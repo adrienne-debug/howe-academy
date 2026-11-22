@@ -18,9 +18,11 @@
  * button is and is not · C each kind of row: the exact writes, the row before / after, the kid's list, the bank, Undo back byte for byte ·
  * D Excuse = ✕ today's record, write for write · E ✕ today in the Kids today pop-up exactly as before; its record undone from the ledger ·
  * F 📊 How often "not counted" · G turns that cannot be excused; a second tap; the kid's list after · H a kid's device, a kiosk, Dad's
- * link (locked / unlocked) · I dryrun · J L1 and L2 still hold · P plan rows (plan ON) · Q the laundry row.
+ * link (locked / unlocked) · I dryrun · J L1 and L2 still hold · K rows refused even when called directly · L LEDGERXLOG: a gone turn's
+ * "— not done" line out on Excuse and back on Undo (this week, last week, a second device just booted, dryrun, the kid's device) ·
+ * P plan rows (plan ON) · Q the laundry row.
  * "The app before" = THIS tree with L3 taken out (no git, no pinned commit): house.js minus the LEDGERX block and its four hooks in
- * LEDGERVIEW, index.html minus rtWave's two extra arguments (arguments[4] / [5]; each must match exactly once, or the test stops).
+ * LEDGERVIEW, index.html minus rtWave's two extra arguments and the routineLog listener's LEDGERXLOG line (arguments[4] / [5]; each must match exactly once, or the test stops).
  * LGX_INDEX / LGX_HJS = other copies of index.html / house.js (a mutation check). LGX_DUMP = a file for the preview page's drawings.
  * run: node test_ledger_excuse.js
  */
@@ -34,7 +36,8 @@ const IDX = process.env.LGX_INDEX || path.join(__dirname, "index.html"), HJS = f
 // ── the app before: this tree, L3 taken out ──
 const once = (src, what, from, to, label) => { const n = typeof from === "string" ? src.split(from).length - 1 : (src.match(from) || []).length;
   if (n !== 1) throw new Error("test_ledger_excuse: the app before cannot be built — " + label + " found " + n + "× in " + what + " (must be exactly once)"); return src.replace(from, () => to); };
-const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const noXLog = s => once(s, "index.html", /else delete routineLog\[kid\]\[w\]; if\(typeof _hhLogCache!=="undefined"\) _hhLogCache=null; \}\);   \/\/ LEDGERXLOG[^\n]*/, "else delete routineLog[kid][w]; });", "the routineLog listener's LEDGERXLOG line");
+const BASE_IDX = (() => { let s = noXLog(fs.readFileSync(path.join(__dirname, "index.html"), "utf8"));
   s = once(s, "index.html", /^ {2}const wk0=arguments\[4\], st0=arguments\[5\];[^\n]*LEDGERX[^\n]*\n/m, "", "rtWave's two extra arguments");
   s = once(s, "index.html", "const wk=wk0||activeWk(), key=rtWaveKey(slot,i), steps=st0?[]:(", "const wk=activeWk(), key=rtWaveKey(slot,i), steps=(", "rtWave's week");
   s = once(s, "index.html", "st=st0||steps[i]; if(!st) return;", "st=steps[i]; if(!st) return;", "rtWave's row");
@@ -50,6 +53,16 @@ const BASE_HJS = (() => { let s = fs.readFileSync(path.join(__dirname, "house.js
   s = once(s, "house.js", "+(r.xH||'')", "", "the drawing hook");
   if (/lgX|LEDGERX|r\.xH/.test(s)) throw new Error("test_ledger_excuse: the app before's house.js still mentions LEDGERX");
   return s; })();
+// LEDGERXLOG (the Click-off Log's "— not done" line out on Excuse, back on Undo; her "fix" 2026-11-22): a third world runs this tree with
+// only that taken out (the block and its two calls, and index.html's one line in the routineLog listener), so section L can show the
+// log as it was before the fix.
+const HJS_X0 = (() => { let s = fs.readFileSync(path.join(__dirname, "house.js"), "utf8");
+  s = once(s, "house.js", /^\/\/ LEDGERXLOG_START[^\n]*\n[\s\S]*?^\/\/ LEDGERXLOG_END\n/m, "", "the LEDGERXLOG block");
+  s = once(s, "house.js", /^ {2}if\(on&&!st\.house\) lgXMissOff\(kid,E,slot,i\);[^\n]*\n/m, "", "the Excuse call");
+  s = once(s, "house.js", /^ {2}if\(off&&!st\.house\) lgXMissOn\(kid,E,slot,i,st\);[^\n]*\n/m, "", "the Undo call");
+  if (/lgXMiss|LEDGERXLOG/.test(s)) throw new Error("test_ledger_excuse: the tree without LEDGERXLOG still mentions it"); return s; })();
+const IDX_X0 = (() => { const s = noXLog(fs.readFileSync(path.join(__dirname, "index.html"), "utf8")); if (/LEDGERXLOG/.test(s)) throw new Error("test_ledger_excuse: index.html without LEDGERXLOG still mentions it");
+  const t = path.join(os.tmpdir(), "ledger_x0_" + process.pid + ".html"); fs.writeFileSync(t, s); return t; })();
 console.log("(the app before: this tree with LEDGERX taken out of house.js and rtWave's two extra arguments out of index.html)");
 
 const K = o => Object.assign({ src: { kind: "routine" }, status: "active", area: "cleaning", verdict: "", note: "", level: 1, minutes: 5 }, o);
@@ -102,6 +115,8 @@ const kidLists = d => JSON.parse(d.run("(function(){ const d0=day, o={}; day=_to
 const page = (d, f) => { d.run("globalThis.__el={innerHTML:'',style:{},appendChild(){},querySelector(){ return null; },querySelectorAll(){ return []; }};1"); try { d.run(f + "(__el);1"); } catch (e) { return "threw " + e.message; } return d.run("__el.innerHTML"); };
 const bal = (d, kid) => d.run("bankBalance(" + J(kid) + ")");
 const tree = w => J(w.db.tree.root);
+const canon = x => JSON.stringify(x, (k, v) => (v && typeof v === "object" && !Array.isArray(v)) ? Object.keys(v).sort().reduce((o, q) => { o[q] = v[q]; return o; }, {}) : v);   // key order left out (a line filed again goes last)
+const ctree = w => canon(noTs(w.db.tree.root));
 const ddiff = (a, b, p) => { p = p || ""; if (J(a) === J(b)) return []; if (!a || !b || typeof a !== "object" || typeof b !== "object") return [p + ": " + String(J(a)).slice(0, 120) + " ≠ " + String(J(b)).slice(0, 120)]; return [...new Set([...Object.keys(a), ...Object.keys(b)])].flatMap(k => ddiff(a[k], b[k], p + "/" + k)).slice(0, 8); };
 const noTs = x => JSON.parse(J(x), (k, v) => (k === "ts" || k === "at") ? "·" : v);
 const pop = (d, k, wk) => LG(d, "lgGo('kid_a'," + k + "," + (wk ? 1 : 0) + ")");
@@ -109,18 +124,18 @@ const bsp = (d, slot) => d.run("(function(){ __pop=''; boardStatPop('kid_a','" +
 const howOften = (d, id) => JSON.parse(d.run("(function(){ const X=hoX(), r=hoRec(" + J(id) + ",X); return JSON.stringify({s:hoSum(r.marks),t:hoText(r)}); })()"));
 
 (async () => {
-const X = await mkWorld(IDX, HJS), BW = await mkWorld(BASE_IDX, BASE_HJS);
+const X = await mkWorld(IDX, HJS), BW = await mkWorld(BASE_IDX, BASE_HJS), X0 = await mkWorld(IDX_X0, HJS_X0);
 const { w, A, B, Dd, Kk } = X;
 const S = { same: [], pop: [], dump: {} };
 const daily = (B, n, dow) => { tick(B, "morning", "kid_a", "Brush teeth"); if ([0, 2, 4].includes(dow) && n !== 4 && n !== 9) tick(B, "morning", "kid_a", "Feed the rabbit");
   if (n !== 9 && n !== 10) tick(B, "chores", "kid_a", "Make the bed"); tick(B, "chores", "kid_c", "Toys in the bin"); };
 const pops = (V, n) => { loadH(V.A, V.hjs); const o = {}; ["kid_a", "kid_b", "kid_c", "kid_d"].forEach(k => { o[k + "day"] = LG(V.A, "lgGo('" + k + "',0,0)"); o[k + "week"] = LG(V.A, "lgGo('" + k + "',0,1)"); for (let j = 1; j <= Math.min(n, 9); j++) o[k + "d" + j] = LG(V.A, "lgGo('" + k + "',-" + j + ",0)"); if (n >= 7) o[k + "lastwk"] = LG(V.A, "lgGo('" + k + "',-7,1)"); }); V.A.run("lgClose();1"); return o; };
 for (let n = 0; n <= 10; n++) {
-  for (const V of [X, BW]) {
+  for (const V of [X, BW, X0]) {
     const { w, A, B } = V, dow = (dOf(n).getDay() + 6) % 7;   // 0 = Monday
     await go(w, n, 8); daily(B, n, dow); await w.flush();
     await go(w, n, 16);
-    if (n < 6) { if (dow === 0) tick(B, "chores", "kid_a", "Wipe the baseboards"); if ([0, 2, 4].includes(dow)) tick(B, "chores", "kid_a", "Empty the trash"); if (dow === 1) { tick(B, "chores", "kid_a", "Vacuum the den"); tick(B, "chores", "kid_b", "Sweep the porch"); } if (dow === 2) tick(B, "chores", "kid_a", "Dust the shelves"); }
+    if (n < 6) { if (dow === 0 && n !== 0) tick(B, "chores", "kid_a", "Wipe the baseboards"); if ([0, 2, 4].includes(dow)) tick(B, "chores", "kid_a", "Empty the trash"); if (dow === 1) { tick(B, "chores", "kid_a", "Vacuum the den"); tick(B, "chores", "kid_b", "Sweep the porch"); } if (dow === 2) tick(B, "chores", "kid_a", "Dust the shelves"); }
     if (n >= 6) { tick(B, "afternoon", "kid_a", "Pick up the"); tick(B, "afternoon", "kid_b", "Pick up the"); }   // 🔄 week 2 only: week 1's turns stay not done (last week's 🔄 rows)
     if (n === 7) tick(B, "chores", "kid_a", "Wash the car");   // Sunday's, 1 day late: 8 of 10
     if (n === 8) tick(B, "chores", "kid_b", "Sweep the porch");
@@ -133,7 +148,7 @@ for (let n = 0; n <= 10; n++) {
     o.bank = V.A.run("JSON.stringify(ROSTER.map(function(k){ return [bankBalance(k),bankLedger(k).length]; }))"); o.log = V.A.run("chSettingsClickoffLogHTML()"); return o; };
   const a = scr(X), b = scr(BW), diff = Object.keys(a).filter(k => J(a[k]) !== J(b[k]));
   const pa = pops(X, n), pb = pops(BW, n), btn = {}, pd = Object.keys(pa).filter(k => { btn[k] = (pa[k].match(EXC) || []).length + (pa[k].match(UND) || []).length; return stripX(pa[k]) !== pb[k]; });
-  S.same.push([n, diff, tree(w) === tree(BW.w), w.db.log.length === BW.w.db.log.length]);
+  S.same.push([n, diff, tree(w) === tree(BW.w), w.db.log.length === BW.w.db.log.length, tree(w) === tree(X0.w) && J(scr(X0)) === J(a)]);
   S.pop.push([n, pd, btn, pd.length ? [pa[pd[0]].slice(0, 300), pb[pd[0]].slice(0, 300)] : null, Object.keys(pa).every(k => rowsRaw(pa[k]).every(r => /lgExcuse\(/.test(r) === (/^[○⏳✖] (?!🌅|🔄 a job that takes turns)/.test(txt(r)) && !/, late \(see that day\)/.test(txt(r)))))]);
 }
 A.run("lgClose();1");
@@ -145,6 +160,7 @@ const I = { bed: idxOf(A, "chores", "kid_a", "Make the bed"), vac: idxOf(A, "cho
 console.log("\n── A · while nobody taps: every screen, the pop-up (but the L3 buttons) and the database = the app before ──");
 ok("11 days: the kids' lists (every list, every kid, Morning too), Mom's Day, Dad's Day, Kids' Corner, the Star Bank, the Click-off Log = the app before, byte for byte", S.same.every(s => s[1].length === 0), S.same.filter(s => s[1].length));
 ok("…and the whole database and the number of writes = the app before, every day (drawing the buttons writes nothing)", S.same.every(s => s[2] && s[3]), S.same.filter(s => !(s[2] && s[3])));
+ok("…and = this tree without LEDGERXLOG, every day (it acts only on a tap)", S.same.every(s => s[4]), S.same.filter(s => !s[4]).map(s => s[0]));
 ok("the 📒 pop-up, every kid, Today, every day back to Monday, This week and last week = the app before once ➖ Excuse / Undo are taken out", S.pop.every(p => p[1].length === 0), S.pop.filter(p => p[1].length));
 ok("…on every kid, every day, every view: ➖ Excuse is on exactly the rows not done (○ · ⏳ · ✖, not a turn done late), never on a done, ➖, 🌅 or ⏸ row, nor on last week's 🔄 rows", S.pop.every(p => p[4]), S.pop.filter(p => !p[4]).map(p => p[0]));
 
@@ -194,8 +210,9 @@ async function caseRun(c) {
   ok(c.lbl + ": the row before: \"" + c.before + "\"", txt(raw) === c.before + " ➖ Excuse", txt(raw));
   ok(c.lbl + ": the tap → yes", !!args && A.run("lgExcuse(" + args + ")") === true, args);
   await w.flush();
-  const P = "waved/" + c.wk + "/" + c.dn + "/kid_a/" + c.slot + "step" + c.i, L = "routineLog/kid_a/" + c.wk + "/" + c.dn + "/wave_" + c.slot + "step" + c.i;
-  ok(c.lbl + ": exactly two writes, on its own day (" + c.dn + "): set " + P + " · set " + L, J(WS(w, m)) === J(["set " + P, "set " + L]), WS(w, m));
+  const P = "waved/" + c.wk + "/" + c.dn + "/kid_a/" + c.slot + "step" + c.i, L = "routineLog/kid_a/" + c.wk + "/" + c.dn + "/wave_" + c.slot + "step" + c.i, M = "routineLog/kid_a/" + c.wk + "/" + c.dn + "/miss_" + c.slot + "_" + c.i;
+  const XW = ["set " + P, "set " + L].concat(c.miss ? ["remove " + M] : []);
+  ok(c.lbl + ": exactly " + XW.length + " writes, on its own day (" + c.dn + "): " + XW.join(" · ") + (c.miss ? " (its \"— not done\" line out)" : ""), J(WS(w, m)) === J(XW), WS(w, m));
   const v = w.get(P) || {}, l = w.get(L) || {};
   ok(c.lbl + ": ✕ today's record: label \"" + c.label + "\", by mom; the log line \"" + c.label + " — waved by Mom\", act wave, 0 ⭐", v.label === c.label && v.by === "mom" && l.label === c.label + " — waved by Mom" && l.act === "wave" && l.pts === 0 && l.slot === c.slot, [v, l]);
   ok(c.lbl + ": nothing on the bank (nothing was taken for it, so nothing is given back); every device's balance as before", J(adj(w, "kid_a")) === bank0 && bal(A, "kid_a") === b0 && bal(B, "kid_a") === b0);
@@ -213,8 +230,9 @@ async function caseRun(c) {
   if (c.dump) S.dump[c.dump] = h1;
   // Undo
   const un = argsOf(c.gone ? rowRaw(goneH(h1), c.nm) : rowRaw(listH(h1), c.nm), "lgExcuseUndo"), m2 = w.mark();
-  ok(c.lbl + ": Undo → yes; two removes of those same paths", !!un && A.run("lgExcuseUndo(" + un + ")") === true && (await w.flush(), J(WS(w, m2)) === J(["remove " + P, "remove " + L])), [un, WS(w, m2)]);
-  ok(c.lbl + ": after Undo the database, the kid's lists, the bank and the pop-up are what they were, byte for byte", tree(w) === t0 && J(kidLists(B)) === J(lists0) && J(adj(w, "kid_a")) === bank0 && pop(A, c.k) === h0 && (due0 === null || pop(A, c.dueK) === due0), [tree(w) === t0, J(kidLists(B)) === J(lists0), pop(A, c.k) === h0]);
+  const UW = ["remove " + P, "remove " + L].concat(c.miss ? ["set " + M] : []);
+  ok(c.lbl + ": Undo → yes; " + (c.miss ? "two removes of those same paths and its \"— not done\" line set again" : "two removes of those same paths"), !!un && A.run("lgExcuseUndo(" + un + ")") === true && (await w.flush(), J(WS(w, m2)) === J(UW)), [un, WS(w, m2)]);
+  ok(c.lbl + ": after Undo the database, the kid's lists, the bank and the pop-up are what they were, byte for byte" + (c.miss ? " (but the \"— not done\" line's time: it is filed again)" : ""), (c.miss ? canon(noTs(JSON.parse(tree(w)))) === canon(noTs(JSON.parse(t0))) : tree(w) === t0) && J(kidLists(B)) === J(lists0) && J(adj(w, "kid_a")) === bank0 && pop(A, c.k) === h0 && (due0 === null || pop(A, c.dueK) === due0), [tree(w) === t0, J(kidLists(B)) === J(lists0), pop(A, c.k) === h0]);
   return { args, un };
 }
 await caseRun({ lbl: "○ not done yet (today, the clothes, Evening)", k: 0, nm: "Lay out clothes", nm2: "👕 Lay out clothes", nmEsc: "Lay out clothes", before: "○ 👕 Lay out clothes not done yet", after: "➖ 👕 Lay out clothes excused (✕ today)", wk, dn: "thursday", slot: "evening", i: I.clothes, label: "Lay out clothes", listGrey: true });
@@ -223,13 +241,14 @@ await caseRun({ lbl: "⏳ falling (the dust, due Wed, pays 8 of 10)", k: 0, dueK
 await caseRun({ lbl: "⏳ the last day of its wait (the vacuum, due Tue, pays 6 of 10)", k: 0, dueK: -2, nm: "Vacuum the den", nm2: "🧹 Vacuum the den", before: "⏳ 🧹 Vacuum the den still on Kid A's list from Tue · pays 6 of 10 ⭐ today", after: "➖ 🧹 Vacuum the den excused · due Tue", wk, dn: "tuesday", slot: "chores", i: I.vac, label: "Vacuum the den", listGone: true, lateZero: true });
 await caseRun({ lbl: "⏳ 3+ a week (the trash, Wed's turn, \"1 day late\")", k: 0, dueK: -1, nm: "Empty the trash", nm2: "🗑 Empty the trash", before: "⏳ 🗑 Empty the trash 1 day late · pays 4 of 5 ⭐ today", after: "➖ 🗑 Empty the trash excused · due Wed", wk, dn: "wednesday", slot: "chores", i: I.trash, label: "Empty the trash", listGone: true, lateZero: true,
   after2: () => ok("⏳ the trash: the kid's list loses the red \"1 day late\" tag with the row", !/Empty the trash[\s\S]{0,400}rt-late/.test(kidLists(B).kid_achores)) });
-const missLine = () => J(((((w.db.tree.root.routineLog || {}).kid_a || {})[wk] || {}).monday || {})["miss_chores_" + I.base] || null);
+const missLine = (wkk, dn, nm) => J(((((w.db.tree.root.routineLog || {}).kid_a || {})[wkk || wk] || {})[dn || "monday"] || {})["miss_chores_" + (nm == null ? I.base : nm)] || null);
 const miss0 = missLine();
-await caseRun({ lbl: "✖ gone from the list (the baseboards, due Mon)", k: 0, dueK: -3, gone: true, nm: "Wipe the baseboards", nm2: "🧽 Wipe the baseboards", before: "✖ 🧽 Wipe the baseboards due Mon, not done in time", after: "➖ 🧽 Wipe the baseboards due Mon · excused", wk, dn: "monday", slot: "chores", i: I.base, label: "Wipe the baseboards", listSame: true, dump: "gone",
-  after2: () => ok("✖ gone: its \"— not done\" line (filed this morning, when it left the list) stays in the Click-off Log — the ✕ record does not remove it (a question for the hub)", miss0 !== "null" && missLine() === miss0, miss0) });
+await caseRun({ lbl: "✖ gone from the list (the baseboards, due Mon)", k: 0, dueK: -3, gone: true, nm: "Wipe the baseboards", nm2: "🧽 Wipe the baseboards", before: "✖ 🧽 Wipe the baseboards due Mon, not done in time", after: "➖ 🧽 Wipe the baseboards due Mon · excused", wk, dn: "monday", slot: "chores", i: I.base, label: "Wipe the baseboards", listSame: true, dump: "gone", miss: true,
+  after2: () => ok("✖ gone: its \"— not done\" line (filed this morning, when it left the list) is out of the Click-off Log while it is excused (LEDGERXLOG)", miss0 !== "null" && missLine() === "null" && !/Wipe the baseboards — not done/.test(A.run("chSettingsClickoffLogHTML()")) && /Wipe the baseboards — waved by Mom/.test(A.run("chSettingsClickoffLogHTML()")), miss0) });
+ok("✖ gone: after Undo its \"— not done\" line is back: the same key, words, list, act, stars and missed mark; only its time is the Undo's", J(noTs(JSON.parse(missLine()))) === J(noTs(JSON.parse(miss0))) && JSON.parse(missLine()).at > JSON.parse(miss0).at, [miss0, missLine()]);
 await caseRun({ lbl: "✖ a daily row on a past day (Wed's bed)", k: -1, nm: "Make the bed", nm2: "🛏 Make the bed", before: "✖ 🛏 Make the bed not done 2 ⭐", after: "➖ 🛏 Make the bed excused (✕ today)", wk, dn: "wednesday", slot: "chores", i: I.bed, label: "Make the bed", listSame: true });
 await caseRun({ lbl: "✖ a Morning row on a past day (Wed's rabbit)", k: -1, nm: "Feed the rabbit", nm2: "🐇 Feed the rabbit", before: "✖ 🐇 Feed the rabbit not done 15 ⭐", after: "➖ 🐇 Feed the rabbit excused (✕ today)", wk, dn: "wednesday", slot: "morning", i: I.rabbit, label: "Feed the rabbit", listSame: true });
-await caseRun({ lbl: "✖ 3+ a week, gone (the trash's Monday turn, seen on Mon)", k: -3, nm: "Empty the trash", nm2: "🗑 Empty the trash", before: "✖ 🗑 Empty the trash not done · gone from Kid A's list Wed 5 ⭐", after: "➖ 🗑 Empty the trash excused (✕ today)", wk, dn: "monday", slot: "chores", i: I.trash, label: "Empty the trash", listSame: true,
+await caseRun({ lbl: "✖ 3+ a week, gone (the trash's Monday turn, seen on Mon)", k: -3, nm: "Empty the trash", nm2: "🗑 Empty the trash", before: "✖ 🗑 Empty the trash not done · gone from Kid A's list Wed 5 ⭐", after: "➖ 🗑 Empty the trash excused (✕ today)", wk, dn: "monday", slot: "chores", i: I.trash, label: "Empty the trash", listSame: true, miss: true,
   after2: () => ok("✖ the trash's Monday turn: Wednesday's \"Gone from Kid A's list\" no longer lists it (an excused turn never left a list)", !/Empty the trash/.test(goneH(pop(A, -1))), goneH(pop(A, -1)).slice(0, 200)) });
 await caseRun({ lbl: "✖ last week (Fri 11/20's rabbit)", k: -6, nm: "Feed the rabbit", nm2: "🐇 Feed the rabbit", before: "✖ 🐇 Feed the rabbit not done 15 ⭐", after: "➖ 🐇 Feed the rabbit excused (✕ today)", wk: pwk, dn: "friday", slot: "morning", i: I.rabbit, label: "Feed the rabbit", listSame: true, dump: "lastwk" });
 // ✖ "still on the list today" (Wed's dust, seen on Wed): the same turn as today's ⏳ row
@@ -265,7 +284,7 @@ console.log("\n── E · ✕ today in the Kids today pop-up: exactly as before
   const h = pop(A, 0);
   ok("the ledger reads that ✕ today as \"➖ 👕 Lay out clothes excused (✕ today)\" with Undo (one record, one home)", rowT(h, "Lay out clothes") === "➖ 👕 Lay out clothes excused (✕ today) Undo", rowT(h, "Lay out clothes"));
   A.run("lgExcuseUndo(" + argsOf(rowRaw(h, "Lay out clothes"), "lgExcuseUndo") + ")"); BW.A.run("rtWave('evening','kid_a',_todayDay," + I.clothes + ");1"); await w.flush(); await BW.w.flush();
-  ok("…the ledger's Undo takes the ✕ today away just as its own undo does: the pop-up and the database = the app before's", bsp(A, "evening") === bsp(BW.A, "evening") && bsp(A, "evening") === p0 && tree(w) === tree(BW.w)); }
+  ok("…the ledger's Undo takes the ✕ today away just as its own undo does: the pop-up and the database = the app before's", bsp(A, "evening") === bsp(BW.A, "evening") && bsp(A, "evening") === p0 && ctree(w) === ctree(BW.w)); }
 
 // ── G ──
 console.log("\n── G · turns that cannot be excused, a second tap, the kid's list after ──");
@@ -305,7 +324,7 @@ console.log("\n── J · L1 and L2 still hold ──");
 { const h = pop(A, -3), a = argsOf(rowRaw(h, "Wash the car"), "lgGive"), m = w.mark();
   ok("L2: ⭐ Give stars back on Monday's car (paid 8 of 10): one line +2, then its Undo", !!a && A.run("lgGive(" + a + ")") === true && (await w.flush(), writes(w, m).length === 1 && /lgb_/.test(writes(w, m)[0].path)) && A.run("lgGiveUndo(" + a + ")") === true && (await w.flush(), !Object.keys(adj(w, "kid_a")).some(k => /^lgb_/.test(k))), WS(w, m));
   ok("L1: every pop-up = the app before's once the L3 buttons are taken out (Today, every day back, This week, last week)", ["kid_a", "kid_b"].every(k => [0, -1, -2, -3, -4, -5, -6, -7].every(j => stripX(LG(A, "lgGo('" + k + "'," + j + ",0)")) === LG(BW.A, "lgGo('" + k + "'," + j + ",0)")) && stripX(LG(A, "lgGo('" + k + "',0,1)")) === LG(BW.A, "lgGo('" + k + "',0,1)")));
-  ok("after every tap above was undone, the whole database = the app before's (but the times)", J(noTs(w.db.tree.root)) === J(noTs(BW.w.db.tree.root)), ddiff(noTs(w.db.tree.root), noTs(BW.w.db.tree.root))); }
+  ok("after every tap above was undone, the whole database = the app before's (but the times, and the order of a line filed again)", ctree(w) === ctree(BW.w), ddiff(noTs(w.db.tree.root), noTs(BW.w.db.tree.root))); }
 
 // ── I ──
 console.log("\n── I · dryrun writes nothing ──");
@@ -326,6 +345,59 @@ console.log("\n── K · a row that cannot be excused even when called directl
   const hs = pop(A, 0), rs = rowRaw(hs, "Make the bed"), m2 = w.mark(), t1 = tree(w);
   ok("a 🌅 row (today's bed, sent to tomorrow morning): \"🌅 🛏 Make the bed sent to tomorrow morning\", no ➖ Excuse", txt(rs) === "🌅 🛏 Make the bed sent to tomorrow morning" && !/lgExcuse/.test(rs), txt(rs));
   ok("…and lgExcuse called on it directly says no and writes nothing (it is the morning list's now)", A.run("lgExcuse('kid_a','" + wk + "','thursday','chores'," + I.bed + ")") === false && (await w.flush(), writes(w, m2).length === 0) && tree(w) === t1, WS(w, m2)); }
+
+// ── L ──
+console.log("\n── L · LEDGERXLOG: a gone turn's \"— not done\" line out on Excuse, back on Undo (her \"fix\", 2026-11-22) ──");
+{ const labels = h => (String(h).match(/>(?:✓|🌅|↩) ([^<]*)<\/span>/g) || []).map(x => x.replace(/^>\S+ /, "").replace(/<\/span>$/, "")).sort();
+  const sub = W0 => canon(noTs({ rl: ((W0.db.tree.root.routineLog || {}).kid_a) || null, wv: W0.db.tree.root.waved || null }));
+  const MT = "routineLog/kid_a/" + wk + "/monday/miss_chores_" + I.base, ML = "routineLog/kid_a/" + pwk + "/monday/miss_chores_" + I.base;
+  const aT = argsOf(rowRaw(goneH(pop(A, 0)), "Wipe the baseboards"), "lgExcuse"), hL = pop(A, -7), rL = rowRaw(goneH(hL), "Wipe the baseboards"), aL = argsOf(rL, "lgExcuse");
+  const log0 = A.run("chSettingsClickoffLogHTML()"), s0 = sub(w), mT0 = missLine(), mL0 = missLine(pwk), ho0 = howOften(A, "a_base"), bank0 = J(adj(w, "kid_a"));
+  ok("before: this week's line (Mon 11/23's turn, gone Thu) and last week's (Mon 11/16's, gone Thu 11/19) are both in the log; Thu 11/19 lists the old turn under Gone", /— not done/.test(mT0) && /— not done/.test(mL0) && txt(rL) === "✖ 🧽 Wipe the baseboards due Mon, not done in time ➖ Excuse" && labels(log0).includes("Wipe the baseboards — not done"), [mT0, mL0, txt(rL)]);
+  // the app before this fix (X0: this tree without LEDGERXLOG): both lines
+  { loadH(X0.A, HJS_X0); const a0 = argsOf(rowRaw(goneH(LG(X0.A, "lgGo('kid_a',0,0)")), "Wipe the baseboards"), "lgExcuse"); X0.A.run("lgExcuse(" + a0 + ")"); await X0.w.flush(); const l = labels(X0.A.run("chSettingsClickoffLogHTML()"));
+    ok("without the fix (this tree minus LEDGERXLOG) the Click-off Log showed both \"Wipe the baseboards — not done\" and \"— waved by Mom\" for the one turn", l.includes("Wipe the baseboards — not done") && l.includes("Wipe the baseboards — waved by Mom"), l);
+    X0.A.run("lgExcuseUndo(" + argsOf(rowRaw(goneH(LG(X0.A, "lgGo('kid_a',0,0)")), "Wipe the baseboards"), "lgExcuseUndo") + ")"); await X0.w.flush(); }
+  let m = w.mark(); A.run("lgExcuse(" + aT + ")"); await w.flush();
+  ok("this week: Excuse → the ✕ record on Monday 11/23 and one remove of its line: " + J(WS(w, m)), J(WS(w, m)) === J(["set waved/" + wk + "/monday/kid_a/choresstep" + I.base, "set routineLog/kid_a/" + wk + "/monday/wave_choresstep" + I.base, "remove " + MT]), WS(w, m));
+  m = w.mark(); A.run("lgExcuse(" + aL + ")"); await w.flush();
+  ok("last week: Excuse → the ✕ record on last week's Monday 11/16 and one remove of its line", J(WS(w, m)) === J(["set waved/" + pwk + "/monday/kid_a/choresstep" + I.base, "set routineLog/kid_a/" + pwk + "/monday/wave_choresstep" + I.base, "remove " + ML]), WS(w, m));
+  const log1 = labels(A.run("chSettingsClickoffLogHTML()"));
+  ok("the Click-off Log now: \"Wipe the baseboards — waved by Mom\", no \"— not done\" for it; every other line as before", !log1.includes("Wipe the baseboards — not done") && log1.includes("Wipe the baseboards — waved by Mom") && J(log1.filter(x => !/Wipe the baseboards/.test(x))) === J(labels(log0).filter(x => !/Wipe the baseboards/.test(x))), log1);
+  ok("the Star Bank untouched (no line written or removed)", J(adj(w, "kid_a")) === bank0);
+  ok("📊 How often on Dad's device, which only heard it (one line swapped for another: the same number of lines), = Mom's", J(howOften(Dd, "a_base")) === J(howOften(A, "a_base")) && howOften(Dd, "a_base").s.skip === ho0.s.skip + 2, [howOften(Dd, "a_base"), howOften(A, "a_base")]);
+  const ho1 = howOften(A, "a_base");
+  ok("📊 How often: Mon 11/16's dropped turn and Mon 11/23's open one are both \"not counted\" (" + ho0.t + " → " + ho1.t + ")", ho1.s.skip === ho0.s.skip + 2 && ho1.s.drop === ho0.s.drop - 1, [ho0, ho1]);
+  m = w.mark(); B.run("(function(){ day=_todayDay; ROSTER.forEach(function(k){ ['afternoon','chores','evening'].forEach(function(s){ rtOpen={}; rtSlotHTML(s,k); }); }); })()"); await w.flush();
+  ok("the kid's device draws every list (where a dropped turn's line is filed): nothing written, the line stays out while it is excused", writes(w, m).length === 0 && missLine() === "null" && missLine(pwk) === "null", WS(w, m));
+  m = w.mark();
+  ok("a second Excuse tap on either: no, nothing written", A.run("lgExcuse(" + aT + ")") === false && A.run("lgExcuse(" + aL + ")") === false && (await w.flush(), writes(w, m).length === 0));
+  m = w.mark();
+  ok("a kid's device and the kiosk: Undo says no, nothing written, the line stays out", B.run("lgExcuseUndo('kid_a','" + wk + "','monday','chores'," + I.base + ")") === false && Kk.run("lgExcuseUndo('kid_a','" + wk + "','monday','chores'," + I.base + ")") === false && (await w.flush(), writes(w, m).length === 0) && missLine() === "null");
+  // dryrun: a grown-up device with ?dryrun=1 — Undo shows the line again on that screen only
+  { const Dr = w.boot("Dr2", "devDr2", { mom: true }); Dr.run(CAP); await w.flush(); Dr.run(HJS); Dr.run("_loadPrevSl();1"); await w.flush(); Dr.run("HA_LS.setItem('ha_dryrun','1');1"); const md = w.mark();
+    const u = Dr.run("lgExcuseUndo('kid_a','" + wk + "','monday','chores'," + I.base + ")"); await w.flush();
+    ok("?dryrun=1: Undo shows the line again on that screen only; nothing reaches the database", u === true && writes(w, md).length === 0 && missLine() === "null" && labels(Dr.run("chSettingsClickoffLogHTML()")).includes("Wipe the baseboards — not done"), WS(w, md));
+    w.__dr = Dr; }
+  // Undo from a second grown-up device, just booted (no memory of the Excuse: a reload)
+  const A2 = w.boot("A2", "devA2", { mom: true }); A2.run(CAP); await w.flush(); A2.run(HJS); A2.run("_loadPrevSl();1"); await w.flush();
+  m = w.mark(); const u1 = A2.run("lgExcuseUndo('kid_a','" + wk + "','monday','chores'," + I.base + ")"); await w.flush(); const w1 = WS(w, m);
+  ok("Undo from a second grown-up device just booted (this week): the ✕ record removed and the line filed again through _rtLogMiss", u1 === true && J(w1) === J(["remove waved/" + wk + "/monday/kid_a/choresstep" + I.base, "remove routineLog/kid_a/" + wk + "/monday/wave_choresstep" + I.base, "set " + MT]), w1);
+  m = w.mark(); const u2 = A2.run("lgExcuseUndo('kid_a','" + pwk + "','monday','chores'," + I.base + ")"); await w.flush(); const w2 = WS(w, m);
+  ok("…and last week's from the same device: the ✕ record removed, the line set again under last week's Monday", u2 === true && J(w2) === J(["remove waved/" + pwk + "/monday/kid_a/choresstep" + I.base, "remove routineLog/kid_a/" + pwk + "/monday/wave_choresstep" + I.base, "set " + ML]), w2);
+  ok("each line back as it was: the same key, words, list, act, stars and missed mark; only its time stamp (ts, at) is the Undo's", J(noTs(JSON.parse(missLine()))) === J(noTs(JSON.parse(mT0))) && J(noTs(JSON.parse(missLine(pwk)))) === J(noTs(JSON.parse(mL0))) && JSON.parse(missLine()).at > JSON.parse(mT0).at, [mT0, missLine()]);
+  ok("kid_a's whole Click-off Log record and the ✕ records = before the Excuse (but those two times); the Click-off Log lists the same lines", sub(w) === s0 && J(labels(A.run("chSettingsClickoffLogHTML()"))) === J(labels(log0)));
+  ok("How often back as it was; the bank untouched", J(howOften(A, "a_base")) === J(ho0) && J(adj(w, "kid_a")) === bank0, [ho0, howOften(A, "a_base"), howOften(A2, "a_base")]);
+  m = w.mark();
+  ok("a second Undo: no, nothing written", A2.run("lgExcuseUndo('kid_a','" + wk + "','monday','chores'," + I.base + ")") === false && A.run("lgExcuseUndo('kid_a','" + pwk + "','monday','chores'," + I.base + ")") === false && (await w.flush(), writes(w, m).length === 0));
+  // a turn that never left the list: no line out, none filed on Undo (the dust, ⏳ since Wed)
+  const aD = argsOf(rowRaw(pop(A, 0), "Dust the shelves"), "lgExcuse"); m = w.mark(); A.run("lgExcuse(" + aD + ")"); await w.flush(); const wd1 = WS(w, m);
+  m = w.mark(); A.run("lgExcuseUndo('kid_a','" + wk + "','wednesday','chores'," + I.dust + ")"); await w.flush(); const wd2 = WS(w, m);
+  ok("a turn still on the list (the dust): Excuse and Undo touch no \"— not done\" line (2 writes each)", wd1.length === 2 && wd2.length === 2 && !wd1.concat(wd2).some(x => /miss_/.test(x)) && missLine(wk, "wednesday", I.dust) === "null", [wd1, wd2]);
+  { const Dr = w.__dr, md = w.mark(); await w.flush(); const a = argsOf(rowRaw(goneH(LG(Dr, "lgGo('kid_a',0,0)")), "Wipe the baseboards"), "lgExcuse"), e = Dr.run("lgExcuse(" + a + ")"); await w.flush();
+    ok("?dryrun=1: Excuse on the gone row takes the line out on that screen only; nothing reaches the database, the line stays in it", !!a && e === true && writes(w, md).length === 0 && missLine() !== "null" && !labels(Dr.run("chSettingsClickoffLogHTML()")).includes("Wipe the baseboards — not done"), [a, e, WS(w, md)]);
+    w.devs.splice(w.devs.indexOf(Dr), 1); }
+  w.devs.splice(w.devs.indexOf(A2), 1); }
 
 // ── P ──
 console.log("\n── P · plan rows (the plan ON): ✕ today's record is the plan's skip ──");
@@ -352,6 +424,6 @@ console.log("\n── P · plan rows (the plan ON): ✕ today's record is the pl
 
 if (process.env.LGX_DUMP) fs.writeFileSync(process.env.LGX_DUMP, J(S.dump));   // read only by the preview page's builder
 console.log("\n" + pass + " passed, " + fail + " failed");
-try { fs.unlinkSync(BASE_IDX); } catch (e) {}
+try { fs.unlinkSync(BASE_IDX); fs.unlinkSync(IDX_X0); } catch (e) {}
 process.exit(fail ? 1 : 0);
-})().catch(e => { console.error(e); try { fs.unlinkSync(BASE_IDX); } catch (x) {} process.exit(1); });
+})().catch(e => { console.error(e); try { fs.unlinkSync(BASE_IDX); fs.unlinkSync(IDX_X0); } catch (x) {} process.exit(1); });
