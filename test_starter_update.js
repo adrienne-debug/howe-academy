@@ -53,8 +53,11 @@ function v3Copy(w, home) {
   deck(u, C6).cards = deck(u, C6).cards.filter(c => !more.has(c.name));
   deck(u, C7).cards = deck(u, C7).cards.filter(c => !caps.has(c.name));
   u.stages.find(s => s.n === 6).readyAt = 96; u.stages.find(s => s.n === 7).readyAt = 54; u.starterVer = 3; u.addedTs = 1763000000000;
-  return u;
+  return noExtra(u);
 }
+// 🏳️🏔🗽 GEOEXTRA (starterVer 5): a copy made before it has no Flags / Rivers & Mountains / Landmarks and no Stages 8–10.
+const EXTRA = ["Flags", "Rivers & Mountains", "Landmarks"];
+function noExtra(u) { u.decks = u.decks.filter(d => !EXTRA.includes(d.key)); u.stages = u.stages.filter(s => s.n <= 7); return u; }
 function family(o) {
   o = o || {};
   const w = boot(o), u = o.copy ? o.copy(w) : v3Copy(w); w.G.unitStudies[UNIT] = u; w.u = u;
@@ -84,8 +87,8 @@ const tick = () => new Promise(r => setTimeout(r, 0));
 (async () => {
 console.log("── the fixture is the live shape ──");
 { const w = family(), u = w.u, code = w.STARTER_UNITS.geography_path(u);
-  ok("v3 copy: Countries 87, World Geography 60, ready at 96 / 54, starterVer 3; the code: 195 / 195, 193 / 175, starterVer 4",
-    deck(u, C6).cards.length === 87 && deck(u, C7).cards.length === 60 && u.starterVer === 3 && code.starterVer === 4 && deck(code, C6).cards.length === 195 && deck(code, C7).cards.length === 195 &&
+  ok("v3 copy: Countries 87, World Geography 60, ready at 96 / 54, starterVer 3; the code: 195 / 195, 193 / 175, starterVer 5 (GEOEXTRA)",
+    deck(u, C6).cards.length === 87 && deck(u, C7).cards.length === 60 && u.starterVer === 3 && code.starterVer === 5 && deck(code, C6).cards.length === 195 && deck(code, C7).cards.length === 195 &&
     code.stages.find(s => s.n === 6).readyAt === 193 && code.stages.find(s => s.n === 7).readyAt === 175);
   ok("the code is built with THIS family's home (Stage 3 and the region order follow it)", w.STARTER_UNITS.geography_path({ home: "Oregon" }).home === "Oregon" && w.STARTER_UNITS.geography_path().home === "North Carolina");
 }
@@ -96,18 +99,18 @@ console.log("\n── the plan for the v3 copy ──");
   const di6 = u.decks.findIndex(d => d.key === C6), di7 = u.decks.findIndex(d => d.key === C7);
   const uw = P.writes.filter(x => x.path.startsWith("unitStudies/")), kw = P.writes.filter(x => x.path.startsWith("mastery/"));
   const c6 = uw.filter(x => x.path.startsWith("unitStudies/" + UNIT + "/decks/" + di6 + "/cards/")), c7 = uw.filter(x => x.path.startsWith("unitStudies/" + UNIT + "/decks/" + di7 + "/cards/"));
-  ok("plan ok; Countries: 108 new · World Geography: 135 new; 243 cards; no new deck or stage", P.ok && S.cards === 243 && S.decks.length === 2 && S.decks.find(d => d.key === C6).added === 108 && S.decks.find(d => d.key === C6).had === 87 && S.decks.find(d => d.key === C7).added === 135 && S.stages.length === 0, S);
-  ok("record writes: 108 at Countries 87…194, 135 at World Geography 60…194, readyAt ×2, starterVer — nothing else", uw.length === 108 + 135 + 3 && c6.length === 108 && c7.length === 135 &&
+  ok("plan ok; Countries: 108 new · World Geography: 135 new; GEOEXTRA's three decks whole (193 + 24 + 24) and Stages 8–10; 484 cards", P.ok && S.cards === 484 && S.decks.length === 5 && S.decks.find(d => d.key === C6).added === 108 && S.decks.find(d => d.key === C6).had === 87 && S.decks.find(d => d.key === C7).added === 135 && S.decks.filter(d => d.isNew).map(d => d.key + ":" + d.added).join() === "Flags:193,Rivers & Mountains:24,Landmarks:24" && S.stages.map(s => s.n).join() === "8,9,10", S);
+  ok("record writes: 108 at Countries 87…194, 135 at World Geography 60…194, 3 new decks, 3 new stages, readyAt ×2, starterVer — nothing else", uw.length === 108 + 135 + 3 + 3 + 3 && c6.length === 108 && c7.length === 135 &&
     c6.every((x, i) => x.path.endsWith("/cards/" + (87 + i))) && c7.every((x, i) => x.path.endsWith("/cards/" + (60 + i))), uw.filter(x => !/\/cards\//.test(x.path)).map(x => x.path));
   const si6 = u.stages.findIndex(s => s.n === 6), si7 = u.stages.findIndex(s => s.n === 7);
   ok("readiness: Stage 6 96 → 193, Stage 7 54 → 175, said in the plan", uw.some(x => x.path === "unitStudies/" + UNIT + "/stages/" + si6 + "/readyAt" && x.value === 193) && uw.some(x => x.path === "unitStudies/" + UNIT + "/stages/" + si7 + "/readyAt" && x.value === 175) &&
     S.settings.length === 2 && S.settings.every(s => s.k === "readyAt") && S.kept.length === 0);
-  ok("starterVer 4 is the last write", P.writes[P.writes.length - 1].path === "unitStudies/" + UNIT + "/starterVer" && P.writes[P.writes.length - 1].value === 4);
+  ok("starterVer 5 is the last write", P.writes[P.writes.length - 1].path === "unitStudies/" + UNIT + "/starterVer" && P.writes[P.writes.length - 1].value === 5);
   const new6 = deck(code, C6).cards.filter(c => !deck(u, C6).cards.some(x => x.name === c.name)), new7 = deck(code, C7).cards.filter(c => !deck(u, C7).cards.some(x => x.name === c.name));
   ok("the new cards are the code's, in the code's order, name/family/stage/back as the code has them; order after the deck's last", JSON.stringify(c6.map(x => x.value.name)) === JSON.stringify(new6.map(c => c.name)) && JSON.stringify(c7.map(x => x.value.name)) === JSON.stringify(new7.map(c => c.name)) &&
     c7.every((x, i) => x.value.def === new7[i].def && x.value.family === new7[i].family && x.value.stage === 7) && c6.every(x => x.value.stage === 6 && x.value.def === undefined) &&
     (m => c6.every((x, i) => x.value.order === m + 1 + i))(Math.max(...deck(u, C6).cards.map(c => c.order))));
-  ok("no write lands on an existing card index, an existing deck or stage, enrolled, kidStage or visuals", uw.every(x => { const m = /\/decks\/(\d+)\/cards\/(\d+)$/.exec(x.path); return m ? Number(m[2]) >= deck(u, u.decks[m[1]].key).cards.length : /\/stages\/\d+\/readyAt$|\/starterVer$/.test(x.path); }));
+  ok("no write lands on an existing card index, an existing deck or stage, enrolled, kidStage or visuals", uw.every(x => { const m = /\/decks\/(\d+)\/cards\/(\d+)$/.exec(x.path); return m ? Number(m[2]) >= deck(u, u.decks[m[1]].key).cards.length : /\/stages\/\d+\/readyAt$|\/starterVer$/.test(x.path) || (/\/decks\/(\d+)$/.test(x.path) && Number(x.path.split("/").pop()) >= u.decks.length) || (/\/stages\/(\d+)$/.test(x.path) && Number(x.path.split("/").pop()) >= u.stages.length); }));
   // kids
   const kb_ = kw.filter(x => x.path.startsWith("mastery/kidb")), ka_ = kw.filter(x => x.path.startsWith("mastery/kida")), kc_ = kw.filter(x => x.path.startsWith("mastery/kidc"));
   const bLen = w.G.masteryData.kidb_custom_items.length;
@@ -115,7 +118,7 @@ console.log("\n── the plan for the v3 copy ──");
   ok("Stage-7 kid: no back written (every capital's back is in the code); no Countries (that stage was never given)", !kb_.some(x => /definitions/.test(x.path)) && S.kids.find(k => k.kid === "kidb").notGiven[C6] === 108 && !S.kids.find(k => k.kid === "kidb").added[C6]);
   ok("Stage-5 kid: nothing — Countries and World Geography come with ➡", ka_.length === 0 && S.kids.find(k => k.kid === "kida").later[C7] === 135 && S.kids.find(k => k.kid === "kida").later[C6] === 108);
   ok("Stage-6 kid: the 108 Countries after the 87, in path order; World Geography later", kc_.length === 108 && kc_.every((x, i) => x.path === "mastery/kidc_custom_items/" + (87 + i) && x.value.name === new6[i].name && x.value.cat === C6) && S.kids.find(k => k.kid === "kidc").later[C7] === 135);
-  ok("in all: 243 + 3 record writes, 243 kid appends = 489", P.writes.length === 489, P.writes.length);
+  ok("in all: 484 cards in 243 + 3 + 3 + 3 record writes, 243 kid appends = 495 (no kid is on Stage 8–10: those come with ➡)", P.writes.length === 495, P.writes.length);
   ok("making the plan changed nothing", JSON.stringify(u) === before && snapKids(w.G) === kb && w.G.writes.length === 0);
   // the next cards don't jump: the Stage-7 kid's next new cards are the same after the appends
   const nextB = () => { const live = new Set(w.G.masteryData.kidb.map(i => i.prompt)); return (w.mastFullBank("kidb")[C7] || []).filter(n => !live.has(n)).slice(0, 10); };
@@ -126,13 +129,13 @@ console.log("\n── the plan for the v3 copy ──");
   ok("Mom sees: Countries 108 new · World Geography 135 new · new ‘ready’ numbers for Stages 6 and 7", /<b>Countries<\/b>: <b>108<\/b> new cards, after the 87 already there/.test(h) && /<b>World Geography<\/b>: <b>135<\/b> new cards, after the 60/.test(h) &&
     /New ‘ready’ number for <b>Stage 6<\/b> · Countries by continent: <b>193<\/b> \(was 96\)/.test(h) && /New ‘ready’ number for <b>Stage 7<\/b> · World capitals: <b>175<\/b> \(was 54\)/.test(h), h.slice(0, 1600));
   ok("…and per kid: Kidb 135 added after what's there; Kida nothing yet; Kidc 108 Countries", /<b>Kidb<\/b> \(Stage 7\): <b>135<\/b> new World Geography cards added to Kidb’s list, after what’s already there/.test(h) &&
-    /<b>Kida<\/b> \(Stage 5\): nothing added to the list — the new Countries, World Geography cards come when Kida gets to that stage/.test(h) && /<b>Kidc<\/b> \(Stage 6\): <b>108<\/b> new Countries cards/.test(h) && /489 saved changes/.test(h) && /Yes, add them/.test(h), h);
+    /<b>Kida<\/b> \(Stage 5\): nothing added to the list — the new Countries, World Geography, Flags, Rivers &amp; Mountains, Landmarks cards come when Kida gets to that stage/.test(h) && /<b>Kidc<\/b> \(Stage 6\): <b>108<\/b> new Countries cards/.test(h) && /495 saved changes/.test(h) && /Yes, add them/.test(h), h);
   // Yes
   const r = w.suApply(w.view.plan); await tick();
   const up = w.G.writes.find(x => x[1] === "");
-  ok("Yes: ONE root update with the 489 paths, nothing else", r === true && w.G.writes.length === 1 && up && Object.keys(up[2]).length === 489, w.G.writes.map(x => x[1]));
-  ok("after: 195 / 195, ready 193 / 175, starterVer 4 — the copy's cards now match the code's names stage by stage", deck(u, C6).cards.length === 195 && deck(u, C7).cards.length === 195 && u.stages.find(s => s.n === 6).readyAt === 193 && u.stages.find(s => s.n === 7).readyAt === 175 && u.starterVer === 4 &&
-    [1, 2, 3, 4, 5, 6, 7].every(n => JSON.stringify(w._ustCards(u, n).map(c => c._dk + c.name).sort()) === JSON.stringify(w._ustCards(code, n).map(c => c._dk + c.name).sort())));
+  ok("Yes: ONE root update with the 495 paths, nothing else", r === true && w.G.writes.length === 1 && up && Object.keys(up[2]).length === 495, w.G.writes.map(x => x[1]));
+  ok("after: 195 / 195, ready 193 / 175, starterVer 5 — the copy's cards now match the code's names stage by stage", deck(u, C6).cards.length === 195 && deck(u, C7).cards.length === 195 && u.stages.find(s => s.n === 6).readyAt === 193 && u.stages.find(s => s.n === 7).readyAt === 175 && u.starterVer === 5 &&
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every(n => JSON.stringify(w._ustCards(u, n).map(c => c._dk + c.name).sort()) === JSON.stringify(w._ustCards(code, n).map(c => c._dk + c.name).sort())));
   const old = JSON.parse(before);
   ok("every card that was there is byte-identical, at the same index; every other field of the record too", old.decks.every((d, i) => d.cards.every((c, j) => JSON.stringify(u.decks[i].cards[j]) === JSON.stringify(c))) &&
     JSON.stringify(Object.assign({}, u, { decks: 0, stages: 0, starterVer: 0 })) === JSON.stringify(Object.assign({}, old, { decks: 0, stages: 0, starterVer: 0 })) &&
@@ -167,7 +170,7 @@ console.log("\n── Mom's own edits are hers ──");
 
 console.log("\n── a current copy, dry run, a stale plan, not Mom ──");
 { const w = boot(); const u = clone(w.STARTER_UNITS.geography_path()); w.G.unitStudies[UNIT] = u;
-  ok("a copy added today (starterVer 4): no row, no panel, the plan says current", w.suPending(u) === null && w.suRowHtml(u) === "" && w.suHtml(u) === "" && !w.suPlan(UNIT).ok);
+  ok("a copy added today (starterVer 5): no row, no panel, the plan says current", w.suPending(u) === null && w.suRowHtml(u) === "" && w.suHtml(u) === "" && !w.suPlan(UNIT).ok);
   const v = boot(); v.G.unitStudies[UNIT] = Object.assign(clone(v.STARTER_UNITS.geography_path()), { starterVer: 3 });
   ok("an older starterVer with nothing actually missing: still no row (nothing to add)", v.suPending(v.G.unitStudies[UNIT]) === null && !v.suPlan(UNIT).ok);
 }
@@ -183,18 +186,36 @@ console.log("\n── a current copy, dry run, a stale plan, not Mom ──");
 { const w = family(); w.G.mom = false;
   ok("not Mom: no row, no panel, no open, Yes refused", w.suRowHtml(w.u) === "" && w.suHtml(w.u) === "" && (w.suOpen(UNIT), w.view === null) && w.suApply(w.suPlan(UNIT, TS)) === false && w.G.writes.length === 0);
   w.G.mom = true;
-  ok("Mom: the quiet row on the unit's card", /＋ Add the new stages \(243 new cards\)/.test(w.suRowHtml(w.u)) && /event\.stopPropagation\(\);suOpen\('geography_path'\)/.test(w.suRowHtml(w.u)));
+  ok("Mom: the quiet row on the unit's card", /＋ Add the new stages \(484 new cards\)/.test(w.suRowHtml(w.u)) && /event\.stopPropagation\(\);suOpen\('geography_path'\)/.test(w.suRowHtml(w.u)));
+}
+
+console.log("\n── 🏳️🏔🗽 GEOEXTRA: a v4 copy (all of GEOALL, no Stages 8–10) → starterVer 5 ──");
+{ const w = family({ copy: w => { const u = noExtra(clone(w.STARTER_UNITS.geography_path({ home: "North Carolina" }))); u.starterVer = 4; return u; },
+    pre: (w, u) => { const all = n => deck(u, n).cards.map(c => ({ cat: n, name: c.name }));
+      w.G.masteryData.kidb_custom_items = all(C7); w.G.masteryData.kida_custom_items = all(SC); w.G.masteryData.kidc_custom_items = all(C6); } });
+  const u = w.u, n0 = u.decks.length, s0 = u.stages.length, before = JSON.stringify(u), kb = snapKids(w.G), P = w.suPlan(UNIT, TS), S = P.sum;
+  ok("the row offers it: ＋ Add the new stages (241 new cards)", /＋ Add the new stages \(241 new cards\)/.test(w.suRowHtml(u)), w.suRowHtml(u));
+  ok("plan: adds Flags (193), Rivers & Mountains (24), Landmarks (24) whole at new deck indexes, Stages 8, 9, 10 at new stage indexes, starterVer 5 — 7 writes, nothing else", P.ok && P.writes.length === 7 &&
+    P.writes.slice(0, 3).map(x => x.path).join() === [0, 1, 2].map(i => "unitStudies/" + UNIT + "/decks/" + (n0 + i)).join() && P.writes.slice(0, 3).map(x => x.value.key + ":" + x.value.cards.length).join() === "Flags:193,Rivers & Mountains:24,Landmarks:24" &&
+    P.writes.slice(3, 6).map(x => x.path).join() === [0, 1, 2].map(i => "unitStudies/" + UNIT + "/stages/" + (s0 + i)).join() && P.writes[6].path === "unitStudies/" + UNIT + "/starterVer" && P.writes[6].value === 5, P.writes.map(x => x.path));
+  ok("the new stages carry their settings: Flags ready at 174 · Rivers & mountains 22 · Landmarks 22, open from Stage 3", JSON.stringify(P.writes.slice(3, 6).map(x => x.value)) === JSON.stringify([{ n: 8, label: "Flags", weeklyFrom: 0, readyAt: 174 }, { n: 9, label: "Rivers & mountains", weeklyFrom: 0, readyAt: 22 }, { n: 10, label: "Landmarks", weeklyFrom: 0, readyAt: 22, openFrom: 3 }]));
+  ok("no kid gets a card now (kids on 5, 6, 7 — the new ones come with ➡); no picture written; nothing existing touched", S.kids.every(k => !Object.keys(k.added).length && k.later.Flags === 193 && k.later.Landmarks === 24) && !P.writes.some(x => /visuals|mastery\//.test(x.path)) && JSON.stringify(u) === before && snapKids(w.G) === kb);
+  w.suOpen(UNIT); const h = w.suHtml(u);
+  ok("Mom reads it: three decks added, Stages 8–10 added", /Adds the <b>Flags<\/b> deck — <b>193<\/b> cards/.test(h) && /Adds the <b>Landmarks<\/b> deck — <b>24<\/b> cards/.test(h) && /Adds <b>Stage 10 · Landmarks<\/b>/.test(h) && /7 saved changes/.test(h), h.slice(0, 900));
+  w.suApply(w.view.plan); await tick();
+  ok("after Yes: the copy has the code's 10 stages and 11 decks, starterVer 5; a kid on Stage 7 is offered ➡ Stage 8 Flags and Landmarks early", u.starterVer === 5 && w._ustStagesWithCards(u).map(s => s.n).join() === "1,2,3,4,5,6,7,8,9,10" && u.decks.length === 11 &&
+    w.unitStageStatus(u, "kidb").next.n === 8 && w.unitStageStatus(u, "kidb").side.n === 10 && w.suPending(u) === null);
 }
 
 console.log("\n── a v2-shaped copy: Stages 5 and 7 are new ──");
 { const w = family({ copy: w => { const u = v3Copy(w); u.decks = u.decks.filter(d => d.key !== SC && d.key !== C7); u.stages = u.stages.filter(s => s.n !== 5 && s.n !== 7); u.starterVer = 2; return u; },
     pre: (w, u) => { delete u.kidStage.kida; delete u.kidStage.kidb; u.enrolled = { kidc: true }; } });
   const u = w.u, n0 = u.decks.length, P = w.suPlan(UNIT, TS), S = P.sum;
-  ok("adds the State Capitals and World Geography decks whole, at new indexes, and Stages 5 and 7", P.ok && S.decks.filter(d => d.isNew).map(d => d.key + ":" + d.added).sort().join() === "State Capitals:50,World Geography:195" &&
-    P.writes.filter(x => /\/decks\/\d+$/.test(x.path)).map(x => x.path.split("/").pop()).join() === n0 + "," + (n0 + 1) && S.stages.map(s => s.n).join() === "5,7", S);
+  ok("adds the State Capitals and World Geography decks whole, at new indexes, and Stages 5 and 7", P.ok && S.decks.filter(d => d.isNew).map(d => d.key + ":" + d.added).sort().join() === "Flags:193,Landmarks:24,Rivers & Mountains:24,State Capitals:50,World Geography:195" &&
+    P.writes.filter(x => /\/decks\/\d+$/.test(x.path)).map(x => x.path.split("/").pop()).join() === [0, 1, 2, 3, 4].map(i => n0 + i).join() && S.stages.map(s => s.n).join() === "5,7,8,9,10", S);
   ok("the Stage-6 kid gets the 108 Countries — and nothing from the new decks", S.kids.length === 1 && S.kids[0].added[C6] === 108 && !S.kids[0].added[C7] && !S.kids[0].added[SC]);
   w.suOpen(UNIT); w.suApply(w.view.plan); await tick();
-  ok("after Yes, ➡ and the Start form go by stage number (1…7), though 5 and 7 sit at the end of the saved list", w._ustStagesWithCards(u).map(s => s.n).join() === "1,2,3,4,5,6,7" && u.stages.map(s => s.n).join() === "1,2,3,4,6,5,7" &&
+  ok("after Yes, ➡ and the Start form go by stage number (1…10), though 5 and 7 sit at the end of the saved list", w._ustStagesWithCards(u).map(s => s.n).join() === "1,2,3,4,5,6,7,8,9,10" && u.stages.map(s => s.n).join() === "1,2,3,4,6,5,7,8,9,10" &&
     w.unitStageStatus(u, "kidc").next.n === 7);
 }
 

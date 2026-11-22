@@ -93,7 +93,7 @@ console.log("\n── the plan ──");
   const up = w.G.writes.find(x => x[1] === "");
   ok("Yes: one update, 167 paths; her cards and settings byte-identical; the list now ends with the 165 more", r && w.G.writes.length === 1 && Object.keys(up[2]).length === 167 && snap(w.G, KID) === before && w.mastFullBank(KID)[D].length === 195 && w.mastFullBank(KID)[D].slice(0, 30).join() === WORLD.join());
   const st = w.unitStageStatus(w.u, KID);
-  ok("status: 6 of 195 on the ladder, learning Asia (China), ready at 175, nothing after Stage 7 yet", st.on === 6 && st.learn === 1 && st.fam === "Asia" && st.need === 175 && st.next === null, st);
+  ok("status: 6 of 195 on the ladder, learning Asia (China), ready at 175; next Stage 8 Flags (GEOEXTRA), Landmarks offered early", st.on === 6 && st.learn === 1 && st.fam === "Asia" && st.need === 175 && st.next && st.next.n === 8 && st.side && st.side.n === 10, st);
 }
 
 console.log("\n── strays and earlier stages ──");
