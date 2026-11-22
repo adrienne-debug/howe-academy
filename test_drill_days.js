@@ -13,7 +13,7 @@
  *      (and the control: with the old editor copy put back, the old days WOULD come back — the drop is what saves them)
  *   6. a child running on the built-in starting days: the first tap saves the whole row as shown
  *   7. the sheet shows the saved days (the builder's own reader), the line's minutes and with Mom / on their own
- *   8. greyed "can't run" lines and the empty chip stay pointers to Mastery; an ok line opens the sheet
+ *   8. greyed "can't run" lines stay pointers to Mastery (the empty chip: Card practice, slice 4); an ok line opens the sheet
  *   9. random taps: only the tapped kind on the tapped day changes, never a duplicate, never a third kind
  *   run:  node test_drill_days.js
  */
@@ -290,7 +290,7 @@ console.log("8. which lines open the sheet");
   ok("…nothing written", w.writes.length === 0);
   const w2 = world();
   const e = w2.drStripChips("kida");
-  ok("the empty-state chip keeps drGo", /class="dr-empty" onclick="drGo\('kida'\)"/.test(e), e);
+  ok("the empty-state chip opens ＋ Add subject ▸ Card practice (DRILLADD, slice 4 — test_drill_add.js)", /class="dr-empty" onclick="daOpen\('kida'\)"/.test(e), e);
 }
 
 console.log("9. random taps keep the rules");

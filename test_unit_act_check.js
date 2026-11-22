@@ -44,7 +44,7 @@ const G = (c, id) => { const u = c.unitStudies.fall; return { day: c.utRef("fall
 const P = (k, a) => "unitStudies/fall/activityLog/" + k + "/" + a;
 
 console.log("── the block ──");
-ok("UNITACTCHK is a marked block inside DAYCARD, hooked once into 🎨 Today's activity", AC.length > 800 && DC.indexOf("// UNITACTCHK_START") > 0 && DC.split(HOOK).length === 2 && /Today\\u2019s activity[^\n]*\+dcActChecksHTML\(g,act\)\);/.test(DC));
+ok("UNITACTCHK is a marked block inside DAYCARD, hooked once into 🎨 Today's activity", AC.length > 800 && DC.indexOf("// UNITACTCHK_START") > 0 && DC.split(HOOK).length === 2 && /Today\\u2019s [^\n]*\+dcActChecksHTML\(g,act\)\)\)\.join\(""\)\);/.test(DC));
 ok("the block writes nothing itself: no db call, no new path — its only write door is the Units page's unitActivityDone", !/db\.|\.ref\(|\.set\(|\.update\(|\.remove\(/.test(AC.replace(/^\s*\/\/.*$/mg, "")) && /unitActivityDone\(uid,kid,key\)/.test(AC));
 ok("the tap is Mom-only (momHere), as the Units page's ✓ Done is", /function dcActTap\(uid,kid,key\)\{ if\(!\(typeof momHere==="function"&&momHere\(\)\)/.test(AC) && /function unitActivityDone\(unitId,kid,actKey\)\{\n  if\(!momHere\(\)\) return;/.test(src));
 ok("the Units page's ✓ Done calls the same function with (unit id, kid, activity key) and reads the same record",

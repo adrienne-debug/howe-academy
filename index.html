@@ -36810,7 +36810,7 @@ function ceAddSave(){
 //   options at once" (step 1) draws today's one-page sheet, byte-identical, with today's ending (the card re-opens).
 //   Writes nothing of its own: every write is ceAddSave's, famWhoSave's or cbApply's. No kid names: the roster draws the chips.
 let afStep=0, afMore=false, afPace=null, afBusy="";   // afStep 0 = the one-page sheet; afPace = the staged lay-out answers
-function afReset(){ afStep=1; afMore=false; afBusy=""; afPace={pages:false,targetDate:"",startDate:"",firstPage:1,lastPage:"",patternStr:"",units:null}; }
+function afReset(){ if(typeof daReset==="function") daReset(); afStep=1; afMore=false; afBusy=""; afPace={pages:false,targetDate:"",startDate:"",firstPage:1,lastPage:"",patternStr:"",units:null}; }
 function afKind(f){ return (f.fixedTime&&String(f.fixedTime).trim())?"class":(f.tracking==="daily"?"daily":"book"); }
 function afFam(){ return typeof famWhoPicks==="function"&&famWhoPicks(ceAddForm).length>1; }
 function afDays(){ return String(ceAddForm.days||"").split(/[\s,]+/).filter(Boolean); }
@@ -36873,6 +36873,7 @@ async function afScan(input){   // 📸 the Builder's own book scan (cbScanBook,
   afBusy=cbScanStatus||""; if(afStep===2) ceRenderAddSheet();
 }
 function afSheetHTML(kid,f,col){
+  if(typeof daOn!=="undefined"&&daOn&&typeof daSheetHTML==="function") return daSheetHTML(kid,col);   // DRILLADD: 🃏 Card practice swaps the form
   const L=t=>'<div class="ce-sheet-lbl">'+t+'</div>', H=t=>'<div style="font-size:10px;color:var(--muted);margin-top:4px">'+t+'</div>';
   const C=(on,click,lbl)=>'<div class="ce-chip'+(on?" sel":"")+'" onclick="'+click+'">'+lbl+'</div>';
   const B=(click,lbl,main)=>'<button class="'+(main?"ce-btn-save":"ce-btn-cancel")+'" onclick="'+click+'">'+lbl+'</button>';
@@ -36883,6 +36884,7 @@ function afSheetHTML(kid,f,col){
   h+='<div style="font-size:11px;color:var(--muted);margin:-6px 0 6px">New subject for '+esc(cap(kid))+' · step '+pos+' of '+path.length+'</div>';
   let nav='';
   if(afStep===1){
+    if(typeof daChoiceHTML==="function") h+=daChoiceHTML(kid,false);   // DRILLADD: A subject · 🃏 Card practice
     if(typeof famWhoRowHTML==="function") h+=famWhoRowHTML(f);
     h+=L("What is it called?")+'<input class="ce-sheet-input" id="ce-add-name" value="'+esc(f.name)+'" placeholder="e.g. Math, Piano Practice" oninput="ceAddForm.name=this.value">';
     h+=L("What kind?")+'<div class="ce-chips" style="flex-direction:column;align-items:stretch">';
@@ -42976,6 +42978,22 @@ function dcActChecksHTML(g,act){
   return h+'</div>';
 }
 // UNITACTCHK_END
+// DCACTS_START — 🎨 every activity of the day on Today's card (slice 1 of PLAN_unit_activity_types_2026-11-19 §2 "The multi-activity
+//   day"; Adrienne 2026-11-22: "build as many in as many sessions you need to get done. go with her answers and build"). A beta mom
+//   writes two activities on one day (a younger and an older version; a draw and a build); a day's nb names only ONE, so the card
+//   showed the first and the second never got a ✓. The Builder and the day editor already write day:n on every activity.
+//   Now the card lists the nb one first (as before), then every other activity whose day is this day's n, in the unit's order —
+//   each its own row with its own ✓ chips (UNITACTCHK). A day with one activity draws byte-identical to before. Reads only; no write.
+function dcActivities(g){
+  const d=g&&g.day, u=g&&g.u; if(!d||!u) return [];
+  const out=[], seen={}, first=dcActivity(g); if(first){ out.push(first); if(first.key) seen[first.key]=1; }
+  const n=parseInt(d.n,10); if(!(n>0)) return out;
+  ((typeof _unitActs==="function")?_unitActs(u):[]).forEach(a=>{ if(a&&a.key&&!seen[a.key]&&a.title&&parseInt(a.day,10)===n){ seen[a.key]=1; out.push(a); } });
+  return out;
+}
+// the 2nd, 3rd… row: a thin line above it; the first row is the old row exactly
+function dcActRow(i,inner){ return i?'<div data-dc-actrow="'+i+'" style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.14)">'+inner+'</div>':inner; }
+// DCACTS_END
 function dcSection(title,inner,extra){ return '<section style="margin-top:22px'+(extra||"")+'"><div style="font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#a5b4fc">'+title+'</div><div style="margin-top:8px">'+inner+'</div></section>'; }
 function dcRungsHTML(g){
   const d=g.day; if(!d||!d.rungs) return ""; const lv=DC_LEVELS.filter(l=>d.rungs[l]); if(!lv.length) return "";
@@ -43022,7 +43040,7 @@ function dcDayHTML(g){
   const books=(d.res&&d.res.books)||[]; if(books.length) h+=dcSection("\u{1F4DA} The book",books.map(b=>'<div style="font-size:24px;font-weight:800;color:#fff">'+dcEsc(b.title)+(b.by?' <span style="font-size:16px;font-weight:600;color:#cbd5e1">by '+dcEsc(b.by)+'</span>':'')+'</div>').join(""));
   const links=dcLinks(g); if(links.length) h+=dcSection("\u25B6 Watch \u00B7 open",'<div style="display:flex;gap:10px;flex-wrap:wrap">'+links.map(dcLinkBtn).join("")+'</div>');
   if(typeof uxDocsCardHTML==="function") h+=uxDocsCardHTML(g);   // UNITDAY_EXTRAS: 🖼 Pictures & documents
-  const act=dcActivity(g); if(act) h+=dcSection("\u{1F3A8} Today\u2019s activity",'<div style="font-size:24px;font-weight:800;color:#fff">'+dcEsc((act.emoji||"\u{1F3A8}")+" "+act.title)+(act.points?' <span style="font-size:15px;color:#fde68a">\u00B7 '+act.points+' \u2B50</span>':'')+'</div>'+(act.desc?'<div style="font-size:17px;color:#e2e8f0;margin-top:4px">'+dcEsc(act.desc)+'</div>':'')+dcActChecksHTML(g,act));   // UNITACTCHK: ✓ per kid
+  const acts=dcActivities(g); if(acts.length) h+=dcSection("\u{1F3A8} Today\u2019s "+(acts.length>1?"activities":"activity"),acts.map((act,i)=>dcActRow(i,'<div style="font-size:24px;font-weight:800;color:#fff">'+dcEsc((act.emoji||"\u{1F3A8}")+" "+act.title)+(act.points?' <span style="font-size:15px;color:#fde68a">\u00B7 '+act.points+' \u2B50</span>':'')+'</div>'+(act.desc?'<div style="font-size:17px;color:#e2e8f0;margin-top:4px">'+dcEsc(act.desc)+'</div>':'')+((typeof uakCardHTML==="function")?uakCardHTML(g,act):"")+dcActChecksHTML(g,act))).join(""));   // UNITACTCHK: ✓ per kid · DCACTS: every activity of the day, each its own row
   h+=dcCardsHTML(g); if(typeof crCardHTML==="function") h+=crCardHTML(g); if(typeof uxSnackCardHTML==="function") h+=uxSnackCardHTML(g); if(typeof ugmCardHTML==="function") h+=ugmCardHTML(g); h+=dcRungsHTML(g); h+=dcWordsHTML(g); h+=dcReadHTML(g);   // CRAFT (B3): the steps, big · UNITDAY_EXTRAS: 🍎 Snack under ✂️ Craft · UNITDAY_GAME: 🎲 Game after 🍎 Snack
   if(d.note) h+=dcSection("\u{1F4DD} Note",'<div style="font-size:17px;line-height:1.5;color:#e2e8f0;background:rgba(255,255,255,.06);border-radius:14px;padding:12px 16px">'+dcEsc(d.note)+'</div>');
   return h;
@@ -43048,6 +43066,7 @@ function dcPageHTML(){
   let h='<div data-dc-board="1" class="dc-board" style="min-height:100vh;background:#0f172a;color:#fff;font-family:\'DM Sans\',sans-serif;padding:18px clamp(16px,4vw,64px) 24px;box-sizing:border-box">';
   h+='<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><button onclick="dcClose()" style="border:none;background:rgba(255,255,255,.1);color:#fff;font-size:15px;font-weight:800;cursor:pointer;padding:8px 14px;border-radius:12px;font-family:\'DM Sans\',sans-serif">\u2190 Back</button>';
   if(groups.length>1) h+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+groups.map(x=>'<button onclick="dcPick(\''+dcJ(x.bid)+'\',\''+dcJ(x.key)+'\')" style="padding:8px 14px;border-radius:999px;border:2px solid '+((g&&x===g)?'#a5b4fc':'rgba(255,255,255,.2)')+';background:'+((g&&x===g)?'#312e81':'transparent')+';color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(x.done?'\u2713 ':'')+dcEsc(x.it.name||"Family time")+'</button>').join("")+'</div>';
+  if(typeof wbdDoorHTML==="function") h+=wbdDoorHTML(g);   // WBOARD: ✍️ Whiteboard — Mom's door, for whoever is at the screen
   h+='<span style="margin-left:auto;font-size:15px;color:#94a3b8">'+dcEsc((typeof _todayStr==="function")?_todayStr():"")+'</span></div>';
   if(!g){ h+='<div style="font-family:\'Fraunces\',serif;font-size:32px;margin-top:40px">No family time on today\u2019s schedule.</div></div>'; return h; }
   const d=g.day;
@@ -43346,6 +43365,7 @@ function utaaAdd(uid,dayId){
   const p=utaaParse(utaaVal("utaa-"+utaaKey(uid,dayId)+"-line")); if(!p) return false;
   const key=utaaFreeKey(u,p.title), i=utaaNextIndex(u), n=utInt(d.n)||utInt(d.wk)||(parseInt(k,10)+1);
   const act={key:key,title:p.title,emoji:"\u{1F3A8}",kind:"sheet",points:p.points,day:n}; if(p.desc) act.desc=p.desc;
+  if(typeof uakAddFields==="function"&&!uakAddFields(utaaKey(uid,dayId),act)) return false;   // UACTKIND: the kind Mom picked (📓 = no field)
   if(!u.activities||typeof u.activities!=="object") u.activities=[]; if(Array.isArray(u.activities)) u.activities[i]=act; else u.activities[String(i)]=act;
   t.days[k].nb={activity:key}; utTouched(u);
   if(utaaLive()){ const upd={}; upd["unitStudies/"+uid+"/activities/"+i]=act; upd["unitStudies/"+uid+"/track/days/"+k+"/nb"]={activity:key}; db.ref().update(upd); }
@@ -43358,6 +43378,7 @@ function utaaEdit(uid,dayId){
   const kk=utaaKey(uid,dayId), title=utaaStr(utaaVal("utaa-"+kk+"-title"),120), pn=Math.round(Number(utaaVal("utaa-"+kk+"-points"))), desc=utaaStr(utaaVal("utaa-"+kk+"-desc"),240);
   if(!title) return false; const points=(isFinite(pn)&&pn>=0)?pn:(x.a.points||5);
   const upd={}, base="unitStudies/"+uid+"/activities/"+x.k+"/";
+  if(typeof uakEditFields==="function"&&!uakEditFields(kk,x.a,upd,base)) return false;   // UACTKIND: the kind, its own path, only when it changed
   if(title!==x.a.title){ x.a.title=title; upd[base+"title"]=title; }
   if(points!==x.a.points){ x.a.points=points; upd[base+"points"]=points; }
   if(desc!==(x.a.desc||"")){ if(desc) x.a.desc=desc; else delete x.a.desc; upd[base+"desc"]=desc||null; }
@@ -43373,18 +43394,121 @@ function utaaEditorHTML(u,d){
   h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#b45309;margin-bottom:4px">\u{1F3A8} Activity on this day</div>';
   const x=utaaOfDay(u,d);
   if(x){
+    h+=((typeof uakPickerHTML==="function")?uakPickerHTML(kk,x.a):"");   // UACTKIND: 📓 📱 🖨 🔗 🧪
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="utaa-'+kk+'-title" type="text" value="'+utEsc(x.a.title||"")+'" placeholder="What they do" style="'+inp+';flex:2 1 180px;width:auto"><input id="utaa-'+kk+'-points" type="number" min="0" value="'+utEsc(x.a.points==null?"":x.a.points)+'" placeholder="Points" style="'+inp+';flex:0 0 80px;width:auto"></div>';
     h+='<input id="utaa-'+kk+'-desc" type="text" value="'+utEsc(x.a.desc||"")+'" placeholder="A line about it (optional)" style="'+inp+';margin-top:6px">';
     h+='<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button onclick="utaaEdit('+a+')" style="'+btn+'">✎ Save the activity</button><span style="font-size:10.5px;color:var(--muted)">It shows on this day’s card and in \u{1F3A8} Activities. Points are what finishing it earns.</span></div>';
   } else if(d.nb&&d.nb.activity){
     h+='<div style="font-size:11px;color:var(--muted)">This day names an activity that isn’t on the unit any more ('+utEsc(d.nb.activity)+').</div>';
   } else {
+    h+=((typeof uakPickerHTML==="function")?uakPickerHTML(kk,null):"");   // UACTKIND: 📓 pre-picked
     h+='<input id="utaa-'+kk+'-line" type="text" placeholder="title | points | a line about it" style="'+inp+'">';
     h+='<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button onclick="utaaAdd('+a+')" style="'+btn+'">+ Add</button><span style="font-size:10.5px;color:var(--muted)">The Builder’s shape: Gratitude scavenger hunt | 5 | Find one thing you’re thankful for in each room. Points default to 5.</span></div>';
   }
   return h+'</div>';
 }
 // UTADDACT_END
+// UACTKIND_START — 📓 the KIND of a unit activity (slice 2 of PLAN_unit_activity_types_2026-11-19; her words 2026-11-19: "Activity
+//   that are currently there are for notebooks and should be called notebook activities … We need another type of activity … or
+//   multiple types"; Adrienne 2026-11-22: "go with her answers and build" — labels §5 Q1, five kinds §2).
+//   · ONE new field on the one record: unitStudies/<id>/activities/<i>/type = "screen" | "print" | "link" | "hands". No field =
+//     📓 Notebook activity, so every activity that exists today stays exactly what it is, with no write, and draws byte-identical.
+//   · THE DAY EDITOR's 🎨 box (UTADDACT) gets a row of five chips, 📓 pre-picked (or the activity's own kind on ✎). + Add puts
+//     the kind into the same one update (📓 → no field: today's record, byte for byte); ✎ Save writes only
+//     unitStudies/<id>/activities/<j>/type when it changed (back to 📓 → null, the field goes). Mom-only, dry-run inert (UTADDACT's).
+//   · THE UNITS PAGE: the section reads "📓 Notebook activities" while every activity is one (§5 Q1); once a unit has another kind
+//     it reads "🎨 Activities" and each other-kind row carries its chip. 🖨 Print and 📓 Notebook hide for 📱 and 🔗 (they would
+//     print an empty box). Claims, ✓ Done, points, the day card's ✓ chips: unchanged for every kind (they read key/title/points).
+//   · What each kind DOES arrives with its own slice (🔗 link next; 🖨 PDF, 🧪 supplies later). No kid's or family's name in code.
+const UAK_TYPES=[["notebook","\u{1F4D3}","Notebook activity"],["screen","\u{1F4F1}","On-screen activity"],["print","\u{1F5A8}","Printable"],["link","\u{1F517}","Web link"],["hands","\u{1F9EA}","Hands-on"]];
+function uakOk(t){ return UAK_TYPES.some(x=>x[0]===t); }
+function uakType(a){ const t=a&&a.type; return (t&&t!=="notebook"&&uakOk(t))?t:"notebook"; }
+function uakLabel(t){ const x=UAK_TYPES.find(y=>y[0]===t)||UAK_TYPES[0]; return x[1]+" "+x[2]; }
+let uakPicked={};   // the day editor box (utaaKey) → the chip Mom tapped this sitting, until + Add / ✎ Save
+function uakBoxType(kk,a){ const t=uakPicked[kk]; return uakOk(t)?t:uakType(a); }
+function uakChipStyle(on){ return 'padding:4px 10px;border-radius:999px;border:1.5px solid '+(on?'#b45309':'var(--border)')+';background:'+(on?'#fffbeb':'#fff')+';color:'+(on?'#92400e':'var(--muted)')+';font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif'; }
+// a chip tap: remembered, and the chips + the kind's own boxes repaint in place (no full render, so a half-typed line stays)
+function uakPick(kk,t){
+  if(!(typeof utMom==="function"&&utMom())||!uakOk(t)) return false; uakPicked[kk]=t;
+  try{ if(typeof document!=="undefined"&&document.getElementById) UAK_TYPES.forEach(x=>{ const el=document.getElementById("uak-"+kk+"-"+x[0]); if(el){ el.setAttribute("style",uakChipStyle(x[0]===t)); el.setAttribute("aria-pressed",x[0]===t?"true":"false"); } }); }catch(e){}
+  if(typeof uakKindShow==="function") uakKindShow(kk,t);
+  return true;
+}
+function uakPickerHTML(kk,a){
+  const t=uakBoxType(kk,a); let h='<div role="group" aria-label="Kind of activity" data-uak-pick="'+utEsc(kk)+'" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">';
+  UAK_TYPES.forEach(x=>{ h+='<button type="button" id="uak-'+kk+'-'+x[0]+'" aria-pressed="'+(x[0]===t?'true':'false')+'" onclick="uakPick(\''+utJ(kk)+'\',\''+x[0]+'\')" style="'+uakChipStyle(x[0]===t)+'">'+x[1]+' '+x[2]+'</button>'; });
+  h+='</div>';
+  if(typeof uakKindHTML==="function") h+=uakKindHTML(kk,t,a);   // the picked kind's own boxes (🔗 the address …)
+  return h;
+}
+// + Add: the kind onto the new record before the one update; 📓 = no field. false = refuse (a kind's box is not filled right).
+function uakAddFields(kk,act){
+  const t=uakBoxType(kk,null);
+  if(typeof uakKindAdd==="function"&&!uakKindAdd(kk,t,act)) return false;
+  if(t!=="notebook") act.type=t; delete uakPicked[kk]; return true;
+}
+// ✎ Save: only what changed, each its own path under base (= unitStudies/<id>/activities/<j>/); back to 📓 → type null.
+function uakEditFields(kk,a,upd,base){
+  const was=uakType(a), t=uakBoxType(kk,a);
+  if(typeof uakKindEdit==="function"&&!uakKindEdit(kk,t,a,upd,base)) return false;
+  if(t!==was){ if(t==="notebook") delete a.type; else a.type=t; upd[base+"type"]=(t==="notebook")?null:t; }
+  delete uakPicked[kk]; return true;
+}
+// ── the Units page (renderUnitDetail's 🎨 section) ──
+function uakSectionTitle(acts){ return (acts||[]).every(a=>uakType(a)==="notebook")?"\u{1F4D3} Notebook activities":"\u{1F3A8} Activities"; }
+function uakChipHTML(a){ const t=uakType(a); if(t==="notebook") return ""; return '<span data-uak-chip="'+t+'" style="font-size:10.5px;font-weight:800;color:#3730a3;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:1px 8px">'+uakLabel(t)+'</span>'; }
+function uakNoPaper(a){ const t=uakType(a); return t==="screen"||t==="link"; }
+// UACTKIND_END
+// UACTLINK_START — 🔗 a Web link activity (slice 3 of PLAN_unit_activity_types_2026-11-19; her words 2026-11-19: "an activity that goes
+//   for a link of a web page"; a beta mom 2026-11-20: "The kids can open the ones I mark OK" = §5 Q2 / §3.2, Adrienne 2026-11-22:
+//   "go with her answers and build").
+//   · THE BOX: when 🔗 is picked in the day editor's 🎨 box, an address box and one tick, "Kids may open it alone", off by default.
+//     The address must start with https:// (nothing else is kept). + Add puts url (and kidOpen:true only when ticked) into
+//     UTADDACT's same one update; ✎ Save writes only unitStudies/<id>/activities/<j>/url and/or …/kidOpen when they changed
+//     (unticked → null). No address → nothing written, a toast says why. Picking another kind later leaves url as it was.
+//   · TODAY'S CARD: the activity's row gets a big "🔗 Open: <title>" button (▶ purple when it is a video, as the day's links
+//     draw), new tab, noopener. On a kid's device (Kids' Corner picked a kid, Mom mode off) the button shows ONLY when Mom ticked
+//     the box; otherwise the row says "👩 Mom opens it". Mom always sees it; so does the big screen (no kid picked). Opening the
+//     link never marks anything done — the ✓ chips stay the one record.
+//   · Mom-only edits (UTADDACT's gate), dry-run inert; no kid's or family's name in code.
+function uakUrl(v){ const s=String(v==null?"":v).trim(); return (s.length<=500&&/^https:\/\/[^\s"'<>\\]+\.[^\s"'<>\\]+$/i.test(s))?s:""; }
+function uakChecked(id){ try{ const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById(id):null; return !!(el&&el.checked); }catch(e){ return false; } }
+function uakToast(m){ if(typeof gwShowToast==="function") gwShowToast(m); }
+// the picked kind's own boxes, under the chips; always drawn, shown only for its kind (a chip tap flips display, so typing stays)
+function uakKindHTML(kk,t,a){
+  const inp='width:100%;box-sizing:border-box;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif;background:#fff';
+  let h='<div id="uak-'+kk+'-box-link" data-uak-kind="link" style="display:'+(t==="link"?'block':'none')+';margin-bottom:6px">';
+  h+='<input id="utaa-'+kk+'-url" type="url" inputmode="url" autocomplete="off" value="'+utEsc((a&&a.url)||"")+'" placeholder="https://… the web page or video" style="'+inp+'">';
+  h+='<label style="display:flex;gap:6px;align-items:center;margin-top:6px;font-size:11.5px;font-weight:700;color:#1f2937;cursor:pointer"><input id="utaa-'+kk+'-kidopen" type="checkbox"'+((a&&a.kidOpen)?' checked':'')+'> Kids may open it alone</label>';
+  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:2px">Off: on a kid’s tablet the card says “\u{1F469} Mom opens it”. Mom and the big screen always get the button.</div>';
+  return h+'</div>';
+}
+// the box's id is uak-<kk>-box-<kind>, never uak-<kk>-<kind>: that is the chip's id (a browser's getElementById returns the first)
+function uakKindShow(kk,t){ try{ const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById("uak-"+kk+"-box-link"):null; if(el&&el.style) el.style.display=(t==="link")?"block":"none"; }catch(e){} }
+// + Add: a 🔗 needs an https address; kidOpen only when ticked (absent = Mom opens it)
+function uakKindAdd(kk,t,act){
+  if(t!=="link") return true;
+  const url=uakUrl(utaaVal("utaa-"+kk+"-url")); if(!url){ uakToast("\u{1F517} Put in the web address — it starts with https://"); return false; }
+  act.url=url; if(uakChecked("utaa-"+kk+"-kidopen")) act.kidOpen=true; return true;
+}
+// ✎ Save: url and kidOpen, each its own path, only when changed
+function uakKindEdit(kk,t,a,upd,base){
+  if(t!=="link") return true;
+  const url=uakUrl(utaaVal("utaa-"+kk+"-url")); if(!url){ uakToast("\u{1F517} Put in the web address — it starts with https://"); return false; }
+  const kid=uakChecked("utaa-"+kk+"-kidopen");
+  if(url!==a.url){ a.url=url; upd[base+"url"]=url; }
+  if(kid!==!!a.kidOpen){ if(kid) a.kidOpen=true; else delete a.kidOpen; upd[base+"kidOpen"]=kid?true:null; }
+  return true;
+}
+// whose screen this is: Mom (Mom mode / PIN) · a kid's own device (Kids' Corner picked a kid) · the board (neither)
+function uakKidDevice(){ const mom=(typeof dcMom==="function"&&dcMom())||(typeof momHere==="function"&&momHere()); if(mom) return false; try{ return typeof kcKid!=="undefined"&&!!kcKid; }catch(e){ return false; } }
+// Today's card, inside the activity's row (DCACTS)
+function uakCardHTML(g,act){
+  if(!act||uakType(act)!=="link") return ""; const url=uakUrl(act.url); if(!url) return "";
+  if(uakKidDevice()&&!act.kidOpen) return '<div data-uak-link="mom" style="margin-top:10px;font-size:17px;font-weight:800;color:#fde68a">\u{1F469} Mom opens it</div>';
+  return '<div data-uak-link="open" style="margin-top:10px">'+((typeof dcLinkBtn==="function")?dcLinkBtn({url:url,label:"Open: "+(act.title||"the link")}):"")+'</div>';
+}
+// UACTLINK_END
 // UNITDAY_EXTRAS_START — 🖼 Pictures & documents and 🍎 Snack on a unit day (her words 2026-11-11, for Sara, a beta mom: "Sarah would
 //   like to add on day 6 a gratitude scavenger hunt. She has a picture of it. So it would be good if on each day another section that
 //   they could add to that is pictures and documents that would open when they click it on that day. Also, a section for snacks that
@@ -43582,6 +43706,122 @@ function uxSnackCardHTML(g){
 function uxRowBadges(d){ const n=((d&&d.res&&d.res.docs)||[]).length; return (n?' <span title="pictures &amp; documents" style="font-size:10px">\u{1F5BC} '+n+'</span>':'')+(d&&d.snack?' <span title="a snack" style="font-size:10px">\u{1F34E}</span>':''); }
 function uxSnackSupplyCells(d){ return ((d&&d.snack&&d.snack.supplies)||[]).map(x=>"\u{1F34E} "+(x.qty?x.qty+" ":"")+x.name); }
 // UNITDAY_EXTRAS_END
+// WBOARD_START — ✍️ a whiteboard on Today's card (Sara's answer 2026-11-20, a beta mom, via PLAN_unit_activity_types §6.9/§7.2;
+//   Adrienne's "go with her answers and build" 2026-11-22). Sara: she would use the board mostly as Mom's board — math scratch paper,
+//   a timeline drawn while she talks — her kids draw with fingers (no stylus), and a board is kept only "when someone taps Save".
+//   · THE DOOR: "✍️ Whiteboard" in the top bar of Today's card (DAYCARD's one hook) — Mom's door, for whoever is at the screen.
+//     wbdOpen(opts) is the one opener: opts = {uid, dayId} (the unit day on the card) · later {uid, dayId, key, kid} from an
+//     activity row (that door is not added here). A board opened with nothing still works — scratch only.
+//   · THE BOARD = the workbook viewer opened on a blank page: the same overlay (#wb-view, #wb-ink), the same pointer plumbing
+//     (finger draws by default; a real Pencil touch flips to pencil-only; touch-action follows the switch — the LG's 9/22 fix),
+//     the same ✏️ · 🩹 Erase · ↩︎ Undo · 🧽 Clear · 👆 Finger too. Its own bar (wbBarRender's hook): ✕ · ▢ Blank / ▦ Grid ·
+//     the tools. A thicker pen for fingers (WBD_PEN_W, the IIFE's hook). Its shape is set when it opens, so turning the iPad
+//     shows the same drawing smaller or larger, never stretched. Mom draws red, everyone else blue (the viewer's rule).
+//   · NOTHING IS STORED: wbView.scratch makes wbSave return before any write (its hook), so the 3 s autosave and ✕ write nothing;
+//     ✕ throws the drawing away. No path, no db, no Storage, no localStorage. While it is open a code update waits (haBusyReason
+//     already holds for any open wbView). No kid's name in code.
+const WBD_PEN_W=0.0045;   // of the board's width; the workbook pen is 0.0026 (a Pencil on a page)
+const WBD_GRID=20;        // squares across the board
+let _wbdBg="blank", _wbdRO=null;
+function wbdJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function wbdOpen(opts){
+  if(typeof document==="undefined"||!document.body) return false; opts=opts||{};
+  if(typeof wbView!=="undefined"&&wbView&&!wbView.scratch) return false;   // a workbook page is open — never wipe it
+  const v={scratch:true,kid:String(opts.kid||""),bookId:"",page:1,strokes:[],dirty:false,tool:"pen",penOnly:false,sawPen:false,penW:WBD_PEN_W,bg:_wbdBg,ar:0,
+    uid:String(opts.uid||""),dayId:opts.dayId==null?"":String(opts.dayId),key:String(opts.key||"")};
+  wbView=v;
+  let ov=document.getElementById("wb-view"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="wb-view"; ov.setAttribute("data-wbd","1");
+  ov.style.cssText="position:fixed;top:0;left:0;right:0;bottom:0;z-index:10050;background:#e2e8f0;display:flex;flex-direction:column;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none";
+  ov.innerHTML='<div id="wb-bar" style="display:flex;align-items:center;gap:6px;padding:8px 10px;background:#fff;border-bottom:1px solid #e2e8f0;flex:none;font-family:\'DM Sans\',sans-serif;flex-wrap:wrap"></div>'+
+    '<div id="wbd-stage" style="flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden">'+
+      '<div id="wb-hold" style="position:relative;background-color:#fff;box-shadow:0 2px 14px rgba(0,0,0,.15);border-radius:6px;overflow:hidden">'+
+        '<div id="wb-img" style="position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none"></div>'+
+        '<canvas style="position:absolute;top:0;left:0;width:100%;height:100%;touch-action:none;cursor:crosshair" id="wb-ink"></canvas></div></div>';
+  document.body.appendChild(ov);
+  wbBarRender(); wbdFit();
+  try{ if(_wbdRO) _wbdRO.disconnect(); _wbdRO=null; if(typeof ResizeObserver==="function"){ _wbdRO=new ResizeObserver(function(){ wbdFit(); }); _wbdRO.observe(document.getElementById("wbd-stage")); } }catch(e){}
+  if(typeof wbWatchFit==="function") wbWatchFit();
+  return true;
+}
+// the board fills the space under the bar at the shape it opened with (8 px all round)
+function wbdFit(){
+  const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!v.scratch) return false;
+  const st=document.getElementById("wbd-stage"), hold=document.getElementById("wb-hold"); if(!st||!hold) return false;
+  const r=st.getBoundingClientRect(), W=r.width-16, H=r.height-16; if(W<20||H<20) return false;
+  if(!v.ar) v.ar=W/H;
+  let w=W, h=W/v.ar; if(h>H){ h=H; w=H*v.ar; }
+  hold.style.width=Math.round(w)+"px"; hold.style.height=Math.round(h)+"px";
+  const c=(w/WBD_GRID).toFixed(2)+"px";
+  hold.style.backgroundImage=v.bg==="grid"?"linear-gradient(#bfdbfe 1px,transparent 1px),linear-gradient(90deg,#bfdbfe 1px,transparent 1px)":"none";
+  hold.style.backgroundSize=v.bg==="grid"?c+" "+c:"auto";
+  if(typeof wbFit==="function") wbFit(); if(typeof wbPaint==="function") wbPaint();
+  return true;
+}
+function wbdBg(k){ const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!v.scratch) return; v.bg=_wbdBg=(k==="grid"?"grid":"blank"); wbdFit(); wbBarRender(); }
+// wbBarRender's hook: the board's bar, drawn with the viewer's own button
+function wbdBarHTML(v,btn){
+  return btn("\u2715","wbClose()")+'<span style="font-weight:800;font-size:13px;color:#0f172a">\u270D\uFE0F Whiteboard</span>'+
+    '<span style="font-size:11px;color:#64748b">scratch \u00B7 \u2715 wipes it</span><span style="flex:1"></span>'+
+    btn("\u25A2 Blank","wbdBg(\'blank\')",v.bg!=="grid")+btn("\u25A6 Grid","wbdBg(\'grid\')",v.bg==="grid")+
+    btn("\u270F\uFE0F","wbTool(\'pen\')",v.tool==="pen")+btn("\u{1FA79} Erase","wbTool(\'erase\')",v.tool==="erase")+
+    btn("\u21A9\uFE0E Undo","wbUndo()")+btn("\u{1F9FD} Clear","wbClear()")+btn(v.penOnly?"\u270D\uFE0F Pencil only":"\u{1F446} Finger too","wbTogglePen()",v.penOnly)+
+    ((typeof wbdSaveBtnHTML==="function")?wbdSaveBtnHTML(v,btn):"");   // WBDSAVE: 💾 Save — Mom, from Today's card on a unit day
+}
+// DAYCARD's hook: the door in the card's top bar (the unit day rides along for Save)
+function wbdDoorHTML(g){
+  const d=g&&g.day, a=(d&&d.uid&&d.id!=null)?"{uid:'"+wbdJ(d.uid)+"',dayId:'"+wbdJ(d.id)+"'}":"{}";
+  return '<button data-wbd-door="1" onclick="wbdOpen('+a+')" style="border:none;background:rgba(255,255,255,.1);color:#fff;font-size:15px;font-weight:800;cursor:pointer;padding:8px 14px;border-radius:12px;font-family:\'DM Sans\',sans-serif">\u270D\uFE0F Whiteboard</button>';
+}
+try{ window.addEventListener("resize",function(){ if(typeof wbView!=="undefined"&&wbView&&wbView.scratch) wbdFit(); }); }catch(e){}   // a device with no ResizeObserver (the LG) still re-fits on a turn
+// WBOARD_END
+// WBDSAVE_START — 💾 Save on the whiteboard (Sara's answer 2026-11-20: a board is kept only "when someone taps Save"; PLAN §7.2;
+//   Adrienne's "go with her answers and build" 2026-11-22). Scratch stays the default — nothing is written until Save is tapped.
+//   · WHO: Mom (momHere()), on a board opened from Today's card with a unit day (wbdOpen({uid, dayId})). Not on a board opened
+//     from an activity row (opts.key): the kid's own Save (unitWork/<kid>/<unitId>/<key>/board) waits for the row door — not built.
+//   · WHAT IT WRITES: the board becomes a JPEG made from the canvas (white, the grid when on, the ink; at most WBD_MAX_W px wide,
+//     0.85 — picStore's size), uploaded by picStore to Storage pictures/units/<unitId>/days/<dayId>/whiteboard_<stamp>.jpg (the
+//     folder UNITDAY_EXTRAS puts a day's pictures in), then uxDocAdd adds {kind:"image", title:"Whiteboard · 10:42 AM", url} to
+//     that day's 🖼 Pictures & documents: ONE set of unitStudies/<unitId>/track/days/<i>/res/docs (UNITDAY_EXTRAS's own write,
+//     Mom-only, db && !_dryRun). She can rename or take it off on the Days table; the day's card shows it next time.
+//   · REFUSED, said plainly, the drawing left on the board: the upload fails, times out or there is no internet (picStore hands
+//     the data URL back — it is never saved as text in the database), dry run, nothing drawn, the day is gone, 24 on the day.
+//   · Saving again after more drawing adds a second picture; "✓ Saved" until the next stroke. No kid's name in code.
+const WBD_MAX_W=1600;
+function wbdCanSave(v){ return !!(v&&v.scratch&&v.uid&&v.dayId&&!v.key&&typeof momHere==="function"&&momHere()&&typeof uxDocAdd==="function"); }
+function wbdSaveBtnHTML(v,btn){
+  if(!wbdCanSave(v)) return ""; const saved=!!v.savedRev&&v.savedRev===v._rev;
+  return btn(v.saving?"Saving…":(saved?"✓ Saved":"\u{1F4BE} Save"),"wbdSave()",!saved&&!v.saving)+
+    ((v.msg&&(v.saving||v.msgRev===v._rev))?'<span data-wbd-msg="1" style="font-size:12px;font-weight:700;color:'+(v.msgOk?'#15803d':'#b91c1c')+'">'+uxEsc(v.msg)+'</span>':'');
+}
+function wbdSay(v,msg,good){ v.msg=msg; v.msgOk=!!good; v.msgRev=v._rev; if(typeof wbView!=="undefined"&&wbView===v) wbBarRender(); return false; }   // the line lasts until the next stroke
+function wbdJpeg(v){
+  const ink=document.getElementById("wb-ink"); if(!ink||!(ink.width>1)) return "";
+  const s=Math.min(1,WBD_MAX_W/ink.width), W=Math.round(ink.width*s), H=Math.round(ink.height*s);
+  const c=document.createElement("canvas"); c.width=W; c.height=H; const g=c.getContext("2d");
+  g.fillStyle="#fff"; g.fillRect(0,0,W,H);
+  if(v.bg==="grid"){ const st=W/WBD_GRID; g.strokeStyle="#bfdbfe"; g.lineWidth=Math.max(1,W/800); g.beginPath();
+    for(let x=st;x<W-1;x+=st){ g.moveTo(x,0); g.lineTo(x,H); } for(let y=st;y<H-1;y+=st){ g.moveTo(0,y); g.lineTo(W,y); } g.stroke(); }
+  g.drawImage(ink,0,0,W,H);
+  return c.toDataURL("image/jpeg",0.85);
+}
+function wbdTitle(){ let t=""; try{ t=new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}); }catch(e){} return "Whiteboard"+(t?" · "+t:""); }
+async function wbdSave(){
+  const v=(typeof wbView!=="undefined")?wbView:null; if(!wbdCanSave(v)||v.saving) return false;
+  if(!v.strokes.length) return wbdSay(v,"Nothing on the board yet.");
+  if(typeof _dryRun==="function"&&_dryRun()) return wbdSay(v,"Dry run — nothing uploaded, nothing written.");
+  if(!uxRawDay(v.uid,v.dayId)) return wbdSay(v,"That unit day isn’t there any more — nothing saved.");
+  if(uxDocsOf(v.uid,v.dayId).length>=UX_MAX_DOCS) return wbdSay(v,"That day has "+UX_MAX_DOCS+" pictures & documents already — take one off first.");
+  let data=""; try{ data=wbdJpeg(v); }catch(e){ data=""; }
+  if(!/^data:image\/jpeg/.test(String(data))) return wbdSay(v,"This device couldn’t make the picture — nothing saved.");
+  const rev=v._rev||0; v.saving=true; wbdSay(v,"Saving the board…",true);
+  let url=""; try{ url=(typeof picStore==="function")?await picStore(data,["units",v.uid,"days",v.dayId,"whiteboard"]):""; }catch(e){ url=""; }
+  v.saving=false;
+  if(!/^https:\/\//i.test(String(url||""))) return wbdSay(v,"Didn’t save: the upload didn’t go through (no internet?). Nothing was saved — try again.");
+  if(!uxDocAdd(v.uid,v.dayId,{kind:"image",title:wbdTitle(),url:url})) return wbdSay(v,"Didn’t save — the day wasn’t updated.");
+  v.savedRev=rev; wbdSay(v,"Saved to the day’s \u{1F5BC} Pictures & documents",true); return true;
+}
+// WBDSAVE_END
 // UNITDAY_GAME_START — 🎲 a Game on a unit day (her words 2026-11-11: "use those to build what she's envisioning please" — Sara, a
 //   beta mom, answered the games worksheet 2026-11-11: her leaf-blowing competition, minute-to-win-it at Christmas; a game is
 //   "something we all do together, off-screen, with the rules on the day card"; notebook activities stay separate, "maybe having the
@@ -44041,7 +44281,7 @@ function utsFamilyHTML(isMom){
 //     Rungs, words, craft and place are not here — the Days table edits them (UNITTRACK) and later steps add them.
 let ubForm=null;   // the open Builder: {step, title, emoji, desc, ages, kind, first, mode, days:[…], boxes:{…}, nDays, perWeek, msg, busy, sources}
 const UB_KINDS=[["topic","Topic"],["skill","Skill path"],["book","Book companion"]];
-const UB_BOXES=[["cards","\u{1F0CF} Cards","word | meaning \u2014 or paste a list in any shape"],["books","\u{1F4DA} Books","title | by | link"],["videos","\u25B6 Videos","link | label"],["acts","\u{1F3A8} Activities & field trips","title | points | a line about it"]];
+const UB_BOXES=[["cards","\u{1F0CF} Cards","word | meaning \u2014 or paste a list in any shape"],["books","\u{1F4DA} Books","title | by | link"],["videos","\u25B6 Videos","link | label"],["acts","\u{1F4D3} Notebook activities & field trips","title | points | a line about it"]];
 const UB_CRAFT_BOX=["craft","\u2702\uFE0F Craft","title \u00B7 steps \u00B7 supplies"];   // CRAFT (B3): the fifth box on a day
 const UB_PROMPTS={
   cards:'This is a photo, a PDF or the pasted text of a homeschool mom\u2019s notes for drill cards: facts, vocabulary, names, dates. List every card as a short front and its back. Use ONLY what is there \u2014 never invent. Return ONLY strict JSON: {"items":[{"front":"","back":""}]}.',
@@ -50709,7 +50949,7 @@ function wbBarRender(){
   const bar=document.getElementById("wb-bar"); if(!bar||!wbView) return;
   const b=wbBook(wbView.bookId)||{}; const v=wbView;
   const btn=(lbl,fn,on)=>'<button onclick="'+fn+'" style="padding:7px 11px;border-radius:9px;border:1.5px solid '+(on?"#1d4ed8":"#cbd5e1")+';background:'+(on?"#dbeafe":"#fff")+';font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
-  bar.innerHTML=
+  bar.innerHTML=(v.scratch&&typeof wbdBarHTML==="function")?wbdBarHTML(v,btn):   // WBOARD: the whiteboard's own bar (no book, no pages, no save)
     btn("✕","wbClose()")+
     '<span style="font-weight:800;font-size:13px;color:#0f172a;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(b.name||"Workbook")+'</span>'+
     '<span style="padding:3px 9px;border-radius:999px;background:'+((typeof SL_KCOL!=="undefined"&&SL_KCOL[v.kid])||"#64748b")+';color:#fff;font-size:11px;font-weight:800">'+((typeof SL_KLBL!=="undefined"&&SL_KLBL[v.kid])||v.kid)+'</span>'+
@@ -50808,7 +51048,7 @@ function wbPaint(){
     const _w0=cv.width; if(!wbFit()) return; if(cv.width!==_w0) wbPaint();
     const p=wbPt(e,cv); if(!p) return;
     if(wbView.tool==="erase"){ wbEraseAt(p); return; }
-    const w=0.0026+0.0026*(e.pressure&&e.pressure>0?e.pressure:0.5);
+    const _pw=wbView.penW||0.0026, w=_pw+_pw*(e.pressure&&e.pressure>0?e.pressure:0.5);   // WBOARD: penW = the whiteboard's thicker finger pen
     wbView._live={c:(typeof momHere==="function"&&momHere())?WB_MOMPEN:WB_PEN,w:+w.toFixed(5),p:[p]};
     wbView.strokes.push(wbView._live); wbMarkDirty(wbView);
     try{cv.setPointerCapture(e.pointerId);}catch(err){}
@@ -50847,7 +51087,7 @@ function wbAutoSaveSoon(){
     wbSave(true); },3000);
 }
 async function wbSave(quiet){
-  const v=wbView; if(!v) return;
+  const v=wbView; if(!v||v.scratch) return;   // WBOARD: a scratch whiteboard never writes
   if(!db||_dryRun()){ v.dirty=false; wbBarRender(); return; }
   const rev=v._rev||0;
   try{
@@ -51051,7 +51291,7 @@ function uwWeekOf(kid,u,tasks,dates){
 function uwAttach(kid,units,tasks,dates){
   units=units||[]; let add=false; const out=[];
   ((typeof haKidUnits==="function")?haKidUnits(kid):[]).filter(u=>u&&u.nbInsert!==false).forEach(u=>{
-    const ins=units.find(x=>x&&x.unitId===u.id); const wk=uwWeekOf(kid,u,tasks,dates);
+    const ins=units.find(x=>x&&x.unitId===u.id); const wk=(typeof uwListOn!=="function"||uwListOn(u))?uwWeekOf(kid,u,tasks,dates):null;   // UNITWEEKSW: Mom's 📅 This week list switch
     if(ins){ if(wk) ins.week=wk; out.push(ins); return; }
     if(!wk) return; add=true;
     out.push({unitId:u.id,title:u.title,emoji:u.emoji||"\u{1F4D8}",days:(typeof nbUnitDays==="function")?nbUnitDays(kid,u.id):{},learning:[],learned:[],next:[],extras:[],extrasTitle:"",activity:null,activities:[],week:wk}); });
@@ -51060,6 +51300,220 @@ function uwAttach(kid,units,tasks,dates){
   return out;
 }
 // UNITWEEK_END
+// UNITWEEKSW_START — 📅 a per-unit switch for the "This week we will…" list (PLAN_unit_sheet_2026-11-19.md §8.2 slice 1b, pick 7). A
+// beta mom's answer 2026-11-20: the week list "Only for some units"; her go 2026-11-22: "build as many in as many sessions you need to
+// get done. go with her answers and build". On the unit page, under 📓 Include in notebooks (Mom only, a unit with days):
+// "📅 This week list", ON by default. Off = that unit's weekly notebook page prints exactly as it did before UNITWEEK: the cards
+// pages only, and a unit with days but no cards prints nothing (uwAttach asks uwListOn: no ins.week, no bare insert).
+// One stored field: unitStudies/<id>/weekList = false while off; turning it back on removes the field (absent = on), so every unit
+// that exists reads as on with no write. ONE targeted set, Mom only (momHere), live only (db && !_dryRun()).
+function uwListOn(u){ return !(u&&u.weekList===false); }
+function uwSwHtml(u){
+  if(!u||!u.id||!momHere()||!(typeof utHasDays==="function"&&utHasDays(u))) return "";
+  const on=uwListOn(u), id=String(u.id).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  return '<div data-uwsw="1" style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:10px">'+
+    '<span style="flex:1;min-width:150px;font-size:12px;font-weight:700;color:#1f2937">\u{1F4C5} This week list'+(on?'':' <span style="font-weight:800;color:#b45309">\u00B7 off</span>')+
+    '<div style="font-size:10.5px;font-weight:600;color:var(--muted);line-height:1.4;margin-top:2px">A \u201CThis week we will\u2026\u201D list on this unit\u2019s notebook page: each unit day of the week with its book, video and activity. Turn off to print the cards page only.</div></span>'+
+    '<button onclick="unitToggleWeekList(\''+id+'\')" style="padding:7px 14px;border-radius:10px;border:1.5px solid '+(on?'#86efac':'var(--border)')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#15803d':'#b45309')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+(on?'\u2713 On':'\u25CB Off')+'</button></div>';
+}
+function unitToggleWeekList(unitId){
+  if(!momHere()) return false;   // what's in the notebook is Mom's call
+  const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[unitId]; if(!u) return false;
+  const next=!uwListOn(u);
+  if(next) delete u.weekList; else u.weekList=false;
+  const live=(typeof db!=="undefined"&&!!db&&!_dryRun());
+  if(live) db.ref("unitStudies/"+unitId+"/weekList").set(next?null:false);   // ONE targeted set; on = the field removed
+  else if(typeof gwShowToast==="function") gwShowToast("\u{1F4C5} This week list "+(next?"on":"off")+" (dry run \u2014 nothing saved)");
+  if(typeof renderAll==="function") renderAll();
+  return true;
+}
+// UNITWEEKSW_END
+// UNITGATHER_START — 🧾 one gatherer for a unit's things (PLAN_unit_sheet_2026-11-19.md §4.0, §8.2 slice 2 lean). Her ask 2026-11-19:
+// "could you go into deep planning of how we could make the sheet that goes with the units more impressive that collects all the
+// things etc?"; a beta mom's answer 2026-11-20: Mom's sheet = "Supplies to gather, Books to get, Pages to print", the week before;
+// her go 2026-11-22: "go with her answers and build". unitGather(u, opts) reads a unit through the readers that exist (utDaysOn,
+// utClean's shapes, utResOf, crOfTrack, _unitActs) and returns plain lists; Mom's get-ready sheet (UNITPREP) is one layout over it.
+//   · Off days are left out. Lists stored as objects (a database array that came back keyed) read like arrays (utArr / lrList).
+//   · A day's activities: the one its notebook activity names (nb.activity) + every activity whose `day` is the day's number — the
+//     rule the week list (UNITWEEK) and the day card use. An activity on no day shows only for the whole unit ("any day").
+//   · An activity's `type` (📓 notebook · 📱 screen · 🖨 print · 🔗 link · 🧪 hands) is read only when it is a known word; none =
+//     notebook, so every activity stored today reads as what it is. Its `pdf` ({url,title} or an address) and `supplies` (a list, or
+//     text one per line with "| mom") are read only when they exist.
+//   · totals: supplies (no repeats by name; each with its days, its amounts, where from: day · ✂️ craft · 🍎 snack · 🎲 game ·
+//     🧪 activity, and mom:true when it is marked Mom's), orders, books, prints (a day's PDF or document; a notebook activity's page;
+//     a printable activity's file), each with its days and how many copies (opts.copies[dayId], else opts.n, else 1 — the sheet says
+//     ×1 for a family-time day and ×N for a day each kid does).
+//   · opts.days = the day ids to gather (a week's); opts.when = {dayId: "Tue"} for the label. Pure: no screen, no database, no write.
+const UG_TYPES=["notebook","screen","print","link","hands"];
+function ugType(a){ const t=(a&&typeof a.type==="string")?a.type.trim().toLowerCase():""; return !t?"notebook":(UG_TYPES.indexOf(t)>=0?t:"other"); }
+function ugUrl(v){ const s=String(v==null?"":v).trim(); return (typeof lrSafeUrl==="function")?lrSafeUrl(s):(/^https:\/\//i.test(s)?s:""); }
+function ugStr(v,n){ return String(v==null?"":v).trim().slice(0,n||120); }
+function ugList(v){ return (typeof utArr==="function")?utArr(v):(Array.isArray(v)?v.filter(x=>x!=null):[]); }
+// an activity's own supplies → [{name, qty, mom}]
+function ugActSupplies(a){
+  const v=a&&a.supplies; if(!v) return [];
+  const line=s=>{ s=String(s).trim(); if(!s) return null; const m=/^(.*?)\s*\|\s*mom\s*$/i.exec(s); const name=ugStr(m?m[1]:s,80); return name?{name:name,qty:"",mom:!!m}:null; };
+  const L=(typeof v==="string")?v.split(/\r?\n/):ugList(v);
+  return L.map(x=>{ if(typeof x==="string") return line(x); if(!x||typeof x!=="object") return null; const name=ugStr(x.name,80); if(!name) return null; return {name:name,qty:ugStr(x.qty,20),mom:x.kids===false||x.mom===true}; }).filter(Boolean);
+}
+function ugActPdf(a){ const p=a&&a.pdf; if(!p) return null; if(typeof p==="string"){ const u=ugUrl(p); return u?{url:u,title:""}:null; } if(typeof p!=="object") return null; const u=ugUrl(p.url); return u?{url:u,title:ugStr(p.title,120)}:null; }
+function ugDayActs(acts,d){ const seen={}; return acts.filter(a=>{ if(!a||!a.key||seen[a.key]) return false; const hit=(d.nb&&d.nb.activity===a.key)||(d.n&&typeof utInt==="function"&&utInt(a.day)===d.n); if(hit) seen[a.key]=1; return hit; }); }
+function ugHead(d){ return d.n?"Day "+d.n:(d.role||(d.wk?"Week "+d.wk:"")); }
+function unitGather(u,opts){
+  opts=opts||{};
+  const all=(typeof utDays==="function")?utDays(u):[], on=all.filter(d=>!d.off);
+  const only=Array.isArray(opts.days)?opts.days.map(String):null, when=opts.when||{}, cps=opts.copies||{};
+  const nDef=Math.max(1,parseInt(opts.n,10)||1), nOf=id=>Math.max(1,parseInt(cps[id],10)||nDef);
+  const acts=(typeof _unitActs==="function")?_unitActs(u):[];
+  const uc=(typeof crOfTrack==="function")?crOfTrack(u):null, first=on[0]||null;
+  const T={supplies:[],orders:[],books:[],prints:[]}, idx={};
+  const put=(kind,key,make,day,n)=>{ const k=kind+"\u0001"+key; let it=idx[k]; if(!it){ it=idx[k]=make(); it.days=[]; T[kind].push(it); }
+    if(day&&it.days.indexOf(day)<0) it.days.push(day); if(n&&(!it.n||n>it.n)) it.n=n; return it; };
+  const sup=(s,from,day)=>{ const it=put("supplies",s.name.toLowerCase(),()=>({name:s.name,qtys:[],from:[],mom:false}),day);
+    if(s.qty&&it.qtys.indexOf(s.qty)<0) it.qtys.push(s.qty); if(it.from.indexOf(from)<0) it.from.push(from); if(s.mom) it.mom=true; };
+  const actInto=(a,day,n)=>{ const ty=ugType(a), title=ugStr(a.title,120)||String(a.key);
+    ugActSupplies(a).forEach(s=>sup(s,"act",day));
+    if(ty==="notebook") put("prints","nb:"+a.key,()=>({title:title,kind:"notebook",url:""}),day,n);
+    if(ty==="print"){ const p=ugActPdf(a); put("prints","act:"+a.key,()=>({title:title,kind:"print",url:p?p.url:""}),day,n); }
+    return {key:a.key,title:title,emoji:ugStr(a.emoji,8),type:ty,points:a.points};
+  };
+  const days=on.filter(d=>!only||only.indexOf(String(d.id))>=0).map(d=>{
+    const dd=(uc&&first&&d.id===first.id)?Object.assign({},d,{_unitCraft:uc}):d;
+    const lbl=[when[d.id]||"",ugHead(d)].filter(Boolean).join(" \u00B7 "), n=nOf(d.id);
+    const r=(typeof utResOf==="function")?utResOf([dd]):{supplies:[],books:[],orders:[],links:[]};
+    r.supplies.forEach(s=>sup({name:ugStr(s.name,80),qty:ugStr(s.qty,20),mom:s.kids===false},s.craft?"craft":s.snack?"snack":s.game?"game":s.act?"act":"day",lbl));
+    r.books.forEach(b=>{ const t=ugStr(b.title,120); if(t) put("books",t.toLowerCase(),()=>({title:t,by:ugStr(b.by,80)}),lbl); });
+    r.orders.forEach(o=>{ const nm=ugStr(o.name,120); if(nm){ const it=put("orders",nm.toLowerCase(),()=>({name:nm,url:""}),lbl); if(!it.url) it.url=ugUrl(o.url); } });
+    ugList(dd.res&&dd.res.docs).forEach(x=>{ if(!x||(x.kind!=="pdf"&&x.kind!=="doc")) return; const url=ugUrl(x.url); if(!url) return; put("prints","doc:"+url,()=>({title:ugStr(x.title,120)||"Document",kind:x.kind,url:url}),lbl,n); });
+    const da=ugDayActs(acts,d).map(a=>actInto(a,lbl,n));
+    return {id:d.id,n:d.n||null,t:d.t||"",label:lbl,books:r.books,links:(r.links||[]).map(l=>({label:l.label||"",kind:l.kind||""})),acts:da,craft:!!(dd.craft||dd._unitCraft),snack:!!d.snack,game:!!d.game};
+  });
+  // an activity no day names (or names a day that is not there) → the whole unit only, "any day"; one on an off day stays out
+  const loose=only?[]:acts.filter(a=>a&&a.key&&!all.some(d=>ugDayActs([a],d).length)).map(a=>actInto(a,"any day",nDef));
+  return {unit:{id:u&&u.id,title:ugStr(u&&u.title,120),emoji:ugStr(u&&u.emoji,8),nDays:on.length,perWeek:(typeof utPerWeek==="function")?utPerWeek(u):null},days:days,loose:loose,totals:T};
+}
+// UNITGATHER_END
+// UNITPREP_START — 🧾 Mom's get-ready sheet (PLAN_unit_sheet_2026-11-19.md §4.5 re-shaped by §8.2 "Slice 2, lean"; a beta mom's
+// answers 2026-11-20: "Supplies to gather, Books to get, Pages to print", reminded "The week before on my weekend list"; family-time
+// sheets are one copy for everyone; her go 2026-11-22: "go with her answers and build"). On the unit page, Mom only, a unit with
+// days or activities: "🧾 Get ready". It opens on NEXT WEEK (Mom gets ready on the weekend; on a Sunday the coming week, which the
+// app calls this week), with This week and Whole unit beside it; a unit not on the schedule shows only Whole unit. Sections: 🎒 Gather (🛒 Order under it) · 📚 Books · 🖨 Print, each line a ☐
+// and its day; 🖨 Print opens the sheet in a print window (black on white). Links, cards and day by day are left out (a later yes).
+//   · Which unit days are in a week: the Sunday list's own question. A family-time item: famGridDates in the week → famCellState runs
+//     with kids → famLessonMap's label → utDayForFam (frBuildFamily's steps). A kid's subject on the unit: lrLaidLessons → utDaysForKey
+//     (lrBuildList's steps), only for a kid who has such a subject.
+//   · Copies: a day on Family Time prints ×1 (one sheet for everyone); a day on kids' own subjects prints × the kids who have it;
+//     the whole unit: ×1 when it is on Family Time, else × its kids (subjects on it, else enrolled).
+//   · Read-only: no database call, no write. The open sheet and the picked view live in memory on this device.
+let upOpenId="", upView="next";
+const _upLaidMemo={};
+function upMom(){ return (typeof momHere==="function")&&momHere(); }
+function upEsc(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function upJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function upPointers(u){ return ((typeof psPointers==="function")?psPointers(u.id):[]).filter(p=>!(p.kind==="fam"&&p.off)); }
+function upLaid(kid,from,to){   // one kid's laid lessons for a week, kept until the lay's fingerprint changes (LRCACHE's)
+  const sig=(typeof lrLaySig==="function")?lrLaySig():null, k=kid+"|"+from+"|"+to, hit=_upLaidMemo[k];
+  if(sig&&hit&&hit.sig===sig) return hit.out;
+  const out=(typeof lrLaidLessons==="function")?lrLaidLessons(kid,from,to):[]; if(sig) _upLaidMemo[k]={sig:sig,out:out}; return out;
+}
+// The unit's days in one week (offset 0 = this week, 1 = next) → {ids, when:{id:"Tue"}, copies:{id:n}, range}
+function upWeek(u,offset){
+  const range=(typeof lrWeekRange==="function")?lrWeekRange(offset):{from:"",to:""};
+  const hit={}, order=[];
+  const add=(d,ds,fam,kid)=>{ if(!d||d.uid!==u.id||d.off||!d.id) return; let h=hit[d.id]; if(!h){ h=hit[d.id]={ds:ds,fam:false,kids:[]}; order.push(d.id); }
+    if(ds&&ds<h.ds) h.ds=ds; if(fam) h.fam=true; if(kid&&h.kids.indexOf(kid)<0) h.kids.push(kid); };
+  const ptrs=upPointers(u), defs=(typeof famDefs==="function")?famDefs():{};
+  const dates=((typeof famGridDates==="function")?famGridDates():[]).map(r=>r.date).filter(d=>d>=range.from&&d<=range.to);
+  ptrs.filter(p=>p.kind==="fam").forEach(p=>{ const b=defs[p.id]; const it=b?famList(b.items).find(x=>x&&x.key===p.key):null; if(!it) return;
+    let map=null; try{ map=famLessonMap(b,p.id,it); }catch(e){ map=null; }
+    dates.forEach(ds=>{ let c=null; try{ c=famCellState(b,it,ds); }catch(e){ c=null; } if(!c||!c.runs||!c.kids||!c.kids.length) return;
+      const lbl=map?String((map.byDate||{})[ds]||""):""; let d=null; try{ d=utDayForFam(p.id,it,ds,lbl); }catch(e){ d=null; } add(d,ds,true,""); }); });
+  ptrs.filter(p=>p.kind==="kid").forEach(p=>{ let L=[]; try{ L=upLaid(p.kid,range.from,range.to); }catch(e){ L=[]; }
+    L.filter(x=>x&&x.sk===p.sk).forEach(x=>{ let ds=[]; try{ ds=utDaysForKey(p.kid,p.sk,x.key); }catch(e){ ds=[]; } ds.forEach(d=>add(d,x.date,false,p.kid)); }); });
+  const when={}, copies={};
+  order.forEach(id=>{ const h=hit[id]; when[id]=(typeof FAM_ABBR!=="undefined"&&typeof gwParseDate==="function"&&h.ds)?FAM_ABBR[gwParseDate(h.ds).getDay()]:""; copies[id]=h.fam?1:Math.max(1,h.kids.length); });
+  return {ids:order,when:when,copies:copies,range:range};
+}
+function upWholeN(u){
+  const ptrs=upPointers(u); if(ptrs.some(p=>p.kind==="fam")) return 1;
+  const ks=[]; ptrs.forEach(p=>{ if(p.kind==="kid"&&ks.indexOf(p.kid)<0) ks.push(p.kid); });
+  if(ks.length) return ks.length;
+  return Math.max(1,Object.keys(u.enrolled||{}).filter(k=>u.enrolled[k]).length);
+}
+function upData(u,view){
+  if(view==="whole"||!upPointers(u).length) return {view:"whole",g:unitGather(u,{n:upWholeN(u)}),range:null};
+  const w=upWeek(u,view==="this"?0:1);
+  return {view:view,g:unitGather(u,{days:w.ids,when:w.when,copies:w.copies}),range:w.range};
+}
+function upShort(iso){ if(!iso) return ""; const M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; const p=String(iso).split("-"); return M[(+p[1]||1)-1]+" "+(+p[2]); }
+const UP_FROM={craft:"\u2702\uFE0F",snack:"\u{1F34E}",game:"\u{1F3B2}",act:"\u{1F9EA}"};
+// The sheet's body. forPrint = black on white, no buttons, addresses not drawn as links.
+function upSheetBody(u,D,forPrint){
+  const g=D.g, T=g.totals, box='<span style="display:inline-block;width:12px;height:12px;border:1.5px solid #374151;border-radius:3px;flex-shrink:0;margin-top:2px"></span>';
+  const days=it=>it.days.length?'<span style="color:#6b7280;font-size:11px;white-space:nowrap"> \u00B7 '+upEsc(it.days.join(", "))+'</span>':"";
+  const open=url=>(!forPrint&&url)?' <a href="'+upEsc(url)+'" target="_blank" rel="noopener" style="font-size:11px;font-weight:700;color:#0e7490">open</a>':"";
+  const row=inner=>'<div style="display:flex;gap:7px;align-items:flex-start;padding:3px 0;font-size:12.5px;line-height:1.4;break-inside:avoid">'+box+'<span style="flex:1;min-width:0">'+inner+'</span></div>';
+  const sec=(title,body)=>'<div style="break-inside:avoid;margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#1f2937;border-bottom:1.5px solid #1f2937;padding-bottom:2px;margin-bottom:4px">'+title+'</div>'+body+'</div>';
+  const none=t=>'<div style="font-size:12px;color:#6b7280;padding:3px 0">'+t+'</div>';
+  let gather=T.supplies.map(s=>row('<b>'+upEsc(s.name)+'</b>'+(s.qtys.length?' <span style="color:#374151">('+upEsc(s.qtys.join(" \u00B7 "))+')</span>':"")+(s.mom?' <span style="font-size:10.5px;font-weight:800;color:#b45309">Mom\u2019s</span>':"")+(s.from.filter(f=>UP_FROM[f]).length?' '+s.from.filter(f=>UP_FROM[f]).map(f=>UP_FROM[f]).join(""):"")+days(s))).join("")||none("Nothing to gather.");
+  if(T.orders.length) gather+='<div style="font-size:10.5px;font-weight:800;color:#1f2937;margin:7px 0 2px">\u{1F6D2} Order</div>'+T.orders.map(o=>row(upEsc(o.name)+open(o.url)+days(o))).join("");
+  const books=T.books.map(b=>row('<b>'+upEsc(b.title)+'</b>'+(b.by?' <span style="color:#374151">by '+upEsc(b.by)+'</span>':"")+days(b))).join("")||none("No books.");
+  const prints=T.prints.map(p=>{ const n=' <b>\u00D7'+(p.n||1)+'</b>';
+    if(p.kind==="notebook") return row(upEsc(p.title)+' <span style="color:#374151">\u2014 notebook page, prints with the notebook</span>'+n+days(p));
+    return row('<b>'+upEsc(p.title)+'</b> <span style="color:#374151">('+(p.kind==="doc"?"document":"PDF")+')</span>'+n+open(p.url)+days(p)); }).join("")||none("Nothing to print.");
+  let h="";
+  if(D.view!=="whole"&&!g.days.length) h+=none("No day of this unit is on "+(D.view==="this"?"this":"next")+" week\u2019s schedule.");
+  h+='<div class="up-cols" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:4px 18px">';
+  h+='<div>'+sec("\u{1F392} Gather",gather)+'</div><div>'+sec("\u{1F4DA} Books",books)+sec("\u{1F5A8} Print",prints)+'</div></div>';
+  return h;
+}
+function upTitle(u,D){
+  const lbl=D.view==="whole"?"Whole unit":(D.view==="this"?"This week":"Next week")+(D.range&&D.range.from?" \u00B7 "+upShort(D.range.from)+" \u2013 "+upShort(D.range.to):"");
+  return {name:(u.emoji?u.emoji+" ":"")+String(u.title||"Unit")+" \u2014 get ready",sub:lbl+" \u00B7 "+D.g.unit.nDays+" day"+(D.g.unit.nDays===1?"":"s")};
+}
+// On the unit page (renderUnitDetail), the line right above 📅 Days: the button, and the sheet while it is open.
+function upSectionHTML(u,isMom){
+  if(!u||!u.id||!isMom||!upMom()) return "";
+  const hasDays=(typeof utDaysOn==="function")&&utDaysOn(u).length>0, hasActs=(typeof _unitActs==="function")&&_unitActs(u).length>0;
+  if(!hasDays&&!hasActs) return "";
+  const open=upOpenId===u.id, id=upJ(u.id);
+  let h='<div data-up="1" style="margin-bottom:10px"><button onclick="upToggle(\''+id+'\')" style="padding:7px 14px;border-radius:10px;border:1.5px solid '+(open?'#1f2937':'var(--border)')+';background:'+(open?'#1f2937':'#fff')+';color:'+(open?'#fff':'#1f2937')+';font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F9FE} Get ready'+(open?' \u25B4':'')+'</button>';
+  if(open){
+    const onSched=upPointers(u).length>0, view=onSched?upView:"whole", D=upData(u,view), t=upTitle(u,D);
+    const pill=(v,txt)=>'<button onclick="upSetView(\''+v+'\')" style="padding:5px 11px;border-radius:999px;border:1.5px solid '+(D.view===v?'#1f2937':'var(--border)')+';background:'+(D.view===v?'#1f2937':'#fff')+';color:'+(D.view===v?'#fff':'#1f2937')+';font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+txt+'</button>';
+    h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-top:8px;color:#1f2937">';
+    h+='<div style="font-size:14px;font-weight:800;line-height:1.3">'+upEsc(t.name)+'</div><div style="font-size:11px;color:var(--muted);margin:2px 0 8px">'+upEsc(t.sub)+'</div>';
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'+(onSched?pill("this","This week")+pill("next","Next week"):"")+pill("whole","Whole unit")+
+      '<button onclick="upPrint(\''+id+'\')" style="margin-left:auto;padding:5px 12px;border-radius:9px;border:none;background:#0e7490;color:#fff;font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F5A8} Print</button></div>';
+    if(!onSched) h+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">This unit isn\u2019t on the schedule yet, so there is no this week or next week.</div>';
+    h+=upSheetBody(u,D,false);
+    if(onSched) h+='<div style="font-size:10.5px;color:var(--muted);margin-top:4px">This week\u2019s and next week\u2019s supplies and books are on your \u{1F9FA} Sunday list too, where you can tick them.</div>';
+    h+='</div>';
+  }
+  return h+'</div>';
+}
+// It opens on the coming week: "Next week" — except on a Sunday, when the app's own "this week" (lrWeekRange, the Sunday list's
+// weeks) already IS the coming week, so "Next week" would be the one after it.
+function upDefaultView(){ const t=(typeof lrToday==="function")?lrToday():""; const d=t?new Date(t+"T12:00:00"):null; return (d&&!isNaN(d.getTime())&&d.getDay()===0)?"this":"next"; }
+function upToggle(uid){
+  if(!upMom()) return;
+  if(upOpenId===uid) upOpenId=""; else { upOpenId=String(uid); upView=upDefaultView(); }
+  if(typeof renderAll==="function") renderAll();
+}
+function upSetView(v){ if(!upMom()||["this","next","whole"].indexOf(v)<0) return; upView=v; if(typeof renderAll==="function") renderAll(); }
+function upPrintHTML(u,view){
+  const onSched=upPointers(u).length>0, D=upData(u,onSched?view:"whole"), t=upTitle(u,D);
+  return '<!doctype html><html><head><meta charset="utf-8"><title>'+upEsc(t.name)+'</title><style>body{margin:24px;background:#fff;color:#111;font-family:-apple-system,Helvetica,Arial,sans-serif}@media print{body{margin:0.4in}}</style></head><body>'+
+    '<div style="font-size:18px;font-weight:800">'+upEsc(t.name)+'</div><div style="font-size:12px;color:#374151;margin:2px 0 14px">'+upEsc(t.sub)+'</div>'+upSheetBody(u,D,true)+'</body></html>';
+}
+function upPrint(uid){
+  if(!upMom()) return;
+  const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[uid]; if(!u) return;
+  const w=window.open("","_blank"); if(!w){ alert("Allow pop-ups to print."); return; }
+  w.document.write(upPrintHTML(u,upView).replace("</body>",'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print()},250)}</scr'+'ipt></body>'));
+  w.document.close();
+}
+// UNITPREP_END
 // In-app status page(s) for every unit a kid is enrolled in.
 // Notebook tab shows a status card per enrolled unit — but only for units set to go to the
 // notebook (nbInsert !== false). A unit shelved from notebooks (Units tab toggle off) drops
@@ -54075,6 +54529,7 @@ function renderUnitDetail(u){
       h+='<button onclick="unitToggleNbInsert(\''+u.id+'\')" style="padding:7px 14px;border-radius:10px;border:1.5px solid '+(nbOn?'#86efac':'var(--border)')+';background:'+(nbOn?'#f0fdf4':'#fff')+';color:'+(nbOn?'#15803d':'#b45309')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+(nbOn?'✓ On':'○ Off')+'</button>';
       h+='</div>';
     }
+    if(typeof uwSwHtml==="function") h+=uwSwHtml(u);   // UNITWEEKSW: 📅 This week list switch, under 📓 Include in notebooks
     if(typeof unitMixPicsHtml==="function") h+=unitMixPicsHtml(u);   // UNITMULTIPIC: 🎲 Multiple pictures switch
     h+=_unitPicsBtnHtml(u);   // UNIT_PICS: 🖼 Find pictures (Wikipedia, in this browser)
     if(typeof laIrrHtml==="function") h+=laIrrHtml(u,esc);   // LAIRR: ＋ Add Irregulars (Language Arts unit only; units step 9, 2026-10-26)
@@ -54123,13 +54578,14 @@ function renderUnitDetail(u){
   const acts=_unitActs(u);
   if(acts.length&&enrolledKids.length){
     h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">';
-    h+='<div style="font-size:12px;font-weight:800;color:#1f2937;margin-bottom:2px">🎨 Activities</div>';
+    h+='<div style="font-size:12px;font-weight:800;color:#1f2937;margin-bottom:2px">'+((typeof uakSectionTitle==="function")?uakSectionTitle(acts):'🎨 Activities')+'</div>';   // UACTKIND: 📓 Notebook activities
     h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin-bottom:6px">Hands-on “apply it” projects. Print one now, or queue it into the next weekly notebook.</div>';
     acts.forEach(a=>{
       const pts=unitActPoints(a);
       h+='<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-top:8px">';
       h+='<div style="display:flex;align-items:baseline;gap:7px;flex-wrap:wrap"><span style="font-size:12.5px;font-weight:800;color:#1f2937">'+(a.emoji||"🎨")+' '+esc(a.title)+'</span>';
       h+='<span style="font-size:10.5px;font-weight:800;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:1px 8px">⭐ '+(pts||0)+' pts</span>';
+      if(typeof uakChipHTML==="function") h+=uakChipHTML(a);   // UACTKIND: 📱 / 🖨 / 🔗 / 🧪 (📓 shows none)
       if(isMom) h+='<button onclick="unitSetActivityPoints(\''+esc(u.id)+'\',\''+esc(a.key)+'\')" title="Set point value" style="padding:1px 7px;border-radius:8px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✎</button>';
       h+='</div>';
       if(a.desc) h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.4;margin:2px 0 6px">'+esc(a.desc)+'</div>';
@@ -54145,14 +54601,15 @@ function renderUnitDetail(u){
         const btn=(lbl,fn,on)=>'<button onclick="'+fn+'" style="padding:4px 9px;border-radius:8px;border:1.5px solid '+(on?'#2d6a4f':'var(--border)')+';background:'+(on?'#f2faf5':'#fff')+';color:'+(on?'#2d6a4f':'var(--muted)')+';font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
         const args='\''+esc(u.id)+'\',\''+esc(k)+'\',\''+esc(a.key)+'\'';
         h+='<span style="margin-left:auto;display:flex;gap:5px;flex-wrap:wrap">';
-        h+=btn('🖨 Print','unitPrintActivity(\''+esc(u.id)+'\',\''+esc(a.key)+'\',\''+esc(k)+'\')',false);
+        const noPaper=(typeof uakNoPaper==="function")&&uakNoPaper(a);   // UACTKIND: 📱 / 🔗 have nothing to print or queue
+        if(!noPaper) h+=btn('🖨 Print','unitPrintActivity(\''+esc(u.id)+'\',\''+esc(a.key)+'\',\''+esc(k)+'\')',false);
         if(!done&&(queued||claim)){ // claim only exists once Mom has ASSIGNED it to this kid —
           // kids share a unit at different paces, so unassigned projects offer nothing to claim
           if(claim) h+='<button onclick="unitActivityClaim('+args+')" style="padding:4px 9px;border-radius:8px;border:1.5px solid #fcd34d;background:#fffbeb;color:#b45309;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">⏳ Claimed</button>';
           else h+='<button onclick="unitActivityClaim('+args+')" style="padding:4px 9px;border-radius:8px;border:none;background:#b45309;color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🙋 I finished it!</button>';
         }
         if(isMom){
-          h+=btn(queued?'📓 Unqueue':'📓 Notebook','unitToggleNbActivity('+args+')',queued);
+          if(!noPaper||queued) h+=btn(queued?'📓 Unqueue':'📓 Notebook','unitToggleNbActivity('+args+')',queued);
           if(claim&&!done) h+='<button onclick="unitActivityApprove('+args+')" style="padding:4px 9px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Approve'+(pts?' +'+pts:'')+'</button>';
           h+=btn(done?'↩︎ Not done':'✓ Done','unitActivityDone('+args+')',!!done);
         }
@@ -54189,6 +54646,7 @@ function renderUnitDetail(u){
     if(isMom) h+='<button onclick="unitPlanEditOpen(\''+esc(u.id)+'\',-1)" style="margin-top:9px;padding:7px 14px;border-radius:10px;border:1.5px dashed #2d6a4f;background:#f2faf5;color:#2d6a4f;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add step</button>';
     h+='</div>';
   }
+  if(typeof upSectionHTML==="function") h+=upSectionHTML(u,isMom);   // UNITPREP: 🧾 Get ready (Mom), right above 📅 Days
   if(typeof utDaysSectionHTML==="function") h+=utDaysSectionHTML(u,isMom);   // UNITTRACK: 📅 Days, above the decks
   (u.decks||[]).forEach(d=>{
     h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px">';
@@ -61992,7 +62450,7 @@ function ctMoreHTML(items){
 // re-derived. Title from RETR_SLOT_TITLE (the card's own words), minutes from retrSlotMinutes, with Mom / on their own from
 // retrSlotMom, so the line, the Min column and the card agree. A kind saved in the plan that the builder drops for this child
 // (Sprint with no ladder) shows greyed. Nothing here writes: a tap on a line that runs opens its day sheet (DRILLDAYS, below);
-// a greyed line or the empty chip opens Mastery ▸ Settings ▸ 🔁 Retrieval Plan on this child. A child with no line that runs and no old-style drills* subject gets one dashed "set it up" chip.
+// a greyed line opens Mastery ▸ Settings ▸ 🔁 Retrieval Plan on this child (the empty chip: Card practice, DRILLADD). A child with no line that runs and no old-style drills* subject gets one dashed "set it up" chip.
 const DR_KINDS=["drill","match","sprint","recheck"];   // fixed order: Daily Drill, Match & Play, Sprint, Sprint Re-checks
 const DR_DAY_SHORT={mon:"Mon",tue:"Tue",wed:"Wed",thu:"Thu",fri:"Fri"};
 // Pure: on = {mon:[kinds the builder makes that day]…}, saved = {mon:[kinds stored that day]…} → rows in the fixed order.
@@ -62050,7 +62508,7 @@ function drStripChips(kid){
     h+='<button class="dr-row" onclick="'+(r.ok?'drDaysOpen(\''+esc(arg)+'\',\''+r.kind+'\')':go)+'" title="'+(r.ok?'Card practice — tap to see or change the days':'This kind makes no card for '+nm+' — tap to change the plan')+'" style="'+base+'border:1px solid #c4b5fd;color:'+(r.ok?'#6d28d9':'#9ca3af')+'">'+esc(drLineText(r,name))+'</button>';
   });
   if(!rows.some(function(r){ return r.ok; })&&!drHasOldDrills(kid))
-    h+='<button class="dr-empty" onclick="'+go+'" style="'+base+'border:1.5px dashed #a78bfa;color:#6d28d9">＋ \u{1F0CF} Flash-card practice isn’t on '+nm+'’s week yet — set it up</button>';
+    h+='<button class="dr-empty" onclick="daOpen(\''+esc(arg)+'\')" style="'+base+'border:1.5px dashed #a78bfa;color:#6d28d9">＋ \u{1F0CF} Flash-card practice isn’t on '+nm+'’s week yet — set it up</button>';   // DRILLADD (slice 4): the empty chip opens ＋ Add subject ▸ 🃏 Card practice
   return h;
 }
 // Tap → Mom's Day ▸ School ▸ Mastery ▸ Settings ▸ 🔁 Retrieval Plan, this child picked (the same kid switch as mhqSetKid; the
@@ -62200,6 +62658,188 @@ function drDaysClose(quiet){
 }
 function drDaysMastery(){ const kid=drDaysKid; drDaysClose(true); if(kid) drGo(kid); }
 // DRILLDAYS_END
+// DRILLADD_START — 🃏 "＋ Add subject ▸ Card practice" on a child's Curriculum page (slice 4 of
+// DESIGN_drill_rows_curriculum_2026-11-19.md, §3.4 / §3.5 / §3.7 / §4). Her picks 2026-11-22: a brand-new kind must be
+// addable from Curriculum first (the Mastery day buttons become a pointer later, slice 6) and the name on this side is
+// "Card practice". Her words 2026-11-19: "it should be with the daily subjects in curriculum … it needs to be uniform".
+// At the top of the guided Add sheet's first step: A subject · 🃏 Card practice. Card practice swaps the form for the kinds
+// this child CAN run and does not have yet (a chip each, with its one line), Mon–Fri pre-lit on every day that still has
+// room for that kind, and Save — no name, device, minutes or tracking. "Can run" is data, never a name: Daily Drill = at
+// least one card the drill can assemble (active or being introduced, not concept/transfer, not held by a study session);
+// Match & Play = the Match game's own playable-deck list (mastMatchDecks) is not empty; Sprint / Sprint Re-checks = a
+// sprint ladder (retrHasLadder, via RETRFAM's RETR_NOLADDER_KINDS). Drill / Match that can't run are listed greyed with the
+// reason and the door ("Needs cards first — add cards →"); Sprint / Re-checks with no ladder are left out (§7: a new family
+// never sees them, and there is no door to offer). An old-style every-day drills* subject still running (§5.1: key drills /
+// drills_*, no study link, every-day tracking, not paused) → Daily Drill is not offered and one plain line says why (never
+// two drill cards on a day; the switch offer is slice 7). Room and placement are drDaysMap's (DRILLDAYS): a day has room
+// for a kind when drDaysMap can turn it on there; Save chains drDaysMap over the lit days and writes ONCE through
+// drDaysWrite → drPlanWrite(kid,{week,week2},{rhythm:true}) (never settings; drops the Mastery panel's stale copy; the
+// live pass brings this week's cards). So the per-day limit lives in one place — drDaysMap's slots (week, week2): the
+// three-a-day slice changes it there and this form follows. Mom only (momHere). The empty-state chip opens this same form
+// (daOpen). Nothing is written before Save. Test: test_drill_add.js.
+let daOn=false, daKind=null, daDays=null, daMsg="";
+function daReset(){ daOn=false; daKind=null; daDays=null; daMsg=""; }
+// §5.1 — an old-style every-day drills* subject still running → its name ("" when none).
+function daOldDrills(kid){
+  const subs=((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid]||{};
+  const sk=Object.keys(subs).sort().find(function(k){ const s=subs[k]; return !!s&&/^drills(_|$)/.test(k)&&!s.study&&s.tracking==="daily"&&!s.paused; });
+  return sk?String(subs[sk].display||sk):"";
+}
+// Cards the Daily Drill can assemble: active or being introduced, not concept/transfer (never drilled), not held by a study session.
+function daCardCount(kid){
+  let items=((typeof masteryData!=="undefined"&&masteryData)||{})[kid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  let owned=null; try{ owned=(typeof mstOwnedIds==="function")?mstOwnedIds(kid):null; }catch(e){ owned=null; }
+  return items.filter(function(i){ return !!i&&(i.status==="active"||i.status==="introduction")
+    &&!(typeof mastIsNeverDrill==="function"&&mastIsNeverDrill(i))&&!(owned&&typeof owned.has==="function"&&owned.has(i.id)); }).length;
+}
+// The Match game's own list of playable decks for this child (it reads masteryKid — swapped and put back).
+function daMatchDeckCount(kid){
+  if(typeof mastMatchDecks!=="function"||typeof masteryKid==="undefined") return 0;
+  const mk=masteryKid; let n=0;
+  try{ masteryKid=kid; n=mastMatchDecks().length; }catch(e){ n=0; } finally{ masteryKid=mk; }
+  return n;
+}
+// Pure. info = {has:{kind:true} (a line that already runs), cards, matchDecks, ladder, old (old-style subject name)}
+// → [{kind, ok:true} | {kind, ok:false, why:"cards"|"deck"}] in the fixed row order; a kind left out is not listed.
+function daKindsFrom(info){
+  const i=info||{}, has=i.has||{}, out=[];
+  const solo=(typeof RETR_NOLADDER_KINDS!=="undefined"&&RETR_NOLADDER_KINDS)||{drill:true,match:true};
+  DR_KINDS.forEach(function(k){
+    if(has[k]) return;                         // already on the week — its own line changes the days
+    if(k==="drill"&&i.old) return;             // the old subject is this child's drill (§5.6: never two on a day)
+    if(!solo[k]&&!i.ladder) return;            // Sprint / Re-checks need a ladder (§7: not shown without one)
+    if(k==="drill"&&!(i.cards>0)){ out.push({kind:k,ok:false,why:"cards"}); return; }
+    if(k==="match"&&!(i.matchDecks>0)){ out.push({kind:k,ok:false,why:(i.cards>0)?"deck":"cards"}); return; }
+    out.push({kind:k,ok:true});
+  });
+  return out;
+}
+function daInfo(kid){
+  const has={}; let rows=[]; try{ rows=drRows(kid); }catch(e){ rows=[]; }
+  rows.forEach(function(r){ if(r.ok) has[r.kind]=true; });
+  return {has:has,cards:daCardCount(kid),matchDecks:daMatchDeckCount(kid),ladder:(typeof retrHasLadder!=="function")||!!retrHasLadder(kid),old:daOldDrills(kid)};
+}
+// Pure. Which days have room for `kind`, by drDaysMap itself → {mon:true | [the kinds filling it] …}.
+function daRoom(w1,w2,kind){
+  const out={};
+  Object.keys(DR_DAY_SHORT).forEach(function(d){ const r=drDaysMap(w1,w2,d,kind,true); out[d]=r.ok?true:r.full; });
+  return out;
+}
+// Pure. Turn `kind` on for each of `days` in turn, by drDaysMap's own rule → {week (all five days), week2 (cleaned),
+// on:[days placed], full:[days refused], changed}.
+function daPlan(w1,w2,kind,days){
+  let a=w1||{}, b=w2||{}, changed=false; const on=[], full=[];
+  (days||[]).forEach(function(d){ const r=drDaysMap(a,b,d,kind,true); if(!r.ok){ full.push(d); return; } a=r.week; b=r.week2; if(r.changed) changed=true; on.push(d); });
+  const z=drDaysMap(a,b,"",kind,true);   // no day: just the shape every save writes
+  return {week:z.week,week2:z.week2,on:on,full:full,changed:changed};
+}
+function daState(kid){
+  const info=daInfo(kid), list=daKindsFrom(info), offer=list.filter(function(x){ return x.ok; }).map(function(x){ return x.kind; });
+  const kind=offer.indexOf(daKind)>=0?daKind:(offer[0]||null);
+  const w1=retrWeek(kid), w2=retrWeek2(kid), room=kind?daRoom(w1,w2,kind):{};
+  const roomDays=Object.keys(DR_DAY_SHORT).filter(function(d){ return room[d]===true; });
+  const lit=(daDays||roomDays).filter(function(d){ return room[d]===true; });
+  return {info:info,list:list,kind:kind,w1:w1,w2:w2,room:room,roomDays:roomDays,lit:lit};
+}
+function daChoose(on){
+  if(on&&!_drMom()) return false;
+  if(typeof afGrab==="function") try{ afGrab(); }catch(e){}   // keep a name she already typed for the subject side
+  daOn=!!on; daKind=null; daDays=null; daMsg="";
+  ceRenderAddSheet();
+  return true;
+}
+function daOpen(kid){ if(!kid||!_drMom()) return false; ceOpenAdd(kid); return daChoose(true); }   // the empty-state chip (§3.5)
+function daPickKind(k){ daKind=k; daDays=null; daMsg=""; ceRenderAddSheet(); }
+function daToggleDay(d){
+  const kid=ceAddKid; if(!kid||!DR_DAY_SHORT[d]) return;
+  const st=daState(kid); if(st.room[d]!==true) return;
+  const lit=st.lit.slice(), i=lit.indexOf(d);
+  if(i>=0) lit.splice(i,1); else lit.push(d);
+  daDays=Object.keys(DR_DAY_SHORT).filter(function(x){ return lit.indexOf(x)>=0; }); daMsg="";
+  ceRenderAddSheet();
+}
+function daClose(){ daReset(); if(typeof afStep!=="undefined") afStep=0; ceCloseSheet(); }
+function _daTitle(k){ return (typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[k])||k; }
+// Save: the one write — week + week2 through drDaysWrite (→ drPlanWrite, rhythm:true), never settings.
+function daSave(){
+  const kid=ceAddKid; if(!kid||!daOn||!_drMom()) return false;
+  const st=daState(kid);
+  const say=function(m){ daMsg=m; ceRenderAddSheet(); return false; };
+  if(!st.kind) return say("There’s no kind of card practice to add right now.");
+  if(!st.lit.length) return say("Pick at least one day.");
+  const p=daPlan(st.w1,st.w2,st.kind,st.lit);
+  if(!p.on.length||!p.changed) return say("Nothing to save — those days already have it.");
+  if(!drDaysWrite(kid,p.week,p.week2)) return say("Not saved — try again.");
+  const name=(typeof cap==="function")?cap(kid):kid, dt=p.on.map(function(d){ return DR_DAY_SHORT[d]; }).join(" ");
+  const pend=(typeof retrLivePending==="function"&&retrLivePending(kid))?" This week’s cards update in a moment.":"";
+  daClose();
+  try{ if(typeof gwShowToast==="function") gwShowToast("✓ "+_daTitle(st.kind)+" is on "+name+"’s week — "+dt+"."+pend); }catch(e){}
+  if(typeof renderAll==="function") renderAll();   // the new line shows in the purple strip
+  return true;
+}
+// "add cards →": Mom's Day ▸ School ▸ Mastery on this child, the 🃏 Cards view (＋ add a card) — drGo's kid switch, that view.
+function daCards(kid){
+  daClose();
+  mhqKid=kid; mhqView="cards"; mhqDeck=null;
+  if(typeof mhqSessEdit!=="undefined"){ mhqSessEdit=null; mhqSessForm=null; mhqSessErr=""; }
+  if(typeof mastAdminLocal!=="undefined") mastAdminLocal=null;
+  mpSchoolOpen('mhq');
+}
+// The choice at the top of the Add sheet (ADDFLOW step 1, and this form).
+function daChoiceHTML(kid,on){
+  if(!kid||!_drMom()) return "";
+  const C=function(sel,click,lbl){ return '<div class="ce-chip'+(sel?' sel':'')+'" onclick="'+click+'">'+lbl+'</div>'; };
+  return '<div class="ce-chips da-choice" style="margin-bottom:6px">'+C(!on,"daChoose(false)","A subject")+C(on,"daChoose(true)","\u{1F0CF} Card practice")+'</div>';
+}
+function daSheetHTML(kid,col){
+  const name=(typeof cap==="function")?cap(kid):kid, nm=esc(name), st=daState(kid);
+  const arg=esc(String(kid).replace(/\\/g,"\\\\").replace(/'/g,"\\'"));
+  const L=function(t){ return '<div class="ce-sheet-lbl">'+t+'</div>'; };
+  const note=function(cls,t,amber){ return '<div class="'+cls+'" style="margin-top:8px;padding:8px 10px;border-radius:10px;font-size:12px;'+(amber?'background:#fef3c7;border:1px solid #fcd34d;color:#92400e':'background:#f5f3ff;border:1px solid #ddd6fe;color:#5b21b6')+'">'+t+'</div>'; };
+  const offer=st.list.filter(function(x){ return x.ok; }), grey=st.list.filter(function(x){ return !x.ok; });
+  let h='<div class="ce-sheet" onclick="if(event.target===this)daClose()"><div class="ce-sheet-box da-sheet">';
+  h+='<div class="ce-sheet-title">Card practice</div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin:-6px 0 6px">New for '+nm+' · flash cards on set days</div>';
+  h+=daChoiceHTML(kid,true);
+  if(st.list.length){
+    h+=L("Which kind?")+'<div class="ce-chips" style="flex-direction:column;align-items:stretch">';
+    offer.forEach(function(x){
+      const min=(typeof retrSlotMinutes==="function")?retrSlotMinutes(kid,x.kind):null;
+      const about=String((typeof DR_KIND_ABOUT!=="undefined"&&DR_KIND_ABOUT[x.kind])||"").replace("{k}",name)+(min!=null?" About "+min+" min.":"");
+      h+='<div class="ce-chip da-kind'+(x.kind===st.kind?' sel':'')+'" onclick="daPickKind(\''+x.kind+'\')" style="white-space:normal">'+esc(_daTitle(x.kind))
+        +'<div style="font-size:11px;font-weight:400;opacity:.85;margin-top:2px">'+esc(about)+'</div></div>';
+    });
+    grey.forEach(function(x){
+      h+='<div class="ce-chip da-grey" style="white-space:normal;cursor:default;color:#9ca3af">'+esc(_daTitle(x.kind))+' — '
+        +(x.why==="deck"?'Needs 4 or more cards in one deck first':'Needs cards first')
+        +' — <a href="javascript:void(0)" onclick="daCards(\''+arg+'\')" style="color:#6d28d9;font-weight:700">add cards →</a></div>';
+    });
+    h+='</div>';
+  }
+  if(st.info.old) h+=note("da-old","“"+esc(st.info.old)+"” already runs every day as a subject, so \u{1F0CF} Daily Drill isn’t offered here — that would put two drill cards on a day.");
+  if(!st.list.length) h+=note("da-none","Every kind of card practice "+nm+" can run is already on the week. Tap its line in the purple strip to change the days.");
+  if(st.kind){
+    h+=L("Days")+'<div class="ce-chips">';
+    Object.keys(DR_DAY_SHORT).forEach(function(d){
+      const on=st.lit.indexOf(d)>=0;
+      if(st.room[d]!==true) h+='<div class="ce-chip da-day da-full" style="color:#9ca3af;border-style:dashed;cursor:default">'+DR_DAY_SHORT[d]+' · full</div>';
+      else h+='<div class="ce-chip da-day'+(on?' sel':'')+'" aria-pressed="'+on+'" onclick="daToggleDay(\''+d+'\')" style="'+(on?'background:'+col+';color:#fff;border-color:transparent':'color:var(--muted)')+'">'+DR_DAY_SHORT[d]+'</div>';
+    });
+    h+='</div>';
+    const full=Object.keys(DR_DAY_SHORT).filter(function(d){ return st.room[d]!==true; });
+    if(full.length===5) h+=note("da-fulls","Every day already has its practice cards. Turn one off on its line in the purple strip first.",true);
+    else if(full.length) h+='<div class="da-fulls" style="margin-top:6px;font-size:11px;color:var(--muted)">'+full.map(function(d){
+      return esc((DR_DAY_LONG[d]||d)+" is full: "+(st.room[d]||[]).map(_daTitle).join(" and ")+".");
+    }).join(" ")+' Turn one off on its line to make room.</div>';
+    else h+='<div style="margin-top:6px;font-size:11px;color:var(--muted)">Tap a day to leave it out.</div>';
+  }
+  if(daMsg) h+=note("da-msg",esc(daMsg),true);
+  const can=!!st.kind&&st.lit.length>0;
+  h+='<div class="ce-sheet-actions"><button class="ce-btn-cancel" onclick="daClose()">Cancel</button>'
+    +(st.kind?'<button class="ce-btn-save" onclick="daSave()"'+(can?'':' disabled style="opacity:.5"')+'>Save</button>':'')+'</div>';
+  return h+'</div></div>';
+}
+// DRILLADD_END
 function renderCurrGrid(el){
   if(!currData||!currData.subjects){
     el.innerHTML+='<div style="padding:40px 20px;text-align:center;color:var(--muted)"><div style="font-size:36px;margin-bottom:8px">\u{1F4CA}</div><div style="font-weight:600;margin-bottom:4px">No curriculum yet</div><div style="font-size:12px">Upload an Excel file or build subjects first.</div></div>';

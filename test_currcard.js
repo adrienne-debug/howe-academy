@@ -524,6 +524,7 @@ console.log("\n(h) no new Firebase write path in the curriculum region");
   "\"unitStudies/\"+unitId+\"/nbActivity/\"+kid",
   "\"unitStudies/\"+unitId+\"/nbInsert\"",
   "\"unitStudies/\"+unitId+\"/planDismiss/\"+kid+\"/\"+key",
+  "\"unitStudies/\"+unitId+\"/weekList\"",   // UNITWEEKSW (2026-11-22): 📅 This week list switch, Mom only
   "\"unitStudies/\"+unitPics.unitId+\"/visuals\"",
   "\"unitStudies/\"+unitPlanEdit.unitId+\"/plan\"",
   "\"walkback_excl/\"+base",
