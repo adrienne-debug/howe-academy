@@ -8,8 +8,8 @@
  *   3. the mirror keeps the kid's other keys; only the keys handed in are written (week/week2 without settings is fine)
  *   4. the live-week pass is queued only on o.rhythm, for that child
  *   5. refuses no kid / a bad kid / an empty payload — nothing written anywhere
- *   6. retrAdminSave through it: the exact payload of the old Save for several editor states (Row 2 off / same-as-Row-1
- *      dropped, an emptied Row 2 → {}, settings carried), the same path, the same effect order
+ *   6. retrAdminSave through it: the payload for several editor states, the same path, the same effect order — since
+ *      DRILLPOINT (slice 6, her pick 2026-11-22) the panel saves the numbers only ({settings}); its day buttons are gone
  *   run:  node test_drill_plan_write.js
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
@@ -118,23 +118,22 @@ for (const [label, args] of [["no kid", [undefined, { week: {} }]], ["empty kid"
   ok(label + " → false, nothing written, mirror and queue untouched", r === false && w.writes.length === 0 && w.sets.length === 0 && w.ls.length === 0 && w.queued.length === 0 && J(w.masteryData) === before, { r, writes: w.writes });
 }
 
-console.log("6. retrAdminSave through it — the old payload, path and order");
-// Each case: stored plan + taps → the exact payload the old Save button / RETRSAVE wrote (pinned).
+console.log("6. retrAdminSave through it — the payload (numbers only since DRILLPOINT), path and order");
+// Each case: stored plan + a change in the panel → the exact payload (pinned). DRILLPOINT (slice 6): the old day-tap cases are
+// gone with the day buttons; every payload is {settings} — the days are set in Curriculum.
 const CASES = [
-  { name: "fresh kid, one Row 1 tap", kid: "kidb", plan: {}, run: w => { w.retrAdminInit(); w.retrAdminCycleDay("mon"); },
-    want: { settings: {}, week: { mon: "sprint", tue: "off", wed: "off", thu: "off", fri: "off" }, week2: {} }, rhythm: true },
   { name: "partly stored row + settings carried", kid: "kida", plan: { kida: { settings: { slot_min_drill: 7, recheck_ladder: [1, 4] }, week: { mon: "drill", tue: "match" }, mathfacts_order: ["x"] } },
-    run: w => { w.retrAdminInit(); w.retrAdminCycleDay("wed"); },
-    want: { settings: { slot_min_drill: 7, recheck_ladder: [1, 4] }, week: { mon: "drill", tue: "match", wed: "sprint", thu: "off", fri: "off" }, week2: {} }, rhythm: true },
-  { name: "Row 2: off and same-as-Row-1 days dropped", kid: "kida", plan: { kida: { week: { mon: "match", tue: "drill", wed: "off", thu: "off", fri: "sprint" } } },
-    run: w => { w.retrAdminInit(); Object.assign(w.__admin().week2, { mon: "match", tue: "sprint", wed: "off", thu: "recheck", fri: "sprint" }); w.retrAdminSave(); },
-    want: { settings: {}, week: { mon: "match", tue: "drill", wed: "off", thu: "off", fri: "sprint" }, week2: { tue: "sprint", thu: "recheck" } }, rhythm: false },
-  { name: "emptied Row 2 → {}", kid: "kida", plan: { kida: { week: { mon: "match", tue: "off", wed: "off", thu: "off", fri: "off" }, week2: { mon: "drill" } } },
-    run: w => { w.retrAdminInit(); w.retrAdminCycleDay("mon", 2); },   // drill → off
-    want: { settings: {}, week: { mon: "match", tue: "off", wed: "off", thu: "off", fri: "off" }, week2: {} }, rhythm: true },
+    run: w => { w.retrAdminInit(); w.retrAdminNum("slot_min_match", "12"); },
+    want: { settings: { slot_min_drill: 7, recheck_ladder: [1, 4], slot_min_match: 12 } }, rhythm: false, quiet: true },
+  { name: "an editor copy that still carries days (the old shape) → numbers only", kid: "kida", plan: { kida: { week: { mon: "match", tue: "drill", wed: "off", thu: "off", fri: "sprint" } } },
+    run: w => { w.retrAdminInit(); Object.assign(w.__admin(), { week: { mon: "sprint" }, week2: { tue: "sprint", thu: "recheck" } }); w.retrAdminSave(); },
+    want: { settings: {} }, rhythm: false },
+  { name: "a toggle (repaint path)", kid: "kidb", plan: { kidb: { week: { mon: "match", tue: "off", wed: "off", thu: "off", fri: "off" }, week2: { mon: "drill" } } },
+    run: w => { w.retrAdminInit(); w.retrAdminToggle("gate_metric", "accuracy", "completion"); },
+    want: { settings: { gate_metric: "accuracy" } }, rhythm: false },
   { name: "a number box (quiet path)", kid: "kidb", plan: { kidb: { week: { mon: "drill", tue: "drill", wed: "drill", thu: "drill", fri: "drill" } } },
     run: w => { w.retrAdminInit(); w.retrAdminNum("slot_min_match", "12"); },
-    want: { settings: { slot_min_match: 12 }, week: { mon: "drill", tue: "drill", wed: "drill", thu: "drill", fri: "drill" }, week2: {} }, rhythm: false, quiet: true },
+    want: { settings: { slot_min_match: 12 } }, rhythm: false, quiet: true },
 ];
 for (const c of CASES) {
   const w = world({ kid: c.kid, plan: c.plan });
@@ -142,26 +141,26 @@ for (const c of CASES) {
   c.run(w);
   const u = w.writes[w.writes.length - 1];
   ok(c.name + ": one write, at the kid on screen", w.writes.length === 1 && u.p === "mastery/retrievalPlan/" + c.kid, w.writes);
-  ok(c.name + ": the exact old payload", J(u.v) === J(c.want), u.v);
+  ok(c.name + ": the exact payload", J(u.v) === J(c.want), u.v);
   ok(c.name + ": mirror = old mirror (other keys kept + payload)", J(w.masteryData.retrievalPlan[c.kid]) === J(Object.assign({}, clone(c.plan[c.kid] || {}), c.want)), w.masteryData.retrievalPlan[c.kid]);
   ok(c.name + ": the mirror was updated before the database write", u.mirrorFirst === J(w.masteryData.retrievalPlan[c.kid]));
   const want = ["db", "ls"].concat(c.rhythm ? ["queue"] : []).concat(c.quiet ? [] : ["repaint"]);
   ok(c.name + ": effects in the old order (" + want.join(" → ") + ")", J(w.log) === J(want), w.log);
-  ok(c.name + ": live pass queued only for a day tap", J(w.queued) === (c.rhythm ? J([c.kid]) : "[]"), w.queued);
+  ok(c.name + ": no live pass (a number never queues one)", J(w.queued) === "[]", w.queued);
   ok(c.name + ": 'Saved ✓' for that kid", w.__savedKid() === c.kid && (!c.quiet || /Saved ✓/.test(w.savedEl.innerHTML)));
   if (other) ok(c.name + ": the kid's other keys survive", J(w.masteryData.retrievalPlan[c.kid].mathfacts_order) === other);
 }
 {
   const w = world({ kid: "kida" });
-  w.retrAdminInit(); w.retrAdminCycleDay("mon");
+  w.retrAdminInit(); w.retrAdminNum("gate_pct", "70");
   w.masteryKid = "kidb";
   const n = w.writes.length, r = w.retrAdminSave();
   ok("wrong-kid guard still runs before the write", r === false && w.writes.length === n && !w.masteryData.retrievalPlan.kidb, w.writes);
 }
 {
   const w = world({ kid: "kida", dry: true });
-  w.retrAdminInit(); w.retrAdminCycleDay("mon");
-  ok("retrAdminSave in ?dryrun=1: no database write (mirror only)", w.writes.length === 0 && w.masteryData.retrievalPlan.kida.week.mon === "sprint");
+  w.retrAdminInit(); w.retrAdminNum("gate_pct", "70");
+  ok("retrAdminSave in ?dryrun=1: no database write (mirror only)", w.writes.length === 0 && w.masteryData.retrievalPlan.kida.settings.gate_pct === 70);
 }
 {
   // the editor kept for a kid id the write refuses → no write, no "Saved" for it
@@ -180,7 +179,7 @@ console.log("7. the block");
   ok("no set() / remove() in DRILLSAVE", !/\.set\(|\.remove\(/.test(DRILLSAVE));
   ok("DRILLSAVE does not read masteryKid or the Mastery editor copy", !/masteryKid|retrAdminLocal|retrAdminSavedKid|_mastRe/.test(DRILLSAVE.replace(/^\/\/.*$/mg, "")));
   ok("no kid or family names in the block", !/\b(lincoln|ellis|lucy|julian|taylor|makenzie|andrew|caleb|sara|melanie|howe|dewalt|burris)\b/i.test(DRILLSAVE));
-  ok("Reset is unchanged (still its own remove, slice 6's job)", /function retrAdminReset\(\)\{[\s\S]*?if\(db\) db\.ref\("mastery\/retrievalPlan\/"\+kid\)\.remove\(\);/.test(src));
+  ok("Reset clears the numbers through the one plan write (DRILLPOINT, slice 6) — no remove of the plan", /function retrAdminReset\(\)\{[\s\S]*?drPlanWrite\(kid,\{settings:null\}\)/.test(src) && !/\.remove\(/.test(src.slice(src.indexOf("function retrAdminReset("), src.indexOf("// DRILLPOINT_START"))));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

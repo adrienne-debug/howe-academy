@@ -224,12 +224,13 @@ console.log("5. the stale-copy trap (§4)");
   w.retrAdminNum("pass_count", "3");
   const last = w.writes[w.writes.length - 1].v;
   ok("the number saves", last.settings && last.settings.pass_count === 3 && last.settings.gate_pct === 80, last.settings);
-  ok("…and the new days survive (no Drill on Wed)", (last.week2 || {}).wed === undefined && last.week.wed === "sprint", last);
-  ok("the stored plan still has Wed without Drill", w.masteryData.retrievalPlan.kida.week2.wed === undefined);
-  // control: put the old copy back (what would happen without the drop) → the old days come back
+  // DRILLPOINT (slice 6): the panel's save writes the numbers only — no days at all, so the new days survive by construction
+  ok("…and the new days survive (the save carries no days: settings only)", JSON.stringify(Object.keys(last)) === '["settings"]', last);
+  ok("the stored plan still has Wed without Drill", w.masteryData.retrievalPlan.kida.week2.wed === undefined && w.masteryData.retrievalPlan.kida.week.wed === "sprint");
+  // the old control (the stale copy put back) — DRILLPOINT: even a stale copy can no longer write the old days back
   w.__setAdmin(oldCopy); w.retrAdminNum("pass_count", "4");
   const bad = w.writes[w.writes.length - 1].v;
-  ok("control: with the stale copy the old Wed Drill WOULD be written back", (bad.week2 || {}).wed === "drill", bad.week2);
+  ok("even with a stale copy put back, the old Wed Drill is NOT written back (numbers only)", JSON.stringify(Object.keys(bad)) === '["settings"]' && w.masteryData.retrievalPlan.kida.week2.wed === undefined, bad);
 }
 {
   const w = world({ plan: { kida: { week: wk("drill", "drill", "drill", "drill", "drill") }, kidb: { week: wk("match", "off", "off", "off", "off") } }, masteryKid: "kida" });

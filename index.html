@@ -80419,7 +80419,7 @@ function _mhqExtraPills() {
 }
 // MASTSET: the two pages behind those pills. masteryKid is already this kid (renderMasteryHQ keeps them in step).
 function _mhqRenderRetr(kid){
-  let h='<div style="font-size:12px;color:var(--muted);margin-bottom:10px">'+mhqEsc((typeof cap==="function")?cap(kid):kid)+'\u2019s retrieval plan \u2014 the re-check rhythm after a miss, the gate, the match suggestion and the weekly days. Save keeps it; Reset goes back to the defaults.</div>';
+  let h='<div style="font-size:12px;color:var(--muted);margin-bottom:10px">'+mhqEsc((typeof cap==="function")?cap(kid):kid)+'\u2019s retrieval plan \u2014 the re-check rhythm after a miss, the gate and the match suggestion. Changes save by themselves; Reset the numbers goes back to the defaults. The practice days are set on the Curriculum page.</div>';   // DRILLPOINT
   try{ h+=retrAdminHtml(); }catch(e){ h+='<div class="mast-none">Couldn\u2019t load the plan \u2014 try again</div>'; }
   return h;
 }
@@ -87910,7 +87910,7 @@ function retrAdminInit(){
   // so one Save would have put Lincoln's plan onto Lucy (2026-08-29, she spotted the
   // rows and stopped before saving). Guarding here covers every entry point that sets
   // masteryKid, instead of relying on each one to remember to reset.
-  retrAdminLocal={kid:masteryKid,settings:Object.assign({},rp.settings||{}),week:Object.assign({},retrWeek(masteryKid)),week2:Object.assign({},retrWeek2(masteryKid))};
+  retrAdminLocal={kid:masteryKid,settings:Object.assign({},rp.settings||{})};   // DRILLPOINT: the numbers only — the days are read from the plan (drRows), never copied here
 }
 function retrAdminNum(key,val){
   if(!retrAdminLocal||retrAdminLocal.kid!==masteryKid) retrAdminInit();
@@ -87934,14 +87934,7 @@ function retrAdminToggle(key,a,b){
   else delete retrAdminLocal.settings[key];                    // b -> inherit
   retrAdminSave();   // 💾 RETRSAVE: saves, then the one repaint
 }
-function retrAdminCycleDay(day,row){
-  if(!retrAdminLocal||retrAdminLocal.kid!==masteryKid) retrAdminInit();
-  if(!retrAdminLocal.week2) retrAdminLocal.week2={};
-  const map=(row===2)?retrAdminLocal.week2:retrAdminLocal.week;
-  const cur=map[day]||"off";
-  map[day]=RETR_DAY_KINDS[(RETR_DAY_KINDS.indexOf(cur)+1)%RETR_DAY_KINDS.length];
-  retrAdminSave({rhythm:true});   // 💾 RETRSAVE: saves this tap; the live week follows once the tapping settles (RETRLIVE)
-}
+// DRILLPOINT: retrAdminCycleDay (the old day buttons' tap) is gone — the days are set in Curriculum (DRILLDAYS, ＋ Add subject ▸ Card practice).
 // RETRSAVE_START — 💾 the Retrieval Plan saves by itself (her ask 2026-11-19: "could we just auto save to avoid this"). Live: a
 // family mom tapped two kids' Weekly rhythm days; one kid's days never reached the database because "Save Retrieval Plan" was
 // missed. Now every day tap (Row 1 / Row 2), number box, re-check ladder box and toggle saves at once for the kid on screen —
@@ -87957,13 +87950,11 @@ function retrAdminSave(o){
   // Belt and braces: never write one kid's editor state onto another, whatever the UI did.
   if(retrAdminLocal.kid&&retrAdminLocal.kid!==masteryKid){ retrAdminInit(); _mastRe(); return false; }
   const kid=masteryKid;
-  // the whole row as shown — a day with nothing on it is stored as "off", so one tap never leaves the other days to the defaults
-  const w1={}; RETR_DAYS.forEach(d=>{ w1[d]=retrAdminLocal.week[d]||"off"; });
-  // Row 2 keeps only real extras: off / same-as-Row-1 days are dropped (the generator
-  // would collapse them anyway); an emptied Row 2 saves as {} which clears the node.
-  const w2={}; RETR_DAYS.forEach(d=>{ const k=(retrAdminLocal.week2||{})[d]; if(k&&k!=="off"&&k!==w1[d]) w2[d]=k; });
-  const payload={settings:JSON.parse(JSON.stringify(retrAdminLocal.settings||{})),week:w1,week2:w2};
-  if(!drPlanWrite(kid,payload,{rhythm:o.rhythm})) return false;   // 🃏 DRILLSAVE: the one plan write, told the kid
+  if(typeof momHere==="function"&&!momHere()) return false;   // DRILLPOINT: Mom only
+  // DRILLPOINT: the numbers only (settings) — never week / week2 / week3: the days are set in Curriculum, so this panel can
+  // never write old days back over them (the stale-copy trap, gone for good). No live-week pass: a number never queued one.
+  const payload={settings:JSON.parse(JSON.stringify(retrAdminLocal.settings||{}))};
+  if(!drPlanWrite(kid,payload)) return false;   // 🃏 DRILLSAVE: the one plan write, told the kid
   retrAdminSavedKid=kid;
   if(o.quiet){ try{ const el=(typeof document!=="undefined")?document.getElementById("retrAdminSaved"):null; if(el) el.innerHTML=retrAdminSavedHtml(kid); }catch(e){} }
   else _mastRe();
@@ -87994,16 +87985,50 @@ function drPlanWrite(kid,payload,o){
 }
 // DRILLSAVE_END
 // RETRSAVE_END
-function retrAdminReset(){
-  if(!confirm("Reset "+SL_KLBL[masteryKid]+"'s retrieval plan to the built-in defaults?")) return;
+function retrAdminReset(){   // DRILLPOINT: "Reset the numbers" — clears settings only; the days are never touched from this panel
   const kid=masteryKid;
-  if(masteryData.retrievalPlan) delete masteryData.retrievalPlan[kid];
-  if(db) db.ref("mastery/retrievalPlan/"+kid).remove();
-  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  if(typeof momHere==="function"&&!momHere()) return false;
+  if(!confirm("Reset "+SL_KLBL[kid]+"'s numbers (pass mark, minutes, sprint…) to the defaults? The practice days stay as they are.")) return false;
+  if(!drPlanWrite(kid,{settings:null})) return false;   // 🃏 DRILLSAVE: one targeted update — settings:null removes that key only
   retrAdminLocal=null;
-  if(typeof retrLiveQueue==="function") retrLiveQueue(kid);   // 🃏 RETRLIVE: back to the built-in rhythm — this week's cards follow too
   _mastRe();
+  return true;
 }
+// DRILLPOINT_START — 🃏 Mastery ▸ Settings ▸ 🔁 Retrieval Plan shows the practice days; it no longer edits them (her pick
+// 2026-11-22, asked with the trade-offs laid out: "Yes, replace them"; slice 6 of DESIGN_drill_rows_curriculum_2026-11-19.md, §4).
+// Her words 2026-11-10: "i dont want things repeating in multiple areas … all the options could be in one spot" — the days are
+// set on the child's Curriculum page (DRILLDAYS, ＋ Add subject ▸ Card practice). The two rows of day buttons are gone: one read-only line per kind,
+// read through the Curriculum line's OWN readers (drRows → drPlanFor → retrOn + retrDayKinds, all three rows, RETRFAM's
+// no-ladder rule; the words are drLineText's, without the tap arrow — these lines are not buttons), then "Days are set in
+// Curriculum →" (drPointGo) opens Curriculum on this child. A child with nothing on gets one plain line and the same button.
+// The panel's save writes the numbers only (settings) and Reset clears the numbers only (retrAdminSave / retrAdminReset,
+// marked DRILLPOINT). Nothing here writes. Test: test_drill_pointer.js.
+function drPointLines(kid){
+  let rows=[]; try{ rows=(typeof drRows==="function")?drRows(kid):[]; }catch(e){ rows=[]; }
+  const name=(typeof cap==="function")?cap(kid):kid;
+  return rows.map(function(r){ return {kind:r.kind,ok:!!r.ok,text:drLineText(r,name).replace(/ →$/,"")}; });
+}
+function drPointHtml(kid){
+  const e=(typeof esc==="function")?esc:function(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); };
+  const name=(typeof cap==="function")?cap(kid):kid, arg=String(kid).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+  const ls=drPointLines(kid);
+  let h='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin:12px 0 6px">Practice days</div>';
+  if(!ls.length) h+='<div class="dr-point-none" style="font-size:12px;color:var(--muted);margin:2px 0;line-height:1.4">No flash-card practice on '+e(name)+'’s week yet.</div>';
+  ls.forEach(function(l){
+    h+='<div class="dr-point-line" style="font-size:12px;font-weight:700;color:'+(l.ok?'#6d28d9':'#9ca3af')+';margin:2px 0;line-height:1.4;overflow-wrap:anywhere">'+e(l.text)+'</div>';
+  });
+  h+='<button class="dr-point-go" onclick="drPointGo(\''+e(arg)+'\')" style="margin-top:6px;padding:7px 12px;border-radius:10px;border:1px solid #c4b5fd;background:#fff;color:#6d28d9;font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;max-width:100%;white-space:normal;text-align:left">Days are set in Curriculum →</button>';
+  return h;
+}
+// Tap → Mom's Day ▸ School ▸ Curriculum (the grid), this child picked — the same kid switch as gvSetKid, the same door as the
+// Curriculum chip (mpSchoolOpen). Navigation only.
+function drPointGo(kid){
+  if(!kid) return false;
+  try{ gvKid=kid; gvEdit=null; gvSelMode=false; gvSel=new Set(); gvSelAnchor=null; gvSelUndo=null; gvScrollTop=0; gvScrollLeft=0; }catch(e){}
+  if(typeof mpSchoolOpen==="function") mpSchoolOpen('curriculum');
+  return true;
+}
+// DRILLPOINT_END
 function retrAdminHtml(){
   if(!retrAdminLocal||retrAdminLocal.kid!==masteryKid) retrAdminInit();
   const kid=masteryKid, S=retrSettings(kid,null), loc=retrAdminLocal.settings;
@@ -88042,29 +88067,10 @@ function retrAdminHtml(){
   h+='<div class="mast-edit-row"><span class="mast-edit-label">Match suggestion'+(mr!==undefined?' <span style="font-size:8px;font-weight:800;color:#b45309">SET</span>':'')+'</span>'
     +'<button onclick="retrAdminToggle(\'match_rotation\',\'manual\',\'heatmap\')" style="padding:6px 12px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'
     +(mrShow==="heatmap"?"heat-map (worst deck)":"manual (off)")+'</button></div>';
-  h+='<div style="display:flex;align-items:baseline;gap:8px;margin:12px 0 6px"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c">Weekly rhythm — tap a day to cycle</span>'
-    +'<span id="retrAdminSaved" style="flex:1;text-align:right;font-size:10.5px;color:var(--muted)">'+retrAdminSavedHtml(kid)+'</span></div>';   // 💾 RETRSAVE
-  h+='<div style="display:flex;gap:5px">';
-  RETR_DAYS.forEach(d=>{
-    const k=retrAdminLocal.week[d]||"off";
-    h+='<button onclick="retrAdminCycleDay(\''+d+'\')" style="flex:1;padding:8px 2px;border-radius:10px;border:1.5px solid var(--border);background:#fff;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:center">'
-      +'<div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#78716c">'+d+'</div>'
-      +'<div style="font-size:15px">'+RETR_KIND_ICON[k]+'</div>'
-      +'<div style="font-size:8.5px;font-weight:700;color:#57534e">'+k+'</div></button>';
-  });
-  h+='</div>';
-  h+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin:10px 0 6px">Row 2 — optional second card that day</div>';
-  h+='<div style="display:flex;gap:5px">';
-  RETR_DAYS.forEach(d=>{
-    const k=(retrAdminLocal.week2||{})[d]||"off";
-    h+='<button onclick="retrAdminCycleDay(\''+d+'\',2)" style="flex:1;padding:8px 2px;border-radius:10px;border:1.5px solid var(--border);background:'+(k==="off"?"#faf8f5":"#fff")+';cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:center;opacity:'+(k==="off"?"0.65":"1")+'">'
-      +'<div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#78716c">'+d+'</div>'
-      +'<div style="font-size:15px">'+RETR_KIND_ICON[k]+'</div>'
-      +'<div style="font-size:8.5px;font-weight:700;color:#57534e">'+k+'</div></button>';
-  });
-  h+='</div>';
+  h+=drPointHtml(kid);   // DRILLPOINT: the day buttons are gone — read-only lines + "Days are set in Curriculum →"
   h+='<div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">';   // 💾 RETRSAVE: no Save button — every change saves itself
-  h+='<button onclick="retrAdminReset()" style="padding:8px 14px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer;color:#b5394a;font-family:\'DM Sans\',sans-serif">Reset</button>';
+  h+='<span id="retrAdminSaved" style="flex:1;align-self:center;font-size:10.5px;color:var(--muted)">'+retrAdminSavedHtml(kid)+'</span>';   // 💾 RETRSAVE · DRILLPOINT: the saved line sits by Reset now (the numbers save; the days above are read-only)
+  h+='<button onclick="retrAdminReset()" style="padding:8px 14px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer;color:#b5394a;font-family:\'DM Sans\',sans-serif">Reset the numbers</button>';   // DRILLPOINT
   h+='</div></div></div>';
   return h;
 }
