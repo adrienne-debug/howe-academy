@@ -44027,6 +44027,7 @@ function uascOpen(uid,key,kid,page){
   const id=uascId(uid,key); wbOpen(id,kid,page||1);
   if(!wbView||wbView.bookId!==id) return false;
   wbView.penW=UASC_PEN_W; wbBarRender();
+  if(typeof uascAnsMount==="function") uascAnsMount(wbView);   // UACTANS: ⌨️ My answers beside the page
   return true;
 }
 function uascSay(v,msg,good){ v.msg=msg||""; v.msgOk=!!good; if(typeof wbView!=="undefined"&&wbView===v) wbBarRender(); }
@@ -44074,9 +44075,112 @@ function uascBarHTML(v,btn){
     btn("✏️","wbTool(\'pen\')",v.tool==="pen")+btn("\u{1FA79} Erase","wbTool(\'erase\')",v.tool==="erase")+
     btn("↩︎ Undo","wbUndo()")+btn("\u{1F9FD} Clear","wbClear()")+btn(v.penOnly?"✍️ Pencil only":"\u{1F446} Finger too","wbTogglePen()",v.penOnly)+
     btn(v.saving?"Saving…":(v.dirty?"\u{1F4BE} Save":"✓ Saved"),"uascSaveNow()",v.dirty)+
+    ((typeof uascAnsBtnHTML==="function")?uascAnsBtnHTML(v,btn):"")+   // UACTANS: ⌨️ jump to the box
     (v.msg?'<span data-uasc-msg="1" style="font-size:12px;font-weight:700;color:'+(v.msgOk?'#15803d':'#b91c1c')+'">'+dcEsc(v.msg)+'</span>':'');
 }
 // UACTSCREEN_END
+// UACTANS_START — ⌨️ "My answers", typed beside the page (piece 4c, PLAN_unit_activity_types §7.1; a beta mom 2026-11-20, asked how a
+//   page done on the iPad should be answered: "Type answers in boxes beside the page" — "Because we don’t have a pen, they could type";
+//   she checks "later on my own screen"; her go 2026-11-22: "go with her answers and build").
+//   · WHERE: in the viewer UACTSCREEN opens (a 🖨 printable done on the screen) — the page and, beside it, ONE box "⌨️ My answers".
+//     Beside it on a wide screen (landscape: the page 560 px+, the box 280–520 px, the box stays in view while the page scrolls);
+//     UNDER it on an iPad held upright (portrait: the box takes its own row). "⌨️ My answers" in the bar jumps to it.
+//   · THE KEYBOARD: while the box has the cursor, the viewer is fitted to the part of the screen the keyboard leaves
+//     (visualViewport: its height and top) and the box is scrolled into view; it goes back when the box lets go. Text 18 px (an
+//     iPad zooms a smaller box). No autocorrect, no spell-check, no word suggestions the app can switch off: the spelling is his.
+//   · WHAT IS SAVED: one leaf per page, APART from the ink (the ink's whole-page set at …/<page> can never touch it):
+//     unitWork/<kid>/<unitId>/<key>/t/<page> = the text (≤ UASC_ANS_MAX letters; empty → the leaf goes). Saved 2.5 s after typing
+//     stops, before ◀ ▶ and on ✕, behind db && !_dryRun. Read once when the page opens. Nothing for Mom to set up, no questions,
+//     no answer key; the app reads nothing into it and checks nothing.
+//   · WHO: the kid on his own tablet types in his own box (UACTSCREEN's rule: Kids' Corner picked him, Mom mode off). Mom sees
+//     "<name>'s answers" beside the page, READ-ONLY — she has no box to type in, so she can never be taken for him; her marks
+//     stay the red pen. A sibling's tablet never opens the page (UACTSCREEN), and the save asks again before writing.
+//   · REFUSED, said plainly under the box, what he typed left in it: the database says no, no connection, not his page; ◀ ▶ stay
+//     and ✕ stays open once (UACTSCREEN's close). Dry run: "Dry run — nothing saved." No kid's or family's name in code.
+const UASC_ANS_MAX=2000;
+let _uascAnsT=null, _uascVV=false;
+function uascAnsPath(kid,id,page){ const ink=uascInkPath(kid,id,page); return ink.slice(0,ink.lastIndexOf("/"))+"/t/"+parseInt(page,10); }   // UACTSCREEN's gate, then …/t/<page>
+function uascAnsMine(v){ return !!v&&!uascMom()&&uascDevKid()===v.kid; }
+function uascAnsEl(id){ return (typeof document!=="undefined"&&document.getElementById)?document.getElementById(id):null; }
+// the box, appended to the viewer's stage beside (or under) #wb-hold
+function uascAnsMount(v){
+  const st=uascAnsEl("wb-stage"), hold=uascAnsEl("wb-hold"); if(!v||!st||!hold||typeof document.createElement!=="function") return false;
+  hold.style.flex="1 1 560px"; hold.style.maxWidth="900px"; hold.style.minWidth="0";
+  const mine=uascAnsMine(v), box=document.createElement("div"); box.id="uasc-ans";
+  box.innerHTML='<style>#uasc-ans{flex:1 1 280px;max-width:520px;min-width:0;box-sizing:border-box;background:#fff;border:2px solid #bfdbfe;border-radius:12px;padding:10px 12px;font-family:\'DM Sans\',sans-serif;line-height:1.35}'+
+    '@media (orientation:portrait){#uasc-ans{flex-basis:100%;max-width:900px}}@media (orientation:landscape){#uasc-ans{position:sticky;top:0}}</style>'+
+    '<div id="uasc-ans-lbl" style="font-size:15px;font-weight:800;color:#1e3a8a;margin-bottom:6px"></div>'+
+    (mine?'<textarea id="uasc-ans-ta" maxlength="'+UASC_ANS_MAX+'" rows="7" disabled autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type your answers here" oninput="uascAnsInput(this)" onfocus="uascAnsFocus()" onblur="uascAnsFocus()" style="display:block;width:100%;box-sizing:border-box;min-height:150px;padding:10px;border:2px solid #cbd5e1;border-radius:10px;font-size:18px;line-height:1.4;font-family:\'DM Sans\',sans-serif;resize:vertical;background:#fff;color:#0f172a"></textarea>'
+      :'<div id="uasc-ans-ro" style="min-height:60px;padding:10px;border:1.5px dashed #cbd5e1;border-radius:10px;font-size:16px;line-height:1.45;color:#0f172a;white-space:pre-wrap;overflow-wrap:anywhere"></div>')+
+    '<div id="uasc-ans-st" aria-live="polite" style="min-height:18px;margin-top:6px;font-size:13px;font-weight:700"></div>';
+  st.appendChild(box);
+  if(!_uascVV){ _uascVV=true; try{ const vv=(typeof window!=="undefined")?window.visualViewport:null; if(vv&&typeof vv.addEventListener==="function") vv.addEventListener("resize",function(){ if(typeof wbView!=="undefined"&&wbView&&uascIs(wbView.bookId)) uascAnsFit(); }); }catch(e){} }
+  uascAnsLoad(v); return true;
+}
+// the label, the box's words, the line under it (full = also the text; while he types, only the line)
+function uascAnsPaint(v,full){
+  const a=v&&v.ans; if(!a||typeof wbView==="undefined"||wbView!==v) return;
+  const lbl=uascAnsEl("uasc-ans-lbl"), st=uascAnsEl("uasc-ans-st"), ta=uascAnsEl("uasc-ans-ta"), ro=uascAnsEl("uasc-ans-ro");
+  if(lbl) lbl.textContent=(ta?"⌨️ My answers":"⌨️ "+dcName(v.kid)+"’s answers")+" · page "+a.page;
+  if(full&&ta){ ta.value=a.text; ta.disabled=!a.loaded; }
+  if(full&&ro){ ro.textContent=a.loaded?(a.text||"Nothing typed on this page yet."):"Loading…"; ro.style.color=a.text?"#0f172a":"#64748b"; }
+  if(st){ st.textContent=a.msg||(!a.loaded?"Loading…":(a.saving?"Saving…":(ta&&a.text!==a.saved?"…":(ta&&a.text?"✓ Saved":"")))); st.style.color=a.msgOk===false?"#b91c1c":"#15803d"; }
+}
+function uascAnsSay(v,msg,good){ if(v&&v.ans){ v.ans.msg=msg||""; v.ans.msgOk=msg?!!good:null; uascAnsPaint(v,false); } }
+// read the page's text once (a page turn reads the new page's)
+function uascAnsLoad(v){
+  if(!v||!uascIs(v.bookId)) return; const page=v.page; clearTimeout(_uascAnsT); _uascAnsT=null;
+  v.ans={page:page,text:"",saved:"",loaded:false,msg:"",msgOk:null}; uascAnsPaint(v,true);
+  let path=""; try{ path=uascAnsPath(v.kid,v.bookId,page); }catch(e){ uascAnsSay(v,"This page isn’t open to this tablet."); return; }
+  if(typeof db==="undefined"||!db){ v.ans.loaded=true; uascAnsPaint(v,true); uascAnsSay(v,uascAnsMine(v)?"Not connected — what you type won’t save.":"Not connected."); return; }
+  try{ db.ref(path).once("value").then(function(s){ if(wbView!==v||!v.ans||v.ans.page!==page) return; const t=s&&typeof s.val==="function"?s.val():null;
+      v.ans.text=v.ans.saved=(typeof t==="string")?t.slice(0,UASC_ANS_MAX):""; v.ans.loaded=true; uascAnsPaint(v,true); },
+    function(){ if(wbView===v&&v.ans&&v.ans.page===page) uascAnsSay(v,"Couldn’t read the answers — close the page and open it again."); }); }
+  catch(e){ uascAnsSay(v,"Couldn’t read the answers — close the page and open it again."); }
+}
+// he types: kept on the page at once, saved 2.5 s after he stops
+function uascAnsInput(el){
+  const v=(typeof wbView!=="undefined")?wbView:null, a=v&&v.ans; if(!a||!a.loaded||!uascAnsMine(v)) return false;
+  a.text=String((el&&el.value)||"").slice(0,UASC_ANS_MAX); a.msg=""; a.msgOk=null; uascAnsPaint(v,false);
+  clearTimeout(_uascAnsT); _uascAnsT=setTimeout(function(){ _uascAnsT=null; if(wbView===v) uascAnsSave(v); },2500);
+  return true;
+}
+// true = nothing to save, or saved · false = refused (what he typed stays in the box)
+async function uascAnsSave(v){
+  const a=v&&v.ans; if(!a||!a.loaded||a.text===a.saved) return true;
+  if(!uascAnsMine(v)){ uascAnsSay(v,"Didn’t save — this page isn’t open to this tablet."); return false; }
+  if(uascDryRun()){ a.saved=a.text; uascAnsSay(v,"Dry run — nothing saved."); return true; }
+  if(typeof db==="undefined"||!db){ uascAnsSay(v,"Not connected — what you typed is still here, but it isn’t saved."); return false; }
+  let path=""; try{ path=uascAnsPath(v.kid,v.bookId,a.page); }catch(e){ uascAnsSay(v,"Didn’t save — this page isn’t open to this tablet."); return false; }
+  const txt=a.text; a.saving=true; uascAnsPaint(v,false);
+  try{ await db.ref(path).set(txt?txt:null); }   // one leaf per page, apart from the ink; empty → the leaf goes
+  catch(e){ a.saving=false; uascAnsSay(v,"Didn’t save — the database said no. What you typed is still here; it tries again when you type."); return false; }
+  a.saving=false; a.saved=txt; uascAnsSay(v,""); return true;
+}
+// before ◀ ▶ and ✕ (UACTSCREEN's hooks): what's in the box now, saved now
+function uascAnsFlush(v){
+  clearTimeout(_uascAnsT); _uascAnsT=null; const a=v&&v.ans; if(!a||!uascAnsMine(v)) return Promise.resolve(true);
+  const ta=uascAnsEl("uasc-ans-ta"); if(ta&&a.loaded) a.text=String(ta.value||"").slice(0,UASC_ANS_MAX);
+  return uascAnsSave(v);
+}
+// the keyboard: fit the viewer to what it leaves, and bring the box into view
+function uascAnsFit(){
+  const ov=uascAnsEl("wb-view"), ta=uascAnsEl("uasc-ans-ta"); if(!ov||!ov.style) return false;
+  const vv=(typeof window!=="undefined")?window.visualViewport:null, on=!!ta&&typeof document!=="undefined"&&document.activeElement===ta;
+  if(on&&vv&&vv.height>120){ ov.style.top=Math.round(vv.offsetTop||0)+"px"; ov.style.bottom="auto"; ov.style.height=Math.round(vv.height)+"px"; }
+  else { ov.style.top="0"; ov.style.bottom="0"; ov.style.height=""; }
+  if(on){ try{ ta.scrollIntoView({block:"nearest"}); const b=uascAnsEl("uasc-ans"); if(b&&b.scrollIntoView) b.scrollIntoView({block:"end"}); }catch(e){} }
+  return on;
+}
+function uascAnsFocus(){ uascAnsFit(); setTimeout(uascAnsFit,350); }   // again once the keyboard has slid up
+// the bar's "⌨️ My answers": jump to the box (and, on his tablet, put the cursor in it)
+function uascAnsGo(){
+  const ta=uascAnsEl("uasc-ans-ta"), b=uascAnsEl("uasc-ans");
+  try{ if(ta&&!ta.disabled&&typeof ta.focus==="function") ta.focus(); if(b&&b.scrollIntoView) b.scrollIntoView({block:"start"}); }catch(e){}
+  return !!b;
+}
+function uascAnsBtnHTML(v,btn){ return btn(uascAnsMine(v)?"⌨️ My answers":"⌨️ Answers","uascAnsGo()"); }
+// UACTANS_END
 // UNITDAY_EXTRAS_START — 🖼 Pictures & documents and 🍎 Snack on a unit day (her words 2026-11-11, for Sara, a beta mom: "Sarah would
 //   like to add on day 6 a gratitude scavenger hunt. She has a picture of it. So it would be good if on each day another section that
 //   they could add to that is pictures and documents that would open when they click it on that day. Also, a section for snacks that

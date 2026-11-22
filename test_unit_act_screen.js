@@ -28,6 +28,7 @@ const BLK = cutIn(src, "// UACTSCREEN_START", "// UACTSCREEN_END") + "// UACTSCR
 // ── the tree minus the feature: the block out, each hook back to the line it replaced ──
 const HOOK_LINES = src.split("\n").filter(l => /\/\/ UACTSCREEN:/.test(l));
 let BASE = src.replace(BLK, "");
+if (src.indexOf("// UACTANS_START") >= 0) BASE = BASE.replace(cutIn(src, "// UACTANS_START", "// UACTANS_END") + "// UACTANS_END\n", "");   // the next piece (typed answers) has its own test
 {
   const strip = [/^\s+h\+=\(\(typeof uascLookBtnHTML===/, /^\s+if\(typeof uascDoHTML===/, /^\s+if\(typeof uascDoEdit===/, /^\s+return \(typeof uascCardHTML===/, /^\s+if\(typeof uascDoNew===/, /^\s+\(typeof uascIs==="function"&&uascIs\(v\.bookId\)\)\?uascBarHTML/, /^\s+if\(typeof uascIs==="function"&&uascIs\(v\.bookId\)\) return uascSave/];
   HOOK_LINES.forEach(l => { if (strip.some(r => r.test(l))) BASE = BASE.split(l + "\n").join(""); });
@@ -101,7 +102,7 @@ function world(o) {
     ...["wbBook", "wbInkPath", "wbMomEyes", "wbAssignClean", "wbAssignRender", "wbOpen", "wbClose", "wbBarRender", "wbTool", "wbTogglePen", "wbGo", "wbLoadPage", "wbFit", "wbWatchFit", "wbPaint", "wbPt", "wbEraseAt", "wbUndo", "wbClear", "wbMarkDirty", "wbAutoSaveSoon", "wbSave"].map(fn),
     S.slice(S.indexOf("(function wbBindOnce(){"), S.indexOf("function wbPt("))].join("\n");
   const blocks = ["UNITTRACK", "UTADDACT", "UACTKIND", "UACTLINK", "UACTPRINT", "UACTPAGES"].map(n => cut("// " + n + "_START", "// " + n + "_END")).join("\n") +
-    "\n" + (o.base ? "" : cut("// UACTSCREEN_START", "// UACTSCREEN_END")) + "\n" + (o.ans === false || o.base ? "" : (S.indexOf("// UACTANS_START") >= 0 ? cut("// UACTANS_START", "// UACTANS_END") : "")) + "\n" + cut("// DAYCARD_START", "// DAYCARD_END");
+    "\n" + (o.base ? "" : cut("// UACTSCREEN_START", "// UACTSCREEN_END")) + "\n" + (!o.ans || o.base ? "" : (S.indexOf("// UACTANS_START") >= 0 ? cut("// UACTANS_START", "// UACTANS_END") : "")) + "\n" + cut("// DAYCARD_START", "// DAYCARD_END");
   vm.createContext(ctx);
   vm.runInContext(LR + "\n" + blocks + "\n" + SIGN + "\n" + PIC + "\n" + fnp("ubSlug") + "\n" + fn("renderClaimQueue") + "\n" + VIEW, ctx);
   const ev = (x, y, pt) => ({ target: reg["wb-ink"], pointerType: pt || "touch", clientX: x, clientY: y + 60, pressure: 0.5, pointerId: 1, buttons: 1, preventDefault() {} });
