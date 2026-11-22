@@ -217,6 +217,8 @@ body.ha-dragging,body.ha-dragging *{user-select:none!important;-webkit-user-sele
 .ev-chip{background:linear-gradient(135deg,#fdf2f8,#fce7f3);border:1.5px solid #f9a8d4;color:#9d174d;border-radius:999px;padding:5px 12px;font-size:12px;font-weight:700;white-space:nowrap}
 .ev-chip b{font-weight:800}
 .ev-chip i{font-style:normal;opacity:.75;font-weight:600}
+.ev-blk{background:#fdf2f8;border:1.5px dashed #f9a8d4;color:#9d174d;border-radius:10px;padding:8px 12px;font-size:12px;font-weight:700}
+.ev-sm{padding:3px 6px;font-size:10.5px;border-radius:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .peek-ev{display:flex;gap:5px;flex-wrap:wrap;margin-left:6px}
 .ev-up{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 10px}
 .ev-up-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
@@ -9255,13 +9257,17 @@ function allAgendaHtml(dayTasks,onlyKids,opt){   // 👨 DADFIX: opt.extra = {ke
         (lookAhead[k]?'<div style="font-size:9px;font-weight:700;color:#b45309;text-transform:none;letter-spacing:0">👀 checks at '+fromMin(gateStartMin(day))+'</div>':'')+'</div>';
     }).join('')+'</div>';
   const _lr=_agLunchRow(day,"all");
+  const _ev=(typeof evDayRows==="function")?evDayRows(calDateForWeekDay(day),kids.length===1?kids[0]:"all","all"):()=>"";   // 🎉 EVDAY
   let lunchDone=!_lr;
   mins.forEach(m=>{
+    if(!lunchDone&&m>=_lr.s) h+=_ev(_lr.s-1);   // 🎉 EVDAY
     if(!lunchDone&&m>=_lr.s){ h+=_lr.html; lunchDone=true; }
+    h+=_ev(m);   // 🎉 EVDAY
     const _tp=fromMin(m).split(' ');
     h+='<div class="all-agenda-row"><div class="time-pill">'+_tp[0]+'<span class="ampm">'+(_tp[1]||'')+'</span></div>'+
       kids.map(k=>cell(byTime[m],k)).join('')+'</div>';
   });
+  h+=_ev();   // 🎉 EVDAY
   if(Object.keys(noTime).length){
     h+='<div class="all-agenda-row"><div class="time-pill">any<span class="ampm">time</span></div>'+
       kids.map(k=>cell(noTime,k)).join('')+'</div>';
@@ -9282,9 +9288,12 @@ function momAgendaHtml(dayTasks){
   let h='<div class="mom-agenda">';
   h+='<div class="mom-agenda-row mom-agenda-head"><div></div><div class="mom-h req">🔴 Mom Needed</div><div class="mom-h may">🟡 May Need Mom</div></div>';
   const _lr=_agLunchRow(day,"mom");
+  const _ev=(typeof evDayRows==="function")?evDayRows(calDateForWeekDay(day),"all","mom"):()=>"";   // 🎉 EVDAY
   let lunchDone=!_lr;
   mins.forEach(m=>{
+    if(!lunchDone&&m>=_lr.s) h+=_ev(_lr.s-1);   // 🎉 EVDAY
     if(!lunchDone&&m>=_lr.s){ h+=_lr.html; lunchDone=true; }
+    h+=_ev(m);   // 🎉 EVDAY
     const c=byTime[m];
     const _tp=fromMin(m).split(' ');
     h+='<div class="mom-agenda-row"><div class="time-pill">'+_tp[0]+'<span class="ampm">'+(_tp[1]||'')+'</span></div>';
@@ -9292,6 +9301,7 @@ function momAgendaHtml(dayTasks){
     h+='<div class="mom-col">'+(c.may.length?c.may.map(tk=>taskCard(tk)).join(''):'<div class="mom-empty">—</div>')+'</div>';
     h+='</div>';
   });
+  h+=_ev();   // 🎉 EVDAY
   h+='</div>';
   return h;
 }
@@ -9552,6 +9562,20 @@ function calEventBanner(dayName,whoFilter){
   if(!evs.length) return "";
   return '<div class="ev-banner">'+evs.map(_evChip).join("")+'</div>';
 }
+// EVDAY_START — 🎉 a calendar event shows IN the day (her ask 2026-11-22: "a note on the calendar for that day and if it's a
+// certain time a time block as well"). DISPLAY ONLY: an event whose time reads as a clock time is a marked row at that time in the
+// kid's list, the All / Mom agendas, Kids' Corner and Dad's schedule; Mom's ▸ Week lists each day's events. A row is not a card —
+// nothing to tap, check or earn, never in week*/tasks, so no count, clock or lay sees it. Who / waiting ones: calEventsOn's rules.
+// evMin: "2:30 PM", "2pm" → minutes; no AM/PM, 24-hour, words, "" → null (no row; the chip at the top stays). Writes nothing.
+function evMin(s){ const m=/^\s*(\d{1,2})(?::(\d\d))?\s*([ap])\.?m\.?\s*$/i.exec(s==null?"":String(s)), h=m?+m[1]:0, n=m?+(m[2]||0):0; return (!m||h<1||h>12||n>59)?null:(h%12+(/p/i.test(m[3])?12:0))*60+n; }
+function evLbl(e,nm){ return esc(e.emoji||"🎉")+' '+esc(e.title||"Event")+(e.time?' · '+esc(e.time):'')+(nm&&e.who&&e.who!=="family"?' · '+esc(cap(e.who)):''); }
+function evQ(iso,who){ const q=[]; try{ calEventsOn(iso,who).forEach(e=>{ const m=evMin(e.time); if(m!=null) q.push({m:m,e:e}); }); }catch(x){} return q.sort((a,b)=>a.m-b.m); }
+// the rows due up to minute `to` (none given = every one left), taken off the queue. span "all" / "mom" = an agenda grid row; none = a time-row
+function evRows(q,to,span){ let h=''; while(q.length&&(to==null||q[0].m<=to)){ const x=q.shift(), t=fromMin(x.m).split(' '), b='<div class="ev-blk"'+(span?' style="grid-column:'+(span==="all"?'2/-1':'2/4')+'"':'')+'>'+evLbl(x.e,span)+'</div>';
+  h+=span?'<div class="'+span+'-agenda-row"><div class="time-pill">'+t[0]+'<span class="ampm">'+t[1]+'</span></div>'+b+'</div>':'<div class="time-row"><div class="time-pill">'+t.join(' ')+'</div><div class="slot-tasks">'+b+'</div></div>'; } return h; }
+function evDayRows(iso,who,span){ const q=evQ(iso,who); return to=>evRows(q,to,span); }   // one day's rows, handed out in time order
+function evWk(iso,who){ let h=''; try{ calEventsOn(iso,who).forEach(e=>{ h+='<div class="ev-blk ev-sm">'+evLbl(e,who==="all"||who==="mom")+'</div>'; }); }catch(x){} return h; }
+// EVDAY_END
 function renderWeekPeek(el){
   if(!el){el=document.getElementById("content");if(!el)return;}
   const wn=currWeekNum()+1, r=(typeof gwWeekDateRange==="function")?gwWeekDateRange(wn):null;
@@ -9729,6 +9753,7 @@ function renderSchedule(el){
       '</div>';
   }
   h+=renderBlockoutBanners(day);
+  if(kid==="all"||kid==="mom"||momModeActive) h+=calEventBanner(day,kid);   // 🎉 EVDAY
   if(momModeActive&&(kid==="mom"||kid==="all")) h+=renderDisplacementSummary(day, kid);
   if(momModeActive) h+=renderSatCutoffBanner(day, kid);
   if(momModeActive&&day===schedLastWorkingDay()) h+=renderEowOverflowBox(kid);
@@ -9860,6 +9885,7 @@ function renderSchedule(el){
   // Only for a single-kid view (gaps are meaningless in the all-kids view), non-lunch, ≥15m.
   let _prevEnd=0;
   const _singleKid=(kid!=="all"&&kid!=="mom");
+  const _ev=(typeof evDayRows==="function")?evDayRows(calDateForWeekDay(day),kid):()=>"";   // 🎉 EVDAY
   times.forEach(t=>{
     const _ss=toMin(t);
     const _slotDone=tmap[t].every(tk=>!!checked[tk.id]);   // ✓ finished work sits at its real time — gaps there aren't breaks
@@ -9871,13 +9897,17 @@ function renderSchedule(el){
                return '\u{1F33F} Free time until '+fromMin(_to)+' <span style="font-weight:400;color:#4d7c53">— nothing on the list until then</span>'; })()
            : '\u{1F33F} Break · '+(_ss-_prevEnd)+' min <span style="font-weight:400;color:#4d7c53">— Mom’s with a sibling, take a breather</span>')+'</div></div></div>';
     }
+    if(!lunchDone&&_ss>=_haLunchMin()) h+=_ev(_haLunchMin()-1);   // 🎉 EVDAY
     if(!lunchDone&&_ss>=_haLunchMin()){ h+=lunchBlock(); lunchDone=true; }
+    h+=_ev(_ss);   // 🎉 EVDAY
     h+='<div class="time-row"><div class="time-pill">'+t+'</div><div class="slot-tasks">';
     tmap[t].forEach(tk=>{ h+=taskCard(tk); });
     h+='</div></div>';
     if(!_slotDone) _prevEnd=Math.max(_prevEnd,_ss+Math.max.apply(null,tmap[t].map(tk=>tk.dur||20)));   // breaks are measured between open work only
   });
+  if(!lunchDone) h+=_ev(_haLunchMin()-1);   // 🎉 EVDAY
   if(!lunchDone&&times.length&&toMin(times[times.length-1])<_haLunchMin()) h+=lunchBlock();
+  h+=_ev();   // 🎉 EVDAY
   if(_singleKid&&typeof hhHouseCardHTML==="function"){ try{ h+=hhHouseCardHTML(kid,day,tasks); }catch(e){} }   // 🏡 HOUSECARDS: derived, never in week*/tasks
   if(_singleKid&&typeof llKidCardHTML==="function"){ try{ h+=llKidCardHTML(kid,day); }catch(e){} }
   if(_singleKid&&typeof qlKidRowHTML==="function"){ try{ h+=qlKidRowHTML(kid,day); }catch(e){} }   // ⚡ QUICKLOADS: the buttons Mom gave this kid   // 🧺 LAUNDRYLINE step 6: derived too, never in week*/tasks
@@ -26260,6 +26290,7 @@ function mpSchWeekHTML(who){
   days.forEach(d=>{
     const ts=mpSchTasks(who,d).slice().sort((a,b)=>(toMin(a.time)==null?9999:toMin(a.time))-(toMin(b.time)==null?9999:toMin(b.time)));
     h+='<div onclick="mpSchDaySet(\''+d+'\')" style="cursor:pointer;display:flex;flex-direction:column;gap:4px;min-width:0">';
+    if(typeof evWk==="function") h+=evWk(calDateForWeekDay(d),who);   // 🎉 EVDAY
     if(!ts.length) h+='<div style="color:var(--muted);font-size:11px;text-align:center;padding:8px 0">—</div>';
     ts.forEach(t=>{
       const col=SL_KCOL[t.who]||"#6B4C93", done=!!checked[t.id], m=toMin(t.time);
@@ -26393,6 +26424,7 @@ function mpSchWkOtherHTML(who){
     let h='<div style="max-width:560px;margin:0 auto;padding:12px 12px 0">'
       +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><button onclick="mpSchWkDaySet(null)" style="border:1.5px solid var(--border);background:#fff;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:800;cursor:pointer">‹ Week '+wn+'</button>'
       +'<div style="font-family:\'Fraunces\',serif;font-size:17px;font-weight:700">'+cap(d)+dl(d)+'</div></div>';
+    if(typeof evWk==="function") h+=evWk(calDateForWeekDay(d,wn),who);   // 🎉 EVDAY
     if(!ts.length) h+=msg('Nothing that day.');
     ts.forEach(t=>{
       const col=SL_KCOL[t.who]||"#6B4C93", m=toMin(t.time), mk=_mpSchWkMark(c,t,past);
@@ -26413,6 +26445,7 @@ function mpSchWkOtherHTML(who){
   days.forEach(d=>{
     const ts=mpSchWkTasks(c,who,d);
     h+='<div onclick="mpSchWkDaySet(\''+d+'\')" style="cursor:pointer;display:flex;flex-direction:column;gap:4px;min-width:0">';
+    if(typeof evWk==="function") h+=evWk(calDateForWeekDay(d,wn),who);   // 🎉 EVDAY
     if(!ts.length) h+='<div style="color:var(--muted);font-size:11px;text-align:center;padding:8px 0">—</div>';
     ts.forEach(t=>{
       const col=SL_KCOL[t.who]||"#6B4C93", m=toMin(t.time), mk=_mpSchWkMark(c,t,past);
@@ -26483,6 +26516,7 @@ function dadSchedItems(dn){
 // 🗓 My schedule today — on Dad's Day, under his helper card.
 function dadSchedHTML(dn){
   const items=dadSchedItems(dn);
+  try{ calEventsOn(_todayStr(),"all").forEach(e=>items.push({m:evMin(e.time),o:-1,html:'<div class="ev-blk">'+evLbl(e,1)+'</div>'})); items.sort((a,b)=>((a.m==null?1e9:a.m)-(b.m==null?1e9:b.m))||(a.o-b.o)); }catch(x){}   // 🎉 EVDAY
   let h='<div style="margin:10px 12px 0;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
     +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#2C5F8A;color:#fff;font-weight:800;font-size:13px"><span>\u{1F5D3}</span> My schedule today</div><div style="padding:6px 12px 10px">';
   if(!items.length) h+='<div style="font-size:12px;color:var(--muted);padding:8px 2px">Nothing on the clock yet &mdash; your checklist, the loads you start and your school cards land here.</div>';
@@ -45796,12 +45830,16 @@ function kcSchoolHTML(k){
       const paused=!!bbActive(k);
       h+='<div class="time-slots"'+((paused||!unlocked)?' style="opacity:.35;pointer-events:none;filter:grayscale(.4)'+(unlocked?'':';filter:blur(2px)')+'"':'')+'>';
       let lunchDone=false;
+      const _ev=(typeof evDayRows==="function")?evDayRows(_todayStr(),k):()=>"";   // 🎉 EVDAY
       times.forEach(function(t){
+        if(!lunchDone&&toMin(t)>=_haLunchMin()) h+=_ev(_haLunchMin()-1);   // 🎉 EVDAY
         if(!lunchDone&&toMin(t)>=_haLunchMin()){ try{ h+=lunchBlock(); }catch(e){} lunchDone=true; }
+        h+=_ev(toMin(t));   // 🎉 EVDAY
         h+='<div class="time-row"><div class="time-pill">'+t+'</div><div class="slot-tasks">';
         tmap[t].forEach(function(tk){ h+=taskCard(tk); });
         h+='</div></div>';
       });
+      h+=_ev();   // 🎉 EVDAY
       h+='</div>';
     }
     return h+'</div>';
