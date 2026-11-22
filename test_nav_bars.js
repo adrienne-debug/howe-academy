@@ -35,7 +35,8 @@ ok("the old fixed offsets are gone for good (52 / 88 / 122 / 166 / 182 px)", !/t
 ok("no script sets the kid row's top by hand any more", !/kf\.style\.top=/.test(src) && !/kid-filter"\)\.style\.top/.test(src));
 ok("in-page bars under the stack use the variables too (Mastery kid row, Schedule ▸ Admin tabs)", /top:calc\(var\(--hdr-h\) \+ var\(--nav-h\)\);z-index:96/.test(src) && /top:calc\(var\(--hdr-h\) \+ var\(--nav-h\) \+ var\(--mp-h\) \+ var\(--sub-h\)\);z-index:90/.test(src));
 ok("the stack is documented in one comment block (header → nav-tabs → page bars) with the how-to-add rule", /#app-header \(top:0\) → #nav-tabs → #sched-subtabs → #day-tabs → #kid-filter/.test(css) && /To add a bar to the stack/.test(css));
-ok("the page can never scroll sideways (html only — body too would break sticky)", /\nhtml\{overflow-x:hidden\}/.test(src) && !/\nbody\{[^}]*overflow-x/.test(src));
+// POPUPW (2026-11-21): body may CLIP sideways (clip makes no scroll box, so sticky still works) — never hidden/auto/scroll.
+ok("the page can never scroll sideways (html only — a scroll box on body would break sticky)", /\nhtml\{overflow-x:hidden\}/.test(src) && !/\nbody\{[^}]*overflow-x:(hidden|auto|scroll)/.test(src));
 
 console.log("\n── the header never changes height ──");
 ok("the family line is always in flow — no display:none on it", /<div class="header-family" id="hdr-family"><\/div>/.test(src) && !/hdr-family" style="display:none"/.test(src));

@@ -73,7 +73,7 @@ const PL_CSS=`#play-root #pl-kidbar{background:#fff;border-bottom:1px solid var(
 #play-root .home-tile .wd{font-size:14px;font-weight:800;margin-top:6px}`;
 
 const PL_SHELL=`<div id="play-root">
-<div id="pl-modebar" style="background:#fff;border-bottom:1px solid var(--border);padding:10px 12px;display:flex;gap:8px">
+<div id="pl-modebar" style="background:#fff;border-bottom:1px solid var(--border);padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap">
 <button id="pl-mb-home" class="kid-btn active" style="background:#111827;flex:1" onclick="plSetMode('home')">🎪 Stations</button>
 <button id="pl-mb-bins" class="kid-btn" style="flex:1" onclick="plSetMode('bins')">🧺 Bins</button>
 <button id="pl-mb-act" class="kid-btn" style="flex:1" onclick="plSetMode('act')">🎯 Activities</button>

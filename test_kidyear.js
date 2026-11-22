@@ -15,10 +15,11 @@
  *   (6) renderCurrBuilder (the Builder tab) is reached from no onclick on the page;
  *   (7) the three moved doors: 📋 Plan resources draws in the card's Links & supplies section; ⤒ Delete & shift up and
  *       Add it back… preview in the card's Pace section; Copy to another kid (on Fix-ups) lands on the copy's card;
- *   (8) no new ref() path pattern anywhere in index.html, and the block writes nothing itself.
+ *   (8) KIDYEAR added no ref() path pattern anywhere in index.html (its merge 5e9050fa vs 7ca02a66), and the block
+ *       writes nothing itself.
  *
  * Main for the comparisons: KIDYEAR_VS=<old index.html>, else `git show 59b0b15:index.html` (the main this slice was cut
- * from); without either, (3)'s byte compare and (8)'s pattern compare are skipped and say so.
+ * from) for (3); (8) uses 5e9050fa / 7ca02a66 unless KIDYEAR_VS is set; without them, each compare is skipped and says so.
  *
  *   run:  node test_kidyear.js
  */
@@ -361,12 +362,25 @@ function refs(S) { const out = new Set(); const re = /\.ref\(([^)]*)\)/g; let m;
   const W = panelWorld(src, { capSet: true, tgt: true, sessOpen: true, undo: true }); W.log.length = 0;
   ["hours", "terms", "lanes", "all"].forEach(t => W.panel(t)); W.run("kySetTab('lanes')"); W.run("kyLane('kid','L1')");
   ok("drawing every tab, switching tabs and opening a lane writes nothing", W.log.length === 0, W.log);
-  if (MAIN) {
-    // 🌅 SENDAM (2026-11-15) is a later feature with paths of its own (amCarry/<kid>/<id>, the log line and last week's check-off it writes) — not KIDYEAR's.
-    const SENDAM_REFS = ['"amCarry/"+kid', '"amCarry/"+kid+"/"+id', '"amCarry/"+kid+"/"+id+"/done"', '"routineLog/"+kid+"/"+it.fromWk+"/"+it.fromDay+"/"+lk', '"routineLog/"+kid+"/"+wk+"/"+d+"/"+lk', '"routineLog/"+kid+"/"+wk+"/"+dn', 'it.fromWk+"/sl/"+sk'];
-    const a = refs(src).filter(x => SENDAM_REFS.indexOf(x) < 0), b = refs(MAIN), added = a.filter(x => b.indexOf(x) < 0), gone = b.filter(x => a.indexOf(x) < 0);
-    ok("the same ref() path patterns as main 59b0b15 across index.html — none added, none gone (" + a.length + ")", added.length === 0 && gone.length === 0, { added, gone });
-  } else console.log("  (skip) main not available — pattern compare skipped");
+  // Which index.html to hold up against 59b0b15. KIDYEAR's claim is "this slice adds no write path", so the pair is pinned to
+  // KIDYEAR itself: its merge into main (PR #347, 5e9050fa) against the main it merged onto (7ca02a66) — exactly 0 added, 0 gone.
+  // Holding TODAY's index.html to 59b0b15 instead failed from 2026-11-17 on, because later, intended features add and move
+  // paths of their own (each found with git log -S on index.html):
+  //   🌅 SENDAM eb764ecf (11-15)   — amCarry/<kid>/<id>[/done], routineLog lines, <fromWk>/sl/<step> (was a hand list here)
+  //   🚪 HOUSEDAY e6a88664 (11-17)  — houseDay, houseDay/<iso>/done/<id>, houseDay/<t>/built, amCarry/…/<cid|key>/done,
+  //                                   routineLog/<who>/<wk>/<dn>/<key>
+  //   🙌 HOUSEOVER f7d72a3a (11-18) — houseDay/<iso>/grabs/<id>
+  //   🎁 Gifts Dad sharing abe602e9 (11-20) — giftShare
+  //   🪶 HOUSESLIM 852fc369 + 6da6f0d5 (11-17) — household/jobs/<id>/hold and …/steps/<sid>[/done] moved to house.js (not gone)
+  //   ⚡ 3a ee75bb14 (11-19)       — library/scans read one book at a time (library/scans/<book>, SCANLAZY)
+  // None is KIDYEAR's; a whole-app compare would need every future feature to edit this file. KIDYEAR_VS=<file> still
+  // compares the working index.html to that file (for a branch that edits KIDYEAR).
+  const git = r => { try { return cp.execSync("git show " + r + ":index.html", { cwd: __dirname, maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] }).toString(); } catch (e) { return null; } };
+  const NOW = process.env.KIDYEAR_VS ? src : git("5e9050fa"), BASE = process.env.KIDYEAR_VS ? MAIN : git("7ca02a66");
+  if (NOW && BASE) {
+    const a = refs(NOW), b = refs(BASE), added = a.filter(x => b.indexOf(x) < 0), gone = b.filter(x => a.indexOf(x) < 0);
+    ok("KIDYEAR (PR #347) left the ref() path patterns across index.html as they were — none added, none gone (" + a.length + ")", added.length === 0 && gone.length === 0, { added, gone });
+  } else console.log("  (skip) 5e9050fa / 7ca02a66 not available — pattern compare skipped");
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

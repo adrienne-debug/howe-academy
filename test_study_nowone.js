@@ -64,11 +64,16 @@ console.log("── (1) the one row ──");
 
 console.log("── (2) Mom's 🔴 Now: same nowN as main ──");
 let base = ""; try { base = cp.execSync("git show origin/main:index.html", { cwd: __dirname, encoding: "utf8", maxBuffer: 1 << 28 }); } catch (e) {}
+// (2)'s before/after needs the main this row REPLACED. Once PR #346 merged (2026-11-11, ed161d5b "📚 One study row in 🔴 Now
+// (red light), Open › → Home Base ▸ HQ … The 🚩 Study sessions rows and the 🕒 Study sittings today rows in Mom's 🔴 Now become
+// ONE row"), origin/main already draws the one row, so "main drew the two lists" could never hold again. The "before" is pinned
+// to e642febf, the main that commit was built on. (4)'s byte-for-byte checks still compare to today's origin/main.
+let pre = ""; try { pre = cp.execSync("git show e642febf:index.html", { cwd: __dirname, encoding: "utf8", maxBuffer: 1 << 28 }); } catch (e) {}
 const nowLines = s => { const md = sliceFn("renderMomsDay", s), i = md.indexOf("try{ const _ap=_momApprovalsHTML();"), j = md.indexOf("try{ const _mm=mmAlertsNowHTML();"); return md.slice(md.indexOf("\n", i) + 1, j); };
 const runNow = (lines, md) => { const c = world(md); c.mmAlertsNowHTML = () => ({ n: 2, html: "<MM/>" }); return vm.runInContext("(function(){ let nowN=0, h=''; " + lines + " try{ const _mm=mmAlertsNowHTML(); nowN+=_mm.n; h+=_mm.html; }catch(e){} return {nowN:nowN,h:h}; })()", c); };
 { const L = nowLines(src);
   ok("🔴 Now's study lines draw studyNowOneHTML", /studyNowOneHTML\(_stA\|\|\[\],_stR\|\|\[\]\)/.test(L) && /nowN\+=_sa\.n/.test(L) && /nowN\+=_sr\.n/.test(L), L);
-  if (base) { const LM = nowLines(base);
+  if (pre) { const LM = nowLines(pre);
     [["busy", busy], ["all judged", judgedAll], ["no study data", () => ({})]].forEach(([nm, f]) => {
       const a = runNow(L, f()), b = runNow(LM, f());
       ok(nm + ": nowN is main's (" + b.nowN + ")", a.nowN === b.nowN, [a.nowN, b.nowN]);
@@ -77,7 +82,7 @@ const runNow = (lines, md) => { const c = world(md); c.mmAlertsNowHTML = () => (
     ok("busy: main drew the two lists, this draws one row instead", /Study sittings today/.test(b.h) && !/Study sittings today|Study sessions — needs a look/.test(a.h) && (a.h.match(/class="study-nowone"/g) || []).length === 1, a.h.slice(0, 300));
     ok("⏱ Timed cards / 🩺 Check-ups still drawn as before", a.h.endsWith("<MM/>") && b.h.endsWith("<MM/>"));
     ok("no study data: nothing drawn, as on main", runNow(L, {}).h === "<MM/>" && runNow(LM, {}).h === "<MM/>");
-  } else console.log("  (skip — no origin/main to compare)");
+  } else console.log("  (skip — no e642febf (the pre-#346 main) to compare)");
 }
 
 console.log("── (3) Open › → Home Base ▸ HQ, the full list there ──");
@@ -95,7 +100,7 @@ console.log("── (4) not changed; nothing written ──");
   ok("no Firebase write from any of it", c._writes.length === 0, c._writes);
   ok("no db / storage in the block", !/db\.ref|HA_LS|\.set\(|\.update\(/.test(ONE));
   if (base) {
-    ok("MSTALERT + SREVIEW (what's flagged, what's counted, the HQ 🚩 box) are byte-for-byte main's", cut("// MSTALERT_START", "// SREVIEW_END", base) === CODE);
+    ok("MSTALERT + SREVIEW (what's flagged, what's counted, the HQ 🚩 box) are byte-for-byte main's", cut("// MSTALERT_START", "// SREVIEW_END", base).replace(/[^\n]*MIXMISSING[^\n]*\n/g, "").replace(/,mixmissing:"⚠️"\};   \/\/ ⚠️ MIXMISSING/, "};") === CODE.replace(/[^\n]*MIXMISSING: cards waiting[^\n]*\n/g, "").replace(/,mixmissing:"⚠️"\};   \/\/ ⚠️ MIXMISSING/, "};"));   // ⚠️ MIXMISSING (2026-11-21) adds a ⚠️ row kind on purpose
     ok("the Home Base badge list (hbAlertItems) is byte-for-byte main's", sliceFn("hbAlertItems", base) === sliceFn("hbAlertItems"));
     ok("⏱ MINMINUTES Now rows (mmAlertsNowHTML) are main's", sliceFn("mmAlertsNowHTML", base) === sliceFn("mmAlertsNowHTML"));
     ["REPROJ", "MOMLOOP", "DAYSTART", "SCHOOLEND"].forEach(k => ok("schedule block " + k + " is byte-for-byte main's", cut("// " + k + "_START", "// " + k + "_END", base) === cut("// " + k + "_START", "// " + k + "_END")));

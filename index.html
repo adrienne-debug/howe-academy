@@ -41,6 +41,24 @@
 }
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 html{overflow-x:hidden}   /* NAVSTACK: a too-wide row can never push the page (and its sticky bars) sideways. On html only — on body too it would become the scroll box and sticky would stop working. */
+/* POPUPW_START — pop-ups stay on a phone's screen (her Planning Board note 2026-10-04: "Pop-ups run off the right edge at phone
+   width (page is 468px wide on a 375 phone) — all pop-ups incl. PIN box"; her yes to the fix 2026-11-21).
+   Cause, measured 2026-11-21 at 375 px: one row wider than the phone (School Room's mode bar reached 429 px) makes a phone
+   browser lay the whole page out that wide. Every pop-up is position:fixed over that wider page, so it centred on 429 (the
+   note saw 468) and ran off the right edge — the blockout box 54 px, the kid "Is this …?" box 36 px, the PIN box sat 27 px
+   off centre. html{overflow-x:hidden} above hides the sideways scroll but does NOT stop the page growing.
+   1. body clips sideways at its own edge, so no row (today's or a later one) can make the page wider than the screen.
+      clip, not hidden: clip makes no scroll box, so the sticky bars keep sticking (the reason NAVSTACK kept it off body).
+      Pop-ups are position:fixed, so the clip never cuts them. Tablet / TV / desktop: nothing reaches past the body there,
+      so nothing changes. A browser too old for clip ignores the line (as before).
+   2. Belt and braces for that older browser: the shared pop-up layers and the code / sign-in boxes are never wider than
+      the screen (100vw is the screen width even when the page has grown), so they still centre on what the phone shows.
+      Their inner boxes already carry width:100% + a max-width, and scroll inside when tall.
+   3. The row that did it, School Room's mode bar (play.js #pl-modebar), now wraps its "all home ✓" count onto a second
+      line on a narrow phone instead of being cut off by 1. On a wider screen it fits on one line, as before. */
+body{overflow-x:clip}
+.dlg-overlay,.bo-dlg,.kk-confirm,.ce-sheet,.mast-vis-overlay,#ha-auth,#kit-pin-wrap>div,#store-pin-wrap>div{max-width:100vw}
+/* POPUPW_END */
 
 /* NAVSTACK_CSS_START — the sticky stack (her report 2026-10-22: "the navy top bar shifts a little bit at times").
    Every bar under the navy header sticks at the bottom edge of the bar above it:
@@ -61925,8 +61943,8 @@ function ctMoreHTML(items){
 // this week, read through the week builder's OWN filter (retrOn → retrDayKinds, both rows, RETRFAM's no-ladder rule) — never
 // re-derived. Title from RETR_SLOT_TITLE (the card's own words), minutes from retrSlotMinutes, with Mom / on their own from
 // retrSlotMom, so the line, the Min column and the card agree. A kind saved in the plan that the builder drops for this child
-// (Sprint with no ladder) shows greyed. Nothing here writes: a tap only opens Mastery ▸ Settings ▸ 🔁 Retrieval Plan on
-// this child. A child with no line that runs and no old-style drills* subject gets one dashed "set it up" chip.
+// (Sprint with no ladder) shows greyed. Nothing here writes: a tap on a line that runs opens its day sheet (DRILLDAYS, below);
+// a greyed line or the empty chip opens Mastery ▸ Settings ▸ 🔁 Retrieval Plan on this child. A child with no line that runs and no old-style drills* subject gets one dashed "set it up" chip.
 const DR_KINDS=["drill","match","sprint","recheck"];   // fixed order: Daily Drill, Match & Play, Sprint, Sprint Re-checks
 const DR_DAY_SHORT={mon:"Mon",tue:"Tue",wed:"Wed",thu:"Thu",fri:"Fri"};
 // Pure: on = {mon:[kinds the builder makes that day]…}, saved = {mon:[kinds stored that day]…} → rows in the fixed order.
@@ -61981,7 +61999,7 @@ function drStripChips(kid){
   const base='margin:2px 4px 2px 0;padding:3px 10px;border-radius:12px;background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;max-width:100%;text-align:left;white-space:normal;';
   let h='';
   rows.forEach(function(r){
-    h+='<button class="dr-row" onclick="'+go+'" title="'+(r.ok?'Card practice — tap to see or change the days':'This kind makes no card for '+nm+' — tap to change the plan')+'" style="'+base+'border:1px solid #c4b5fd;color:'+(r.ok?'#6d28d9':'#9ca3af')+'">'+esc(drLineText(r,name))+'</button>';
+    h+='<button class="dr-row" onclick="'+(r.ok?'drDaysOpen(\''+esc(arg)+'\',\''+r.kind+'\')':go)+'" title="'+(r.ok?'Card practice — tap to see or change the days':'This kind makes no card for '+nm+' — tap to change the plan')+'" style="'+base+'border:1px solid #c4b5fd;color:'+(r.ok?'#6d28d9':'#9ca3af')+'">'+esc(drLineText(r,name))+'</button>';
   });
   if(!rows.some(function(r){ return r.ok; })&&!drHasOldDrills(kid))
     h+='<button class="dr-empty" onclick="'+go+'" style="'+base+'border:1.5px dashed #a78bfa;color:#6d28d9">＋ \u{1F0CF} Flash-card practice isn’t on '+nm+'’s week yet — set it up</button>';
@@ -61996,6 +62014,144 @@ function drGo(kid){
   mpSchoolOpen('mhq');
 }
 // DRILLROWS_END
+// DRILLDAYS_START — 🃏 tap a card-practice line on the Curriculum page → that kind's days, Mon–Fri on/off (her yes 2026-11-21:
+// "get slice 3 going"; slice 3 of DESIGN_drill_rows_curriculum_2026-11-19.md, §3.3 / §3.7 / §4). Her words 2026-11-19: "it should
+// be with the daily subjects in curriculum … it needs to be uniform". A line that makes a card opens a small sheet (the subject
+// card's own bottom-sheet look): the child, the kind's title, minutes and with Mom / on their own as the line shows them, five
+// day buttons lit from the SAVED plan as the week builder reads it (drPlanFor → retrOn + retrDayKinds — no second copy), "saves
+// by itself", Done, and a link to the Mastery panel for the numbers. Storage is unchanged (§3.7): a kind per day in two slots,
+// week[day] and week2[day]. A day tap maps per-kind on/off onto them with drDaysMap (pure): on → the free slot (week first);
+// both slots hold other kinds → NOT saved, the two-a-day message names them (two a day stays the limit — the design's
+// recommendation, Q3 still open); off → that slot becomes "off", the other is left alone. Each tap saves at once through the
+// one plan write (drPlanWrite, DRILLSAVE) — the whole week row (off stored as "off", so a first tap never leaves the other
+// days to the built-in starting days) and the cleaned week2 (off / same-as-week dropped), the shape retrAdminSave writes,
+// never settings — then the existing live pass (retrLiveQueue) brings this week's cards along. The stale-copy trap (§4): the
+// Mastery panel keeps its editor copy after a save, so a later number change there would write the OLD days back — every
+// write here drops that copy for the child. Mom only (momHere) on open and on every tap. Greyed "can't run" lines and the
+// empty-state chip still go to Mastery (drGo). Test: test_drill_days.js.
+const DR_DAY_LONG={mon:"Monday",tue:"Tuesday",wed:"Wednesday",thu:"Thursday",fri:"Friday"};
+const DR_KIND_ABOUT={drill:"You show the cards, {k} answers.",match:"A matching game {k} plays alone.",
+  sprint:"Timed rounds up {k}’s sprint ladder, with you.",recheck:"{k} re-checks cards passed earlier, with you."};
+// Pure. w1 / w2 = the two slots as the builder reads them (retrWeek / retrWeek2); turn `kind` on (on=true) or off for `day`.
+// → {ok:true, changed, week, week2} with week = all five days ("off" stored) and week2 cleaned (off / same-as-week dropped),
+//   or {ok:false, full:[kind in week, kind in week2]} when the day already holds two other kinds (nothing to save).
+function drDaysMap(w1,w2,day,kind,on){
+  const days=(typeof RETR_DAYS!=="undefined")?RETR_DAYS:["mon","tue","wed","thu","fri"];
+  const a={}, b={};
+  days.forEach(function(d){
+    a[d]=((w1||{})[d])||"off";
+    const x=((w2||{})[d])||"off"; b[d]=(x===a[d])?"off":x;   // the same kind twice is never kept
+  });
+  let changed=false;
+  if(days.indexOf(day)>=0&&kind&&kind!=="off"){
+    if(on){
+      if(a[day]!==kind&&b[day]!==kind){
+        if(a[day]==="off"){ a[day]=kind; changed=true; }
+        else if(b[day]==="off"){ b[day]=kind; changed=true; }
+        else return {ok:false,full:[a[day],b[day]]};
+      }
+    } else {
+      if(a[day]===kind){ a[day]="off"; changed=true; }
+      if(b[day]===kind){ b[day]="off"; changed=true; }
+    }
+  }
+  const week={}, week2={};
+  days.forEach(function(d){ week[d]=a[d]; if(b[d]!=="off"&&b[d]!==a[d]) week2[d]=b[d]; });
+  return {ok:true,changed:changed,week:week,week2:week2};
+}
+function _drMom(){ return typeof momHere==="function"&&!!momHere(); }
+function _drCanRun(kid,kind){ return DR_KINDS.indexOf(kind)>=0&&((typeof retrHasLadder!=="function")||retrHasLadder(kid)||!!(typeof RETR_NOLADDER_KINDS!=="undefined"&&RETR_NOLADDER_KINDS[kind])); }
+// The days this kind is lit — the same reader the line uses (drPlanFor: retrOn, then retrDayKinds per day).
+function drDaysLit(kid,kind){
+  const on=drPlanFor(kid).on;
+  return Object.keys(DR_DAY_SHORT).filter(function(d){ return (on[d]||[]).indexOf(kind)>=0; });
+}
+let drDaysKid=null, drDaysKind=null, drDaysFull=null, drDaysSaved=null, _drDaysTimer=null;
+// The one write from this sheet: week + week2 through drPlanWrite (never settings), the live pass queued, and the Mastery
+// panel's in-memory editor copy for this child dropped so it can never write the old days back (§4).
+function drDaysWrite(kid,week,week2){
+  if(!_drMom()) return false;
+  if(!drPlanWrite(kid,{week:week,week2:week2},{rhythm:true})) return false;
+  try{ if(retrAdminLocal&&retrAdminLocal.kid===kid) retrAdminLocal=null; }catch(e){}
+  return true;
+}
+function drDaysTap(day){
+  const kid=drDaysKid, kind=drDaysKind;
+  if(!kid||!kind||!DR_DAY_SHORT[day]||!_drMom()||!_drCanRun(kid,kind)) return false;
+  const lit=drDaysLit(kid,kind).indexOf(day)>=0;
+  const r=drDaysMap(retrWeek(kid),retrWeek2(kid),day,kind,!lit);
+  drDaysFull=null;
+  let saved=false;
+  if(!r.ok) drDaysFull={day:day,kinds:r.full};
+  else if(r.changed&&drDaysWrite(kid,r.week,r.week2)){ drDaysSaved=kid+"|"+kind; saved=true; }
+  drDaysRender();
+  return saved;
+}
+function drDaysHtml(kid,kind){
+  const name=(typeof cap==="function")?cap(kid):kid, nm=esc(name);
+  const arg=esc(String(kid).replace(/\\/g,"\\\\").replace(/'/g,"\\'"));
+  const col=((typeof KID_COLOR!=="undefined"&&KID_COLOR)||{})[kid]||"#6d28d9";
+  const t=(typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[kind])||kind;
+  const min=(typeof retrSlotMinutes==="function")?retrSlotMinutes(kid,kind):null;
+  const mom=((typeof retrSlotMom==="function")?retrSlotMom(kind):"required")==="none"?"on their own":"with Mom";
+  const lit=drDaysLit(kid,kind);
+  let h='<div class="ce-sheet dr-days" onclick="if(event.target===this)drDaysClose()"><div class="ce-sheet-box">';
+  h+='<div class="ce-sheet-title" style="margin-bottom:4px">'+esc(t)+' <span style="font-family:\'DM Sans\',sans-serif;font-size:13px;font-weight:700;color:'+col+'">· '+nm+'</span></div>';
+  h+='<div style="font-size:12px;color:var(--muted)">'+esc((DR_KIND_ABOUT[kind]||"").replace("{k}",name))+'</div>';
+  h+='<div class="ce-sheet-lbl">Days</div><div class="ce-chips">';
+  Object.keys(DR_DAY_SHORT).forEach(function(d){ const on=lit.indexOf(d)>=0;
+    h+='<button class="ce-chip dr-day'+(on?' on':'')+'" aria-pressed="'+on+'" onclick="drDaysTap(\''+d+'\')" style="'+(on?'background:'+col+';color:#fff;border-color:transparent':'color:var(--muted)')+'">'+DR_DAY_SHORT[d]+'</button>'; });
+  h+='</div>';
+  if(drDaysFull){
+    const ks=drDaysFull.kinds, dl=DR_DAY_LONG[drDaysFull.day]||drDaysFull.day;
+    const tt=function(k){ return (typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[k])||k; };
+    h+='<div class="dr-full" style="margin-top:10px;padding:8px 10px;border-radius:10px;background:#fef3c7;border:1px solid #fcd34d;font-size:12px;color:#92400e">'
+      +esc(dl)+' already has two: '+esc(tt(ks[0]))+' and '+esc(tt(ks[1]))+'. Turn one of those off for '+esc(dl)+' first.<div style="margin-top:6px">';
+    ks.forEach(function(k){
+      h+=_drCanRun(kid,k)
+        ?'<button class="ce-chip" onclick="drDaysOpen(\''+arg+'\',\''+k+'\')" style="margin:2px 4px 0 0">'+esc(tt(k))+' →</button>'
+        :'<button class="ce-chip" onclick="drDaysMastery()" style="margin:2px 4px 0 0;color:#9ca3af">'+esc(tt(k))+' — can’t run for '+nm+' yet · change in Mastery →</button>';
+    });
+    h+='</div></div>';
+  }
+  h+='<div style="margin-top:12px;font-size:12px;font-weight:700;color:#6d28d9">'+(min!=null?min+' min · ':'')+mom+'</div>';
+  h+='<div class="dr-saved" style="margin-top:6px;font-size:12px;color:var(--muted)">'+(drDaysSaved===kid+"|"+kind
+    ?'<b style="color:#15803d">Saved ✓</b>'+((typeof retrLivePending==="function"&&retrLivePending(kid))?' · this week’s cards update in a moment':'')
+    :'Tap a day on or off — it saves by itself.')+'</div>';
+  h+='<div style="margin-top:10px"><a href="javascript:void(0)" onclick="drDaysMastery()" style="font-size:12px;color:#6d28d9;font-weight:700">More settings (pass mark, minutes…) in Mastery →</a></div>';
+  h+='<div class="ce-sheet-actions"><button class="ce-btn-cancel" onclick="drDaysClose()">Done</button></div>';
+  return h+'</div></div>';
+}
+function drDaysRender(){
+  if(!drDaysKid||typeof document==="undefined"||!document.body) return;
+  let w=document.getElementById("dr-days-wrap");
+  if(!w){ w=document.createElement("div"); w.id="dr-days-wrap"; document.body.appendChild(w); }
+  const h=drDaysHtml(drDaysKid,drDaysKind), was=!!w.querySelector(".ce-sheet.open");
+  w.innerHTML=was?h.replace('class="ce-sheet ','class="ce-sheet open '):h;
+  w.style.display="block"; document.body.style.overflow="hidden";
+  if(!was) requestAnimationFrame(function(){ const s=w.querySelector(".ce-sheet"); if(s) s.classList.add("open"); });
+}
+function drDaysOpen(kid,kind){
+  if(!kid||!_drMom()) return false;
+  if(!_drCanRun(kid,kind)){ drGo(kid); return false; }   // a kind that makes no card for this child stays a pointer
+  if(_drDaysTimer){ clearTimeout(_drDaysTimer); _drDaysTimer=null; }
+  if(drDaysKid!==kid||drDaysKind!==kind) drDaysSaved=null;
+  drDaysKid=kid; drDaysKind=kind; drDaysFull=null;
+  drDaysRender();
+  return true;
+}
+function drDaysClose(quiet){
+  drDaysKid=null; drDaysKind=null; drDaysFull=null; drDaysSaved=null;
+  if(typeof document!=="undefined"&&document.body){
+    document.body.style.overflow="";
+    const w=document.getElementById("dr-days-wrap");
+    if(w){ const s=w.querySelector(".ce-sheet"); if(s) s.classList.remove("open");
+      _drDaysTimer=setTimeout(function(){ w.style.display="none"; w.innerHTML=""; _drDaysTimer=null; },250); }
+  }
+  if(!quiet&&typeof renderAll==="function") renderAll();   // the line behind shows the new days
+}
+function drDaysMastery(){ const kid=drDaysKid; drDaysClose(true); if(kid) drGo(kid); }
+// DRILLDAYS_END
 function renderCurrGrid(el){
   if(!currData||!currData.subjects){
     el.innerHTML+='<div style="padding:40px 20px;text-align:center;color:var(--muted)"><div style="font-size:36px;margin-bottom:8px">\u{1F4CA}</div><div style="font-weight:600;margin-bottom:4px">No curriculum yet</div><div style="font-size:12px">Upload an Excel file or build subjects first.</div></div>';
@@ -72006,6 +72162,78 @@ function mstMixSession(kid) {
   return null;
 }
 
+// MIXMISSING_START — ⚠ cards waiting for a Daily Mix that is not on the schedule (her yes 2026-11-21: "warn Mom when a child has
+// weekly cards waiting in a Daily Mix that is not on their schedule" — a warning only, no automatic fix). The incident (another
+// family, found 2026-11-19): a child had a Daily Mix study session but no schedule card that opens it. Cards that climb to the
+// Mix's rungs belong to the Mix (mstMixOwns) and Mom's drill skips them (mstOwnedIds, because a Mix exists), so 56 weekly cards
+// showed nowhere — nothing crashed and nothing said so. A kid with NO Mix session is not stranded: the drill keeps those cards.
+// THE RULE (mixMissingCount, pure): the kid has a Mix session (kind "mix") AND it is not on the schedule AND n > 0, where
+//   n = the kid's cards mstMixOwns owns right now (the app's own rule, no copy — active, not parked/never-drill, at or above a
+//       deck session's mixInAt and below its handOffAt), due today or not: none of them comes up anywhere else, ever.
+//   "on the schedule" = one of the kid's curriculum subjects opens this Mix (subject.study === the Mix's sid — the link a
+//       schedule card follows to open a sitting, sbCardSid / the day list) and that subject is not ⏸ paused and not set to
+//       0 times a week. That subject is what the week builder lays as cards, and it is exactly what the fix adds, so the
+//       warning goes away the moment Mom adds it (no second subject by mistake); the card itself comes with the next week
+//       build / Regenerate.
+// Shown (Mom only — momHere, never Kids' Corner): one line at the top of that kid's Mastery page (Drills and 📚 Study views),
+// and one row in the 🚩 Study sessions — needs a look list (MSTALERT: 🔴 Now, Mom HQ, the Home Base badge). Cost: memoized per kid
+// on the card / session / settings / subject objects (60 s at most), and it stops before touching a card when the kid has no
+// Mix or the Mix is linked. Reads only — nothing is written, nothing about any pile, drill or schedule changes.
+function mixOnSchedule(sid,subjects){
+  return Object.keys(subjects||{}).some(k=>{ const s=subjects[k];
+    return !!(s&&typeof s==="object"&&s.study===sid&&!s.paused&&String(s.timesPerWeek)!=="0"); });
+}
+// sessions = mstSessions(kid), items = the kid's cards (array), ladder = the kid's drill ladder, subjects = curriculum/subjects/<kid>
+// → null (nothing to say) or {sid, name, emoji, n}
+function mixMissingCount(sessions,items,ladder,subjects){
+  const mix=(sessions||[]).find(s=>s&&s.kind==="mix"); if(!mix) return null;
+  if(mixOnSchedule(mix.sid,subjects)) return null;
+  let n=0; (items||[]).forEach(it=>{ if(it&&mstMixOwns(sessions,it,ladder)) n++; });
+  return n>0?{sid:mix.sid,name:String(mix.name||"Daily Mix"),emoji:String(mix.emoji||""),n:n}:null;
+}
+let _mixMissMemo={};
+function mixMissingFor(kid){
+  if(!kid||typeof masteryData==="undefined"||!masteryData) return null;
+  const raw=masteryData[kid], ses=masteryData[kid+"_sessions"], st=masteryData[kid+"_settings"];
+  const subs=(typeof gwGetSubjects==="function")?gwGetSubjects(kid):{};
+  if(!ses||typeof ses!=="object") return null;
+  const now=Date.now(), m=_mixMissMemo[kid];
+  if(m&&m.raw===raw&&m.ses===ses&&m.st===st&&m.subs===subs&&now-m.t<60000) return m.out;
+  let out=null;
+  try{
+    // cheap exits first: no Mix record, or the Mix is linked → no card is looked at
+    const mixSid=Object.keys(ses).find(k=>ses[k]&&ses[k].kind==="mix");
+    if(mixSid!=null&&!mixOnSchedule(mixSid,subs)){
+      const sessions=mstSessions(kid)||[];
+      let items=raw||[]; if(!Array.isArray(items)) items=Object.values(items); items=items.filter(Boolean);
+      const _mk=masteryKid; let ladder; masteryKid=kid; try{ ladder=mastDrillSettings().ladder; } finally { masteryKid=_mk; }
+      out=mixMissingCount(sessions,items,ladder,subs);
+    }
+  }catch(e){ out=null; }
+  _mixMissMemo[kid]={raw:raw,ses:ses,st:st,subs:subs,t:now,out:out};
+  return out;
+}
+// The real menu words (cw — a family's own wording follows): Curriculum ▸ ＋ Add subject ▸ The same every day ▸ 📚 Study session ▸ <the Mix>
+function mixMissingPath(o){
+  const w=k=>(typeof cw==="function")?cw(k):k;
+  return "School ▸ Curriculum ▸ "+w("addSubject")+" ▸ "+w("daily")+" ▸ \u{1F4DA} Study session ▸ "+o.name;
+}
+// The Mastery page line (plain text; the caller escapes)
+function mixMissingLine(kid,o){
+  return "⚠ "+o.n+" card"+(o.n===1?" is":"s are")+" waiting for a "+o.name+", but "+cap(kid)+" has no "+o.name+" on the schedule. Add it: "+mixMissingPath(o)+".";
+}
+// The 🚩 alert row's text (the row puts the kid's name in front; "<Mix>: …" names it in 🔴 Now's short line)
+function mixMissingAlertText(o){
+  return o.name+": "+o.n+" card"+(o.n===1?"":"s")+" waiting, but it is not on the schedule. Add it: "+mixMissingPath(o)+".";
+}
+function mixMissingHtml(kid){
+  const mom=(typeof momHereCards==="function")?momHereCards():((typeof momHere==="function")&&momHere());
+  if(!mom) return "";
+  const o=mixMissingFor(kid); if(!o) return "";
+  return '<div class="mix-missing" style="margin:10px 0 12px;padding:8px 12px;background:#fffbeb;border-left:4px solid #f59e0b;border-radius:8px;font-size:13px;font-weight:700;color:#92400e;font-family:\'DM Sans\',sans-serif">'+esc(mixMissingLine(kid,o))+'</div>';
+}
+// MIXMISSING_END
+
 // 5. The session that owns `deck`, or null.
 function mstDeckInSession(kid, deck) {
   const sessions = mstSessions(kid);
@@ -72341,6 +72569,27 @@ function mstSittingInit(pile, session, opts) {
   return { cards, queue, passes, counts };
 }
 
+// COMEBACK20_START — a card that needs another look in THIS sitting comes back about 20 cards later, not at the end of the
+// whole line. Her yes 2026-11-21 to: "a card the child is still learning comes back 10–30 cards later instead of at the end of the
+// whole line." Why (memory note project_howe_sitting_size_research.md, 11/17): in a 75–90 card 🌿 sitting a learning card's 2nd
+// look came 75–90 cards after its 1st; the studies she was given found repeats spaced ~10–30 cards apart did best (Karpicke &
+// Bauernschmidt 2011; Pyc & Rawson 2009), nothing was tested past ~30–34 apart, and back-to-back repeats did worst.
+// 20 is OUR choice inside that tested 10–30 range — it is not a number from the research.
+// The rule: the card goes back with MST_COMEBACK_GAP other cards ahead of it; when that many aren't left, it goes to the end of
+// the line exactly as before (so a short sitting is unchanged). Two cards sent back one after the other keep their order and each
+// still has 20 cards between its looks. Order only: how many rights a card needs, what a miss does, passes, Mix's once-through,
+// scoring and what is saved are all as before, and a saved sitting from the old build resumes as it is (the queue is just a list).
+const MST_COMEBACK_GAP = 20;
+// line = the queue WITHOUT the card (already taken out at pos) · pos = where it was · returns a new line with key put back.
+function mstComeback(line, pos, key, gap) {
+  const out = (line || []).slice();
+  const g = (gap == null) ? MST_COMEBACK_GAP : Math.max(0, gap | 0);
+  const at = Math.max(0, pos | 0) + g;
+  if (at >= out.length) out.push(key);   // fewer than `gap` cards left → the end of the line, as before
+  else out.splice(at, 0, key);
+  return out;
+}
+// COMEBACK20_END
 function mstAnswer(state, key, ans) {
   const card = state.cards[key];
   if (!card || card.done) return state;
@@ -72348,6 +72597,12 @@ function mstAnswer(state, key, ans) {
   if (idx === -1) return state;
   if (card.first === null) card.first = ans;
   if (typeof gameCardAnswered === "function") gameCardAnswered(card);   // ⏱ CARDSECS: the first grade stops the card's clock (no-op without gameCardShown)
+  // COMEBACK20: a card that needs another look goes back ~20 cards ahead (end of the line when fewer are left). Guarded so a
+  // harness that loads mstAnswer alone keeps the old push.
+  const _back = () => {
+    if (typeof mstComeback === "function") { const nq = mstComeback(state.queue, idx, key); state.queue.length = 0; nq.forEach(k => state.queue.push(k)); }
+    else state.queue.push(key);
+  };
   if (ans !== "good") card.misses = (card.misses | 0) + 1;   // 🎮 MISSPLAY: how often this card was missed in the sitting (study misses join the practice list)
 
   if (card.kind === "review") {
@@ -72355,7 +72610,7 @@ function mstAnswer(state, key, ans) {
     if (ans === "good" || card.once) {   // MIXONCE: a Mix card's miss is scored ✗ (and joins the missed-card games list) — it does not go back in line
       card.done = true;
     } else {
-      state.queue.push(key);
+      _back();
     }
   } else {
     state.queue.splice(idx, 1);
@@ -72364,11 +72619,11 @@ function mstAnswer(state, key, ans) {
       if (card.goods >= (card.passes != null ? card.passes : state.passes)) {   // PATSIDE: a repeat-side day asks for 1
         card.done = true;
       } else {
-        state.queue.push(key);
+        _back();
       }
     } else {
       card.goods = 0;
-      state.queue.push(key);
+      _back();
     }
   }
   return state;
@@ -77234,7 +77489,7 @@ function _mstSaveInner(){
 // "Mom sent this back"; the redo stamps redoneTs and the row turns into ✅ redone. A sitting saved before
 // this shipped has no `before` — Send back then reopens it but can't take back what it moved (Mom is told).
 const MST_ALERT_FAST_SECS=3, MST_ALERT_MIN_CARDS=5, MST_ALERT_PCT=60, MST_ALERT_DROPS=3, MST_ALERT_STUCK_DAYS=7;
-const MST_ALERT_ICON={fast:"⚡",miss:"❌",notdone:"⏰",stuck:"\u{1F501}",sentback:"↩️",redone:"✅"};
+const MST_ALERT_ICON={fast:"⚡",miss:"❌",notdone:"⏰",stuck:"\u{1F501}",sentback:"↩️",redone:"✅",mixmissing:"⚠️"};   // ⚠️ MIXMISSING
 const MST_BACK_FIELDS=["tier","consecutive_correct","cycle","drop_count","status","tally_dots","next_due","dynamic","dynSource","dynFromTier","dynAddedAt"];
 let _mstAlertList=[];
 function mstAlertKids(){
@@ -77310,6 +77565,7 @@ function mstAlertsFor(kid,nowMin){
       .sort((a,b)=>(b.drop_count||0)-(a.drop_count||0));
     if(stuck.length) out.push({kind:"stuck",text:"Keeps missing: "+stuck.slice(0,6).map(i=>_mstAlertPlain(i.prompt)+" ("+i.drop_count+"×)").join(", ")+(stuck.length>6?" +"+(stuck.length-6)+" more":"")});
   }catch(e){}
+  try{ const _mm=(typeof mixMissingFor==="function")?mixMissingFor(kid):null; if(_mm) out.push({kind:"mixmissing",sid:_mm.sid,text:mixMissingAlertText(_mm)}); }catch(e){}   // ⚠️ MIXMISSING: cards waiting for a Daily Mix that is not on the schedule
   return out;
 }
 function mstAlertsAll(){
@@ -80546,6 +80802,7 @@ function _renderMasteryInner(el){
   // MASTSET (her yes 2026-11-02): the ADMIN VIEW (PIN box, the "everything moved" card, the Retrieval Plan) is gone from this page —
   // mastView 'admin' is turned into 'drill' at the top of this function; renderMastAdmin / mastAdminCheckPin stay for the record.
 
+  if(!(typeof mastBare!=="undefined"&&mastBare)&&(mastView==="drill"||mastView==="study")&&typeof mixMissingHtml==="function"){ try{ h+=mixMissingHtml(masteryKid); }catch(e){} }   // ⚠️ MIXMISSING: Mom only — cards waiting for a Daily Mix that is not on the schedule
   // ── 📚 STUDY VIEW (study sessions: learn a deck Anki-style, own pile, own pace) ──
   if(mastView==="study"){
     h+=(typeof renderMastStudy==="function")?renderMastStudy():'';
