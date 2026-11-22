@@ -54,7 +54,7 @@ console.log("\n# seasonkid.js itself: what it can never reach");
   const code = KSRC.replace(/^\s*\/\/.*$/gm, "");
   ok("it never names Mom's secret node — not in code, not even in a comment", KSRC.indexOf("seasonSecret") < 0 && !/secret\//i.test(KSRC));
   ok("nor the gift list, the whole-season lines, Mom's or Dad's day, or the Kitchen", !/gifts|seasons\/extra|momday|dadday|kitchen|wishes/.test(code));
-  ok("its database calls: the season list, ONE season's ideas, and ONE update door — nothing else", (code.match(/db\.ref\(/g) || []).length === 3 && /db\.ref\("seasons\/list"\)/.test(code) && /db\.ref\("seasons\/ideas\/"\+sid\)/.test(code) && /if\(live\(\)\)db\.ref\(\)\.update\(up\);/.test(code));
+  ok("its database calls: the season list, ONE season's ideas, and ONE update door — nothing else", (code.match(/db\.ref\(/g) || []).length === 4 && /db\.ref\("seasonJobs\/"\+k\)/.test(code) && /db\.ref\("seasons\/list"\)/.test(code) && /db\.ref\("seasons\/ideas\/"\+sid\)/.test(code) && /if\(live\(\)\)db\.ref\(\)\.update\(up\);/.test(code));
   ok("it never does a one-time read", !/\.once\(/.test(code) && !/\.get\(\)/.test(code));
   ok("it never writes the calendar (a kid cannot schedule here)", !/["'`]calendar\//.test(code) && !/calSave|kcSaveEvent/.test(code));
   ok("no family's names, no Santa, no 🔀, no confirm()/alert()", !/lincoln|ellis|\blucy\b|julian|howe|dewalt|burris|polar|disney|santa/i.test(KSRC) && KSRC.indexOf("\u{1F500}") < 0 && !/\b(confirm|alert|prompt)\(/.test(code));
@@ -68,9 +68,9 @@ console.log("\n# seasonkid.js itself: what it can never reach");
 console.log("\n# listening: only the list, and only a season Mom opened to the kids");
 {
   const o = kidWorld(); const h = o.W.seasonKidPageHTML("ava");
-  ok("opening → ONE listener, on seasons/list; the page says Opening…", o.on.join() === "seasons/list" && /Opening…/.test(h) && /id="sk-root"/.test(h));
+  ok("opening → listeners on seasons/list and (SEASONJOBS step B) this kid's own jobs; the page says Opening…", o.on.join() === "seasons/list,seasonJobs/ava" && /Opening…/.test(h) && /id="sk-root"/.test(h));
   o.fire["seasons/list"]({ xmas: LIST().xmas, hush: { name: "HUSHSEASON", ts: 2 }, old: { name: "OLDSEASON", kids: true, closed: true, ts: 0 } });
-  ok("the list is in → it listens to the open season's ideas, and to no other season's", o.on.join() === "seasons/list,seasons/ideas/xmas", o.on);
+  ok("the list is in → it listens to the open season's ideas, and to no other season's", o.on.join() === "seasons/list,seasonJobs/ava,seasons/ideas/xmas", o.on);
   ok("a season that is not open to the kids is never shown — not even its name", o.html().indexOf("HUSHSEASON") < 0 && o.html().indexOf("OLDSEASON") < 0 && /Winter fun/.test(o.html()));
   ok("until that season's ideas are in, it says Opening… (never 'No ideas yet')", /Opening…/.test(o.html()) && !/No ideas yet/.test(o.html()) && !/skNew\(\)/.test(o.html()));
   o.fire["seasons/ideas/xmas"](IDEAS().xmas);
@@ -79,18 +79,18 @@ console.log("\n# listening: only the list, and only a season Mom opened to the k
   ok("an open season with nothing on it yet says so, with the add button", /No ideas yet/.test(o.html()) && /skNew\(\)/.test(o.html()));
   o.fire["seasons/ideas/xmas"](IDEAS().xmas);
   o.W.seasonKidPageHTML("ava");
-  ok("drawing again adds no listener", o.on.length === 2);
+  ok("drawing again adds no listener", o.on.length === 3);
   const l2 = LIST(); delete l2.xmas.kids; o.fire["seasons/list"](l2);
   ok("Mom closes it to the kids → that listener stops and its ideas are dropped from this device's page", o.off.join() === "seasons/ideas/xmas" && Object.keys(o.T.data()).length === 0 && /Nothing to plan yet/.test(o.html()) && o.html().indexOf("Board game night") < 0, o.off);
   o.fire["seasons/list"](LIST());
-  ok("she opens it again → it listens again", o.on.length === 3 && o.T.refs().join() === "xmas");
+  ok("she opens it again → it listens again", o.on.length === 4 && o.T.refs().join() === "xmas");
   o.W.seasonKidStop();
-  ok("closing the page stops every listener", o.off.slice().sort().join() === "seasons/ideas/xmas,seasons/ideas/xmas,seasons/list" && o.T.refs().length === 0);
+  ok("closing the page stops every listener", o.off.slice().sort().join() === "seasonJobs/ava,seasons/ideas/xmas,seasons/ideas/xmas,seasons/list" && o.T.refs().length === 0);
   ok("nothing was read once, nothing was written", o.once.length === 0 && o.writes.length === 0);
-  ok("no listener ever sat on the whole seasons node or all ideas", o.on.every(p => p === "seasons/list" || /^seasons\/ideas\/[^\/]+$/.test(p)));
+  ok("no listener ever sat on the whole seasons node or all ideas", o.on.every(p => p === "seasons/list" || p === "seasonJobs/ava" || /^seasons\/ideas\/[^\/]+$/.test(p)));
   // leaving Kids' Corner: the next data change stops it
   const p = kidWorld(); p.W.seasonKidPageHTML("ava"); p.fire["seasons/list"](LIST()); p.ctx.tab = "today"; p.fire["seasons/ideas/xmas"]({});
-  ok("the kid leaves Kids' Corner → the next change stops the listeners", p.off.length === 2 && p.T.refs().length === 0, p.off);
+  ok("the kid leaves Kids' Corner → the next change stops the listeners", p.off.length === 3 && p.T.refs().length === 0, p.off);
   ok("only a kid on the roster gets a page", kidWorld().W.seasonKidPageHTML("mom") === "" && kidWorld().W.seasonKidPageHTML("") === "");
 }
 
@@ -130,7 +130,7 @@ console.log("\n# 🤫 surprises: nothing, or only what the calendar already says
   const ev = Object.assign(EV(), { h1: { title: "A surprise", date: "2026-12-05", time: "5:00 PM", who: "family", emoji: "✨" }, h2: { title: "A surprise", date: "2027-02-01", time: "", who: "family", emoji: "✨" }, x1: { title: "A surprise", date: "2026-12-06", time: "", who: "family", emoji: "🎉" } });
   const o = kidWorld(); o.W.seasonKidPageHTML("ava"); o.fire["seasons/list"](LIST()); o.fire["seasons/ideas/xmas"](IDEAS().xmas); o.cal().events = ev; o.root.innerHTML = o.T.inner("ava");
   const h = o.html();
-  ok("the device never asked the database for anything but the list and that season's ideas", o.on.join() === "seasons/list,seasons/ideas/xmas" && o.once.length === 0 && !o.on.some(p => /secret/i.test(p)));
+  ok("the device never asked the database for anything but the list and that season's ideas", o.on.join() === "seasons/list,seasonJobs/ava,seasons/ideas/xmas" && o.once.length === 0 && !o.on.some(p => /secret/i.test(p)));
   ok("(Mom's world does hold the surprises — this proves the test would notice a leak)", JSON.stringify(momSecret).indexOf(SECRET) > 0);
   ok("a 🤐 no-hint surprise shows a kid NOTHING: not its words, not its day", h.indexOf(SECRET2) < 0 && h.indexOf("Dec 24") < 0);
   ok("a ✨ hint shows only 'A surprise' on its day, with sleeps — never its words", h.indexOf(SECRET) < 0 && /✨<\/div><div class="sk-wt"><div class="sk-words">A surprise<\/div><\/div><div class="sk-count"[^>]*><b>in 14 sleeps<\/b><span>Sat Dec 5 · 5:00 PM<\/span>/.test(h), (h.match(/A surprise[\s\S]{0,160}/) || [""])[0]);
@@ -260,7 +260,7 @@ console.log("\n# Mom's page: one switch, and whose idea it is");
   ok("the idea's pop-up says who added it", /💡 Ava’s idea<\/span> — added in Kids’ Corner/.test(root.innerHTML));
   const closed = LIST(); closed.xmas.closed = true; T.setData({ list: closed, ideas: IDEAS() }, {}); T.reset(); T.draw(); writes.length = 0; W.snKids();
   ok("a 📜 past season has no switch", !/snKids\(\)/.test(root.innerHTML) && writes.length === 0);
-  ok("Mom's file still has two listeners and ONE update door", (MSRC.replace(/^\s*\/\/.*$/gm, "").match(/db\.ref\(/g) || []).length === 3);
+  ok("Mom's file has three listeners (seasonJobs: SEASONJOBS step B) and ONE update door", (MSRC.replace(/^\s*\/\/.*$/gm, "").match(/db\.ref\(/g) || []).length === 4);
 }
 
 console.log("\n# index.html: the button, the open/close state, the loader — nothing more");

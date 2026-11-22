@@ -22,10 +22,20 @@
 //   seasons/ideas/<sid>/<iid>/want/<kid>  true | null                               ✋ me too (their own mark only)
 //   seasons/ideas/<sid>/<iid>/star/<kid>  true | null                               ⭐ (their own mark only)
 //   seasons/ideas/<sid>/<iid>             null                                      their OWN idea, only while it has no day and nothing on it
+//
+// 🧹 YOUR JOBS (SEASONJOBS step B, her yes to "Dad & kid to-dos" 2026-11-21): a planner to-do Mom gave THIS kid shows at the top of
+// this page from its show day (its due day, or the days ahead she picked), and the kid ticks it. Read: seasonJobs/<this kid> ONLY
+// (Mom's device writes those records; a surprise's to-dos are never sent). Writes, checked by okPath() for this kid:
+//   seasonJobs/<kid>/<id>/done   "today" | null      only their own job, once it is showing
+//   seasonJobs/<kid>/<id>/bid    <bank entry id> | null   the stars it paid — through the app's OWN bankDirect, the way every chore pays
+// ⭐ pay only if Mom put a number on it: on the tick, bankDirect(kid, stars, label, choreVerifyOn(kid)) (held for Mom's check when that
+// kid's chore check is on); un-tick takes back exactly that entry; a job already holding a bid is never paid twice.
+// A job never gates school, the morning gate, a routine or a missed chore: it lives only on this page.
 (function(){
 "use strict";
 let skList={}, skIdeas={}, skFor=null, skListRef=null, skListCb=null, skLoaded=false, skSid=null, skDraft=null, skAsk=null, skMsg="";
 const skRefs={};   // sid → {r, cb}: one listener per season that is open to the kids
+let skJobs={}, skJobRef=null, skJobCb=null, skJobsOk=false;   // 🧹 seasonJobs/<this kid> — their jobs from the planner
 const SK_STARS=3;   // her answer 2026-11-20: "three ⭐ each per season" — the same count Mom's page uses (a season's own `stars` wins)
 const SK_MAX=30, SK_TEXT=60;   // ideas one kid may add to one season · letters in an idea
 const SK_HINT_TITLE="A surprise", SK_HINT_EMOJI="✨";   // what Mom's page writes on the calendar for a ✨ hint
@@ -57,6 +67,8 @@ function listen(k){
   if(typeof db==="undefined"||!db){skLoaded=true;return;}
   skListRef=db.ref("seasons/list");skListCb=s=>{if(skFor!==k)return;skList=s.val()||{};skLoaded=true;sync();paint();};
   skListRef.on("value",skListCb);
+  skJobRef=db.ref("seasonJobs/"+k);skJobCb=s=>{if(skFor!==k)return;skJobs=s.val()||{};skJobsOk=true;paint();};   // 🧹 their jobs only
+  skJobRef.on("value",skJobCb);
 }
 function sync(){   // listen to the ideas of the seasons that are open to the kids — and to no other season's
   if(typeof db==="undefined"||!db)return;
@@ -66,6 +78,7 @@ function sync(){   // listen to the ideas of the seasons that are open to the ki
 }
 function stop(){
   if(skListRef){try{skListRef.off("value",skListCb);}catch(e){}}
+  if(skJobRef){try{skJobRef.off("value",skJobCb);}catch(e){}}skJobRef=null;skJobCb=null;skJobs={};skJobsOk=false;
   Object.keys(skRefs).forEach(sid=>{try{skRefs[sid].r.off("value",skRefs[sid].cb);}catch(e){}delete skRefs[sid];});
   skListRef=null;skListCb=null;skFor=null;skList={};skIdeas={};skLoaded=false;skSid=null;skDraft=null;skAsk=null;skMsg="";
 }
@@ -92,8 +105,18 @@ function starMax(s){const n=+((s||{}).stars);return n>0?Math.floor(n):SK_STARS;}
 function starsUsed(sid,k){return ideas(sid).filter(it=>it.star&&it.star[k]).length;}
 function canRemove(it,k){return !!(it&&typeof it==="object"&&it.by===k&&!it.did&&!keys(it.ev).length&&!it.sup&&!it.todo&&!it.bookBy);}
 
+// 🧹 their jobs that show today: from the show day on; a done one stays (ticked) for the rest of the day it was done
+function jobs(){const t=today(),o=skJobs||{};return Object.keys(o).filter(id=>{const j=o[id];return j&&typeof j==="object"&&typeof j.t==="string"&&isIso(j.show)&&j.show<=t&&(!j.done||j.done===t);})
+  .map(id=>Object.assign({id},o[id])).sort((a,b)=>(!!a.done-!!b.done)||String(a.due||"9999").localeCompare(String(b.due||"9999"))||(a.ts||0)-(b.ts||0));}
+
 // ── the one door for a kid's writes ──────────────────────────────────────────
+function okJob(p,v,k){   // 🧹 seasonJobs/<this kid>/<id>/done|bid — their own job, once it is showing
+  const m=/^seasonJobs\/([^\/]+)\/([^\/]+)\/(done|bid)$/.exec(p);if(!m||m[1]!==k||!isKid(k))return false;
+  const j=(skJobs||{})[m[2]];if(!j||typeof j!=="object"||!isIso(j.show)||j.show>today())return false;
+  return m[3]==="done"?(v===null||v===today()):(v===null||(typeof v==="string"&&v.length>0&&v.length<60));
+}
 function okPath(p,v,k){
+  if(/^seasonJobs\//.test(p))return okJob(p,v,k);
   const m=/^seasons\/ideas\/([^\/]+)\/([^\/]+)(?:\/(want|star)\/([^\/]+))?$/.exec(p);if(!m||!isKid(k))return false;
   const s=skList[m[1]];if(!s||s.kids!==true||s.closed)return false;                 // only a season Mom opened to the kids
   const cur=(skIdeas[m[1]]||{})[m[2]];
@@ -103,7 +126,9 @@ function okPath(p,v,k){
 }
 function apply(up,k){
   const P=Object.keys(up);if(!P.length||P.some(p=>!okPath(p,up[p],k))){if(P.length){try{console.warn("our plans: refused a write",P);}catch(e){}}return false;}
-  P.forEach(p=>{const a=p.split("/"),v=up[p],sid=a[2],iid=a[3];const S=skIdeas[sid]||(skIdeas[sid]={});
+  P.forEach(p=>{const a=p.split("/"),v=up[p],sid=a[2],iid=a[3];
+    if(a[0]==="seasonJobs"){const j=skJobs[a[2]];if(j){if(v===null)delete j[a[3]];else j[a[3]]=v;}return;}
+    const S=skIdeas[sid]||(skIdeas[sid]={});
     if(a.length===4){if(v===null)delete S[iid];else S[iid]=JSON.parse(JSON.stringify(v));}
     else{const o=S[iid][a[4]]||(S[iid][a[4]]={});if(v===null)delete o[a[5]];else o[a[5]]=true;}});
   if(live())db.ref().update(up);
@@ -131,6 +156,13 @@ function card(k,it){
   }
   return h+'</div>';
 }
+function jobCard(k,j){   // 🧹 one job: a big tick, the words, what it's for, when, and ⭐ if Mom put stars on it
+  const n=j.due?daysTo(today(),j.due):null,c=col(k),on=!!j.done;
+  const when=on?"Done!":(n==null?"":(n<0?"was due "+fmtDay(j.due):"due "+sleeps(n)));
+  return '<div class="sk-card sk-job'+(on?" done":"")+'"><div class="sk-main"><button class="sk-tick" style="border-color:'+c+';'+(on?"background:"+c+";color:#fff":"color:"+c)+'" onclick="skJob(\''+esc(j.id)+'\')">'+(on?"✓":"")+'</button>'
+    +'<div class="sk-wt"><div class="sk-words">'+esc(j.t)+'</div>'+(j.for?'<div class="sk-for">for '+esc(j.for)+'</div>':"")+'</div></div>'
+    +'<div class="sk-row">'+(when?'<span class="sk-badge'+(n!=null&&n<0&&!on?" late":"")+'">'+esc(when)+'</span>':"")+(+j.stars>0?'<span class="sk-badge star">⭐ '+(+j.stars)+'</span>':"")+'</div></div>';
+}
 function coverCard(k,x){return '<div class="sk-card"><div class="sk-main"><div class="sk-em">'+SK_HINT_EMOJI+'</div><div class="sk-wt"><div class="sk-words">'+SK_HINT_TITLE+'</div></div>'
   +'<div class="sk-count" style="background:'+col(k)+'"><b>'+sleeps(daysTo(today(),x.d))+'</b><span>'+dayLine(x)+'</span></div></div></div>';}
 function composer(k){
@@ -144,8 +176,9 @@ function inner(k){
   let h='<div class="sk-top"><button class="sk-btn sk-back" style="border-color:'+c+';color:'+c+'" onclick="skBack()">← Back</button>'
     +'<div><div class="sk-title">✨ Our plans</div><div class="sk-sub">Things we want to do. Mom picks the days.</div></div></div>';
   if(!skLoaded)return h+'<div class="sk-empty">Opening…</div>';
+  const J=jobs();if(J.length)h+='<div class="sk-h">🧹 Your jobs</div>'+J.map(j=>jobCard(k,j)).join("");   // 🧹 SEASONJOBS step B
   const S=openSeasons(),sid=curSid(),s=S.find(x=>x.id===sid);
-  if(!s)return h+'<div class="sk-empty">Nothing to plan yet.</div>';
+  if(!s)return h+(J.length?"":'<div class="sk-empty">Nothing to plan yet.</div>');
   if(S.length>1)h+='<div class="sk-tabs">'+S.map(x=>'<button class="sk-btn'+(x.id===sid?" on":"")+'" style="'+(x.id===sid?"background:"+c+";border-color:"+c+";color:#fff":"")+'" onclick="skPick(\''+esc(x.id)+'\')">'+esc(x.emoji||"🎉")+" "+esc(x.name||"")+'</button>').join("")+'</div>';
   else h+='<div class="sk-season">'+esc(s.emoji||"🎉")+" "+esc(s.name||"")+'</div>';
   if(!skIdeas[sid]&&typeof db!=="undefined"&&db)return h+'<div class="sk-empty">Opening…</div>';   // this season's ideas are still on their way
@@ -217,8 +250,18 @@ function skRemove(iid){
   skAsk=null;const up={};up["seasons/ideas/"+sid+"/"+iid]=null;apply(up,k);paint();
 }
 function skKeep(){skAsk=null;paint();}
-Object.assign(window,{skPick,skNew,skCancel,skSet,skAdd,skMe,skStar,skRemove,skKeep});
-window._skTest={setData:(list,ideasBySid)=>{skList=list||{};skIdeas=ideasBySid||{};skLoaded=true;},setFor:k=>{skFor=k;},list:()=>skList,data:()=>skIdeas,draft:()=>skDraft,msg:()=>skMsg,
+// 🧹 tick / un-tick one of their jobs. Stars go through the app's own bank (see the header) — checked FIRST, paid only if the write is allowed.
+function skJob(id){
+  const k=skFor,j=(skJobs||{})[id];if(!k||!j)return;const on=!j.done,P="seasonJobs/"+k+"/"+id+"/",up={};up[P+"done"]=on?today():null;
+  if(!okPath(P+"done",up[P+"done"],k))return;
+  if(!dry()){
+    if(on){if(+j.stars>0&&!j.bid&&typeof bankDirect==="function"){let bid=null;try{bid=bankDirect(k,+j.stars,"🎉 "+String(j.t).slice(0,80),(typeof choreVerifyOn==="function"&&choreVerifyOn(k)))||null;}catch(e){}if(bid)up[P+"bid"]=bid;}}
+    else if(j.bid){try{if(!(typeof cuUnpay==="function"&&cuUnpay(k,j.bid,"🎉 "+String(j.t).slice(0,80)))&&typeof bankDirectRemove==="function")bankDirectRemove(k,j.bid);}catch(e){}up[P+"bid"]=null;}
+  }
+  apply(up,k);if(on&&+j.stars>0)toast("⭐ +"+(+j.stars)+" — nice work!");paint();
+}
+Object.assign(window,{skPick,skNew,skCancel,skSet,skAdd,skMe,skStar,skRemove,skKeep,skJob});
+window._skTest={jobs,okJob,setJobs:j=>{skJobs=j||{};skJobsOk=true;},jobData:()=>skJobs,setData:(list,ideasBySid)=>{skList=list||{};skIdeas=ideasBySid||{};skLoaded=true;},setFor:k=>{skFor=k;},list:()=>skList,data:()=>skIdeas,draft:()=>skDraft,msg:()=>skMsg,
   inner,ideas,openSeasons,covers,state,when,canRemove,okPath,apply,starsUsed,starMax,sleeps,refs:()=>Object.keys(skRefs),HINT:[SK_HINT_TITLE,SK_HINT_EMOJI],STARS:SK_STARS};
 
 const SK_CSS=`
@@ -270,5 +313,16 @@ const SK_CSS=`
 .sk-little .sk-count{flex:1 1 100%;flex-direction:row;gap:10px;align-items:baseline}
 .sk-little .sk-count b{font-size:19px}
 .sk-little .sk-count span{font-size:13px;margin-top:0}
+.sk-job .sk-main{flex-wrap:nowrap}
+.sk-tick{flex:none;width:52px;height:52px;border-radius:14px;border:3px solid #cbd5e1;background:#fff;font-size:28px;font-weight:900;cursor:pointer;font-family:inherit;line-height:1}
+.sk-job.done .sk-words{text-decoration:line-through;opacity:.6}
+.sk-for{font-size:13px;font-weight:700;color:#64748b;margin-top:2px}
+.sk-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;padding-left:64px}
+.sk-badge{font-size:13px;font-weight:800;border-radius:99px;padding:3px 10px;background:#f1f5f9;color:#334155}
+.sk-badge.late{background:#fef2f2;color:#b91c1c}
+.sk-badge.star{background:#fffbeb;color:#92400e}
+.sk-little .sk-tick{width:68px;height:68px;font-size:36px}
+.sk-little .sk-row{padding-left:0}
+.sk-little .sk-badge{font-size:15px}
 `;
 })();

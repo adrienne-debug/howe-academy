@@ -58,10 +58,25 @@
 // deleted, 🌙 parked, ✓ done or 📜 closed. A copy Dad ticked is never touched or re-added; his tick makes the to-do done here, and
 // Mom's tick here ticks his copy in the same update. 🤫 A SURPRISE'S TO-DOS NEVER GO TO DAD'S LIST (dadday is read by every device);
 // the row says so.
+//
+// SEASONJOBS step B (same yes; her answers: a kid's to-do shows on its due day or some days ahead · ⭐ for it is an OPTION — a number
+// she sets per to-do, 0 unless she sets it): a to-do whose who is a roster kid and that has a day goes to that kid's own jobs:
+//   seasonJobs/<kid>/<todoId>  {t, for, show, due, stars?, sn, ts}   written by Mom's device (outSync), ONE record per job
+//                              + done:"YYYY-MM-DD", bid?:<the bank entry it paid>   written by the kid's tick (seasonkid.js) or hers here
+//   on the to-do:  stars?:<1–50>   jobFor?:<kid>  (whose jobs it went to — so a job a kid already did is never sent to anyone again)
+// The kid sees it in Kids' Corner ▸ ✨ Our plans ▸ Your jobs from its show day (seasonkid.js reads seasonJobs/<that kid> only).
+// ⭐ PAY THE WAY EVERY KID CHECK-OFF IN THE APP PAYS (routine steps, Up for Grabs, a once-job on a cleaning day): on the tick, through
+// the app's own bankDirect(kid, stars, label, choreVerifyOn(kid)) — so it is HELD for Mom's check exactly when that kid's chore check
+// is on, and released or ✗'d in the same held list — and the entry's id is kept on the job (bid). An un-tick takes back exactly that
+// entry (cuUnpay when Mom/Dad undoes a paid one, else bankDirectRemove). A job already holding a bid is never paid again. A job a kid
+// ticked is history: re-wording, re-assigning or deleting the to-do never touches it, so its stars are never stranded or doubled.
+// 🤫 a surprise's to-dos never go to a kid. Nothing here ever gates school, the morning gate, a routine or a missed chore — this is
+// its own list on its own page.
 (function(){
 "use strict";
 let snData={}, snSecret={}, snOn=false, snLoaded=false, snGot=0, snSid=null, snFilter="all", snEdit=null, snRoot=null, snAh="", snFor={}, snPast=false, snFocus=false;
 let snView="ideas", snAsk=null, snNowWant=false;
+let snJobs={}, snJobsOk=false;   // SEASONJOBS step B: seasonJobs/ (every kid's season jobs) — Mom's device only
 const SN_BOOK_DAYS=7, SN_NOW_MAX=5;   // 🎟 a book-by date shows in 🔴 NOW from a week ahead · NOW lists at most this many lines
 const SN_STARS=3;   // her answer 2026-11-20: "three ⭐ each per season"
 const SN_KINDS=[["holiday","🎄","Holiday season"],["summer","☀️","Summer bucket list"],["season","🍂","A season"],["trip","🧳","Trip"],["party","🎂","Party or event"],["someday","💭","Someday list"]];
@@ -95,7 +110,8 @@ function clone(v){return v==null?v:JSON.parse(JSON.stringify(v));}
 // and the calendar's family events is refused — nothing here can reach the school schedule.
 // Slice 2 adds two: seasons/extra/<sid> (whole-season lines) and ONE kind of record on Mom's own to-do list — momday/<day>/todos/sn<id>.
 // SEASONJOBS step A adds ONE more: the same kind of sn-record on Dad's own to-do list — dadday/<day>/todos/sn<id>.
-const SN_OK=/^(seasons\/(list|ideas|extra)\/[^\/]+|seasonSecret\/[^\/]+\/[^\/]+|calendar\/events\/[^\/]+|(momday|dadday)\/\d{4}-\d{2}-\d{2}\/todos\/sn[^\/]+)(\/|$)/;
+// Step B adds a kid's job record: seasonJobs/<kid>/<todoId> (the bank is reached only through the app's own bankDirect).
+const SN_OK=/^(seasons\/(list|ideas|extra)\/[^\/]+|seasonSecret\/[^\/]+\/[^\/]+|calendar\/events\/[^\/]+|(momday|dadday)\/\d{4}-\d{2}-\d{2}\/todos\/sn[^\/]+|seasonJobs\/[^\/]+\/[^\/]+)(\/|$)/;
 function setIn(o,parts,v){
   for(let i=0;i<parts.length-1;i++){if(o[parts[i]]==null||typeof o[parts[i]]!=="object"){if(v==null)return;o[parts[i]]={};}o=o[parts[i]];}
   const k=parts[parts.length-1];if(v==null)delete o[k];else o[k]=clone(v);
@@ -109,6 +125,7 @@ function apply(up){
     if(a[0]==="seasons")setIn(snData,a.slice(1),v);
     else if(a[0]==="seasonSecret")setIn(snSecret,a.slice(1),v);
     else if(a[0]==="momday"){try{if(typeof momdayData!=="undefined"&&momdayData){setIn(momdayData,a.slice(1),v);if(!dry())HA_LS.setItem("momday_data",JSON.stringify(momdayData));}}catch(e){}}
+    else if(a[0]==="seasonJobs")setIn(snJobs,a.slice(1),v);
     else if(a[0]==="dadday"){try{if(typeof daddayData!=="undefined"&&daddayData){setIn(daddayData,a.slice(1),v);if(!dry())HA_LS.setItem("ha_dadday",JSON.stringify(daddayData));}}catch(e){}}
     else{const c=cal();if(!c.events)c.events={};setIn(c.events,a.slice(2),v);}});
   if(live())db.ref().update(up);
@@ -195,7 +212,7 @@ function ideaDay(it){if(!it)return "";const W=whens(it),t=today(),up=W.filter(w=
 function tdDue(L){const r=L.r;if(isIso(r.due))return r.due;if(L.it&&r.before!=null&&+r.before>=0){const d=ideaDay(L.it);return d?addDays(d,-Math.floor(+r.before)):"";}return "";}
 function mdTodos(iso){try{return ((typeof momdayData!=="undefined"&&momdayData&&momdayData[iso])||{}).todos||{};}catch(e){return {};}}
 function tdCopy(L){return isIso(L.r.list)?(mdTodos(L.r.list)["sn"+L.id]||null):null;}   // its copy on Mom's own list, if she made one and it's still there
-function tdDone(L){const c=tdCopy(L),d=dadCopy(L);return !!(L.r.done||(c&&c.done)||(d&&d.done));}
+function tdDone(L){const c=tdCopy(L),d=dadCopy(L),j=kidCopy(L);return !!(L.r.done||(c&&c.done)||(d&&d.done)||(j&&j.done));}
 // ── 👨 a to-do for Dad on his own list (SEASONJOBS step A) ──
 const SN_AHEAD_MAX=30;
 function ddTodos(iso){try{return ((typeof daddayData!=="undefined"&&daddayData&&daddayData[iso])||{}).todos||{};}catch(e){return {};}}
@@ -203,13 +220,29 @@ function dadCopy(L){return isIso(L.r.dadOn)?(ddTodos(L.r.dadOn)["sn"+L.id]||null
 function ahead(r){const n=Math.floor(+r.ahead);return n>0?Math.min(n,SN_AHEAD_MAX):0;}
 function showDay(L){const d=tdDue(L);return d?addDays(d,-ahead(L.r)):"";}   // her answer 1: its due day, or "ahead" days before it
 // Why a to-do is NOT on Dad's list ("" = it should be). The one rule the sync and Mom's row both use.
-function dadWhy(L){
-  if((L.r.who||"mom")!=="dad")return "who";
+function dadWhy(L){return (L.r.who||"mom")!=="dad"?"who":outWhy(L);}
+function kidWhy(L){return isKidId(L.r.who)?outWhy(L):"who";}   // SEASONJOBS step B: the same rule for a kid's jobs
+function outWhy(L){
   const s=season(L.sid);if(!s||s.closed)return "closed";
   if(L.it&&hideOf(L.it))return "secret";
   if(L.it&&(L.it.skip||L.it.did))return "rest";
   if(tdDone(L))return "done";
   return showDay(L)?"":"noday";
+}
+// ── 🧒 a to-do for a kid → their own jobs (SEASONJOBS step B) ──
+const SN_STARS_MAX=50;
+function isKidId(w){return !!w&&roster().some(k=>k.id===w);}
+function kidCopy(L){const k=L.r.jobFor;return (k&&typeof k==="string")?(((snJobs[k]||{})[L.id])||null):null;}   // its job record, where it was sent
+function jobStars(r){const n=Math.floor(+((r||{}).stars));return n>0?Math.min(n,SN_STARS_MAX):0;}
+function jobRec(L){const it=L.it,s=season(L.sid)||{},r={t:String(L.r.t||"").slice(0,120),for:(it?((it.emoji?it.emoji+" ":"")+(it.t||"")):((s.emoji||"🎉")+" "+(s.name||""))).trim(),show:showDay(L),due:tdDue(L),sn:L.sid+"/"+(L.iid||"-")+"/"+L.id};
+  const st=jobStars(L.r);if(st)r.stars=st;return r;}
+function jobLabel(t){return "🎉 "+String(t||"").slice(0,80);}
+// Pay / take back ONE job's stars through the app's own bank functions (see the header). Returns the fields to write on the job.
+function jobPay(k,c,on){
+  const f={};if(dry())return f;
+  if(on){if(c&&+c.stars>0&&!c.bid&&typeof bankDirect==="function"){let bid=null;try{bid=bankDirect(k,+c.stars,jobLabel(c.t),(typeof choreVerifyOn==="function"&&choreVerifyOn(k)))||null;}catch(e){}if(bid)f.bid=bid;}}
+  else if(c&&c.bid){try{if(!(typeof cuUnpay==="function"&&cuUnpay(k,c.bid,jobLabel(c.t)))&&typeof bankDirectRemove==="function")bankDirectRemove(k,c.bid);}catch(e){}f.bid=null;}
+  return f;
 }
 function lineOf(sn,lid){const p=String(sn||"").split("/");return p.length===3&&p[2]===lid?line(p[0],p[1]==="-"?"":p[1],"todo",lid):null;}
 function dadPlan(){const want={};seasons().forEach(s=>lines(s.id,"todo").forEach(L=>{if(!dadWhy(L))want[showDay(L)+"/sn"+L.id]=L;}));return want;}
@@ -221,6 +254,7 @@ function dadSync(){
   const c0=cal();if(!c0.events||typeof c0.events!=="object")return 0;
   let D={};try{D=(typeof daddayData!=="undefined"&&daddayData)||{};}catch(e){}
   const want=dadPlan(),up={};
+  if(snJobsOk)kidPlanUp(up);   // SEASONJOBS step B: the kids' jobs, in the same update
   Object.keys(D).forEach(iso=>{if(!isIso(iso))return;const T=(D[iso]||{}).todos||{};
     Object.keys(T).forEach(k=>{const c=T[k];if(k.indexOf("sn")!==0||!c||typeof c!=="object"||c.src!=="season"||c.done||want[iso+"/"+k])return;
       up["dadday/"+iso+"/todos/"+k]=null;   // its to-do is gone, changed, moved, done here or no longer Dad's
@@ -232,11 +266,31 @@ function dadSync(){
   if(!Object.keys(up).length)return 0;
   apply(up);return Object.keys(up).length;
 }
+function kidPlanUp(up){
+  const want={};seasons().forEach(s=>lines(s.id,"todo").forEach(L=>{if(!kidWhy(L))want[L.r.who+"/"+L.id]=L;}));
+  Object.keys(snJobs||{}).forEach(k=>{const J=snJobs[k];if(!J||typeof J!=="object")return;
+    Object.keys(J).forEach(id=>{const c=J[id];if(!c||typeof c!=="object"||c.done||want[k+"/"+id])return;
+      up["seasonJobs/"+k+"/"+id]=null;   // gone, changed hands, done here, a surprise now, or its season closed — a job the kid did stays
+      const L=lineOf(c.sn,id);if(L&&L.r.jobFor===k)up[lineBase(L,"todo")+"/jobFor"]=null;});});
+  Object.keys(want).forEach(key=>{const L=want[key],k=L.r.who,id=L.id,c=(snJobs[k]||{})[id],rec=jobRec(L),P="seasonJobs/"+k+"/"+id,b=lineBase(L,"todo")+"/jobFor";
+    if(c&&typeof c==="object"){["t","for","show","due","stars","sn"].forEach(f=>{const nv=rec[f]==null?null:rec[f],ov=c[f]==null?null:c[f];if(nv!==ov)up[P+"/"+f]=nv;});if(L.r.jobFor!==k)up[b]=k;return;}
+    up[P]=Object.assign(rec,{ts:Date.now()});up[b]=k;});
+}
 let snSyncT=null;
 function syncSoon(){if(snSyncT)return;try{snSyncT=setTimeout(()=>{snSyncT=null;try{dadSync();}catch(e){}},80);}catch(e){snSyncT=null;}}
 // What Mom's row says about Dad's list.
+function kidNote(L){   // SEASONJOBS step B: where a kid's to-do stands with their jobs
+  if(!isKidId(L.r.who))return "";
+  const n=esc(who(L.r.who).name),why=kidWhy(L),c=kidCopy(L),sd=showDay(L),t=today(),chip=x=>'<span class="sn-chip dad">'+x+'</span>',st=jobStars(L.r),sc=st?chip("⭐ "+st):"";
+  if(why==="secret")return '<div class="sn-secnote">🤫 Stays here. A surprise’s to-dos never go to '+n+'’s jobs.</div>';
+  if(why==="done")return (c&&c.done&&!L.r.done)?chip("✓ "+n+" did it"+(c.bid?" · ⭐ "+(+c.stars||0):"")):"";
+  if(why==="noday")return chip("Goes to "+n+"’s jobs once it has a day")+sc;
+  if(why)return "";
+  if(c&&L.r.jobFor===L.r.who)return chip(sd>t?"In "+n+"’s jobs from "+esc(fmtShort(sd)):"✓ In "+n+"’s jobs")+sc;
+  return chip("Going to "+n+"’s jobs")+sc;
+}
 function dadNote(L){
-  if((L.r.who||"mom")!=="dad")return "";
+  if((L.r.who||"mom")!=="dad")return kidNote(L);
   const why=dadWhy(L),c=dadCopy(L),sd=showDay(L),t=today(),chip=x=>'<span class="sn-chip dad">'+x+'</span>';
   if(why==="secret")return '<div class="sn-secnote">🤫 Stays here. A surprise’s to-dos never go to Dad’s list.</div>';
   if(why==="done")return (c&&c.done&&!L.r.done)?chip("✓ Dad ticked it"):"";
@@ -515,6 +569,8 @@ function lineSheet(){
       +'<div class="sn-lab">Who</div><div class="sn-chips">'+people().map(p=>'<button class="sn-pchip'+(f.who===p.id?" on":"")+'" style="--c:'+esc(p.color)+'" onclick="snLineWho(\''+esc(p.id)+'\')">'+esc(p.name)+'</button>').join("")+'</div>'
       +'<div class="sn-form">'+field("due","When — a date (optional)","","date")+(it?field("before","…or days before its day","3","number"):"")+'</div>'
       +(it?'<div class="sn-sub">“Days before” moves by itself when the idea moves. '+(day?"Its day is "+fmtDay(day)+" right now.":"It has no day yet, so the to-do waits for one.")+'</div>':"")
+      +(isKidId(f.who)?((it&&hideOf(it))?'<div class="sn-sub">🤫 This idea is a surprise, so its to-dos stay on this page. They never go to a kid.</div>'
+        :'<div class="sn-form">'+field("ahead","Show it to "+esc(who(f.who).name)+" early — days ahead","0","number")+field("stars","⭐ for doing it (optional)","0","number")+'</div><div class="sn-sub">'+esc(who(f.who).name)+' sees it in Kids’ Corner ▸ ✨ Our plans ▸ Your jobs, on the day it’s due (or this many days ahead), and ticks it there. Stars pay only if you put a number here — on the tick, the same way a chore pays.</div>'):"")
       +(f.who==="dad"?((it&&hideOf(it))?'<div class="sn-sub">🤫 This idea is a surprise, so its to-dos stay on this page. They never go to Dad’s list.</div>'
         :'<div class="sn-form">'+field("ahead","Show it on Dad’s list early — days ahead","0","number")+'</div><div class="sn-sub">Dad’s to-dos go on his own list by themselves, on the day they’re due (or this many days ahead). When he ticks it, it’s ticked here too.</div>'):"");
   }
@@ -711,7 +767,7 @@ function snLine(kind,iid,lid){   // open the pop-up: lid "" = a new line · iid 
   const back=!!(iid&&snEdit&&snEdit.type==="idea"&&snEdit.id===iid);if(back&&!flush(iid))return;
   if(iid&&!idea(sid,iid))return;const L=lid?line(sid,iid,kind,lid):null;if(lid&&!L)return;const r=L?L.r:{};
   snAsk=null;snEdit={type:"line",kind,sid,iid:iid||"",id:lid||null,back,form:kind==="sup"?{name:r.name||"",qty:(+r.qty>0)?String(r.qty):""}
-    :{t:r.t||"",who:r.who||"mom",due:isIso(r.due)?r.due:"",before:(r.before!=null&&!isIso(r.due))?String(r.before):"",ahead:ahead(r)?String(ahead(r)):""}};draw();
+    :{t:r.t||"",who:r.who||"mom",due:isIso(r.due)?r.due:"",before:(r.before!=null&&!isIso(r.due))?String(r.before):"",ahead:ahead(r)?String(ahead(r)):"",stars:jobStars(r)?String(jobStars(r)):""}};draw();
 }
 function lineClose(){const e=snEdit;snEdit=null;if(e&&e.back&&e.iid&&idea(e.sid,e.iid)){snOpenIdea(e.iid);return;}draw();}
 function snLineWho(w){if(!snEdit||snEdit.type!=="line"||snEdit.kind!=="todo")return;snEdit.form.who=w;draw();}
@@ -733,13 +789,14 @@ function saveLine(){
     const t=String(f.t||"").trim().slice(0,120);if(!t){e.msg="It needs a few words.";draw();return;}
     const w=people().some(p=>p.id===f.who)?f.who:"mom",bn=String(f.before==null?"":f.before).trim()===""?null:Math.floor(+f.before);
     const before=(it&&bn!=null&&bn>=0&&bn<=365)?bn:null,due=(before==null&&isIso(f.due))?f.due:"";
-    const ah=w==="dad"?ahead({ahead:f.ahead}):0;   // SEASONJOBS: days early on Dad's list (blank = on its day)
-    if(!L){const rec={t,who:w};if(before!=null)rec.before=before;else if(due)rec.due=due;if(ah)rec.ahead=ah;up[b+rid("t")]=rec;}
+    const ah=(w==="dad"||isKidId(w))?ahead({ahead:f.ahead}):0;   // SEASONJOBS: days early on Dad's list / in a kid's jobs (blank = on its day)
+    const st=isKidId(w)?jobStars({stars:f.stars}):0;   // step B: ⭐ for a kid's job — 0 unless she sets it
+    if(!L){const rec={t,who:w};if(before!=null)rec.before=before;else if(due)rec.due=due;if(ah)rec.ahead=ah;if(st)rec.stars=st;up[b+rid("t")]=rec;}
     else{
       const r=L.r,p=b+e.id+"/";
       if(t!==r.t)up[p+"t"]=t;if(w!==(r.who||"mom"))up[p+"who"]=w;
       if(due!==(isIso(r.due)?r.due:""))up[p+"due"]=due||null;if(before!==(r.before!=null?Math.floor(+r.before):null))up[p+"before"]=before;
-      if(ah!==ahead(r))up[p+"ahead"]=ah||null;
+      if(ah!==ahead(r))up[p+"ahead"]=ah||null;if(st!==jobStars(r))up[p+"stars"]=st||null;
     }
   }
   apply(up);lineClose();
@@ -797,6 +854,7 @@ function snTodoTick(sid,iid,lid){
   up[lineBase(L,"todo")+"/done"]=on?t:null;
   if(tdCopy(L)){const m="momday/"+L.r.list+"/todos/sn"+lid+"/";up[m+"done"]=on;up[m+"doneOn"]=on?t:null;}
   if(dadCopy(L)){const m="dadday/"+L.r.dadOn+"/todos/sn"+lid+"/";up[m+"done"]=on;up[m+"doneOn"]=on?t:null;}   // SEASONJOBS: and Dad's copy
+  const j=kidCopy(L);if(j){const k=L.r.jobFor,m="seasonJobs/"+k+"/"+lid+"/",f=jobPay(k,j,on);up[m+"done"]=on?t:null;if("bid" in f)up[m+"bid"]=f.bid;}   // step B: and the kid's job (pays like a chore)
   apply(up);repaint();
 }
 // → My list today: ONE copy onto Mom's own daily to-do list (her answer 10, Mom's half). The to-do remembers the day (`list`), so it
@@ -820,7 +878,7 @@ function snBooked(sid,iid){const it=idea(sid,iid);if(!it||!isIso(it.bookBy))retu
 function nowItems(){
   const out=[];
   seasons().filter(s=>!s.closed).forEach(s=>{
-    lines(s.id,"todo").forEach(L=>{if(parked(L)||(L.it&&L.it.did)||tdCopy(L)||(!dadWhy(L)&&dadCopy(L)))return;const st=tdState(L);if(st==="late"||st==="due")out.push({k:"todo",sid:s.id,L,d:tdDue(L),late:st==="late",sec:!!(L.it&&hideOf(L.it))});});
+    lines(s.id,"todo").forEach(L=>{if(parked(L)||(L.it&&L.it.did)||tdCopy(L)||(!dadWhy(L)&&dadCopy(L))||(!kidWhy(L)&&kidCopy(L)))return;const st=tdState(L);if(st==="late"||st==="due")out.push({k:"todo",sid:s.id,L,d:tdDue(L),late:st==="late",sec:!!(L.it&&hideOf(L.it))});});
     ideasOf(s.id).forEach(it=>{if(it.skip||it.did)return;const b=bookState(it);if(b==="late"||b==="soon")out.push({k:"book",sid:s.id,it,d:it.bookBy,late:b==="late",sec:!!hideOf(it)});});
   });
   return out.sort((a,b)=>String(a.d).localeCompare(String(b.d)));
@@ -857,6 +915,7 @@ function snListen(){
   let a=false,b=false;
   db.ref("seasons").on("value",s=>{snData=s.val()||{};if(!a){a=true;got();}else if(onPage()&&!snEdit)draw();if(snLoaded)syncSoon();});
   db.ref("seasonSecret").on("value",s=>{snSecret=s.val()||{};if(!b){b=true;got();}else if(onPage()&&!snEdit)draw();if(snLoaded)syncSoon();});
+  db.ref("seasonJobs").on("value",s=>{snJobs=s.val()||{};snJobsOk=true;if(snLoaded){if(onPage()&&!snEdit)draw();syncSoon();}});   // SEASONJOBS step B: the kids' ticks come back here
 }
 const SN_CSS=`
 .sn-wrap{padding:10px 12px 40px;max-width:760px;margin:0 auto;font-family:'DM Sans',sans-serif}
@@ -977,5 +1036,6 @@ Object.assign(window,{snNewSeason,snKind,snEditSeason,snDelSeason,snPick,snPastT
 window._snTest={data:()=>snData,secret:()=>snSecret,setData:(d,s)=>{snData=d||{};snSecret=s||{};snLoaded=true;},reset:()=>{snSid=null;snFilter="all";snEdit=null;snFor={};snPast=false;snView="ideas";snAsk=null;},
   lines,line,tdDue,tdState,tdDone,supState,bookState,shopLabel,nowItems,ideaDay,view:()=>snView,ask:()=>snAsk,
   setRoot:(el,ah)=>{snRoot=el;snAh=ah||"";},draw,edit:()=>snEdit,seasons,season,ideasOf,idea,whens,state,counts,picks,openDays,dayInfo,mins,starsUsed,starMax,apply,schedRange,kindDefaults,fmtDay,curSid,OK:SN_OK,
-  dadSync,dadPlan,dadWhy,dadCopy,dadNote,showDay,tdDue,tdDone,line,lines,syncPending:()=>!!snSyncT};
+  dadSync,dadPlan,dadWhy,dadCopy,dadNote,showDay,tdDue,tdDone,line,lines,syncPending:()=>!!snSyncT,
+  kidWhy,kidCopy,kidNote,jobRec,jobStars,jobs:()=>snJobs,setJobs:j=>{snJobs=j||{};snJobsOk=!!j;}};
 })();

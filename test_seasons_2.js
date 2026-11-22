@@ -355,9 +355,9 @@ console.log("\n# 🔴 NOW loads the data only for Mom, and repaints Home Base on
   p.mom = false; p.W.seasonNowLines();
   ok("no Mom → no listener", p.listens.length === 0);
   p.mom = true; const a = p.W.seasonNowLines();
-  ok("Mom on Home Base → listeners on seasons and seasonSecret only; nothing to show until the data is in", a.n === 0 && p.listens.slice().sort().join() === "seasonSecret,seasons", p.listens);
+  ok("Mom on Home Base → listeners on seasons and seasonSecret only; nothing to show until the data is in", a.n === 0 && p.listens.slice().sort().join() === "seasonJobs,seasonSecret,seasons", p.listens);   // + seasonJobs: SEASONJOBS step B
   p.W.seasonNowLines();
-  ok("asking again adds no listener", p.listens.length === 2);
+  ok("asking again adds no listener", p.listens.length === 3);
   p.fire.seasons({ list: { s: { name: "S", ts: 1 } }, extra: { s: { todo: { t1: { t: "Due thing", who: "mom", due: "2026-11-19" } } } } });
   ok("half the data → no repaint yet", p.repaints === 0);
   p.fire.seasonSecret(null);
@@ -398,7 +398,7 @@ console.log("\n# the idea rows, deleting, and a whole session inside the guard")
 console.log("\n# seasons.js itself");
 {
   const code = SRC.replace(/^\s*\/\/.*$/gm, "");
-  ok("still only two listeners and ONE update door", (code.match(/db\.ref\(/g) || []).length === 3);
+  ok("still only three listeners (seasonJobs: SEASONJOBS step B) and ONE update door", (code.match(/db\.ref\(/g) || []).length === 4);
   ok("the Kitchen is only reached through its own grCreate / grPut — this file never writes kitchen/ itself", !/["'`]kitchen\//.test(code) && (code.match(/grCreate\(/g) || []).length === 1 && (code.match(/grPut\(/g) || []).length === 1);
   ok("the only path it builds on Mom's day is todos/sn<id>", (code.match(/"momday\//g) || []).length === 2 && (code.match(/"momday\/"\+[A-Za-z.]+\+"\/todos\/sn"/g) || []).length === 2 && !/dadday\/(?!"\+)/.test(code));   // SEASONJOBS step A: Dad's day only through the sn-record rule (test_seasons_4.js)
   ok("no family's names, no Santa, no 🔀", !/lincoln|ellis|\blucy\b|julian|howe|dewalt|burris|polar|disney|santa/i.test(SRC) && SRC.indexOf("\u{1F500}") < 0);
