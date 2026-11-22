@@ -37556,6 +37556,7 @@ function haNbContext(kid){
   let units=[]; try{ units=haKidUnits(kid).filter(u=>u&&u.nbInsert!==false).map(u=>haBuildUnitInsight(kid,u)).filter(Boolean); }catch(e){}
   try{ if(typeof usNbAttach==="function") usNbAttach(kid,units); }catch(e){}   // 🇺🇸 USNB: the US Path's stage pages read ins.us
   try{ if(typeof uwAttach==="function") units=uwAttach(kid,units,tasks,dates); }catch(e){}   // 🧾 UNITWEEK: "This week we will…" on each unit page (ins.week)
+  try{ if(typeof ucAttach==="function") units=ucAttach(kid,units,tasks,dates); }catch(e){}   // 📕 UNITCOVER: the unit's cover in the week of its first day (ins.cover)
   // Recent drill misses per item ("m"/"~" results over the last few sessions) so the notebook's
   // review flag can resurface letters/numbers Julian struggled with this week. Kept separate from
   // the item's lifetime drop_count — this ages out as he recovers.
@@ -52799,6 +52800,73 @@ function usNbAttach(kid,units){
   return units;
 }
 // USNB_END
+// UNITCOVER_START — 📕 the unit's cover in the kids' notebook (PLAN_unit_sheet_2026-11-19.md §4.2, §5 row 3; her words 2026-11-22: "go
+// with her answers and build" — pick 3 as recommended: the cover prints by itself in the notebook of the week that holds the unit's
+// first day; a beta mom's keepsake list 11/20 starts with "A cover page").
+//   · Which week: the kid's TARGET week (the one haNbContext prints, parked next week included) has a card that points at the unit's
+//     first day (its first day not switched off) — asked through UNITWEEK's uwDayFor, the same question the "This week we will…" list
+//     asks of each card. Day 1 in last week's notebook → no cover this week; the same week printed twice → the same cover.
+//   · What it shows (ucCoverOf, worked out fresh, nothing stored): the title and emoji, the first card's photo (none → the emoji), the
+//     days in order (20 at most; "+ N more days"), and counts — books (each title once), cards (every deck), projects (activities),
+//     crafts (days with one + the unit's own). No web address, supply, note or card text.
+//   · A unit switched out of the notebooks (📓 Include in notebooks off) gets no cover. A unit with no insert this week (no deck, or
+//     its week list off) gets a bare one so its cover still prints (the hook runs after UNITWEEK's, so its bare insert is found).
+//   · 🖨 Print the cover (Mom, Units tab): the same page from notebooks.js, one per enrolled kid in that kid's notebook colours
+//     (nobody enrolled → one in the starter colours). Any time, any unit — a unit with no days gets its cover this way.
+// Read-only: no database call anywhere in this block.
+function ucCoverOf(kid,u){
+  if(!u||!u.id) return null;
+  const on=(typeof utDaysOn==="function")?utDaysOn(u):[], s=v=>String(v==null?"":v).trim();
+  const arr=v=>Array.isArray(v)?v.filter(Boolean):Object.values(v||{}).filter(Boolean);
+  let pic=null; const cd=(typeof _unitCharDeck==="function")?_unitCharDeck(u):null;
+  if(cd){ const c=arr(cd.cards).slice().sort((a,b)=>(a.order||0)-(b.order||0))[0]; const p=(c&&typeof _unitPortrait==="function")?_unitPortrait(u,kid,cd.key,c.name):null; if(p&&p.img) pic={img:p.img}; }
+  const books={}; on.forEach(d=>arr((d.res||{}).books).forEach(b=>{ const t=s(b.title).toLowerCase(); if(t) books[t]=1; }));
+  const days=on.map((d,i)=>({dn:d.n?"Day "+d.n:(d.wk?"Week "+d.wk:"Day "+(i+1)),t:s(d.t)}));
+  return {title:s(u.title)||"Unit Study",emoji:u.emoji||"\u{1F4D8}",pic:pic,nDays:on.length,days:days.slice(0,20),more:Math.max(0,days.length-20),
+    counts:{books:Object.keys(books).length,cards:arr(u.decks).reduce((n,d)=>n+arr(d.cards).length,0),acts:(typeof _unitActs==="function")?_unitActs(u).length:0,
+      crafts:on.filter(d=>d.craft).length+(((typeof crOfTrack==="function")&&crOfTrack(u))?1:0)}};
+}
+// Does this kid's target week hold the unit's first day?
+function ucFirstWeek(kid,u,tasks,dates){
+  const first=((typeof utDaysOn==="function")?utDaysOn(u):[])[0]; if(!first) return false;
+  return (tasks||[]).some(t=>{ if(!t||t.who!==kid) return false; let r=null;
+    try{ r=(typeof uwDayFor==="function")?uwDayFor(t,dates):((typeof utDayForTask==="function")?utDayForTask(t):null); }catch(e){ r=null; }
+    return !!(r&&r.uid===u.id&&r.id===first.id); });
+}
+// Called from haNbContext with the kid's built inserts: each unit whose first day is this week gets ins.cover.
+function ucAttach(kid,units,tasks,dates){
+  units=units||[]; const add=[];
+  ((typeof haKidUnits==="function")?haKidUnits(kid):[]).filter(u=>u&&u.nbInsert!==false).forEach(u=>{
+    if(!ucFirstWeek(kid,u,tasks,dates)) return;
+    const cv=ucCoverOf(kid,u); if(!cv) return;
+    const ins=units.find(x=>x&&x.unitId===u.id);
+    if(ins) ins.cover=cv;
+    else add.push({unitId:u.id,title:u.title,emoji:u.emoji||"\u{1F4D8}",days:(typeof nbUnitDays==="function")?nbUnitDays(kid,u.id):{},learning:[],learned:[],next:[],extras:[],extrasTitle:"",activity:null,activities:[],cover:cv}); });
+  return add.length?units.concat(add):units;
+}
+function ucCoverBtnHtml(u,esc){
+  if(!(typeof momHere==="function"&&momHere())||!u||!u.id) return "";
+  return '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:12px;padding-top:11px;border-top:1px solid var(--border)">'+
+    '<span style="flex:1;min-width:150px;font-size:12px;font-weight:700;color:#1f2937">\u{1F4D5} The unit’s cover<div style="font-size:10.5px;font-weight:600;color:var(--muted);line-height:1.4;margin-top:2px">Prints by itself in the notebook of the week with the unit’s first day. Print it any time here.</div></span>'+
+    '<button onclick="ucPrintCover(\''+esc(u.id)+'\')" style="padding:7px 14px;border-radius:10px;border:1.5px solid var(--border);background:#fff;color:#1f2937;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">\u{1F5A8} Print the cover</button></div>';
+}
+// The kid's notebook look, as haNbContext hands it to the notebook.
+function ucLook(kid){ return {notebookTheme:(typeof nbThemeOf==="function")?nbThemeOf(kid):null,nbLevel:(typeof nbLevelOf==="function")?nbLevelOf(kid):{}}; }
+function ucCoverDoc(u){
+  const NB=window.HoweNotebooks; if(!u||!NB||!NB.unitCoverPage||!NB.unitPrintDoc) return "";
+  const kids=((typeof utsRoster==="function")?utsRoster():[]).filter(k=>(u.enrolled||{})[k]);
+  const pages=(kids.length?kids:[null]).map(k=>NB.unitCoverPage(ucCoverOf(k,u),NB.unitPageTheme(k,k?ucLook(k):{})));
+  return NB.unitPrintDoc((u.title||"Unit")+" — cover",pages);
+}
+function ucPrintCover(unitId){
+  if(!(typeof momHere==="function"&&momHere())) return;
+  const u=(typeof unitStudies!=="undefined"&&unitStudies)?unitStudies[unitId]:null; if(!u) return;
+  const doc=ucCoverDoc(u); if(!doc){ alert("The notebook pages haven’t loaded yet — try again in a moment."); return; }
+  const w=window.open("","_blank"); if(!w){ alert("Allow pop-ups to print."); return; }
+  w.document.write(doc.replace("</body>",'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print()},250)}</scr'+'ipt></body>'));
+  w.document.close();
+}
+// UNITCOVER_END
 // GEOALL_START — 🌍 GEOGRAPHY PATH: every country (her words 2026-11-16: "does the geography unit cover all of the countries?" …
 // "Yes, add all"). Stage 6 Countries 87 → 195 — the 193 UN members + Vatican City + Palestine — and Stage 7 World Geography
 // 60 → 195, a capital card for every one.
@@ -54079,6 +54147,7 @@ function renderUnitDetail(u){
     h+=_unitPicsBtnHtml(u);   // UNIT_PICS: 🖼 Find pictures (Wikipedia, in this browser)
     if(typeof laIrrHtml==="function") h+=laIrrHtml(u,esc);   // LAIRR: ＋ Add Irregulars (Language Arts unit only; units step 9, 2026-10-26)
     if(typeof laGrowHtml==="function") h+=laGrowHtml(u,esc);   // LAGROW: ＋ Grow Language Arts (Language Arts unit only, 2026-11-02)
+    if(typeof ucCoverBtnHtml==="function") h+=ucCoverBtnHtml(u,esc);   // UNITCOVER: 📕 🖨 Print the cover
     if(typeof suHtml==="function") h+=suHtml(u,esc);   // STARTERUP: ＋ Add the new stages (a starter unit the code has grown)
     if(typeof udelHtml==="function") h+=udelHtml(u,esc);   // UNITDEL: 🗑 Delete unit (a Builder unit nothing uses, two taps)
     h+='</div>';
