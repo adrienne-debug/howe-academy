@@ -3382,6 +3382,133 @@ function _archAllArrived(){
   if(_archWaitShown){ _archWaitShown=false; if(typeof renderAllSoon==="function") renderAllSoon(); }
 }
 // ARCHENSURE_END
+// ARCHCORE_START — the trimmed copy of the past weeks, archiveCore/<wk>, kept in step with archive/<wk> (her "Start slice 3"
+// 2026-11-22, PLAN_archive_window_2026-11-21.md slice 3). It keeps only what the everyday screens read — the field audit in
+// test_archive_core.js, which pins this list. Every archive write goes through archWrite: BOTH copies in one multi-path
+// update (Firebase applies both or neither); if that update is ever refused, the full record is written alone, so the copy can
+// never cost the real one. Nothing reads archiveCore yet (slice 4). Settings ▸ 📚 Past weeks fills it once, on her tap.
+const ARCH_CORE={
+  week:["weekLabel","archivedAt","checked","dates","deferred","tasks","history"],
+  task:["id","who","title","day","subjectKey","lid","famBlock","famItem"],
+  hist:["who","title","ts","missed","flag","checkedOnDay","famLabel","famMadeUp"]
+};
+function _acPick(o,ks){ const r={}; ks.forEach(k=>{ if(o[k]!==undefined&&o[k]!==null) r[k]=o[k]; }); return r; }
+function archCoreTask(t){ return (t&&typeof t==="object")?_acPick(t,ARCH_CORE.task):t; }
+// every history KEY is kept (the streaks ask whether "<id>_missed" exists); a record with no kept field stays as `true`
+function archCoreHist(h){ if(!h||typeof h!=="object") return h; const p=_acPick(h,ARCH_CORE.hist); return Object.keys(p).length?p:true; }
+function _acMap(o,f){ if(Array.isArray(o)) return o.map(f); const r={}; Object.keys(o||{}).forEach(k=>{ r[k]=f(o[k]); }); return r; }
+function archCoreOf(aw){
+  if(!aw||typeof aw!=="object") return aw;
+  const out={};
+  ARCH_CORE.week.forEach(k=>{
+    if(aw[k]===undefined||aw[k]===null) return;
+    out[k]=(k==="tasks")?_acMap(aw.tasks,archCoreTask):(k==="history")?_acMap(aw.history,archCoreHist):aw[k];
+  });
+  return out;
+}
+// the copy of one write: "" = the whole week; "<field>" or "<field>/<key>[/…]" below it. undefined = the copy doesn't keep it.
+function archCoreAt(sub,val){
+  if(!sub) return (val==null)?null:archCoreOf(val);
+  const ks=String(sub).split("/"), top=ks[0];
+  if(ARCH_CORE.week.indexOf(top)<0) return undefined;
+  if(val==null) return null;
+  if(top==="tasks"||top==="history"){
+    if(ks.length===1) return _acMap(val,top==="tasks"?archCoreTask:archCoreHist);
+    if(ks.length===2) return top==="tasks"?archCoreTask(val):archCoreHist(val);
+    return (ARCH_CORE[top==="tasks"?"task":"hist"].indexOf(ks[2])>=0)?val:undefined;
+  }
+  return val;
+}
+const _acJson=v=>(v===undefined)?undefined:JSON.parse(JSON.stringify(v));   // a copy Firebase always accepts (no undefined inside)
+// Write past week <wk>: changes = {"": wholeWeek} or {"dates/monday": "Nov 2", "checked/<id>": null, …}. No connection → nothing,
+// exactly like the five writes it replaced (they never checked dry run; changing that would be its own change).
+function archWrite(wk,changes){
+  if(typeof db==="undefined"||!db||!wk) return;
+  const full={}, both={};
+  Object.keys(changes||{}).forEach(sub=>{
+    const p=wk+(sub?"/"+sub:""), v=(changes[sub]===undefined)?null:changes[sub];
+    full["archive/"+p]=v; both["archive/"+p]=v;
+    let c; try{ c=_acJson(archCoreAt(sub,v)); }catch(e){ c=undefined; }
+    if(c!==undefined) both["archiveCore/"+p]=c;
+  });
+  if(!Object.keys(full).length) return;
+  const say=function(why){ try{ if(typeof dbg==="function") dbg("archiveCore write refused — the full record written alone: "+why); }catch(e){} };
+  let pr;
+  try{ pr=db.ref().update(both); }
+  catch(e){ say((e&&e.message)||e); db.ref().update(full); return; }   // a full record that can't be written throws here, exactly as its set() did
+  if(pr&&typeof pr.catch==="function") pr.catch(function(e){ say((e&&e.message)||e); try{ db.ref().update(full); }catch(e2){ console.log("[HA] archive write",e2); } });
+}
+// Settings ▸ 📚 Past weeks (Mom only): does the copy match every past week? fill it, check it again.
+let _acRemote=null, _acAsked=false, _acBusy=false, _acMsg="";
+function _acCanon(v){
+  if(v===null||v===undefined) return undefined;
+  if(typeof v!=="object") return v;
+  const o={}; Object.keys(v).sort().forEach(k=>{ const c=_acCanon(v[k]); if(c!==undefined) o[k]=c; });   // a list and its 0..n keys read alike
+  return Object.keys(o).length?o:undefined;
+}
+const _acSame=(a,b)=>JSON.stringify(_acCanon(a))===JSON.stringify(_acCanon(b));
+function archCoreStatus(){
+  if((typeof archiveEnsureAll==="function"&&!archiveEnsureAll())||_acRemote===null) return null;
+  const A=archive||{}, C=_acRemote||{}, st={n:0,match:0,missing:[],differ:[],extra:[]};
+  Object.keys(A).forEach(wk=>{ st.n++; if(C[wk]===undefined) st.missing.push(wk); else if(_acSame(archCoreOf(A[wk]),C[wk])) st.match++; else st.differ.push(wk); });
+  Object.keys(C).forEach(wk=>{ if(A[wk]===undefined) st.extra.push(wk); });
+  return st;
+}
+function _acBody(){
+  const msg=s=>'<div style="font-size:12px;color:var(--muted)">'+s+'</div>';
+  if((typeof archiveEnsureAll==="function"&&!archiveEnsureAll())) return msg("Loading past weeks…");
+  if(_acRemote===null){
+    if(typeof db==="undefined"||!db) _acRemote={};
+    else{
+      if(!_acAsked){ _acAsked=true; db.ref("archiveCore").once("value").then(function(s){ _acRemote=s.val()||{}; archCoreRefresh(); }).catch(function(e){ _acAsked=false; _acMsg="Couldn’t read the copy ("+((e&&e.message)||e)+")."; archCoreRefresh(); }); }
+      return msg("Checking the copy…")+(_acMsg?msg(_acMsg):"");
+    }
+  }
+  const st=archCoreStatus(), off=st.n-st.match+st.extra.length;
+  let h='<div style="font-size:13px;margin-bottom:8px"><b>'+st.n+'</b> past week'+(st.n===1?'':'s')+' · <b>'+st.match+'</b> match the smaller copy';
+  if(st.missing.length) h+=' · '+st.missing.length+' not copied yet';
+  if(st.differ.length) h+=' · '+st.differ.length+' out of date';
+  if(st.extra.length) h+=' · '+st.extra.length+' left over';
+  h+='.</div>';
+  if(_acBusy) h+=msg("⏳ Saving the copy…");
+  else{
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+    if(off) h+='<button onclick="archCoreBackfill()" style="padding:7px 14px;border-radius:9px;border:none;background:var(--header);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Make the copy ('+(st.n-st.match)+' week'+((st.n-st.match)===1?'':'s')+')</button>';
+    else h+='<div style="font-size:12px;color:#16a34a;font-weight:700;align-self:center">✓ The copy matches every past week.</div>';
+    h+='<button onclick="archCoreCheck()" style="padding:7px 14px;border-radius:9px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Check again</button>';
+    h+='</div>';
+  }
+  if(_acMsg) h+='<div style="font-size:12px;margin-top:8px">'+_acMsg+'</div>';
+  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px;line-height:1.45">Making the copy changes nothing in the app — every device keeps downloading the full past weeks until a later update switches them. Each week that closes from now on is copied by itself.</div>';
+  return h;
+}
+function archCoreCardHtml(){
+  if(typeof momHere!=="function"||!momHere()) return "";
+  return '<div class="rules-wrap"><div class="rules-hdr">📚 Past weeks</div>'+
+    '<div class="rules-sub">Every device downloads all the past weeks each time it opens. A smaller copy with only what the everyday screens use will let them start faster.</div>'+
+    '<div class="rules-card open"><div class="rules-card-body" id="ac-body">'+_acBody()+'</div></div></div>';
+}
+function archCoreRefresh(){ try{ const el=document.getElementById("ac-body"); if(el) el.innerHTML=_acBody(); }catch(e){} }
+function archCoreCheck(){ _acRemote=null; _acAsked=false; _acMsg=""; archCoreRefresh(); }
+function archCoreBackfill(){
+  if(typeof momHere!=="function"||!momHere()||_acBusy||_acRemote===null) return;
+  if((typeof archiveEnsureAll==="function"&&!archiveEnsureAll())) return;
+  const A=archive||{}, upd={};
+  Object.keys(A).forEach(wk=>{ upd["archiveCore/"+wk]=_acJson(archCoreOf(A[wk])); });
+  Object.keys(_acRemote||{}).forEach(wk=>{ if(A[wk]===undefined) upd["archiveCore/"+wk]=null; });   // a copy of a week that's gone
+  const n=Object.keys(A).length, mb=(JSON.stringify(upd).length/1e6).toFixed(1);
+  if(typeof _dryRun==="function"&&_dryRun()){ _acMsg="Dry run — nothing was written ("+n+" weeks, "+mb+" MB)."; archCoreRefresh(); return; }
+  if(typeof db==="undefined"||!db||!n) return;
+  if(!confirm("Save the smaller copy of "+n+" past weeks?\n\nThis writes a second copy (about "+mb+" MB) next to the full past weeks. The full past weeks stay exactly as they are, and no screen changes.")) return;
+  _acBusy=true; _acMsg=""; archCoreRefresh();
+  db.ref().update(upd).then(function(){ return db.ref("archiveCore").once("value"); }).then(function(s){
+    _acRemote=s.val()||{}; _acBusy=false;
+    const st=archCoreStatus();
+    _acMsg=(st&&st.match===st.n&&!st.extra.length)?("✓ Saved and checked: all "+st.n+" weeks match."):("⚠ Saved, but "+(st?(st.n-st.match+st.extra.length):"?")+" weeks don’t match. Nothing reads the copy yet, so nothing changed — tell Claude.");
+    archCoreRefresh();
+  }).catch(function(e){ _acBusy=false; _acMsg="✗ Not saved ("+((e&&e.message)||e)+"). Nothing changed."; archCoreRefresh(); });
+}
+// ARCHCORE_END
 let cascadeDebounce = null;
 let fbTasksHighWater = 0; // max task count ever seen from Firebase — guards against accidental wipes
 // Dry-run mode (?dryrun=1 or localStorage ha_dryrun=1): reads work, writes are no-ops.
@@ -7073,6 +7200,7 @@ function renderSettings(el,ah){
   pinHtml+='<div id="celeb-cfg-msg" style="font-size:12px;color:#16a34a;min-height:16px;margin-top:6px"></div>';
   pinHtml+='</div></div></div>';
   if(typeof picMoveCardHtml==="function") pinHtml+=picMoveCardHtml();   // 🖼 PICMOVE: copy + check the pictures (Mom only)
+  if(typeof archCoreCardHtml==="function") pinHtml+=archCoreCardHtml();   // ARCHCORE: 📚 Past weeks — the smaller copy (Mom only)
 
   renderRules(el, pinHtml);
 }
@@ -28978,7 +29106,7 @@ function addManualAttWeek(label){
   const entry={weekLabel:wkKey,archivedAt:nowTs(),history:{},tasks:[],checked:{},dates:{}};
   archive[wkKey]=entry;
   // ARCHNOSTR: no device copy of the archive (NO_MIRROR drops it)
-  if(db) db.ref("archive/"+wkKey).set(entry);
+  archWrite(wkKey,{"":entry});   // ARCHCORE: the week and its smaller copy, one write
   _preserveUI(function(){ const el=document.getElementById("content"); if(el) renderHistory(el); });
 }
 
@@ -29018,7 +29146,7 @@ function setAttDate(wkKey,day,val){
   if(!archive[wkKey].dates) archive[wkKey].dates={};
   archive[wkKey].dates[day]=val.trim();
   // ARCHNOSTR: no device copy of the archive (NO_MIRROR drops it)
-  if(db) db.ref("archive/"+wkKey+"/dates/"+day).set(val.trim());
+  archWrite(wkKey,{["dates/"+day]:val.trim()});   // ARCHCORE
   _preserveUI(function(){ const el=document.getElementById("content"); if(el) renderHistory(el); });
 }
 
@@ -29161,7 +29289,7 @@ function loadJson(){
           const entry={weekLabel:oldWK,archivedAt:nowTs(),history:snapHist,tasks:snapTasks,checked:snapChecked,dates:{...DAY_DT},slot_points:snapSlotPts,completion:buildWeekCompletion(snapTasks,snapChecked,snapHist)};
           archive[oldWK]=entry;
           // ARCHNOSTR: no device copy of the archive (NO_MIRROR drops it)
-          if(db) db.ref("archive/"+oldWK).set(entry);
+          archWrite(oldWK,{"":entry});   // ARCHCORE
         }
         // Carry ALL uncompleted tasks from old week into Monday of new week.
         // Same filter as Carry-overs tab: base tasks where neither original nor _c was checked,
@@ -34151,7 +34279,7 @@ function ceWalkApply(){
       const aw=archive[it.wk]; if(!aw) return;
       if(aw.checked) delete aw.checked[it.doneKey];
       if(aw.history) delete aw.history[it.doneKey];
-      if(db){ db.ref("archive/"+it.wk+"/checked/"+it.doneKey).remove(); db.ref("archive/"+it.wk+"/history/"+it.doneKey).remove(); }
+      archWrite(it.wk,{["checked/"+it.doneKey]:null,["history/"+it.doneKey]:null});   // ARCHCORE
     }
   });
   if(curTouched){
@@ -93835,7 +93963,7 @@ function gwCommit(){
       try{ const _df=(typeof sucDeferredOf==="function")?sucDeferredOf(relayLogData):null; if(_df) entry.deferred=_df; }catch(e3){}   // 🔁 SUCPB: the lessons this week's re-lays sent "to next week" — Sunday catch-up reads them
       archive[oldWK]=entry;
       // ARCHNOSTR: no device copy of the archive (NO_MIRROR drops it)
-      if(db) db.ref("archive/"+oldWK).set(entry);
+      archWrite(oldWK,{"":entry});   // ARCHCORE: the closed week and its smaller copy, one write
     }
     snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"]&&!subjNoCarry(t)&&!carryRebaselined(t)&&!carrySubjectGone(t)&&!carryPlanBacked(t))
       .forEach(t=>{

@@ -12,16 +12,17 @@ ok("no code turns the whole archive into text", !/JSON\.stringify\(archive\)/.te
 ok("HA_LS still drops ha_archive (NO_MIRROR unchanged)", /var NO_MIRROR=\{"ha_mastery":1,"ha_archive":1\};/.test(html) && /setItem:function\(k,v\)\{ if\(NO_MIRROR\[k\]\) return;/.test(html));
 ok("six ARCHNOSTR notes where the copies were", (html.match(/\/\/ ARCHNOSTR/g) || []).length === 6);
 
-// every archive write to Firebase is still there, each right after its in-memory change
+// every archive write to Firebase is still there, each right after its in-memory change (since ARCHCORE, slice 3 11/22, through
+// archWrite — the same write plus the smaller copy, in one update; test_archive_core_sync.js tests archWrite itself)
 const writes = [
   ["the start-up listener still fills archive from Firebase", /db\.ref\("archive"\)\.on\("value",s=>\{\n\s*fbArchiveLoaded=true;[\s\S]{0,300}archive=s\.val\(\)\|\|\{\};\n\s*\/\/ ARCHNOSTR/],
-  ["Attendance ▸ add a week still writes archive/<week>", /archive\[wkKey\]=entry;\n\s*\/\/ ARCHNOSTR[^\n]*\n\s*if\(db\) db\.ref\("archive\/"\+wkKey\)\.set\(entry\);/],
-  ["Attendance ▸ set a date still writes that one date", /archive\[wkKey\]\.dates\[day\]=val\.trim\(\);\n\s*\/\/ ARCHNOSTR[^\n]*\n\s*if\(db\) db\.ref\("archive\/"\+wkKey\+"\/dates\/"\+day\)\.set\(val\.trim\(\)\);/],
+  ["Attendance ▸ add a week still writes archive/<week>", /archive\[wkKey\]=entry;\n\s*\/\/ ARCHNOSTR[^\n]*\n\s*archWrite\(wkKey,\{"":entry\}\);/],
+  ["Attendance ▸ set a date still writes that one date", /archive\[wkKey\]\.dates\[day\]=val\.trim\(\);\n\s*\/\/ ARCHNOSTR[^\n]*\n\s*archWrite\(wkKey,\{\["dates\/"\+day\]:val\.trim\(\)\}\);/],
 ];
 writes.forEach(([n, re]) => ok(n, re.test(html)));
-const closes = html.match(/archive\[oldWK\]=entry;\n\s*\/\/ ARCHNOSTR[^\n]*\n\s*if\(db\) db\.ref\("archive\/"\+oldWK\)\.set\(entry\);/g) || [];
+const closes = html.match(/archive\[oldWK\]=entry;\n\s*\/\/ ARCHNOSTR[^\n]*\n\s*archWrite\(oldWK,\{"":entry\}\);/g) || [];
 ok("both week-close paths (loadJson + gwCommit) still write archive/<old week>", closes.length === 2, closes.length);
-ok("the curriculum editor walk-back still removes its archive records", /db\.ref\("archive\/"\+it\.wk\+"\/checked\/"\+it\.doneKey\)\.remove\(\)/.test(html));
+ok("the curriculum editor walk-back still removes its archive records", /archWrite\(it\.wk,\{\["checked\/"\+it\.doneKey\]:null,\["history\/"\+it\.doneKey\]:null\}\)/.test(html));
 
 // run the start-up listener for real: archive arrives, no storage call, nothing thrown
 { const m = /db\.ref\("archive"\)\.on\("value",(s=>\{[\s\S]*?\n\s*\})\);/.exec(html);
