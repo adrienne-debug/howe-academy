@@ -43048,6 +43048,7 @@ function dcPageHTML(){
   let h='<div data-dc-board="1" class="dc-board" style="min-height:100vh;background:#0f172a;color:#fff;font-family:\'DM Sans\',sans-serif;padding:18px clamp(16px,4vw,64px) 24px;box-sizing:border-box">';
   h+='<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><button onclick="dcClose()" style="border:none;background:rgba(255,255,255,.1);color:#fff;font-size:15px;font-weight:800;cursor:pointer;padding:8px 14px;border-radius:12px;font-family:\'DM Sans\',sans-serif">\u2190 Back</button>';
   if(groups.length>1) h+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+groups.map(x=>'<button onclick="dcPick(\''+dcJ(x.bid)+'\',\''+dcJ(x.key)+'\')" style="padding:8px 14px;border-radius:999px;border:2px solid '+((g&&x===g)?'#a5b4fc':'rgba(255,255,255,.2)')+';background:'+((g&&x===g)?'#312e81':'transparent')+';color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(x.done?'\u2713 ':'')+dcEsc(x.it.name||"Family time")+'</button>').join("")+'</div>';
+  if(typeof wbdDoorHTML==="function") h+=wbdDoorHTML(g);   // WBOARD: ✍️ Whiteboard — Mom's door, for whoever is at the screen
   h+='<span style="margin-left:auto;font-size:15px;color:#94a3b8">'+dcEsc((typeof _todayStr==="function")?_todayStr():"")+'</span></div>';
   if(!g){ h+='<div style="font-family:\'Fraunces\',serif;font-size:32px;margin-top:40px">No family time on today\u2019s schedule.</div></div>'; return h; }
   const d=g.day;
@@ -43582,6 +43583,74 @@ function uxSnackCardHTML(g){
 function uxRowBadges(d){ const n=((d&&d.res&&d.res.docs)||[]).length; return (n?' <span title="pictures &amp; documents" style="font-size:10px">\u{1F5BC} '+n+'</span>':'')+(d&&d.snack?' <span title="a snack" style="font-size:10px">\u{1F34E}</span>':''); }
 function uxSnackSupplyCells(d){ return ((d&&d.snack&&d.snack.supplies)||[]).map(x=>"\u{1F34E} "+(x.qty?x.qty+" ":"")+x.name); }
 // UNITDAY_EXTRAS_END
+// WBOARD_START — ✍️ a whiteboard on Today's card (Sara's answer 2026-11-20, a beta mom, via PLAN_unit_activity_types §6.9/§7.2;
+//   Adrienne's "go with her answers and build" 2026-11-22). Sara: she would use the board mostly as Mom's board — math scratch paper,
+//   a timeline drawn while she talks — her kids draw with fingers (no stylus), and a board is kept only "when someone taps Save".
+//   · THE DOOR: "✍️ Whiteboard" in the top bar of Today's card (DAYCARD's one hook) — Mom's door, for whoever is at the screen.
+//     wbdOpen(opts) is the one opener: opts = {uid, dayId} (the unit day on the card) · later {uid, dayId, key, kid} from an
+//     activity row (that door is not added here). A board opened with nothing still works — scratch only.
+//   · THE BOARD = the workbook viewer opened on a blank page: the same overlay (#wb-view, #wb-ink), the same pointer plumbing
+//     (finger draws by default; a real Pencil touch flips to pencil-only; touch-action follows the switch — the LG's 9/22 fix),
+//     the same ✏️ · 🩹 Erase · ↩︎ Undo · 🧽 Clear · 👆 Finger too. Its own bar (wbBarRender's hook): ✕ · ▢ Blank / ▦ Grid ·
+//     the tools. A thicker pen for fingers (WBD_PEN_W, the IIFE's hook). Its shape is set when it opens, so turning the iPad
+//     shows the same drawing smaller or larger, never stretched. Mom draws red, everyone else blue (the viewer's rule).
+//   · NOTHING IS STORED: wbView.scratch makes wbSave return before any write (its hook), so the 3 s autosave and ✕ write nothing;
+//     ✕ throws the drawing away. No path, no db, no Storage, no localStorage. While it is open a code update waits (haBusyReason
+//     already holds for any open wbView). No kid's name in code.
+const WBD_PEN_W=0.0045;   // of the board's width; the workbook pen is 0.0026 (a Pencil on a page)
+const WBD_GRID=20;        // squares across the board
+let _wbdBg="blank", _wbdRO=null;
+function wbdJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function wbdOpen(opts){
+  if(typeof document==="undefined"||!document.body) return false; opts=opts||{};
+  if(typeof wbView!=="undefined"&&wbView&&!wbView.scratch) return false;   // a workbook page is open — never wipe it
+  const v={scratch:true,kid:String(opts.kid||""),bookId:"",page:1,strokes:[],dirty:false,tool:"pen",penOnly:false,sawPen:false,penW:WBD_PEN_W,bg:_wbdBg,ar:0,
+    uid:String(opts.uid||""),dayId:opts.dayId==null?"":String(opts.dayId),key:String(opts.key||"")};
+  wbView=v;
+  let ov=document.getElementById("wb-view"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="wb-view"; ov.setAttribute("data-wbd","1");
+  ov.style.cssText="position:fixed;top:0;left:0;right:0;bottom:0;z-index:10050;background:#e2e8f0;display:flex;flex-direction:column;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none";
+  ov.innerHTML='<div id="wb-bar" style="display:flex;align-items:center;gap:6px;padding:8px 10px;background:#fff;border-bottom:1px solid #e2e8f0;flex:none;font-family:\'DM Sans\',sans-serif;flex-wrap:wrap"></div>'+
+    '<div id="wbd-stage" style="flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden">'+
+      '<div id="wb-hold" style="position:relative;background-color:#fff;box-shadow:0 2px 14px rgba(0,0,0,.15);border-radius:6px;overflow:hidden">'+
+        '<div id="wb-img" style="position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none"></div>'+
+        '<canvas style="position:absolute;top:0;left:0;width:100%;height:100%;touch-action:none;cursor:crosshair" id="wb-ink"></canvas></div></div>';
+  document.body.appendChild(ov);
+  wbBarRender(); wbdFit();
+  try{ if(_wbdRO) _wbdRO.disconnect(); _wbdRO=null; if(typeof ResizeObserver==="function"){ _wbdRO=new ResizeObserver(function(){ wbdFit(); }); _wbdRO.observe(document.getElementById("wbd-stage")); } }catch(e){}
+  if(typeof wbWatchFit==="function") wbWatchFit();
+  return true;
+}
+// the board fills the space under the bar at the shape it opened with (8 px all round)
+function wbdFit(){
+  const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!v.scratch) return false;
+  const st=document.getElementById("wbd-stage"), hold=document.getElementById("wb-hold"); if(!st||!hold) return false;
+  const r=st.getBoundingClientRect(), W=r.width-16, H=r.height-16; if(W<20||H<20) return false;
+  if(!v.ar) v.ar=W/H;
+  let w=W, h=W/v.ar; if(h>H){ h=H; w=H*v.ar; }
+  hold.style.width=Math.round(w)+"px"; hold.style.height=Math.round(h)+"px";
+  const c=(w/WBD_GRID).toFixed(2)+"px";
+  hold.style.backgroundImage=v.bg==="grid"?"linear-gradient(#bfdbfe 1px,transparent 1px),linear-gradient(90deg,#bfdbfe 1px,transparent 1px)":"none";
+  hold.style.backgroundSize=v.bg==="grid"?c+" "+c:"auto";
+  if(typeof wbFit==="function") wbFit(); if(typeof wbPaint==="function") wbPaint();
+  return true;
+}
+function wbdBg(k){ const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!v.scratch) return; v.bg=_wbdBg=(k==="grid"?"grid":"blank"); wbdFit(); wbBarRender(); }
+// wbBarRender's hook: the board's bar, drawn with the viewer's own button
+function wbdBarHTML(v,btn){
+  return btn("\u2715","wbClose()")+'<span style="font-weight:800;font-size:13px;color:#0f172a">\u270D\uFE0F Whiteboard</span>'+
+    '<span style="font-size:11px;color:#64748b">scratch \u00B7 \u2715 wipes it</span><span style="flex:1"></span>'+
+    btn("\u25A2 Blank","wbdBg(\'blank\')",v.bg!=="grid")+btn("\u25A6 Grid","wbdBg(\'grid\')",v.bg==="grid")+
+    btn("\u270F\uFE0F","wbTool(\'pen\')",v.tool==="pen")+btn("\u{1FA79} Erase","wbTool(\'erase\')",v.tool==="erase")+
+    btn("\u21A9\uFE0E Undo","wbUndo()")+btn("\u{1F9FD} Clear","wbClear()")+btn(v.penOnly?"\u270D\uFE0F Pencil only":"\u{1F446} Finger too","wbTogglePen()",v.penOnly);
+}
+// DAYCARD's hook: the door in the card's top bar (the unit day rides along for Save)
+function wbdDoorHTML(g){
+  const d=g&&g.day, a=(d&&d.uid&&d.id!=null)?"{uid:'"+wbdJ(d.uid)+"',dayId:'"+wbdJ(d.id)+"'}":"{}";
+  return '<button data-wbd-door="1" onclick="wbdOpen('+a+')" style="border:none;background:rgba(255,255,255,.1);color:#fff;font-size:15px;font-weight:800;cursor:pointer;padding:8px 14px;border-radius:12px;font-family:\'DM Sans\',sans-serif">\u270D\uFE0F Whiteboard</button>';
+}
+try{ window.addEventListener("resize",function(){ if(typeof wbView!=="undefined"&&wbView&&wbView.scratch) wbdFit(); }); }catch(e){}   // a device with no ResizeObserver (the LG) still re-fits on a turn
+// WBOARD_END
 // UNITDAY_GAME_START — 🎲 a Game on a unit day (her words 2026-11-11: "use those to build what she's envisioning please" — Sara, a
 //   beta mom, answered the games worksheet 2026-11-11: her leaf-blowing competition, minute-to-win-it at Christmas; a game is
 //   "something we all do together, off-screen, with the rules on the day card"; notebook activities stay separate, "maybe having the
@@ -50709,7 +50778,7 @@ function wbBarRender(){
   const bar=document.getElementById("wb-bar"); if(!bar||!wbView) return;
   const b=wbBook(wbView.bookId)||{}; const v=wbView;
   const btn=(lbl,fn,on)=>'<button onclick="'+fn+'" style="padding:7px 11px;border-radius:9px;border:1.5px solid '+(on?"#1d4ed8":"#cbd5e1")+';background:'+(on?"#dbeafe":"#fff")+';font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
-  bar.innerHTML=
+  bar.innerHTML=(v.scratch&&typeof wbdBarHTML==="function")?wbdBarHTML(v,btn):   // WBOARD: the whiteboard's own bar (no book, no pages, no save)
     btn("✕","wbClose()")+
     '<span style="font-weight:800;font-size:13px;color:#0f172a;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(b.name||"Workbook")+'</span>'+
     '<span style="padding:3px 9px;border-radius:999px;background:'+((typeof SL_KCOL!=="undefined"&&SL_KCOL[v.kid])||"#64748b")+';color:#fff;font-size:11px;font-weight:800">'+((typeof SL_KLBL!=="undefined"&&SL_KLBL[v.kid])||v.kid)+'</span>'+
@@ -50808,7 +50877,7 @@ function wbPaint(){
     const _w0=cv.width; if(!wbFit()) return; if(cv.width!==_w0) wbPaint();
     const p=wbPt(e,cv); if(!p) return;
     if(wbView.tool==="erase"){ wbEraseAt(p); return; }
-    const w=0.0026+0.0026*(e.pressure&&e.pressure>0?e.pressure:0.5);
+    const _pw=wbView.penW||0.0026, w=_pw+_pw*(e.pressure&&e.pressure>0?e.pressure:0.5);   // WBOARD: penW = the whiteboard's thicker finger pen
     wbView._live={c:(typeof momHere==="function"&&momHere())?WB_MOMPEN:WB_PEN,w:+w.toFixed(5),p:[p]};
     wbView.strokes.push(wbView._live); wbMarkDirty(wbView);
     try{cv.setPointerCapture(e.pointerId);}catch(err){}
@@ -50847,7 +50916,7 @@ function wbAutoSaveSoon(){
     wbSave(true); },3000);
 }
 async function wbSave(quiet){
-  const v=wbView; if(!v) return;
+  const v=wbView; if(!v||v.scratch) return;   // WBOARD: a scratch whiteboard never writes
   if(!db||_dryRun()){ v.dirty=false; wbBarRender(); return; }
   const rev=v._rev||0;
   try{
