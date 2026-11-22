@@ -413,7 +413,7 @@ console.log("\n# index.html: only the thin hook");
   ok("seasonNowHTML lives in the SEASONS block: Mom only, never Dad's TV, and it only asks seasons.js", /function seasonNowHTML\(\)\{\n  if\(!\(typeof momHere==="function"&&momHere\(\)\)\|\|\(typeof _kioskD==="function"&&_kioskD\(\)\)\) return \{n:0,html:""\};\n  if\(typeof window\.seasonNowLines!=="function"\)\{ seasonsLoad\(\); return \{n:0,html:""\}; \}\n  return window\.seasonNowLines\(\)\|\|\{n:0,html:""\};\n\}/.test(BLOCK));
   ok("the NOW list asks for it right after the gift reminders, guarded", /_gf\.html; \} \}catch\(e\)\{\}[^\n]*\n  try\{ if\(typeof seasonNowHTML==="function"\)\{ const _sn=seasonNowHTML\(\); nowN\+=_sn\.n; h\+=_sn\.html; \} \}catch\(e\)\{\}[^\n]*\n  if\(!nowN\)/.test(src));
   ok("it is asked for in exactly one place", (src.match(/seasonNowHTML\(\)/g) || []).length === 2);   // the function itself + the one guarded call
-  ok("the block still writes nothing and reads no season data itself", !/\.set\(|\.update\(|\.remove\(|db\.ref/.test(BLOCK) && !/db\.ref\(["'`]season/.test(src));
+  ok("the block still writes nothing and reads no season data itself", !/\.set\(|\.update\(|\.remove\(|db\.ref/.test(BLOCK) && !/db\.ref\(["'`](seasons|seasonSecret)\b/.test(src));   // (seasonJobs/<kid> is the kids' button count — test_seasons_5)
   ok("when seasons.js arrives for Home Base, Home Base is drawn again", /s\.onload=\(\)=>\{ if\(tab==="moms-plan"&&\(mpSubView==="seasons"\|\|\(typeof giftHomeBase==="function"&&giftHomeBase\(\)\)\)\) renderAll\(\); \};/.test(BLOCK));
   // run the hook
   let momOn = false, kiosk = false, loads = 0; const win = {};

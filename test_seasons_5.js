@@ -145,6 +145,20 @@ console.log("\n# a job the kid did is history — stars never stranded or double
   ok("deleted after it was done → Ava's job and its stars stay; no bank call", o.sync() === 0 && T.jobs().ava.t1.done === TODAY && o.bank.length === 0);
 }
 
+console.log("\n# hub fix: Mom ticks a kid's job before it is showing");
+{
+  o.set(SEASON({ t1: { t: "Dough", who: "ava", due: "2026-12-03", stars: 2 } }), {}, EV(), {});
+  o.sync(); o.writes.length = 0; o.bank.length = 0;
+  W.snTodoTick("xmas", "g1", "t1"); let w = o.last();
+  ok("show day still ahead → the job record is removed and jobFor cleared, in the same update as her tick", w.val["seasons/ideas/xmas/g1/todo/t1/done"] === TODAY && w.val["seasonJobs/ava/t1"] === null && w.val["seasons/ideas/xmas/g1/todo/t1/jobFor"] === null && !("seasonJobs/ava/t1/done" in w.val), w.val);
+  ok("…and NO bank entry is made (the kid never saw it)", o.bank.length === 0 && !T.jobs().ava.t1);
+  ok("nothing more to sync while it's done", o.sync() === 0);
+  o.writes.length = 0; W.snTodoTick("xmas", "g1", "t1"); w = o.last();
+  ok("her un-tick only clears done; still no bank call", w.val["seasons/ideas/xmas/g1/todo/t1/done"] === null && paths(w).length === 1 && o.bank.length === 0);
+  o.sync();
+  ok("…and the sync sends the job again, for its show day", o.last().val["seasonJobs/ava/t1"].show === "2026-12-03" && o.last().val["seasons/ideas/xmas/g1/todo/t1/jobFor"] === "ava");
+}
+
 console.log("\n# Mom ticks it on her page: it pays the way a chore pays, and un-ticking takes back exactly that");
 {
   o.set(SEASON({ t1: { t: "Dough", who: "ava", due: "2026-11-20", stars: 2 } }), {}, EV(), {});
@@ -246,6 +260,36 @@ console.log("\n# the kid's guard");
     ["seasonJobs/ava/j1", null], ["seasonJobs/ava/j9/done", TODAY], ["seasonJobs/ava/j3/done", TODAY], ["seasonJobs/ava/j1/bid", { x: 1 }], ["bank/ava/adjustments/x", { amount: 9 }]];
   ok("refused: another kid's job, an old date, its words/stars/day, the whole record, a job that isn't there or isn't showing, the bank", bad.every(b => !ok1(b[0], b[1])), bad.filter(b => ok1(b[0], b[1])));
   ok("a kid not on the roster can write nothing", !T2.okPath("seasonJobs/zed/j1/done", TODAY, "zed"));
+}
+
+console.log("\n# the ✨ Our plans button counts today's jobs (index.html SEASONKID, hub review)");
+{
+  const HTML = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+  const a = HTML.indexOf("// SEASONKID_START"), b = HTML.indexOf("// SEASONKID_END"), BLOCK = HTML.slice(a, b);
+  ok("its one read lives only in this block's skJobsN — nothing at boot, no listener", (HTML.match(/seasonJobs/g) || []).length === (BLOCK.match(/seasonJobs/g) || []).length && !/\.on\(/.test(BLOCK) && /function skJobsN\(k\)/.test(BLOCK));
+  const X = { reads: [], fire: {}, draws: 0, now: 1e6, tab: "kids" };
+  const env = { KID_COLOR: { ava: "#2563eb", ben: "#16a34a" }, ROSTER: ["ava", "ben"], kcLittle: () => false, kcPlay: null, kcPlayClose() {}, renderAll() { X.draws++; }, location: { hostname: "x.github.io" },
+    document: { createElement: () => ({}), head: { appendChild() {} } }, window: {}, _todayStr: () => TODAY, Date: { now: () => X.now },
+    db: { ref(p) { return { once(ev, fn) { X.reads.push(p); X.fire[p] = v => fn({ val: () => v }); } }; } } };
+  const names = ["skTileHTML", "skOpen", "skClose", "skBack", "skOn"];
+  const F = new Function(...Object.keys(env), "getTab", BLOCK.replace(/^\/\/ SEASONKID_START[^\n]*\n/, "").replace(/\btab\b/g, "getTab()") + "\nreturn {" + names.join(",") + "};")(...Object.values(env), () => X.tab);
+  const J = { j1: { t: "a", show: TODAY, due: TODAY }, j2: { t: "b", show: "2026-11-18", due: "2026-11-19" }, j3: { t: "c", show: "2026-11-25" }, j4: { t: "d", show: TODAY, done: TODAY } };
+  let h = F.skTileHTML("ava");
+  ok("first draw: no count yet, ONE read of seasonJobs/ava", /✨ Our plans<\/button>/.test(h) && X.reads.join() === "seasonJobs/ava");
+  X.fire["seasonJobs/ava"](J);
+  ok("the answer: 2 showing, un-ticked jobs (a later one and a ticked one don't count) → the Corner redraws once", X.draws === 1 && /✨ Our plans · 🧹 2 jobs<\/button>/.test(F.skTileHTML("ava")));
+  F.skTileHTML("ava"); F.skTileHTML("ava"); X.now += 30000; F.skTileHTML("ava");
+  ok("repaints within a minute don't read again", X.reads.length === 1);
+  F.skTileHTML("ben"); X.fire["seasonJobs/ben"]({ b1: { t: "x", show: TODAY } });
+  ok("one job → “🧹 1 job”; each kid read on their own", /🧹 1 job<\/button>/.test(F.skTileHTML("ben")) && X.reads.join() === "seasonJobs/ava,seasonJobs/ben");
+  // ava ticks both on the page, then ← Back
+  F.skOpen("ava"); F.skBack();
+  h = F.skTileHTML("ava");
+  ok("← Back from the page reads again, and shows no stale count meanwhile", X.reads.filter(p => p === "seasonJobs/ava").length === 2 && /✨ Our plans<\/button>/.test(h));
+  const d0 = X.draws; X.fire["seasonJobs/ava"]({ j1: Object.assign({}, J.j1, { done: TODAY }), j2: Object.assign({}, J.j2, { done: TODAY }) });
+  ok("all ticked → the count is gone (nothing to redraw)", /✨ Our plans<\/button>/.test(F.skTileHTML("ava")) && X.draws === d0);
+  X.now += 61000; F.skTileHTML("ava"); X.tab = "today"; X.fire["seasonJobs/ava"](J);
+  ok("after a minute it reads again; an answer while the kid is on another tab doesn't redraw", X.reads.filter(p => p === "seasonJobs/ava").length === 3 && X.draws === d0);
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

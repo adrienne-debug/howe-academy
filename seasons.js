@@ -857,7 +857,9 @@ function snTodoTick(sid,iid,lid){
   if(dadCopy(L)){const m="dadday/"+L.r.dadOn+"/todos/sn"+lid;
     if(on&&L.r.dadOn>t){up[m]=null;up[lineBase(L,"todo")+"/dadOn"]=null;}   // SEASONJOBS fix: not showing yet → off his list (her un-tick lets the sync put it back)
     else{up[m+"/done"]=on;up[m+"/doneOn"]=on?t:null;}}   // showing → crossed off today, gone tomorrow, like anything he ticks
-  const j=kidCopy(L);if(j){const k=L.r.jobFor,m="seasonJobs/"+k+"/"+lid+"/",f=jobPay(k,j,on);up[m+"done"]=on?t:null;if("bid" in f)up[m+"bid"]=f.bid;}   // step B: and the kid's job (pays like a chore)
+  const j=kidCopy(L);if(j){const k=L.r.jobFor,m="seasonJobs/"+k+"/"+lid;
+    if(on&&isIso(j.show)&&j.show>t){up[m]=null;up[lineBase(L,"todo")+"/jobFor"]=null;}   // hub fix: not showing yet → off their jobs, NO pay (her un-tick lets the sync send it again)
+    else{const f=jobPay(k,j,on);up[m+"/done"]=on?t:null;if("bid" in f)up[m+"/bid"]=f.bid;}}   // step B: showing → ticked, and pays like a chore
   apply(up);repaint();
 }
 // → My list today: ONE copy onto Mom's own daily to-do list (her answer 10, Mom's half). The to-do remembers the day (`list`), so it

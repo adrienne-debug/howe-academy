@@ -268,7 +268,7 @@ console.log("\n# index.html: the button, the open/close state, the loader — no
   const a = HTML.indexOf("// SEASONKID_START"), b = HTML.indexOf("// SEASONKID_END"), BLOCK = HTML.slice(a, b);
   ok("one SEASONKID block, right after the wish list's", a > 0 && b > a && HTML.indexOf("// SEASONKID_START", a + 1) < 0 && HTML.slice(HTML.lastIndexOf("\n", a - 2) + 1, a - 1) === "// WISHES_END");
   ok("seasonkid.js is named only inside the block (never loaded at start)", HTML.split("seasonkid.js").length - 1 === BLOCK.split("seasonkid.js").length - 1 && BLOCK.split("seasonkid.js").length - 1 >= 2 && !/<script[^>]*seasonkid/.test(HTML));
-  ok("the block reads and writes nothing itself", !/db\.ref|\.set\(|\.update\(|\.remove\(|\.on\(/.test(BLOCK));
+  ok("the block writes nothing and listens to nothing; its ONE read is the 🧹 job count (SEASONJOBS, test_seasons_5)", !/\.set\(|\.update\(|\.remove\(|\.on\(/.test(BLOCK) && (BLOCK.match(/db\.ref\(/g) || []).length === 1 && /db\.ref\("seasonJobs\/"\+k\)\.once\("value"/.test(BLOCK));
   ok("the block is under 3 KB", Buffer.byteLength(BLOCK, "utf8") < 3072, Buffer.byteLength(BLOCK, "utf8"));
   const kc = HTML.slice(HTML.indexOf("function renderKidsCorner(el){"), HTML.indexOf("\nfunction kcAddOpen"));
   ok("Kids' Corner: the page in place of the buttons, the button next to the wish list's", /else if\(typeof skOn==="function"&&skOn\(k\)\) h\+=skPageHTML\(k\);/.test(kc) && /if\(typeof skTileHTML==="function"\) h\+=skTileHTML\(k\);/.test(kc) && kc.indexOf("kcCalToggleHTML(k)") < kc.indexOf("skTileHTML(k)") && kc.indexOf("skTileHTML(k)") < kc.indexOf("kcModeBodyHTML(k)"));
