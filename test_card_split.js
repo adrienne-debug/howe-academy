@@ -12,7 +12,7 @@ const fs = require("fs"), path = require("path"), vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const cut = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); if (i < 0 || j < 0) throw new Error("markers " + a); return src.slice(i, j); };
 const fn = name => { const i = src.indexOf("function " + name + "("); if (i < 0) throw new Error("no " + name); let d = 0, j = i, seen = false; for (; j < src.length; j++) { const c = src[j]; if (c === "{") { d++; seen = true; } else if (c === "}") { d--; if (seen && d === 0) break; } } return src.slice(i, j + 1); };
-const CS = cut("// CARDSPLIT_START", "// CARDSPLIT_END");
+const CS = cut("// CARDSPLIT_START", "// CARDSPLIT_END"), CF = cut("// CHECKFIX_START", "// CHECKFIX_END");   // the sheet draws CHECKFIX's fixes (slice B)
 let pass = 0, fail = 0;
 const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  " + JSON.stringify(x).slice(0, 600) : "")); } };
 const J = x => JSON.stringify(x);
@@ -29,7 +29,7 @@ function world(o) {
       update: v => writes.push([p, "update", v]), set: v => writes.push([p, "set", v]) }) },
     document: { getElementById: id => els[id] || null, createElement: () => { const x = { style: {}, remove() { if (els[x.id] === x) delete els[x.id]; } }; return x; }, body: { appendChild: x => { els[x.id] = x; } } } };
   vm.createContext(ctx);
-  vm.runInContext(CS + "\n" + fn("unitBatchAdd") + "\n" + fn("unitBatchClose") + "\n" + fn("unitBatchSave") + "\nlet unitBatch=null;\nObject.defineProperty(this,'cardSheet',{get:()=>cardSheet,set:v=>{cardSheet=v;}});", ctx);
+  vm.runInContext(CS + "\n" + CF + "\n" + fn("unitBatchAdd") + "\n" + fn("unitBatchClose") + "\n" + fn("unitBatchSave") + "\nlet unitBatch=null;\nObject.defineProperty(this,'cardSheet',{get:()=>cardSheet,set:v=>{cardSheet=v;}});", ctx);
   return { ctx, writes, els, el, alerts, store };
 }
 const W = world(), c = W.ctx;
@@ -110,7 +110,7 @@ const UNIT = () => ({ u1: { id: "u1", title: "Pond Life", enrolled: { k1: true, 
   w.el("unit-batch-txt").value = txt; w.el("card-sheet-prev"); w.el("card-sheet-go");
   c.cardSheetInput(txt);
   const prev = w.els["card-sheet-prev"].innerHTML;
-  ok("the preview: 4 rows shown (frog is already in the deck), split at dash, the heading noted", (prev.match(/data-cs-row=/g) || []).length === 4 && /split at: dash/.test(prev) && /Heading “Pond animals”/.test(prev) && /1 already in this deck/.test(prev), prev.slice(0, 300));
+  ok("the preview: 4 new cards found (frog is already in the deck — shown greyed, not counted), split at dash, the heading noted", /Check — 4 cards found/.test(prev) && (prev.match(/data-cs-row=/g) || []).length === 5 && (prev.match(/data-cf-dup="1"/g) || []).length === 1 && /split at: dash/.test(prev) && /Heading “<b>Pond animals<\/b>”/.test(prev), prev.slice(0, 300));
   ok("…Duckweed (no meaning) is amber and said so; the Add button counts only ready rows", /#f59e0b/.test(prev) && /1 row has no meaning yet/.test(prev) && w.els["card-sheet-go"].textContent === "Add 3 cards");
   const duck = c.cardSheet.rows.find(r => r.name === "Duckweed"); w.el("cs-row-" + duck.id);
   c.cardSheetEdit(duck.id, "back", "  a tiny floating plant ");
@@ -154,7 +154,7 @@ function builder(o) {
     lrSafeUrl: u => u, kitCapKey: () => (o.key === false ? "" : "k"), kitCapAsk: async content => { asks.push(content); return '{"items":[{"front":"guppy","back":"a tiny fish"}]}'; },
     document: { getElementById: () => null } };
   vm.createContext(ctx);
-  vm.runInContext(CS + "\n" + cut("// UNITBUILD_START", "// UNITBUILD_END") + "\nObject.defineProperty(this,'ubForm',{get:()=>ubForm});", ctx);
+  vm.runInContext(CS + "\n" + CF + "\n" + cut("// UNITBUILD_START", "// UNITBUILD_END") + "\nObject.defineProperty(this,'ubForm',{get:()=>ubForm});", ctx);
   ctx.ubOpen(); ctx.ubSet("title", "Pond"); ctx.ubGo("fill");
   const paste = text => { const el = { value: text }; ctx.document.getElementById = id => id === "ub-in-cards-0" ? el : null; return { r: ctx.ubAddLines(0, "cards"), el }; };
   return { ctx, asks, paste, cards: () => ctx.ubForm.days[0].cards.map(x => [x.front, x.back]) };
