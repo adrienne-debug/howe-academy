@@ -24,6 +24,7 @@
  *   run:  node test_drill_three.js
  */
 const fs = require("fs"), path = require("path"), vm = require("vm"), cp = require("child_process");
+const { stripPoint } = require("./test_drill_pointer.js");   // DRILLPOINT (slice 6): the panel's save is numbers only now — compared regions strip it on both sides
 
 // ── stripThree: the slice taken out again. The block (inside RETRWEEK) goes; every other edit is put back to its old text.
 // [new text, old text] — exactly what the slice changed outside its block (each new text occurs exactly once).
@@ -94,7 +95,8 @@ console.log("0. stripThree undoes the slice exactly");
     const regions = [["// RETRWEEK_START", "// RETRWEEK_END"], ["// GWRETR_START", "// GWRETR_END"], ["// RETRLIVE_START", "// RETRLIVE_END"],
       ["// SCHOOLEND_START", "// SCHOOLEND_END"], ["// DRILLROWS_START", "// DRILLROWS_END"], ["// DRILLDAYS_START", "// DRILLDAYS_END"],
       ["// DRILLADD_START", "// DRILLADD_END"], ["// RETRSAVE_START", "// RETRSAVE_END"]];
-    const diff = regions.filter(r => sliceIn(SRC0, r[0], r[1]) !== sliceIn(M0, r[0], r[1])).map(r => r[0]);
+    const P0 = stripPoint(SRC0), PM = stripPoint(M0);   // DRILLPOINT (slice 6) taken out the same way on both sides (a no-op without it)
+    const diff = regions.filter(r => sliceIn(P0, r[0], r[1]) !== sliceIn(PM, r[0], r[1])).map(r => r[0]);
     ok("stripped, RETRWEEK / GWRETR / RETRLIVE / SCHOOLEND / DRILLROWS / DRILLDAYS / DRILLADD / RETRSAVE equal origin/main's (stripped the same way)", diff.length === 0, diff);
   } else console.log("  (origin/main not readable here — compare skipped)");
   const g0 = sliceIn(src, "// GWRETR_START", "// GWRETR_END"), g1 = sliceIn(SRC0, "// GWRETR_START", "// GWRETR_END");
@@ -445,15 +447,15 @@ console.log("5. writers");
   ok("…and after that, writes are {week, week2} again", w.writes.length === 4 && J(Object.keys(w.writes[3].v).sort()) === J(["week", "week2"]), w.writes[3] && w.writes[3].v);
 }
 {
-  // the old Mastery ▸ Settings day buttons never erase a saved week3
+  // the Mastery ▸ Settings panel never erases a saved week3 (DRILLPOINT, slice 6: its day buttons are gone; a number saves settings only)
   const plan = { kida: { week: wk("sprint", "match", "off", "sprint", "recheck"), week2: { mon: "drill" }, week3: { mon: "match", tue: "drill" } } };
   const w = uiWorld({ plan, masteryKid: "kida" });
-  w.retrAdminInit(); w.retrAdminCycleDay("wed", 1); w.retrAdminCycleDay("fri", 2); w.retrAdminNum("gate_pct", "75");
-  ok("Mastery day taps and a number: three saves, none carries week3", w.writes.length === 3 && w.writes.every(x => !("week3" in x.v)), w.writes.map(x => Object.keys(x.v)));
+  w.retrAdminInit(); w.retrAdminNum("gate_pct", "75");
+  ok("a Mastery number: one save, settings only (no week3, no days)", w.writes.length === 1 && J(Object.keys(w.writes[0].v)) === J(["settings"]), w.writes.map(x => Object.keys(x.v)));
   ok("…update() keeps week3 in the database and in the mirror", J(w.masteryData.retrievalPlan.kida.week3) === J({ mon: "match", tue: "drill" }));
   ok("…and the builder still reads it", J(w.retrDayKinds("kida", "tue")) === J(["match", "drill"]));
   w.drDaysOpen("kida", "drill"); w.drDaysTap("wed");
-  ok("a Curriculum tap after that carries week3 through untouched", J(w.writes[3].v.week3) === J({ mon: "match", tue: "drill" }) && w.__admin() === null, w.writes[3] && w.writes[3].v);
+  ok("a Curriculum tap after that carries week3 through untouched", J(w.writes[1].v.week3) === J({ mon: "match", tue: "drill" }) && w.__admin() === null, w.writes[1] && w.writes[1].v);
 }
 {
   // ＋ Add subject ▸ Card practice
