@@ -173,7 +173,7 @@ function peopleView(o){
       '<button class="gf-tool" onclick="gfGroupBudget(\''+esc(g.id)+'\')">💲</button></div>'+(T.budget!=null?'<div style="padding:0 14px">'+bar(T)+'</div>':'')+grpSecLine(g)+dadGroupRow(o,g)+'<div class="gf-bd">';   // GIFTS_GROUPS · GIFTS_DAD: 👨 share the whole group
     ps.forEach(p=>{const PT=personTot(o.id,p.id);
       h+='<button class="gf-prow" onclick="gfOpenPerson(\''+esc(p.id)+'\')"><span class="gf-dot" style="background:'+esc(p.color||"#94a3b8")+'"></span>'+
-        '<span class="gf-pn">'+esc(p.name)+'<span class="gf-pc">'+(PT.count?PT.count+' present'+(PT.count===1?'':'s')+(PT.shared?' · 👤 '+(PT.count-PT.shared)+' own · 🤝 '+PT.shared+' shared':'')+' · '+counts(PT):'nothing yet')+'</span>'+bar(PT)+'</span>'+
+        '<span class="gf-pn">'+esc(p.name)+'<span class="gf-pc">'+(PT.count?PT.count+' present'+(PT.count===1?'':'s')+(PT.shared?' · 👤 '+(PT.count-PT.shared)+' own · 🤝 '+PT.shared+' shared':'')+' · '+counts(PT):'nothing yet')+'</span>'+bar(PT)+secChips(o,p.id,PT)+'</span>'+   // SECTOTALS: money by section under the row
         '<span class="gf-amt">'+money(PT.paid)+(PT.budget!=null?'<small> / '+money(PT.budget)+'</small>':'')+'</span></button>';});
     h+='</div></div>';
   });
@@ -181,6 +181,20 @@ function peopleView(o){
   if(nobody.length)h+='<div class="gf-card"><div class="gf-ghd"><span>💭 Not for anyone yet</span></div><div class="gf-bd">'+nobody.map(it=>itemRow(it,null)).join("")+'</div></div>';
   h+='<div class="gf-acts"><button class="gf-tool" onclick="gfNewItem(null,null)">＋ Present</button><button class="gf-tool" onclick="gfNewPerson()">＋ Person</button><button class="gf-tool" onclick="gfTagsToggle()">🏷 Want · need · wear · read: '+(tagsOn()?'on':'off')+'</button></div>';   // GIFTS_GROUPS: ＋ Group is on the group bar · WNWR
   return h;
+}
+// SECTOTALS (Sara's ask 2026-11-22: "where it says what you have spent on each kids could it separate it to the categories? … so I can see
+// which category is low … on the overview page too"): under each person's row on People, one small chip per section they have — paid,
+// + still to buy, / that section's budget (red over, green under). Same numbers as their page (personTot per section; shared presents
+// by share; returned/dropped don't count). No chips for someone with nothing, or for a group with just one section. Display only.
+function secChips(o,pid,PT){
+  const S=secsFor(o,[pid]);if(S.length<2)return "";
+  const R=S.map(s=>({s,T:personTot(o.id,pid,s.id)})),known=S.map(s=>s.id);
+  if(!PT.count&&!R.some(r=>r.T.budget!=null))return "";
+  const NT=tally(items(o.id).filter(it=>known.indexOf(it.sec)<0),it=>share(it,pid));NT.budget=null;   // 📦 No section, as on their page — only when it has something
+  if(NT.count)R.push({s:{emoji:"📦",name:"No section"},T:NT});
+  return '<span class="gf-secs">'+R.map(r=>{const T=r.T,L=left(T);
+    return '<span class="gf-sc">'+esc(r.s.emoji||"")+' '+esc(r.s.name)+' <b>'+money(T.paid)+'</b>'+(T.toBuy?' +'+money(T.toBuy)+' to buy':'')+
+      (T.budget!=null?' <b style="color:'+(L<-0.005?"#dc2626":"#16a34a")+'">/ '+money(T.budget)+'</b>':'')+'</span>';}).join("")+'</span>';
 }
 function needsChips(it){const n=it.needs||{};return (n.batt?'<span>🔋 '+esc(n.batt===true?"batteries":n.batt)+'</span>':'')+(n.build?'<span>🔧 assemble</span>':'')+(n.charge?'<span>🔌 charge</span>':'');}
 function dueChip(it){if(!it.due||it.status!=="ordered")return "";const late=String(it.due)<today();return late?chip("📦 late — due "+shortDate(it.due),"#dc2626"):'<span>📦 by '+esc(shortDate(it.due))+'</span>';}
@@ -1616,6 +1630,9 @@ const GF_CSS=`
 .gf-pc{display:block;font-weight:500;font-size:11.5px;color:#64748b}
 .gf-amt{font-weight:800;font-size:13.5px;white-space:nowrap;text-align:right}
 .gf-amt small{font-weight:600;color:#64748b;font-size:11px}
+.gf-secs{display:flex;flex-wrap:wrap;gap:3px 5px;margin-top:4px}
+.gf-sc{font-weight:600;font-size:11px;color:#64748b;background:#f8fafc;border:1px solid #f1f5f9;border-radius:99px;padding:1px 7px;max-width:100%;box-sizing:border-box}
+.gf-sc b{font-weight:800;color:#334155}
 .gf-item{display:flex;gap:8px;align-items:center;border:1.5px solid var(--border);border-radius:10px;padding:7px 8px;margin-bottom:6px}
 .gf-item.dead{opacity:.55}
 .gf-ib{flex:1;min-width:0;text-align:left;background:none;border:none;padding:0;cursor:pointer;font:inherit;color:inherit}
