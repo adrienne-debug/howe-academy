@@ -162,7 +162,8 @@ console.log("6. a tap only navigates");
 {
   const w = world({ plan: { kida: { week: { mon: "drill" } } } });
   const chips = w.drStripChips("kida");
-  ok("every chip calls drGo for this child", /onclick="drGo\('kida'\)"/.test(chips));
+  // DRILLDAYS (slice 3, 2026-11-21): a line that runs now opens its day sheet; greyed lines and the empty chip keep drGo (test_drill_days.js)
+  ok("a running line opens its day sheet for this child (DRILLDAYS)", /onclick="drDaysOpen\('kida','drill'\)"/.test(chips));
   w.drGo("kida");
   const g = w.__get();
   ok("child picked, 🔁 Retrieval Plan view open", g.mhqKid === "kida" && g.mhqView === "retr" && g.mhqDeck === null, g);

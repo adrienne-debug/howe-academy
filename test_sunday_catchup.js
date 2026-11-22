@@ -58,11 +58,19 @@ ok("no db write of its own; the switch goes through stWrite", !/db\.ref|\.(set|u
   const dup = names.filter((n) => (src.match(new RegExp("(function |let |const |var )" + n + "\\b", "g")) || []).length !== 1);
   ok("every name in the block is the app's only one (" + names.length + ")", dup.length === 0, dup); }
 
+// A fixed clock for the sandbox: "now" is the sandbox's own calToday() (Sunday 2026-11-01 unless a case says otherwise).
+// The real effectiveDay (section 3) rolls an unfinished card past its day by comparing DAY_DT (Nov 2–7) with new Date();
+// on the real clock every card of that week became "carryover" once Nov 2026 moved on, so 4 checks failed after the week.
+function fixedDate(iso) {
+  const RD = Date, NOW = new RD(iso + "T12:00:00").getTime();
+  class D extends RD { constructor(...a) { if (a.length) super(...a); else super(NOW); } static now() { return NOW; } }
+  return D;
+}
 function sandbox(o) {
   o = o || {};
   const writes = [];
   const ctx = {
-    toMin, fromMin, console, Date, JSON, Set,
+    toMin, fromMin, console, Date: fixedDate(o.todayIso || "2026-11-01"), JSON, Set,
     esc: (s) => String(s == null ? "" : s), ampmTo24: (s) => s, to12h: (s) => s, cap: (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1),
     momHere: () => o.mom !== false, _dryRun: () => false, dbg: () => {}, renderAll: () => {},
     db: { ref: () => ({ update: (u) => writes.push(JSON.parse(JSON.stringify(u))) }) },
