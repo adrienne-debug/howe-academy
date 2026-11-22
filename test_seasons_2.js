@@ -355,9 +355,9 @@ console.log("\n# 🔴 NOW loads the data only for Mom, and repaints Home Base on
   p.mom = false; p.W.seasonNowLines();
   ok("no Mom → no listener", p.listens.length === 0);
   p.mom = true; const a = p.W.seasonNowLines();
-  ok("Mom on Home Base → listeners on seasons and seasonSecret only; nothing to show until the data is in", a.n === 0 && p.listens.slice().sort().join() === "seasonSecret,seasons", p.listens);
+  ok("Mom on Home Base → listeners on seasons and seasonSecret only; nothing to show until the data is in", a.n === 0 && p.listens.slice().sort().join() === "seasonJobs,seasonSecret,seasons", p.listens);   // + seasonJobs: SEASONJOBS step B
   p.W.seasonNowLines();
-  ok("asking again adds no listener", p.listens.length === 2);
+  ok("asking again adds no listener", p.listens.length === 3);
   p.fire.seasons({ list: { s: { name: "S", ts: 1 } }, extra: { s: { todo: { t1: { t: "Due thing", who: "mom", due: "2026-11-19" } } } } });
   ok("half the data → no repaint yet", p.repaints === 0);
   p.fire.seasonSecret(null);
@@ -398,7 +398,7 @@ console.log("\n# the idea rows, deleting, and a whole session inside the guard")
 console.log("\n# seasons.js itself");
 {
   const code = SRC.replace(/^\s*\/\/.*$/gm, "");
-  ok("still only two listeners (+ SEASONJOBS' once-read of Dad's list) and ONE update door", (code.match(/db\.ref\(/g) || []).length === 4 && /db\.ref\("dadday"\)\.once\(/.test(code));
+  ok("still only three listeners (seasonJobs: SEASONJOBS step B), the once-read of Dad's list, and ONE update door", (code.match(/db\.ref\(/g) || []).length === 5 && /db\.ref\("dadday"\)\.once\(/.test(code));
   ok("the Kitchen is only reached through its own grCreate / grPut — this file never writes kitchen/ itself", !/["'`]kitchen\//.test(code) && (code.match(/grCreate\(/g) || []).length === 1 && (code.match(/grPut\(/g) || []).length === 1);
   ok("the only path it builds on Mom's day is todos/sn<id>", (code.match(/"momday\//g) || []).length === 2 && (code.match(/"momday\/"\+[A-Za-z.]+\+"\/todos\/sn"/g) || []).length === 2 && !/dadday\/(?!"\+)/.test(code));   // SEASONJOBS step A: Dad's day only through the sn-record rule (test_seasons_4.js)
   ok("no family's names, no Santa, no 🔀", !/lincoln|ellis|\blucy\b|julian|howe|dewalt|burris|polar|disney|santa/i.test(SRC) && SRC.indexOf("\u{1F500}") < 0);
@@ -413,7 +413,7 @@ console.log("\n# index.html: only the thin hook");
   ok("seasonNowHTML lives in the SEASONS block: Mom only, never Dad's TV, and it only asks seasons.js", /function seasonNowHTML\(\)\{\n  if\(!\(typeof momHere==="function"&&momHere\(\)\)\|\|\(typeof _kioskD==="function"&&_kioskD\(\)\)\) return \{n:0,html:""\};\n  if\(typeof window\.seasonNowLines!=="function"\)\{ seasonsLoad\(\); return \{n:0,html:""\}; \}\n  return window\.seasonNowLines\(\)\|\|\{n:0,html:""\};\n\}/.test(BLOCK));
   ok("the NOW list asks for it right after the gift reminders, guarded", /_gf\.html; \} \}catch\(e\)\{\}[^\n]*\n  try\{ if\(typeof seasonNowHTML==="function"\)\{ const _sn=seasonNowHTML\(\); nowN\+=_sn\.n; h\+=_sn\.html; \} \}catch\(e\)\{\}[^\n]*\n  if\(!nowN\)/.test(src));
   ok("it is asked for in exactly one place", (src.match(/seasonNowHTML\(\)/g) || []).length === 2);   // the function itself + the one guarded call
-  ok("the block still writes nothing and reads no season data itself", !/\.set\(|\.update\(|\.remove\(|db\.ref/.test(BLOCK) && !/db\.ref\(["'`]season/.test(src));
+  ok("the block still writes nothing and reads no season data itself", !/\.set\(|\.update\(|\.remove\(|db\.ref/.test(BLOCK) && !/db\.ref\(["'`](seasons|seasonSecret)\b/.test(src));   // (seasonJobs/<kid> is the kids' button count — test_seasons_5)
   ok("when seasons.js arrives for Home Base, Home Base is drawn again", /s\.onload=\(\)=>\{ if\(tab==="moms-plan"&&\(mpSubView==="seasons"\|\|\(typeof giftHomeBase==="function"&&giftHomeBase\(\)\)\)\) renderAll\(\); \};/.test(BLOCK));
   // run the hook
   let momOn = false, kiosk = false, loads = 0; const win = {};

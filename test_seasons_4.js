@@ -69,7 +69,7 @@ console.log("\n# the guard: ONE more kind of path, nothing else on Dad's day");
   ok("refused: Dad's own to-dos, his chores, his whole day, anything else", bad.every(p => { const u = {}; u[p] = { x: 1 }; return T.apply(u) === false; }) && o.writes.length === 0, bad.filter(p => T.OK.test(p)));
   const code = SRC.replace(/^\s*\/\/.*$/gm, "");
   ok("every dadday path this file builds is <day>/todos/sn<id>", (code.match(/"dadday\/"/g) || []).length === 4 && (code.match(/"dadday\/"\+[A-Za-z.]+\+"\/todos\/(sn"|"\+k)/g) || []).length === 4);
-  ok("no listener on Dad's list: it is read from the app's own daddayData, plus ONE once-read to know it is fresh", (code.match(/db\.ref\(/g) || []).length === 4 && /db\.ref\("dadday"\)\.once\("value"/.test(code) && /daddayData/.test(code));
+  ok("no listener on Dad's list: it is read from the app's own daddayData, plus ONE once-read to know it is fresh", (code.match(/db\.ref\(/g) || []).length === 5 && /db\.ref\("dadday"\)\.once\("value"/.test(code) && /daddayData/.test(code));
 }
 
 console.log("\n# a Dad to-do with a date lands on his list by itself");

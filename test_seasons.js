@@ -49,9 +49,9 @@ console.log("\n# secrecy: nothing loads without Mom");
   mom = false; const r = el("x"); ctx.renderSeasons(r, "<nav/>");
   ok("no Mom → 'Mom only', no listener at all", /Mom only/.test(r.innerHTML) && listens.length === 0, listens);
   mom = true; ctx.renderSeasons(r, "<nav/>");
-  ok("Mom → listeners on seasons and seasonSecret, and only there", listens.length === 2 && listens.slice().sort().join() === "seasonSecret,seasons", listens);
+  ok("Mom → listeners on seasons, seasonSecret (and, since SEASONJOBS step B, seasonJobs), and only there", listens.length === 3 && listens.slice().sort().join() === "seasonJobs,seasonSecret,seasons", listens);
   ctx.renderSeasons(r, "<nav/>");
-  ok("re-opening never adds another listener", listens.length === 2);
+  ok("re-opening never adds another listener", listens.length === 3);
 }
 
 console.log("\n# a new season");
@@ -299,7 +299,7 @@ console.log("\n# seasons.js itself");
   ok("it never says Santa (a kid may see the screen)", !/santa/i.test(SRC));
   ok("no 🔀 emoji", SRC.indexOf("\u{1F500}") < 0);
   ok("it never names the calendar nodes that change school, or the school's own data", !/calendar\/(holidays|vacations|kidOverrides|coops|coopMomDays|cleaningDays)|config\/rules|familyBlocks|curriculum\/|\/tasks|\/checked/.test(SRC.replace(/^\/\/.*$/gm, "")));
-  ok("its only database calls: two listeners, ONE once-read of Dad's list (SEASONJOBS: is it fresh?) and ONE update door", (SRC.replace(/^\/\/.*$/gm, "").match(/db\.ref\(/g) || []).length === 4 && /db\.ref\("dadday"\)\.once\("value"/.test(SRC) && /db\.ref\("seasons"\)\.on\(/.test(SRC) && /db\.ref\("seasonSecret"\)\.on\(/.test(SRC) && /if\(live\(\)\)db\.ref\(\)\.update\(up\);/.test(SRC));
+  ok("its only database calls: three listeners (seasonJobs since SEASONJOBS step B), ONE once-read of Dad's list (is it fresh?) and ONE update door", (SRC.replace(/^\/\/.*$/gm, "").match(/db\.ref\(/g) || []).length === 5 && /db\.ref\("dadday"\)\.once\("value"/.test(SRC) && /db\.ref\("seasonJobs"\)\.on\(/.test(SRC) && /db\.ref\("seasons"\)\.on\(/.test(SRC) && /db\.ref\("seasonSecret"\)\.on\(/.test(SRC) && /if\(live\(\)\)db\.ref\(\)\.update\(up\);/.test(SRC));
   ok("it never reads the gift list", !/gifts\//.test(SRC.replace(/^\/\/.*$/gm, "")) && !/db\.ref\("gifts/.test(SRC));
 }
 
@@ -312,7 +312,7 @@ console.log("\n# index.html wiring");
   ok("the page draws the Mom's Day banner + the menu row with 🗓 Schedule lit", /mwBanner\('[^']{1,50}'\)\+mpSubnav\('cal'\)\+mpSeasonsBar\(\)/.test(BLOCK));
   ok("Mom only: no Mom → 'Mom only' before anything loads", /if\(!\(typeof momHere==="function"&&momHere\(\)\)\)\{ el\.innerHTML=top\+'[^']*Mom only\.<\/div>'; return; \}\n  if\(window\.renderSeasons\)/.test(BLOCK));
   ok("seasons.js is loaded lazily by ONE loader, called only from the page and (slice 2) Home Base's 🔴 NOW hook — both behind momHere", /function seasonsLoad\(onErr\)/.test(BLOCK) && /"seasons\.js\?v="\+Date\.now\(\)/.test(BLOCK) && (src.match(/seasonsLoad\(/g) || []).length === 3 && (BLOCK.match(/seasonsLoad\(/g) || []).length === 3 && !/<script[^>]*seasons\.js/.test(src));
-  ok("index.html itself never reads seasons/ or seasonSecret/ (nothing at app start, nothing on a kid's device)", !/db\.ref\(["'`]season/.test(src) && !/["'`]seasons\//.test(src) && !/seasonSecret/.test(src.replace(BLOCK, "").replace(/^\s*\/\/.*$/gm, "")));
+  ok("index.html itself never reads seasons/ or seasonSecret/ (nothing at app start, nothing on a kid's device; seasonJobs/<kid> is the kids' button count, test_seasons_5)", !/db\.ref\(["'`](seasons|seasonSecret)\b/.test(src) && !/["'`]seasons\//.test(src) && !/seasonSecret/.test(src.replace(BLOCK, "").replace(/^\s*\/\/.*$/gm, "")));
   ok("the pill is under Today · Week · Month on both Schedule rows, guarded", (src.match(/typeof mpSeasonsPill==="function"/g) || []).length === 2 && /function msvBarHTML\(\)\{[\s\S]*?mpSeasonsPill\(false,'0 12px 8px'\)/.test(src) && /function mpSchBody\(\)\{[\s\S]*?h\+=mpSeasonsPill\(false\);/.test(src));
   ok("the pill says 🎉 Seasons & Events and opens the page", /mpGoto\(\\'seasons\\'\)/.test(BLOCK) && /\\u\{1F389\} Seasons &amp; Events/.test(BLOCK));
   ok("'seasons' is not a Today view (SS_OTHER_VIEWS)", (() => { const l = JSON.parse(src.match(/const SS_OTHER_VIEWS=(\[[^\]]*\])/)[1]); return l.indexOf("seasons") >= 0 && l[l.length - 1] === "gifts"; })());
