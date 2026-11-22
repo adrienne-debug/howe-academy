@@ -560,6 +560,7 @@ console.log("\n(h) no new Firebase write path in the curriculum region");
   "path",
   "path+\"/\"+id",
   "pr[1]",
+  "\"seasonJobs/\"+k",   // SEASONJOBS 2026-11-21: Kids' Corner ✨ Our plans button — ONE once-read of a kid's planner jobs (not a write; outside the curriculum)
   "uxPdfPath(uid,dayId,file.name)",
   "wbInkPath(v.kid,v.bookId,v.page)",
   "wk+\"/supplies\"",

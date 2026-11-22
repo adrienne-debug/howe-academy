@@ -268,7 +268,7 @@ console.log("\n# the ✨ Our plans button counts today's jobs (index.html SEASON
   const a = HTML.indexOf("// SEASONKID_START"), b = HTML.indexOf("// SEASONKID_END"), BLOCK = HTML.slice(a, b);
   ok("its one read lives only in this block's skJobsN — nothing at boot, no listener", (HTML.match(/seasonJobs/g) || []).length === (BLOCK.match(/seasonJobs/g) || []).length && !/\.on\(/.test(BLOCK) && /function skJobsN\(k\)/.test(BLOCK));
   const X = { reads: [], fire: {}, draws: 0, now: 1e6, tab: "kids" };
-  const env = { KID_COLOR: { ava: "#2563eb", ben: "#16a34a" }, ROSTER: ["ava", "ben"], kcLittle: () => false, kcPlay: null, kcPlayClose() {}, renderAll() { X.draws++; }, location: { hostname: "x.github.io" },
+  const env = { KID_COLOR: { ava: "#2563eb", ben: "#16a34a" }, ROSTER: ["ava", "ben"], kcLittle: () => false, kcPlay: null, kcPlayClose() {}, renderAll() { X.draws++; }, renderAllSoon() { X.draws++; }, location: { hostname: "x.github.io" },
     document: { createElement: () => ({}), head: { appendChild() {} } }, window: {}, _todayStr: () => TODAY, Date: { now: () => X.now },
     db: { ref(p) { return { once(ev, fn) { X.reads.push(p); X.fire[p] = v => fn({ val: () => v }); } }; } } };
   const names = ["skTileHTML", "skOpen", "skClose", "skBack", "skOn"];
