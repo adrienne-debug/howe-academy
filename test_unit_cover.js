@@ -278,13 +278,38 @@ console.log("── Mom's 🖨 Print the cover (Units tab) ──");
   let opened = 0; ctx.window.open = () => { opened++; return null; }; ctx.alert = () => {};
   ctx.ucPrintCover("bugs");
   ok("…a kid's tap prints nothing", opened === 0);
-  ctx.momHere = () => true; let wrote = "";
-  ctx.window.open = () => ({ document: { write: s => { wrote += s; }, close: () => {} } }); ctx.open = ctx.window.open;
-  vm.runInContext("window.open=this.window.open; var open=window.open;", ctx);
-  ctx.ucPrintCover("bugs");
-  ok("Mom's tap opens the print window with the covers and a print call", wrote.indexOf("(cover)") > 0 && wrote.indexOf("window.print()") > 0);
-  ok("no database write anywhere in the print path", writes.length === 0, writes);
+  globalThis.__app = { ctx, writes };
 }
 
-console.log("\n" + pass + " passed, " + fail + " failed");
-process.exit(fail ? 1 : 0);
+console.log("── 🖨 Print the cover when notebooks.js isn't loaded yet (it loads lazily) ──");
+const fakeWin = () => { const w = { opens: 0, closed: false, buf: "", docs: [], document: { open() { w.opens++; w.buf = ""; }, write(s) { w.buf += s; }, close() { w.docs.push(w.buf); } }, close() { w.closed = true; } }; return w; };
+const tick = () => new Promise(r => setImmediate(r));
+(async () => {
+  const { ctx, writes } = globalThis.__app;
+  ctx.momHere = () => true;
+  let opened = 0, alerts = [], w = null;
+  ctx.window.open = () => { opened++; w = fakeWin(); return w; };
+  vm.runInContext("window.open=this.window.open; var open=window.open;", ctx); ctx.alert = m => alerts.push(m);
+  ctx.window.HoweNotebooks = NB;
+  ctx.ucPrintCover("bugs");
+  const loadedDoc = w.docs[w.docs.length - 1];
+  ok("library loaded: Mom's tap opens the print window with the covers and a print call", opened === 1 && w.docs.length === 1 && loadedDoc.indexOf("(cover)") > 0 && loadedDoc.indexOf("window.print()") > 0 && !alerts.length);
+  ctx.window.HoweNotebooks = null; let calls = 0, release = null;
+  ctx.haLoadNotebooksLib = () => { calls++; return new Promise(r => { release = () => { ctx.window.HoweNotebooks = NB; r(NB); }; }); };
+  ctx.ucPrintCover("bugs");
+  const w2 = w;
+  ok("not loaded: the window opens in the tap, before the load finishes, saying it's getting ready", opened === 2 && w2.docs.length === 0 && w2.buf.indexOf("Getting the page ready") > 0);
+  ok("…the loader is asked exactly once", calls === 1);
+  release(); await tick(); await tick();
+  ok("…once it loads, the same document as with the library already there", w2.docs.length === 1 && w2.docs[0] === loadedDoc && !w2.closed && !alerts.length);
+  ctx.window.HoweNotebooks = null; ctx.haLoadNotebooksLib = () => Promise.reject(new Error("offline"));
+  let threw = false; try { ctx.ucPrintCover("bugs"); } catch (e) { threw = true; }
+  const w3 = w; await tick(); await tick();
+  ok("a failed load: the window is closed, one plain message, nothing thrown", !threw && w3.closed && w3.docs.length === 0 && alerts.length === 1 && /Couldn’t load the notebook pages/.test(alerts[0]), alerts);
+  ctx.momHere = () => false; const before = opened; let c2 = 0; ctx.haLoadNotebooksLib = () => { c2++; return Promise.resolve(NB); };
+  ctx.ucPrintCover("bugs");
+  ok("a kid's tap: no window, no load", opened === before && c2 === 0);
+  ok("no database write anywhere in the print path", writes.length === 0, writes);
+  console.log("\n" + pass + " passed, " + fail + " failed");
+  process.exit(fail ? 1 : 0);
+})();

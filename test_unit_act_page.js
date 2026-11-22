@@ -171,18 +171,43 @@ console.log("── the app: the Units tab's 🖨 Print (real haBuildUnitInsight
   ok("the print carries no card definition", doc.indexOf("DEFSECRET") < 0);
   ok("bio pool = the kid's learned cards, as the notebook's (Bug 3 with its photo, Bug 4; not Bug 1 in learning)", (() => { const d = ctx.uapPrintDoc(ctx.unitStudies.bugs, ctx.unitStudies.bugs.activities[1], "kidb"); return d.indexOf(">Bug 3<") > 0 && d.indexOf("bug3.jpg") > 0 && d.indexOf(">Bug 4<") > 0 && d.indexOf(">Bug 1<") < 0; })());
   ok("a Pre-K kid's print is in the kid's look (shark colours) and the little band", (() => { const d = ctx.uapPrintDoc(ctx.unitStudies.bugs, ctx.unitStudies.bugs.activities[0], "kida"); return d.indexOf(NB.unitPageTheme("kida", { notebookTheme: "shark" }).GD) > 0 && d.indexOf("I made <span") > 0; })());
-  let wrote = "", opened = 0;
-  ctx.window.open = () => { opened++; return { document: { write: s => { wrote += s; }, close: () => {} } }; };
-  vm.runInContext("var open=window.open; var alert=function(){};", ctx);
-  ctx.unitPrintActivity("bugs", "draw", "kidc");
-  ok("unitPrintActivity opens one print window with the page and a print call", opened === 1 && wrote.indexOf('data-uap="1"') > 0 && wrote.indexOf("window.print()") > 0);
-  ctx.unitPrintActivity("bugs", "nope", "kidc"); ctx.unitPrintActivity("none", "draw", "kidc");
-  ok("an unknown activity or unit prints nothing", opened === 1);
-  ctx.window.HoweNotebooks = null;
-  ctx.unitPrintActivity("bugs", "draw", "kidc");
-  ok("notebook code not loaded yet → no window (a message instead)", opened === 1);
-  ok("no database write anywhere", writes.length === 0, writes);
+  globalThis.__app = { ctx, writes };
 }
 
-console.log("\n" + pass + " passed, " + fail + " failed");
-process.exit(fail ? 1 : 0);
+console.log("── 🖨 Print when notebooks.js isn't loaded yet (it loads lazily) ──");
+const fakeWin = () => { const w = { opens: 0, closed: false, buf: "", docs: [], document: { open() { w.opens++; w.buf = ""; }, write(s) { w.buf += s; }, close() { w.docs.push(w.buf); } }, close() { w.closed = true; } }; return w; };
+const tick = () => new Promise(r => setImmediate(r));
+(async () => {
+  const { ctx, writes } = globalThis.__app;
+  let opened = 0, alerts = [], w = null;
+  ctx.window.open = () => { opened++; w = fakeWin(); return w; };
+  vm.runInContext("var open=window.open;", ctx); ctx.alert = m => alerts.push(m);
+  ctx.window.HoweNotebooks = NB;
+  ctx.unitPrintActivity("bugs", "draw", "kidc");
+  const loadedDoc = w.docs[w.docs.length - 1];
+  ok("library already loaded: one window, the page and a print call, written at once", opened === 1 && w.docs.length === 1 && loadedDoc.indexOf('data-uap="1"') > 0 && loadedDoc.indexOf("window.print()") > 0 && !alerts.length);
+  ctx.unitPrintActivity("bugs", "nope", "kidc"); ctx.unitPrintActivity("none", "draw", "kidc");
+  ok("an unknown activity or unit opens nothing", opened === 1);
+  // not loaded: the window opens inside the tap, the loader is asked once, the page arrives when it resolves
+  ctx.window.HoweNotebooks = null; let calls = 0, release = null;
+  ctx.haLoadNotebooksLib = () => { calls++; return new Promise(r => { release = () => { ctx.window.HoweNotebooks = NB; r(NB); }; }); };
+  ctx.unitPrintActivity("bugs", "draw", "kidc");
+  const w2 = w;
+  ok("not loaded: the window is opened in the tap, before the load finishes, and says it is getting ready", opened === 2 && w2.docs.length === 0 && w2.buf.indexOf("Getting the page ready") > 0 && !w2.closed);
+  ok("…the loader is asked exactly once", calls === 1);
+  release(); await tick(); await tick();
+  ok("…once it loads, the window holds the very document a loaded library gives", w2.docs.length === 1 && w2.docs[0] === loadedDoc && w2.opens === 1 && !w2.closed && !alerts.length);
+  // the load fails
+  ctx.window.HoweNotebooks = null; ctx.haLoadNotebooksLib = () => Promise.reject(new Error("offline"));
+  let threw = false; try { ctx.unitPrintActivity("bugs", "draw", "kidc"); } catch (e) { threw = true; }
+  const w3 = w; await tick(); await tick();
+  ok("a failed load: the window is closed, one plain message, nothing thrown", !threw && w3.closed && w3.docs.length === 0 && alerts.length === 1 && /Couldn’t load the notebook pages/.test(alerts[0]), alerts);
+  ctx.haLoadNotebooksLib = () => { throw new Error("boom"); }; alerts = [];
+  threw = false; try { ctx.unitPrintActivity("bugs", "draw", "kidc"); } catch (e) { threw = true; }
+  const w4 = w; await tick(); await tick();
+  ok("a loader that throws: the same (closed, one message, nothing thrown)", !threw && w4.closed && alerts.length === 1);
+  ok("pop-ups blocked: one message, no load asked for", (() => { ctx.window.open = () => null; alerts = []; let c = 0; ctx.haLoadNotebooksLib = () => { c++; return Promise.resolve(NB); }; ctx.unitPrintActivity("bugs", "draw", "kidc"); return alerts.length === 1 && /pop-ups/.test(alerts[0]) && c === 0; })());
+  ok("no database write anywhere", writes.length === 0, writes);
+  console.log("\n" + pass + " passed, " + fail + " failed");
+  process.exit(fail ? 1 : 0);
+})();
