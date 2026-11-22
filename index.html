@@ -36810,7 +36810,7 @@ function ceAddSave(){
 //   options at once" (step 1) draws today's one-page sheet, byte-identical, with today's ending (the card re-opens).
 //   Writes nothing of its own: every write is ceAddSave's, famWhoSave's or cbApply's. No kid names: the roster draws the chips.
 let afStep=0, afMore=false, afPace=null, afBusy="";   // afStep 0 = the one-page sheet; afPace = the staged lay-out answers
-function afReset(){ afStep=1; afMore=false; afBusy=""; afPace={pages:false,targetDate:"",startDate:"",firstPage:1,lastPage:"",patternStr:"",units:null}; }
+function afReset(){ if(typeof daReset==="function") daReset(); afStep=1; afMore=false; afBusy=""; afPace={pages:false,targetDate:"",startDate:"",firstPage:1,lastPage:"",patternStr:"",units:null}; }
 function afKind(f){ return (f.fixedTime&&String(f.fixedTime).trim())?"class":(f.tracking==="daily"?"daily":"book"); }
 function afFam(){ return typeof famWhoPicks==="function"&&famWhoPicks(ceAddForm).length>1; }
 function afDays(){ return String(ceAddForm.days||"").split(/[\s,]+/).filter(Boolean); }
@@ -36873,6 +36873,7 @@ async function afScan(input){   // 📸 the Builder's own book scan (cbScanBook,
   afBusy=cbScanStatus||""; if(afStep===2) ceRenderAddSheet();
 }
 function afSheetHTML(kid,f,col){
+  if(typeof daOn!=="undefined"&&daOn&&typeof daSheetHTML==="function") return daSheetHTML(kid,col);   // DRILLADD: 🃏 Card practice swaps the form
   const L=t=>'<div class="ce-sheet-lbl">'+t+'</div>', H=t=>'<div style="font-size:10px;color:var(--muted);margin-top:4px">'+t+'</div>';
   const C=(on,click,lbl)=>'<div class="ce-chip'+(on?" sel":"")+'" onclick="'+click+'">'+lbl+'</div>';
   const B=(click,lbl,main)=>'<button class="'+(main?"ce-btn-save":"ce-btn-cancel")+'" onclick="'+click+'">'+lbl+'</button>';
@@ -36883,6 +36884,7 @@ function afSheetHTML(kid,f,col){
   h+='<div style="font-size:11px;color:var(--muted);margin:-6px 0 6px">New subject for '+esc(cap(kid))+' · step '+pos+' of '+path.length+'</div>';
   let nav='';
   if(afStep===1){
+    if(typeof daChoiceHTML==="function") h+=daChoiceHTML(kid,false);   // DRILLADD: A subject · 🃏 Card practice
     if(typeof famWhoRowHTML==="function") h+=famWhoRowHTML(f);
     h+=L("What is it called?")+'<input class="ce-sheet-input" id="ce-add-name" value="'+esc(f.name)+'" placeholder="e.g. Math, Piano Practice" oninput="ceAddForm.name=this.value">';
     h+=L("What kind?")+'<div class="ce-chips" style="flex-direction:column;align-items:stretch">';
@@ -62448,7 +62450,7 @@ function ctMoreHTML(items){
 // re-derived. Title from RETR_SLOT_TITLE (the card's own words), minutes from retrSlotMinutes, with Mom / on their own from
 // retrSlotMom, so the line, the Min column and the card agree. A kind saved in the plan that the builder drops for this child
 // (Sprint with no ladder) shows greyed. Nothing here writes: a tap on a line that runs opens its day sheet (DRILLDAYS, below);
-// a greyed line or the empty chip opens Mastery ▸ Settings ▸ 🔁 Retrieval Plan on this child. A child with no line that runs and no old-style drills* subject gets one dashed "set it up" chip.
+// a greyed line opens Mastery ▸ Settings ▸ 🔁 Retrieval Plan on this child (the empty chip: Card practice, DRILLADD). A child with no line that runs and no old-style drills* subject gets one dashed "set it up" chip.
 const DR_KINDS=["drill","match","sprint","recheck"];   // fixed order: Daily Drill, Match & Play, Sprint, Sprint Re-checks
 const DR_DAY_SHORT={mon:"Mon",tue:"Tue",wed:"Wed",thu:"Thu",fri:"Fri"};
 // Pure: on = {mon:[kinds the builder makes that day]…}, saved = {mon:[kinds stored that day]…} → rows in the fixed order.
@@ -62506,7 +62508,7 @@ function drStripChips(kid){
     h+='<button class="dr-row" onclick="'+(r.ok?'drDaysOpen(\''+esc(arg)+'\',\''+r.kind+'\')':go)+'" title="'+(r.ok?'Card practice — tap to see or change the days':'This kind makes no card for '+nm+' — tap to change the plan')+'" style="'+base+'border:1px solid #c4b5fd;color:'+(r.ok?'#6d28d9':'#9ca3af')+'">'+esc(drLineText(r,name))+'</button>';
   });
   if(!rows.some(function(r){ return r.ok; })&&!drHasOldDrills(kid))
-    h+='<button class="dr-empty" onclick="'+go+'" style="'+base+'border:1.5px dashed #a78bfa;color:#6d28d9">＋ \u{1F0CF} Flash-card practice isn’t on '+nm+'’s week yet — set it up</button>';
+    h+='<button class="dr-empty" onclick="daOpen(\''+esc(arg)+'\')" style="'+base+'border:1.5px dashed #a78bfa;color:#6d28d9">＋ \u{1F0CF} Flash-card practice isn’t on '+nm+'’s week yet — set it up</button>';   // DRILLADD (slice 4): the empty chip opens ＋ Add subject ▸ 🃏 Card practice
   return h;
 }
 // Tap → Mom's Day ▸ School ▸ Mastery ▸ Settings ▸ 🔁 Retrieval Plan, this child picked (the same kid switch as mhqSetKid; the
@@ -62656,6 +62658,188 @@ function drDaysClose(quiet){
 }
 function drDaysMastery(){ const kid=drDaysKid; drDaysClose(true); if(kid) drGo(kid); }
 // DRILLDAYS_END
+// DRILLADD_START — 🃏 "＋ Add subject ▸ Card practice" on a child's Curriculum page (slice 4 of
+// DESIGN_drill_rows_curriculum_2026-11-19.md, §3.4 / §3.5 / §3.7 / §4). Her picks 2026-11-22: a brand-new kind must be
+// addable from Curriculum first (the Mastery day buttons become a pointer later, slice 6) and the name on this side is
+// "Card practice". Her words 2026-11-19: "it should be with the daily subjects in curriculum … it needs to be uniform".
+// At the top of the guided Add sheet's first step: A subject · 🃏 Card practice. Card practice swaps the form for the kinds
+// this child CAN run and does not have yet (a chip each, with its one line), Mon–Fri pre-lit on every day that still has
+// room for that kind, and Save — no name, device, minutes or tracking. "Can run" is data, never a name: Daily Drill = at
+// least one card the drill can assemble (active or being introduced, not concept/transfer, not held by a study session);
+// Match & Play = the Match game's own playable-deck list (mastMatchDecks) is not empty; Sprint / Sprint Re-checks = a
+// sprint ladder (retrHasLadder, via RETRFAM's RETR_NOLADDER_KINDS). Drill / Match that can't run are listed greyed with the
+// reason and the door ("Needs cards first — add cards →"); Sprint / Re-checks with no ladder are left out (§7: a new family
+// never sees them, and there is no door to offer). An old-style every-day drills* subject still running (§5.1: key drills /
+// drills_*, no study link, every-day tracking, not paused) → Daily Drill is not offered and one plain line says why (never
+// two drill cards on a day; the switch offer is slice 7). Room and placement are drDaysMap's (DRILLDAYS): a day has room
+// for a kind when drDaysMap can turn it on there; Save chains drDaysMap over the lit days and writes ONCE through
+// drDaysWrite → drPlanWrite(kid,{week,week2},{rhythm:true}) (never settings; drops the Mastery panel's stale copy; the
+// live pass brings this week's cards). So the per-day limit lives in one place — drDaysMap's slots (week, week2): the
+// three-a-day slice changes it there and this form follows. Mom only (momHere). The empty-state chip opens this same form
+// (daOpen). Nothing is written before Save. Test: test_drill_add.js.
+let daOn=false, daKind=null, daDays=null, daMsg="";
+function daReset(){ daOn=false; daKind=null; daDays=null; daMsg=""; }
+// §5.1 — an old-style every-day drills* subject still running → its name ("" when none).
+function daOldDrills(kid){
+  const subs=((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid]||{};
+  const sk=Object.keys(subs).sort().find(function(k){ const s=subs[k]; return !!s&&/^drills(_|$)/.test(k)&&!s.study&&s.tracking==="daily"&&!s.paused; });
+  return sk?String(subs[sk].display||sk):"";
+}
+// Cards the Daily Drill can assemble: active or being introduced, not concept/transfer (never drilled), not held by a study session.
+function daCardCount(kid){
+  let items=((typeof masteryData!=="undefined"&&masteryData)||{})[kid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  let owned=null; try{ owned=(typeof mstOwnedIds==="function")?mstOwnedIds(kid):null; }catch(e){ owned=null; }
+  return items.filter(function(i){ return !!i&&(i.status==="active"||i.status==="introduction")
+    &&!(typeof mastIsNeverDrill==="function"&&mastIsNeverDrill(i))&&!(owned&&typeof owned.has==="function"&&owned.has(i.id)); }).length;
+}
+// The Match game's own list of playable decks for this child (it reads masteryKid — swapped and put back).
+function daMatchDeckCount(kid){
+  if(typeof mastMatchDecks!=="function"||typeof masteryKid==="undefined") return 0;
+  const mk=masteryKid; let n=0;
+  try{ masteryKid=kid; n=mastMatchDecks().length; }catch(e){ n=0; } finally{ masteryKid=mk; }
+  return n;
+}
+// Pure. info = {has:{kind:true} (a line that already runs), cards, matchDecks, ladder, old (old-style subject name)}
+// → [{kind, ok:true} | {kind, ok:false, why:"cards"|"deck"}] in the fixed row order; a kind left out is not listed.
+function daKindsFrom(info){
+  const i=info||{}, has=i.has||{}, out=[];
+  const solo=(typeof RETR_NOLADDER_KINDS!=="undefined"&&RETR_NOLADDER_KINDS)||{drill:true,match:true};
+  DR_KINDS.forEach(function(k){
+    if(has[k]) return;                         // already on the week — its own line changes the days
+    if(k==="drill"&&i.old) return;             // the old subject is this child's drill (§5.6: never two on a day)
+    if(!solo[k]&&!i.ladder) return;            // Sprint / Re-checks need a ladder (§7: not shown without one)
+    if(k==="drill"&&!(i.cards>0)){ out.push({kind:k,ok:false,why:"cards"}); return; }
+    if(k==="match"&&!(i.matchDecks>0)){ out.push({kind:k,ok:false,why:(i.cards>0)?"deck":"cards"}); return; }
+    out.push({kind:k,ok:true});
+  });
+  return out;
+}
+function daInfo(kid){
+  const has={}; let rows=[]; try{ rows=drRows(kid); }catch(e){ rows=[]; }
+  rows.forEach(function(r){ if(r.ok) has[r.kind]=true; });
+  return {has:has,cards:daCardCount(kid),matchDecks:daMatchDeckCount(kid),ladder:(typeof retrHasLadder!=="function")||!!retrHasLadder(kid),old:daOldDrills(kid)};
+}
+// Pure. Which days have room for `kind`, by drDaysMap itself → {mon:true | [the kinds filling it] …}.
+function daRoom(w1,w2,kind){
+  const out={};
+  Object.keys(DR_DAY_SHORT).forEach(function(d){ const r=drDaysMap(w1,w2,d,kind,true); out[d]=r.ok?true:r.full; });
+  return out;
+}
+// Pure. Turn `kind` on for each of `days` in turn, by drDaysMap's own rule → {week (all five days), week2 (cleaned),
+// on:[days placed], full:[days refused], changed}.
+function daPlan(w1,w2,kind,days){
+  let a=w1||{}, b=w2||{}, changed=false; const on=[], full=[];
+  (days||[]).forEach(function(d){ const r=drDaysMap(a,b,d,kind,true); if(!r.ok){ full.push(d); return; } a=r.week; b=r.week2; if(r.changed) changed=true; on.push(d); });
+  const z=drDaysMap(a,b,"",kind,true);   // no day: just the shape every save writes
+  return {week:z.week,week2:z.week2,on:on,full:full,changed:changed};
+}
+function daState(kid){
+  const info=daInfo(kid), list=daKindsFrom(info), offer=list.filter(function(x){ return x.ok; }).map(function(x){ return x.kind; });
+  const kind=offer.indexOf(daKind)>=0?daKind:(offer[0]||null);
+  const w1=retrWeek(kid), w2=retrWeek2(kid), room=kind?daRoom(w1,w2,kind):{};
+  const roomDays=Object.keys(DR_DAY_SHORT).filter(function(d){ return room[d]===true; });
+  const lit=(daDays||roomDays).filter(function(d){ return room[d]===true; });
+  return {info:info,list:list,kind:kind,w1:w1,w2:w2,room:room,roomDays:roomDays,lit:lit};
+}
+function daChoose(on){
+  if(on&&!_drMom()) return false;
+  if(typeof afGrab==="function") try{ afGrab(); }catch(e){}   // keep a name she already typed for the subject side
+  daOn=!!on; daKind=null; daDays=null; daMsg="";
+  ceRenderAddSheet();
+  return true;
+}
+function daOpen(kid){ if(!kid||!_drMom()) return false; ceOpenAdd(kid); return daChoose(true); }   // the empty-state chip (§3.5)
+function daPickKind(k){ daKind=k; daDays=null; daMsg=""; ceRenderAddSheet(); }
+function daToggleDay(d){
+  const kid=ceAddKid; if(!kid||!DR_DAY_SHORT[d]) return;
+  const st=daState(kid); if(st.room[d]!==true) return;
+  const lit=st.lit.slice(), i=lit.indexOf(d);
+  if(i>=0) lit.splice(i,1); else lit.push(d);
+  daDays=Object.keys(DR_DAY_SHORT).filter(function(x){ return lit.indexOf(x)>=0; }); daMsg="";
+  ceRenderAddSheet();
+}
+function daClose(){ daReset(); if(typeof afStep!=="undefined") afStep=0; ceCloseSheet(); }
+function _daTitle(k){ return (typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[k])||k; }
+// Save: the one write — week + week2 through drDaysWrite (→ drPlanWrite, rhythm:true), never settings.
+function daSave(){
+  const kid=ceAddKid; if(!kid||!daOn||!_drMom()) return false;
+  const st=daState(kid);
+  const say=function(m){ daMsg=m; ceRenderAddSheet(); return false; };
+  if(!st.kind) return say("There’s no kind of card practice to add right now.");
+  if(!st.lit.length) return say("Pick at least one day.");
+  const p=daPlan(st.w1,st.w2,st.kind,st.lit);
+  if(!p.on.length||!p.changed) return say("Nothing to save — those days already have it.");
+  if(!drDaysWrite(kid,p.week,p.week2)) return say("Not saved — try again.");
+  const name=(typeof cap==="function")?cap(kid):kid, dt=p.on.map(function(d){ return DR_DAY_SHORT[d]; }).join(" ");
+  const pend=(typeof retrLivePending==="function"&&retrLivePending(kid))?" This week’s cards update in a moment.":"";
+  daClose();
+  try{ if(typeof gwShowToast==="function") gwShowToast("✓ "+_daTitle(st.kind)+" is on "+name+"’s week — "+dt+"."+pend); }catch(e){}
+  if(typeof renderAll==="function") renderAll();   // the new line shows in the purple strip
+  return true;
+}
+// "add cards →": Mom's Day ▸ School ▸ Mastery on this child, the 🃏 Cards view (＋ add a card) — drGo's kid switch, that view.
+function daCards(kid){
+  daClose();
+  mhqKid=kid; mhqView="cards"; mhqDeck=null;
+  if(typeof mhqSessEdit!=="undefined"){ mhqSessEdit=null; mhqSessForm=null; mhqSessErr=""; }
+  if(typeof mastAdminLocal!=="undefined") mastAdminLocal=null;
+  mpSchoolOpen('mhq');
+}
+// The choice at the top of the Add sheet (ADDFLOW step 1, and this form).
+function daChoiceHTML(kid,on){
+  if(!kid||!_drMom()) return "";
+  const C=function(sel,click,lbl){ return '<div class="ce-chip'+(sel?' sel':'')+'" onclick="'+click+'">'+lbl+'</div>'; };
+  return '<div class="ce-chips da-choice" style="margin-bottom:6px">'+C(!on,"daChoose(false)","A subject")+C(on,"daChoose(true)","\u{1F0CF} Card practice")+'</div>';
+}
+function daSheetHTML(kid,col){
+  const name=(typeof cap==="function")?cap(kid):kid, nm=esc(name), st=daState(kid);
+  const arg=esc(String(kid).replace(/\\/g,"\\\\").replace(/'/g,"\\'"));
+  const L=function(t){ return '<div class="ce-sheet-lbl">'+t+'</div>'; };
+  const note=function(cls,t,amber){ return '<div class="'+cls+'" style="margin-top:8px;padding:8px 10px;border-radius:10px;font-size:12px;'+(amber?'background:#fef3c7;border:1px solid #fcd34d;color:#92400e':'background:#f5f3ff;border:1px solid #ddd6fe;color:#5b21b6')+'">'+t+'</div>'; };
+  const offer=st.list.filter(function(x){ return x.ok; }), grey=st.list.filter(function(x){ return !x.ok; });
+  let h='<div class="ce-sheet" onclick="if(event.target===this)daClose()"><div class="ce-sheet-box da-sheet">';
+  h+='<div class="ce-sheet-title">Card practice</div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin:-6px 0 6px">New for '+nm+' · flash cards on set days</div>';
+  h+=daChoiceHTML(kid,true);
+  if(st.list.length){
+    h+=L("Which kind?")+'<div class="ce-chips" style="flex-direction:column;align-items:stretch">';
+    offer.forEach(function(x){
+      const min=(typeof retrSlotMinutes==="function")?retrSlotMinutes(kid,x.kind):null;
+      const about=String((typeof DR_KIND_ABOUT!=="undefined"&&DR_KIND_ABOUT[x.kind])||"").replace("{k}",name)+(min!=null?" About "+min+" min.":"");
+      h+='<div class="ce-chip da-kind'+(x.kind===st.kind?' sel':'')+'" onclick="daPickKind(\''+x.kind+'\')" style="white-space:normal">'+esc(_daTitle(x.kind))
+        +'<div style="font-size:11px;font-weight:400;opacity:.85;margin-top:2px">'+esc(about)+'</div></div>';
+    });
+    grey.forEach(function(x){
+      h+='<div class="ce-chip da-grey" style="white-space:normal;cursor:default;color:#9ca3af">'+esc(_daTitle(x.kind))+' — '
+        +(x.why==="deck"?'Needs 4 or more cards in one deck first':'Needs cards first')
+        +' — <a href="javascript:void(0)" onclick="daCards(\''+arg+'\')" style="color:#6d28d9;font-weight:700">add cards →</a></div>';
+    });
+    h+='</div>';
+  }
+  if(st.info.old) h+=note("da-old","“"+esc(st.info.old)+"” already runs every day as a subject, so \u{1F0CF} Daily Drill isn’t offered here — that would put two drill cards on a day.");
+  if(!st.list.length) h+=note("da-none","Every kind of card practice "+nm+" can run is already on the week. Tap its line in the purple strip to change the days.");
+  if(st.kind){
+    h+=L("Days")+'<div class="ce-chips">';
+    Object.keys(DR_DAY_SHORT).forEach(function(d){
+      const on=st.lit.indexOf(d)>=0;
+      if(st.room[d]!==true) h+='<div class="ce-chip da-day da-full" style="color:#9ca3af;border-style:dashed;cursor:default">'+DR_DAY_SHORT[d]+' · full</div>';
+      else h+='<div class="ce-chip da-day'+(on?' sel':'')+'" aria-pressed="'+on+'" onclick="daToggleDay(\''+d+'\')" style="'+(on?'background:'+col+';color:#fff;border-color:transparent':'color:var(--muted)')+'">'+DR_DAY_SHORT[d]+'</div>';
+    });
+    h+='</div>';
+    const full=Object.keys(DR_DAY_SHORT).filter(function(d){ return st.room[d]!==true; });
+    if(full.length===5) h+=note("da-fulls","Every day already has its practice cards. Turn one off on its line in the purple strip first.",true);
+    else if(full.length) h+='<div class="da-fulls" style="margin-top:6px;font-size:11px;color:var(--muted)">'+full.map(function(d){
+      return esc((DR_DAY_LONG[d]||d)+" is full: "+(st.room[d]||[]).map(_daTitle).join(" and ")+".");
+    }).join(" ")+' Turn one off on its line to make room.</div>';
+    else h+='<div style="margin-top:6px;font-size:11px;color:var(--muted)">Tap a day to leave it out.</div>';
+  }
+  if(daMsg) h+=note("da-msg",esc(daMsg),true);
+  const can=!!st.kind&&st.lit.length>0;
+  h+='<div class="ce-sheet-actions"><button class="ce-btn-cancel" onclick="daClose()">Cancel</button>'
+    +(st.kind?'<button class="ce-btn-save" onclick="daSave()"'+(can?'':' disabled style="opacity:.5"')+'>Save</button>':'')+'</div>';
+  return h+'</div></div>';
+}
+// DRILLADD_END
 function renderCurrGrid(el){
   if(!currData||!currData.subjects){
     el.innerHTML+='<div style="padding:40px 20px;text-align:center;color:var(--muted)"><div style="font-size:36px;margin-bottom:8px">\u{1F4CA}</div><div style="font-weight:600;margin-bottom:4px">No curriculum yet</div><div style="font-size:12px">Upload an Excel file or build subjects first.</div></div>';
