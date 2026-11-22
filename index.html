@@ -51172,7 +51172,7 @@ function uwWeekOf(kid,u,tasks,dates){
 function uwAttach(kid,units,tasks,dates){
   units=units||[]; let add=false; const out=[];
   ((typeof haKidUnits==="function")?haKidUnits(kid):[]).filter(u=>u&&u.nbInsert!==false).forEach(u=>{
-    const ins=units.find(x=>x&&x.unitId===u.id); const wk=uwWeekOf(kid,u,tasks,dates);
+    const ins=units.find(x=>x&&x.unitId===u.id); const wk=(typeof uwListOn!=="function"||uwListOn(u))?uwWeekOf(kid,u,tasks,dates):null;   // UNITWEEKSW: Mom's 📅 This week list switch
     if(ins){ if(wk) ins.week=wk; out.push(ins); return; }
     if(!wk) return; add=true;
     out.push({unitId:u.id,title:u.title,emoji:u.emoji||"\u{1F4D8}",days:(typeof nbUnitDays==="function")?nbUnitDays(kid,u.id):{},learning:[],learned:[],next:[],extras:[],extrasTitle:"",activity:null,activities:[],week:wk}); });
@@ -51181,6 +51181,220 @@ function uwAttach(kid,units,tasks,dates){
   return out;
 }
 // UNITWEEK_END
+// UNITWEEKSW_START — 📅 a per-unit switch for the "This week we will…" list (PLAN_unit_sheet_2026-11-19.md §8.2 slice 1b, pick 7). A
+// beta mom's answer 2026-11-20: the week list "Only for some units"; her go 2026-11-22: "build as many in as many sessions you need to
+// get done. go with her answers and build". On the unit page, under 📓 Include in notebooks (Mom only, a unit with days):
+// "📅 This week list", ON by default. Off = that unit's weekly notebook page prints exactly as it did before UNITWEEK: the cards
+// pages only, and a unit with days but no cards prints nothing (uwAttach asks uwListOn: no ins.week, no bare insert).
+// One stored field: unitStudies/<id>/weekList = false while off; turning it back on removes the field (absent = on), so every unit
+// that exists reads as on with no write. ONE targeted set, Mom only (momHere), live only (db && !_dryRun()).
+function uwListOn(u){ return !(u&&u.weekList===false); }
+function uwSwHtml(u){
+  if(!u||!u.id||!momHere()||!(typeof utHasDays==="function"&&utHasDays(u))) return "";
+  const on=uwListOn(u), id=String(u.id).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  return '<div data-uwsw="1" style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:10px">'+
+    '<span style="flex:1;min-width:150px;font-size:12px;font-weight:700;color:#1f2937">\u{1F4C5} This week list'+(on?'':' <span style="font-weight:800;color:#b45309">\u00B7 off</span>')+
+    '<div style="font-size:10.5px;font-weight:600;color:var(--muted);line-height:1.4;margin-top:2px">A \u201CThis week we will\u2026\u201D list on this unit\u2019s notebook page: each unit day of the week with its book, video and activity. Turn off to print the cards page only.</div></span>'+
+    '<button onclick="unitToggleWeekList(\''+id+'\')" style="padding:7px 14px;border-radius:10px;border:1.5px solid '+(on?'#86efac':'var(--border)')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#15803d':'#b45309')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+(on?'\u2713 On':'\u25CB Off')+'</button></div>';
+}
+function unitToggleWeekList(unitId){
+  if(!momHere()) return false;   // what's in the notebook is Mom's call
+  const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[unitId]; if(!u) return false;
+  const next=!uwListOn(u);
+  if(next) delete u.weekList; else u.weekList=false;
+  const live=(typeof db!=="undefined"&&!!db&&!_dryRun());
+  if(live) db.ref("unitStudies/"+unitId+"/weekList").set(next?null:false);   // ONE targeted set; on = the field removed
+  else if(typeof gwShowToast==="function") gwShowToast("\u{1F4C5} This week list "+(next?"on":"off")+" (dry run \u2014 nothing saved)");
+  if(typeof renderAll==="function") renderAll();
+  return true;
+}
+// UNITWEEKSW_END
+// UNITGATHER_START — 🧾 one gatherer for a unit's things (PLAN_unit_sheet_2026-11-19.md §4.0, §8.2 slice 2 lean). Her ask 2026-11-19:
+// "could you go into deep planning of how we could make the sheet that goes with the units more impressive that collects all the
+// things etc?"; a beta mom's answer 2026-11-20: Mom's sheet = "Supplies to gather, Books to get, Pages to print", the week before;
+// her go 2026-11-22: "go with her answers and build". unitGather(u, opts) reads a unit through the readers that exist (utDaysOn,
+// utClean's shapes, utResOf, crOfTrack, _unitActs) and returns plain lists; Mom's get-ready sheet (UNITPREP) is one layout over it.
+//   · Off days are left out. Lists stored as objects (a database array that came back keyed) read like arrays (utArr / lrList).
+//   · A day's activities: the one its notebook activity names (nb.activity) + every activity whose `day` is the day's number — the
+//     rule the week list (UNITWEEK) and the day card use. An activity on no day shows only for the whole unit ("any day").
+//   · An activity's `type` (📓 notebook · 📱 screen · 🖨 print · 🔗 link · 🧪 hands) is read only when it is a known word; none =
+//     notebook, so every activity stored today reads as what it is. Its `pdf` ({url,title} or an address) and `supplies` (a list, or
+//     text one per line with "| mom") are read only when they exist.
+//   · totals: supplies (no repeats by name; each with its days, its amounts, where from: day · ✂️ craft · 🍎 snack · 🎲 game ·
+//     🧪 activity, and mom:true when it is marked Mom's), orders, books, prints (a day's PDF or document; a notebook activity's page;
+//     a printable activity's file), each with its days and how many copies (opts.copies[dayId], else opts.n, else 1 — the sheet says
+//     ×1 for a family-time day and ×N for a day each kid does).
+//   · opts.days = the day ids to gather (a week's); opts.when = {dayId: "Tue"} for the label. Pure: no screen, no database, no write.
+const UG_TYPES=["notebook","screen","print","link","hands"];
+function ugType(a){ const t=(a&&typeof a.type==="string")?a.type.trim().toLowerCase():""; return !t?"notebook":(UG_TYPES.indexOf(t)>=0?t:"other"); }
+function ugUrl(v){ const s=String(v==null?"":v).trim(); return (typeof lrSafeUrl==="function")?lrSafeUrl(s):(/^https:\/\//i.test(s)?s:""); }
+function ugStr(v,n){ return String(v==null?"":v).trim().slice(0,n||120); }
+function ugList(v){ return (typeof utArr==="function")?utArr(v):(Array.isArray(v)?v.filter(x=>x!=null):[]); }
+// an activity's own supplies → [{name, qty, mom}]
+function ugActSupplies(a){
+  const v=a&&a.supplies; if(!v) return [];
+  const line=s=>{ s=String(s).trim(); if(!s) return null; const m=/^(.*?)\s*\|\s*mom\s*$/i.exec(s); const name=ugStr(m?m[1]:s,80); return name?{name:name,qty:"",mom:!!m}:null; };
+  const L=(typeof v==="string")?v.split(/\r?\n/):ugList(v);
+  return L.map(x=>{ if(typeof x==="string") return line(x); if(!x||typeof x!=="object") return null; const name=ugStr(x.name,80); if(!name) return null; return {name:name,qty:ugStr(x.qty,20),mom:x.kids===false||x.mom===true}; }).filter(Boolean);
+}
+function ugActPdf(a){ const p=a&&a.pdf; if(!p) return null; if(typeof p==="string"){ const u=ugUrl(p); return u?{url:u,title:""}:null; } if(typeof p!=="object") return null; const u=ugUrl(p.url); return u?{url:u,title:ugStr(p.title,120)}:null; }
+function ugDayActs(acts,d){ const seen={}; return acts.filter(a=>{ if(!a||!a.key||seen[a.key]) return false; const hit=(d.nb&&d.nb.activity===a.key)||(d.n&&typeof utInt==="function"&&utInt(a.day)===d.n); if(hit) seen[a.key]=1; return hit; }); }
+function ugHead(d){ return d.n?"Day "+d.n:(d.role||(d.wk?"Week "+d.wk:"")); }
+function unitGather(u,opts){
+  opts=opts||{};
+  const all=(typeof utDays==="function")?utDays(u):[], on=all.filter(d=>!d.off);
+  const only=Array.isArray(opts.days)?opts.days.map(String):null, when=opts.when||{}, cps=opts.copies||{};
+  const nDef=Math.max(1,parseInt(opts.n,10)||1), nOf=id=>Math.max(1,parseInt(cps[id],10)||nDef);
+  const acts=(typeof _unitActs==="function")?_unitActs(u):[];
+  const uc=(typeof crOfTrack==="function")?crOfTrack(u):null, first=on[0]||null;
+  const T={supplies:[],orders:[],books:[],prints:[]}, idx={};
+  const put=(kind,key,make,day,n)=>{ const k=kind+"\u0001"+key; let it=idx[k]; if(!it){ it=idx[k]=make(); it.days=[]; T[kind].push(it); }
+    if(day&&it.days.indexOf(day)<0) it.days.push(day); if(n&&(!it.n||n>it.n)) it.n=n; return it; };
+  const sup=(s,from,day)=>{ const it=put("supplies",s.name.toLowerCase(),()=>({name:s.name,qtys:[],from:[],mom:false}),day);
+    if(s.qty&&it.qtys.indexOf(s.qty)<0) it.qtys.push(s.qty); if(it.from.indexOf(from)<0) it.from.push(from); if(s.mom) it.mom=true; };
+  const actInto=(a,day,n)=>{ const ty=ugType(a), title=ugStr(a.title,120)||String(a.key);
+    ugActSupplies(a).forEach(s=>sup(s,"act",day));
+    if(ty==="notebook") put("prints","nb:"+a.key,()=>({title:title,kind:"notebook",url:""}),day,n);
+    if(ty==="print"){ const p=ugActPdf(a); put("prints","act:"+a.key,()=>({title:title,kind:"print",url:p?p.url:""}),day,n); }
+    return {key:a.key,title:title,emoji:ugStr(a.emoji,8),type:ty,points:a.points};
+  };
+  const days=on.filter(d=>!only||only.indexOf(String(d.id))>=0).map(d=>{
+    const dd=(uc&&first&&d.id===first.id)?Object.assign({},d,{_unitCraft:uc}):d;
+    const lbl=[when[d.id]||"",ugHead(d)].filter(Boolean).join(" \u00B7 "), n=nOf(d.id);
+    const r=(typeof utResOf==="function")?utResOf([dd]):{supplies:[],books:[],orders:[],links:[]};
+    r.supplies.forEach(s=>sup({name:ugStr(s.name,80),qty:ugStr(s.qty,20),mom:s.kids===false},s.craft?"craft":s.snack?"snack":s.game?"game":s.act?"act":"day",lbl));
+    r.books.forEach(b=>{ const t=ugStr(b.title,120); if(t) put("books",t.toLowerCase(),()=>({title:t,by:ugStr(b.by,80)}),lbl); });
+    r.orders.forEach(o=>{ const nm=ugStr(o.name,120); if(nm){ const it=put("orders",nm.toLowerCase(),()=>({name:nm,url:""}),lbl); if(!it.url) it.url=ugUrl(o.url); } });
+    ugList(dd.res&&dd.res.docs).forEach(x=>{ if(!x||(x.kind!=="pdf"&&x.kind!=="doc")) return; const url=ugUrl(x.url); if(!url) return; put("prints","doc:"+url,()=>({title:ugStr(x.title,120)||"Document",kind:x.kind,url:url}),lbl,n); });
+    const da=ugDayActs(acts,d).map(a=>actInto(a,lbl,n));
+    return {id:d.id,n:d.n||null,t:d.t||"",label:lbl,books:r.books,links:(r.links||[]).map(l=>({label:l.label||"",kind:l.kind||""})),acts:da,craft:!!(dd.craft||dd._unitCraft),snack:!!d.snack,game:!!d.game};
+  });
+  // an activity no day names (or names a day that is not there) → the whole unit only, "any day"; one on an off day stays out
+  const loose=only?[]:acts.filter(a=>a&&a.key&&!all.some(d=>ugDayActs([a],d).length)).map(a=>actInto(a,"any day",nDef));
+  return {unit:{id:u&&u.id,title:ugStr(u&&u.title,120),emoji:ugStr(u&&u.emoji,8),nDays:on.length,perWeek:(typeof utPerWeek==="function")?utPerWeek(u):null},days:days,loose:loose,totals:T};
+}
+// UNITGATHER_END
+// UNITPREP_START — 🧾 Mom's get-ready sheet (PLAN_unit_sheet_2026-11-19.md §4.5 re-shaped by §8.2 "Slice 2, lean"; a beta mom's
+// answers 2026-11-20: "Supplies to gather, Books to get, Pages to print", reminded "The week before on my weekend list"; family-time
+// sheets are one copy for everyone; her go 2026-11-22: "go with her answers and build"). On the unit page, Mom only, a unit with
+// days or activities: "🧾 Get ready". It opens on NEXT WEEK (Mom gets ready on the weekend; on a Sunday the coming week, which the
+// app calls this week), with This week and Whole unit beside it; a unit not on the schedule shows only Whole unit. Sections: 🎒 Gather (🛒 Order under it) · 📚 Books · 🖨 Print, each line a ☐
+// and its day; 🖨 Print opens the sheet in a print window (black on white). Links, cards and day by day are left out (a later yes).
+//   · Which unit days are in a week: the Sunday list's own question. A family-time item: famGridDates in the week → famCellState runs
+//     with kids → famLessonMap's label → utDayForFam (frBuildFamily's steps). A kid's subject on the unit: lrLaidLessons → utDaysForKey
+//     (lrBuildList's steps), only for a kid who has such a subject.
+//   · Copies: a day on Family Time prints ×1 (one sheet for everyone); a day on kids' own subjects prints × the kids who have it;
+//     the whole unit: ×1 when it is on Family Time, else × its kids (subjects on it, else enrolled).
+//   · Read-only: no database call, no write. The open sheet and the picked view live in memory on this device.
+let upOpenId="", upView="next";
+const _upLaidMemo={};
+function upMom(){ return (typeof momHere==="function")&&momHere(); }
+function upEsc(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function upJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function upPointers(u){ return ((typeof psPointers==="function")?psPointers(u.id):[]).filter(p=>!(p.kind==="fam"&&p.off)); }
+function upLaid(kid,from,to){   // one kid's laid lessons for a week, kept until the lay's fingerprint changes (LRCACHE's)
+  const sig=(typeof lrLaySig==="function")?lrLaySig():null, k=kid+"|"+from+"|"+to, hit=_upLaidMemo[k];
+  if(sig&&hit&&hit.sig===sig) return hit.out;
+  const out=(typeof lrLaidLessons==="function")?lrLaidLessons(kid,from,to):[]; if(sig) _upLaidMemo[k]={sig:sig,out:out}; return out;
+}
+// The unit's days in one week (offset 0 = this week, 1 = next) → {ids, when:{id:"Tue"}, copies:{id:n}, range}
+function upWeek(u,offset){
+  const range=(typeof lrWeekRange==="function")?lrWeekRange(offset):{from:"",to:""};
+  const hit={}, order=[];
+  const add=(d,ds,fam,kid)=>{ if(!d||d.uid!==u.id||d.off||!d.id) return; let h=hit[d.id]; if(!h){ h=hit[d.id]={ds:ds,fam:false,kids:[]}; order.push(d.id); }
+    if(ds&&ds<h.ds) h.ds=ds; if(fam) h.fam=true; if(kid&&h.kids.indexOf(kid)<0) h.kids.push(kid); };
+  const ptrs=upPointers(u), defs=(typeof famDefs==="function")?famDefs():{};
+  const dates=((typeof famGridDates==="function")?famGridDates():[]).map(r=>r.date).filter(d=>d>=range.from&&d<=range.to);
+  ptrs.filter(p=>p.kind==="fam").forEach(p=>{ const b=defs[p.id]; const it=b?famList(b.items).find(x=>x&&x.key===p.key):null; if(!it) return;
+    let map=null; try{ map=famLessonMap(b,p.id,it); }catch(e){ map=null; }
+    dates.forEach(ds=>{ let c=null; try{ c=famCellState(b,it,ds); }catch(e){ c=null; } if(!c||!c.runs||!c.kids||!c.kids.length) return;
+      const lbl=map?String((map.byDate||{})[ds]||""):""; let d=null; try{ d=utDayForFam(p.id,it,ds,lbl); }catch(e){ d=null; } add(d,ds,true,""); }); });
+  ptrs.filter(p=>p.kind==="kid").forEach(p=>{ let L=[]; try{ L=upLaid(p.kid,range.from,range.to); }catch(e){ L=[]; }
+    L.filter(x=>x&&x.sk===p.sk).forEach(x=>{ let ds=[]; try{ ds=utDaysForKey(p.kid,p.sk,x.key); }catch(e){ ds=[]; } ds.forEach(d=>add(d,x.date,false,p.kid)); }); });
+  const when={}, copies={};
+  order.forEach(id=>{ const h=hit[id]; when[id]=(typeof FAM_ABBR!=="undefined"&&typeof gwParseDate==="function"&&h.ds)?FAM_ABBR[gwParseDate(h.ds).getDay()]:""; copies[id]=h.fam?1:Math.max(1,h.kids.length); });
+  return {ids:order,when:when,copies:copies,range:range};
+}
+function upWholeN(u){
+  const ptrs=upPointers(u); if(ptrs.some(p=>p.kind==="fam")) return 1;
+  const ks=[]; ptrs.forEach(p=>{ if(p.kind==="kid"&&ks.indexOf(p.kid)<0) ks.push(p.kid); });
+  if(ks.length) return ks.length;
+  return Math.max(1,Object.keys(u.enrolled||{}).filter(k=>u.enrolled[k]).length);
+}
+function upData(u,view){
+  if(view==="whole"||!upPointers(u).length) return {view:"whole",g:unitGather(u,{n:upWholeN(u)}),range:null};
+  const w=upWeek(u,view==="this"?0:1);
+  return {view:view,g:unitGather(u,{days:w.ids,when:w.when,copies:w.copies}),range:w.range};
+}
+function upShort(iso){ if(!iso) return ""; const M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; const p=String(iso).split("-"); return M[(+p[1]||1)-1]+" "+(+p[2]); }
+const UP_FROM={craft:"\u2702\uFE0F",snack:"\u{1F34E}",game:"\u{1F3B2}",act:"\u{1F9EA}"};
+// The sheet's body. forPrint = black on white, no buttons, addresses not drawn as links.
+function upSheetBody(u,D,forPrint){
+  const g=D.g, T=g.totals, box='<span style="display:inline-block;width:12px;height:12px;border:1.5px solid #374151;border-radius:3px;flex-shrink:0;margin-top:2px"></span>';
+  const days=it=>it.days.length?'<span style="color:#6b7280;font-size:11px;white-space:nowrap"> \u00B7 '+upEsc(it.days.join(", "))+'</span>':"";
+  const open=url=>(!forPrint&&url)?' <a href="'+upEsc(url)+'" target="_blank" rel="noopener" style="font-size:11px;font-weight:700;color:#0e7490">open</a>':"";
+  const row=inner=>'<div style="display:flex;gap:7px;align-items:flex-start;padding:3px 0;font-size:12.5px;line-height:1.4;break-inside:avoid">'+box+'<span style="flex:1;min-width:0">'+inner+'</span></div>';
+  const sec=(title,body)=>'<div style="break-inside:avoid;margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#1f2937;border-bottom:1.5px solid #1f2937;padding-bottom:2px;margin-bottom:4px">'+title+'</div>'+body+'</div>';
+  const none=t=>'<div style="font-size:12px;color:#6b7280;padding:3px 0">'+t+'</div>';
+  let gather=T.supplies.map(s=>row('<b>'+upEsc(s.name)+'</b>'+(s.qtys.length?' <span style="color:#374151">('+upEsc(s.qtys.join(" \u00B7 "))+')</span>':"")+(s.mom?' <span style="font-size:10.5px;font-weight:800;color:#b45309">Mom\u2019s</span>':"")+(s.from.filter(f=>UP_FROM[f]).length?' '+s.from.filter(f=>UP_FROM[f]).map(f=>UP_FROM[f]).join(""):"")+days(s))).join("")||none("Nothing to gather.");
+  if(T.orders.length) gather+='<div style="font-size:10.5px;font-weight:800;color:#1f2937;margin:7px 0 2px">\u{1F6D2} Order</div>'+T.orders.map(o=>row(upEsc(o.name)+open(o.url)+days(o))).join("");
+  const books=T.books.map(b=>row('<b>'+upEsc(b.title)+'</b>'+(b.by?' <span style="color:#374151">by '+upEsc(b.by)+'</span>':"")+days(b))).join("")||none("No books.");
+  const prints=T.prints.map(p=>{ const n=' <b>\u00D7'+(p.n||1)+'</b>';
+    if(p.kind==="notebook") return row(upEsc(p.title)+' <span style="color:#374151">\u2014 notebook page, prints with the notebook</span>'+n+days(p));
+    return row('<b>'+upEsc(p.title)+'</b> <span style="color:#374151">('+(p.kind==="doc"?"document":"PDF")+')</span>'+n+open(p.url)+days(p)); }).join("")||none("Nothing to print.");
+  let h="";
+  if(D.view!=="whole"&&!g.days.length) h+=none("No day of this unit is on "+(D.view==="this"?"this":"next")+" week\u2019s schedule.");
+  h+='<div class="up-cols" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:4px 18px">';
+  h+='<div>'+sec("\u{1F392} Gather",gather)+'</div><div>'+sec("\u{1F4DA} Books",books)+sec("\u{1F5A8} Print",prints)+'</div></div>';
+  return h;
+}
+function upTitle(u,D){
+  const lbl=D.view==="whole"?"Whole unit":(D.view==="this"?"This week":"Next week")+(D.range&&D.range.from?" \u00B7 "+upShort(D.range.from)+" \u2013 "+upShort(D.range.to):"");
+  return {name:(u.emoji?u.emoji+" ":"")+String(u.title||"Unit")+" \u2014 get ready",sub:lbl+" \u00B7 "+D.g.unit.nDays+" day"+(D.g.unit.nDays===1?"":"s")};
+}
+// On the unit page (renderUnitDetail), the line right above 📅 Days: the button, and the sheet while it is open.
+function upSectionHTML(u,isMom){
+  if(!u||!u.id||!isMom||!upMom()) return "";
+  const hasDays=(typeof utDaysOn==="function")&&utDaysOn(u).length>0, hasActs=(typeof _unitActs==="function")&&_unitActs(u).length>0;
+  if(!hasDays&&!hasActs) return "";
+  const open=upOpenId===u.id, id=upJ(u.id);
+  let h='<div data-up="1" style="margin-bottom:10px"><button onclick="upToggle(\''+id+'\')" style="padding:7px 14px;border-radius:10px;border:1.5px solid '+(open?'#1f2937':'var(--border)')+';background:'+(open?'#1f2937':'#fff')+';color:'+(open?'#fff':'#1f2937')+';font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F9FE} Get ready'+(open?' \u25B4':'')+'</button>';
+  if(open){
+    const onSched=upPointers(u).length>0, view=onSched?upView:"whole", D=upData(u,view), t=upTitle(u,D);
+    const pill=(v,txt)=>'<button onclick="upSetView(\''+v+'\')" style="padding:5px 11px;border-radius:999px;border:1.5px solid '+(D.view===v?'#1f2937':'var(--border)')+';background:'+(D.view===v?'#1f2937':'#fff')+';color:'+(D.view===v?'#fff':'#1f2937')+';font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+txt+'</button>';
+    h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-top:8px;color:#1f2937">';
+    h+='<div style="font-size:14px;font-weight:800;line-height:1.3">'+upEsc(t.name)+'</div><div style="font-size:11px;color:var(--muted);margin:2px 0 8px">'+upEsc(t.sub)+'</div>';
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'+(onSched?pill("this","This week")+pill("next","Next week"):"")+pill("whole","Whole unit")+
+      '<button onclick="upPrint(\''+id+'\')" style="margin-left:auto;padding:5px 12px;border-radius:9px;border:none;background:#0e7490;color:#fff;font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F5A8} Print</button></div>';
+    if(!onSched) h+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">This unit isn\u2019t on the schedule yet, so there is no this week or next week.</div>';
+    h+=upSheetBody(u,D,false);
+    if(onSched) h+='<div style="font-size:10.5px;color:var(--muted);margin-top:4px">This week\u2019s and next week\u2019s supplies and books are on your \u{1F9FA} Sunday list too, where you can tick them.</div>';
+    h+='</div>';
+  }
+  return h+'</div>';
+}
+// It opens on the coming week: "Next week" — except on a Sunday, when the app's own "this week" (lrWeekRange, the Sunday list's
+// weeks) already IS the coming week, so "Next week" would be the one after it.
+function upDefaultView(){ const t=(typeof lrToday==="function")?lrToday():""; const d=t?new Date(t+"T12:00:00"):null; return (d&&!isNaN(d.getTime())&&d.getDay()===0)?"this":"next"; }
+function upToggle(uid){
+  if(!upMom()) return;
+  if(upOpenId===uid) upOpenId=""; else { upOpenId=String(uid); upView=upDefaultView(); }
+  if(typeof renderAll==="function") renderAll();
+}
+function upSetView(v){ if(!upMom()||["this","next","whole"].indexOf(v)<0) return; upView=v; if(typeof renderAll==="function") renderAll(); }
+function upPrintHTML(u,view){
+  const onSched=upPointers(u).length>0, D=upData(u,onSched?view:"whole"), t=upTitle(u,D);
+  return '<!doctype html><html><head><meta charset="utf-8"><title>'+upEsc(t.name)+'</title><style>body{margin:24px;background:#fff;color:#111;font-family:-apple-system,Helvetica,Arial,sans-serif}@media print{body{margin:0.4in}}</style></head><body>'+
+    '<div style="font-size:18px;font-weight:800">'+upEsc(t.name)+'</div><div style="font-size:12px;color:#374151;margin:2px 0 14px">'+upEsc(t.sub)+'</div>'+upSheetBody(u,D,true)+'</body></html>';
+}
+function upPrint(uid){
+  if(!upMom()) return;
+  const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[uid]; if(!u) return;
+  const w=window.open("","_blank"); if(!w){ alert("Allow pop-ups to print."); return; }
+  w.document.write(upPrintHTML(u,upView).replace("</body>",'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print()},250)}</scr'+'ipt></body>'));
+  w.document.close();
+}
+// UNITPREP_END
 // In-app status page(s) for every unit a kid is enrolled in.
 // Notebook tab shows a status card per enrolled unit — but only for units set to go to the
 // notebook (nbInsert !== false). A unit shelved from notebooks (Units tab toggle off) drops
@@ -54196,6 +54410,7 @@ function renderUnitDetail(u){
       h+='<button onclick="unitToggleNbInsert(\''+u.id+'\')" style="padding:7px 14px;border-radius:10px;border:1.5px solid '+(nbOn?'#86efac':'var(--border)')+';background:'+(nbOn?'#f0fdf4':'#fff')+';color:'+(nbOn?'#15803d':'#b45309')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+(nbOn?'✓ On':'○ Off')+'</button>';
       h+='</div>';
     }
+    if(typeof uwSwHtml==="function") h+=uwSwHtml(u);   // UNITWEEKSW: 📅 This week list switch, under 📓 Include in notebooks
     if(typeof unitMixPicsHtml==="function") h+=unitMixPicsHtml(u);   // UNITMULTIPIC: 🎲 Multiple pictures switch
     h+=_unitPicsBtnHtml(u);   // UNIT_PICS: 🖼 Find pictures (Wikipedia, in this browser)
     if(typeof laIrrHtml==="function") h+=laIrrHtml(u,esc);   // LAIRR: ＋ Add Irregulars (Language Arts unit only; units step 9, 2026-10-26)
@@ -54312,6 +54527,7 @@ function renderUnitDetail(u){
     if(isMom) h+='<button onclick="unitPlanEditOpen(\''+esc(u.id)+'\',-1)" style="margin-top:9px;padding:7px 14px;border-radius:10px;border:1.5px dashed #2d6a4f;background:#f2faf5;color:#2d6a4f;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add step</button>';
     h+='</div>';
   }
+  if(typeof upSectionHTML==="function") h+=upSectionHTML(u,isMom);   // UNITPREP: 🧾 Get ready (Mom), right above 📅 Days
   if(typeof utDaysSectionHTML==="function") h+=utDaysSectionHTML(u,isMom);   // UNITTRACK: 📅 Days, above the decks
   (u.decks||[]).forEach(d=>{
     h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px">';
