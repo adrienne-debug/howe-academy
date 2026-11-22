@@ -43778,7 +43778,7 @@ try{ window.addEventListener("resize",function(){ if(typeof wbView!=="undefined"
 // WBDSAVE_START — 💾 Save on the whiteboard (Sara's answer 2026-11-20: a board is kept only "when someone taps Save"; PLAN §7.2;
 //   Adrienne's "go with her answers and build" 2026-11-22). Scratch stays the default — nothing is written until Save is tapped.
 //   · WHO: Mom (momHere()), on a board opened from Today's card with a unit day (wbdOpen({uid, dayId})). Not on a board opened
-//     from an activity row (opts.key): the kid's own Save (unitWork/<kid>/<unitId>/<key>/board) waits for the row door — not built.
+//     from an activity row (opts.key): that board's Save is the kid's own (WBDKID: unitWork/<kid>/<unitId>/<key>/board).
 //   · WHAT IT WRITES: the board becomes a JPEG made from the canvas (white, the grid when on, the ink; at most WBD_MAX_W px wide,
 //     0.85 — picStore's size), uploaded by picStore to Storage pictures/units/<unitId>/days/<dayId>/whiteboard_<stamp>.jpg (the
 //     folder UNITDAY_EXTRAS puts a day's pictures in), then uxDocAdd adds {kind:"image", title:"Whiteboard · 10:42 AM", url} to
@@ -43790,7 +43790,8 @@ try{ window.addEventListener("resize",function(){ if(typeof wbView!=="undefined"
 const WBD_MAX_W=1600;
 function wbdCanSave(v){ return !!(v&&v.scratch&&v.uid&&v.dayId&&!v.key&&typeof momHere==="function"&&momHere()&&typeof uxDocAdd==="function"); }
 function wbdSaveBtnHTML(v,btn){
-  if(!wbdCanSave(v)) return ""; const saved=!!v.savedRev&&v.savedRev===v._rev;
+  if(!wbdCanSave(v)) return (typeof wbdKidSaveBtnHTML==="function")?wbdKidSaveBtnHTML(v,btn):"";   // WBDKID: a row's board → the kid's own Save
+  const saved=!!v.savedRev&&v.savedRev===v._rev;
   return btn(v.saving?"Saving…":(saved?"✓ Saved":"\u{1F4BE} Save"),"wbdSave()",!saved&&!v.saving)+
     ((v.msg&&(v.saving||v.msgRev===v._rev))?'<span data-wbd-msg="1" style="font-size:12px;font-weight:700;color:'+(v.msgOk?'#15803d':'#b91c1c')+'">'+uxEsc(v.msg)+'</span>':'');
 }
@@ -43837,9 +43838,80 @@ function wbdDevKid(){
 function wbdRowBtnHTML(g,act){
   const d=g&&g.day; if(!d||!d.uid||d.id==null||!act||!act.key) return "";
   const a="{uid:'"+wbdJ(d.uid)+"',dayId:'"+wbdJ(d.id)+"',key:'"+wbdJ(act.key)+"',kid:'"+wbdJ(wbdDevKid())+"'}";
-  return '<div data-wbd-rowbar="1" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px"><button data-wbd-row="'+dcEsc(act.key)+'" onclick="wbdOpen('+a+')" style="min-height:44px;border:2px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;font-size:15px;font-weight:800;cursor:pointer;padding:8px 16px;border-radius:12px;font-family:\'DM Sans\',sans-serif">\u270D\uFE0F Whiteboard</button></div>';
+  return '<div data-wbd-rowbar="1" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px"><button data-wbd-row="'+dcEsc(act.key)+'" onclick="wbdOpen('+a+')" style="min-height:44px;border:2px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;font-size:15px;font-weight:800;cursor:pointer;padding:8px 16px;border-radius:12px;font-family:\'DM Sans\',sans-serif">\u270D\uFE0F Whiteboard</button>'+((typeof wbdBoardLinksHTML==="function")?wbdBoardLinksHTML(g,act):"")+'</div>';   // WBDKID: 🖼 Board, Mom only
 }
 // WBDROW_END
+// WBDKID_START — 💾 the kid's own Save on a board opened from an activity row (PLAN_unit_activity_types §7.2: "From a kid's activity
+//   row it is kept with his activity (unitWork/<kid>/<unitId>/<key>/board = {url, ts}) and shows to Mom on approve"; Sara's answer
+//   2026-11-20: a board is kept only "when someone taps Save"; Adrienne's "go with her answers and build" 2026-11-22).
+//   · WHO MAY SAVE: the kid on his own device, for himself (wbdDevKid() is the board's kid and he is enrolled in the unit) · Mom
+//     (momHere()) for the kid she picks — one enrolled kid: "💾 Save"; more: "💾 Save for" and the row's own name chips, never a
+//     guess. Nobody else: the shared board (no kid picked), a sibling's device, a board whose activity is gone — no button, and
+//     wbdKidSave refuses if called anyway. Mom's day board (WBDSAVE) is unchanged.
+//   · WHAT IT WRITES: the board as a JPEG made exactly as WBDSAVE makes it (wbdJpeg), uploaded by picStore to Storage
+//     pictures/units/<unitId>/work/<kid>/<key>/board_<stamp>.jpg, then ONE targeted set of unitWork/<kid>/<unitId>/<key>/board =
+//     {url, ts} (db && !_dryRun). Saving again replaces the link; the older file stays in Storage (stamped names are never reused).
+//   · REFUSED, said plainly, the drawing left on the board: nothing drawn, dry run, no database, the device can't make the picture,
+//     the upload fails / times out / no internet (picStore hands the data URL back — never saved as text in the database).
+//   · MOM SEES IT: on her device, next to the row's ✍️ Whiteboard, "🖼 Board · <name>" for each kid with a saved board — it opens
+//     the picture. Her device listens to each enrolled kid's one small board leaf (one listener per kid and activity per page load)
+//     and repaints when one arrives. No points and no done: saving never touches activityLog, activityClaims or the bank.
+const _wbdBoards={};   // "kid|unitId|key" → {url, ts} · null (none) · 0 (listening, nothing yet)
+function wbdBoardPath(k,uid,key){ return "unitWork/"+k+"/"+uid+"/"+key+"/board"; }
+function wbdSeg(s){ s=String(s==null?"":s); return !!s&&!/[.#$\[\]\/]/.test(s); }
+// who this board may be saved for on this device ([] = no Save)
+function wbdKidSaveFor(v){
+  if(!v||!v.scratch||!v.key||!wbdSeg(v.uid)||!wbdSeg(v.key)) return [];
+  const u=(typeof unitStudies!=="undefined"&&unitStudies)?unitStudies[v.uid]:null; if(!u||typeof dcActKids!=="function") return [];
+  if(!((typeof _unitActs==="function")?_unitActs(u):[]).some(a=>a&&a.key===v.key)) return [];
+  const kids=dcActKids(u).filter(wbdSeg);
+  if(typeof momHere==="function"&&momHere()) return kids;
+  const me=wbdDevKid(); return (me&&me===v.kid&&kids.indexOf(me)>=0)?[me]:[];
+}
+function wbdKidSaveBtnHTML(v,btn){
+  const ks=wbdKidSaveFor(v); if(!ks.length) return ""; const sv=v.kSaved||{}, done=k=>sv[k]!=null&&sv[k]===v._rev;
+  let h;
+  if(ks.length===1) h=btn(v.saving?"Saving…":(done(ks[0])?"✓ Saved":"\u{1F4BE} Save"),"wbdKidSave('"+wbdJ(ks[0])+"')",!done(ks[0])&&!v.saving);
+  else h='<span style="font-size:12px;font-weight:800;color:#0f172a">'+(v.saving?"Saving…":"\u{1F4BE} Save for")+'</span>'+ks.map(k=>btn((done(k)?"✓ ":"")+dcEsc(dcName(k)),"wbdKidSave('"+wbdJ(k)+"')",!done(k)&&!v.saving)).join("");
+  return h+((v.msg&&(v.saving||v.msgRev===v._rev))?'<span data-wbd-msg="1" style="font-size:12px;font-weight:700;color:'+(v.msgOk?'#15803d':'#b91c1c')+'">'+dcEsc(v.msg)+'</span>':'');
+}
+async function wbdKidSave(k){
+  const v=(typeof wbView!=="undefined")?wbView:null; if(!v||v.saving||wbdKidSaveFor(v).indexOf(k)<0) return false;
+  if(!v.strokes.length) return wbdSay(v,"Nothing on the board yet.");
+  if(typeof _dryRun==="function"&&_dryRun()) return wbdSay(v,"Dry run — nothing uploaded, nothing written.");
+  if(typeof db==="undefined"||!db) return wbdSay(v,"Not connected — nothing saved.");
+  let data=""; try{ data=wbdJpeg(v); }catch(e){ data=""; }
+  if(!/^data:image\/jpeg/.test(String(data))) return wbdSay(v,"This device couldn’t make the picture — nothing saved.");
+  const rev=v._rev||0, uid=v.uid, key=v.key; v.saving=true; wbdSay(v,"Saving the board…",true);
+  let url=""; try{ url=(typeof picStore==="function")?await picStore(data,["units",uid,"work",k,key,"board"]):""; }catch(e){ url=""; }
+  v.saving=false;
+  if(!/^https:\/\//i.test(String(url||""))) return wbdSay(v,"Didn’t save: the upload didn’t go through (no internet?). Nothing was saved — try again.");
+  const rec={url:String(url),ts:Date.now()}, id=k+"|"+uid+"|"+key, was=_wbdBoards[id];
+  try{ const p=db.ref(wbdBoardPath(k,uid,key)).set(rec);
+    if(p&&typeof p.catch==="function") p.catch(function(){ _wbdBoards[id]=was; if(wbView===v){ v.kSaved=Object.assign({},v.kSaved); delete v.kSaved[k]; wbdSay(v,"Didn’t save — the database said no. Try again."); } }); }
+  catch(e){ return wbdSay(v,"Didn’t save — the database said no. Try again."); }
+  _wbdBoards[id]=rec; v.kSaved=Object.assign({},v.kSaved); v.kSaved[k]=rev;
+  wbdSay(v,(typeof momHere==="function"&&momHere())?"Saved with "+dcName(k)+"’s activity.":"Saved — Mom will see it with your activity.",true);
+  try{ if(typeof dcRe==="function") dcRe(); }catch(e){}
+  return true;
+}
+// Mom's device: listen to one kid's board leaf for one activity (once per page load)
+function wbdBoardWatch(k,uid,key){
+  const id=k+"|"+uid+"|"+key; if(_wbdBoards[id]!==undefined) return; _wbdBoards[id]=0;
+  if(typeof db==="undefined"||!db||typeof db.ref!=="function") return;
+  try{ db.ref(wbdBoardPath(k,uid,key)).on("value",function(s){ const b=s&&typeof s.val==="function"?s.val():null;
+    const nb=(b&&/^https:\/\//i.test(String(b.url||"")))?{url:String(b.url),ts:b.ts||0}:null, old=_wbdBoards[id];
+    _wbdBoards[id]=nb; if(JSON.stringify(nb)!==JSON.stringify(old||null)&&typeof dcRe==="function") dcRe(); }); }catch(e){}
+}
+// DCACTS row (inside WBDROW's bar): 🖼 Board · <name> per kid with a saved board — Mom only
+function wbdBoardLinksHTML(g,act){
+  if(!(typeof momHere==="function"&&momHere())) return "";
+  const u=g&&g.u, uid=g&&g.day&&g.day.uid; if(!u||!act||!wbdSeg(uid)||!wbdSeg(act.key)||typeof dcActKids!=="function") return "";
+  let h=""; dcActKids(u).filter(wbdSeg).forEach(k=>{ wbdBoardWatch(k,uid,act.key); const b=_wbdBoards[k+"|"+uid+"|"+act.key];
+    if(b&&b.url) h+='<a data-wbd-board="'+dcEsc(k)+'" href="'+dcEsc(b.url)+'" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;min-height:44px;box-sizing:border-box;padding:8px 14px;border-radius:12px;border:2px solid #93c5fd;color:#dbeafe;font-size:15px;font-weight:800;text-decoration:none;font-family:\'DM Sans\',sans-serif">\u{1F5BC} Board \u00B7 '+dcEsc(dcName(k))+'</a>'; });
+  return h;
+}
+// WBDKID_END
 // UNITDAY_GAME_START — 🎲 a Game on a unit day (her words 2026-11-11: "use those to build what she's envisioning please" — Sara, a
 //   beta mom, answered the games worksheet 2026-11-11: her leaf-blowing competition, minute-to-win-it at Christmas; a game is
 //   "something we all do together, off-screen, with the rules on the day card"; notebook activities stay separate, "maybe having the
