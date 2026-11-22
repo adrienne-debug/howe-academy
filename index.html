@@ -44867,6 +44867,7 @@ async function ubAsk(di,kind,content,src){
 }
 async function ubPhoto(di,kind,input){
   const files=[...((input&&input.files)||[])]; if(input) input.value=""; if(!files.length||!ubForm) return;
+  if(kind==="cards"&&typeof pdfCardsBuilder==="function"&&files.every(ubIsPdf)) return pdfCardsBuilder(di,files);   // PDFCARDS: a PDF's own text first, on this device — no key, no AI
   const key=(typeof kitCapKey==="function")?kitCapKey():""; if(!key){ ubForm.msg="Needs a Claude key \u2014 Admin \u25B8 Settings \u25B8 \u2728 AI key. Typing or pasting the lines always works."; ubRe(); return; }
   const pdfs=files.filter(ubIsPdf).slice(0,3), pics=files.filter(x=>!ubIsPdf(x)).slice(0,6);
   if((pics.length&&typeof _cbShrinkImage!=="function")||typeof kitCapAsk!=="function"){ ubForm.msg="The photo reader isn\u2019t in this build."; ubRe(); return; }
@@ -44988,6 +44989,7 @@ function ubBoxHTML(di,kind){
   let h='<div data-ub-box="'+kind+'" style="border:1px solid #eef0f3;border-radius:10px;padding:8px 10px;margin-top:8px;background:#fff">';
   h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:12px;font-weight:800;color:#1f2937;flex:1">'+meta[1]+' <span style="font-weight:600;color:var(--muted)">\u00B7 '+L.length+'</span></span>';
   h+='<label style="padding:4px 10px;border-radius:999px;border:1.5px solid #a7f3d0;background:#f0fdf4;color:#15803d;font-size:11px;font-weight:700;cursor:pointer"><input type="file" accept="image/*,application/pdf,.pdf" multiple onchange="ubPhoto('+(di==null?"null":di)+',\''+kind+'\',this)" style="display:none">\u{1F4F8} Photo or \u{1F4C4} PDF</label></div>';
+  if(kind==="cards"&&typeof pdfCardsBoxNoteHTML==="function") h+=pdfCardsBoxNoteHTML(di);   // PDFCARDS: reading… / a scan
   L.forEach(x=>{ const id="'"+ubJ(x.id)+"'";
     h+='<div data-ub-item="'+ubEsc(x.id)+'" style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding:5px 0;border-top:1px solid #f3f4f6;font-size:12px">';
     if(kind==="cards") h+='<input value="'+ubEsc(x.front)+'" placeholder="front" oninput="ubEdit('+a+','+id+',\'front\',this.value)" style="'+UB_INP+';flex:1 1 120px;width:auto"><input value="'+ubEsc(x.back)+'" placeholder="back" oninput="ubEdit('+a+','+id+',\'back\',this.value)" style="'+UB_INP+';flex:2 1 160px;width:auto">';
@@ -56032,6 +56034,7 @@ function cardSheetHTML(S){ const btn="flex:1;padding:12px;border-radius:10px;bor
     '<div style="font-size:11.5px;color:var(--muted);margin:6px 0 4px;line-height:1.5">Paste or type here — any shape works: one card per line, “word - meaning”, a table, a numbered list… New cards go into this unit and into every enrolled kid’s drill bank.</div>'+
     '<div style="font-size:11.5px;color:#2d6a4f;font-weight:700;margin:0 0 8px">Made it in ChatGPT? Copying and pasting the list works too.</div>'+
     '<textarea id="unit-batch-txt" oninput="cardSheetInput(this.value)" placeholder="Guppy - a tiny, colorful fish&#10;Platy - a peaceful round fish" style="width:100%;box-sizing:border-box;min-height:130px;padding:9px 11px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;line-height:1.55">'+csEsc(S.text||"")+'</textarea>'+
+    (typeof pdfCardsSheetBarHTML==="function"?pdfCardsSheetBarHTML(S):"")+   // PDFCARDS: 📄 PDF — the PDF's own text, read on this device
     '<div id="card-sheet-prev">'+cardSheetPreviewHTML(S)+'</div>'+
     '<div id="unit-batch-msg" style="font-size:11.5px;font-weight:600;color:#b45309;margin-top:6px"></div>'+
     '<div style="display:flex;gap:8px;margin-top:12px;position:sticky;bottom:0;background:#fff;padding-top:6px">'+
@@ -56166,6 +56169,149 @@ function checkFixNewDeck(unitId,key,fresh,kids,startNames){ if(!cfLive()) return
   });
   return cards; }
 // CHECKFIX_END
+// PDFCARDS_START — 📄 PDF on ＋ Add cards: the PDF's own text, read on Mom's device — no key, no AI, nothing uploaded (her go
+//   2026-11-22: "build as many in as many sessions you need … go with her answers and build"; a beta mom 11/20: "I normally would
+//   make my ChatGPT change into a pdf. So I think just a pic of my notes and a pdf from chat would be all I would use.";
+//   PLAN_unit_easy_import_2026-11-19.md §3, §9.1, slice F).
+//   · "📄 PDF" on a saved unit's ＋ Add cards sheet: she picks a file; pdf.js is LOADED on demand (nbLoadPdfJs — the library the
+//     coloring pages already use) and pulls the text right here (getTextContent). Lines are rebuilt from where each piece of text
+//     sits on the page (top to bottom, then left to right), so a table row stays one line with its cells in order; a wide gap
+//     between two pieces is a cell break (a tab), so cardSplit reads the table as name | meaning. The text lands in the paste box
+//     and runs through the SAME check screen (green rows; Swap / Join / Split at fix a table that came out interleaved).
+//   · The Builder's 🃏 Cards box: a PDF picked on its 📸 Photo or 📄 PDF button is read the same way first (rows like a paste);
+//     a photo, or a photo + PDF together, still goes to Claude as before.
+//   · A PDF with no text (a scan — a picture of a page) says so plainly; with a Claude key it offers "✨ Read it with Claude"
+//     (the Builder's existing request; on the saved unit once that path is there); with no key it says what to do instead.
+//   · Caps: 15 MB (the app's PDF cap, as the Builder and the receipt reader), the first 40 pages, 60,000 characters (the paste
+//     cap). Page numbers, a lone link line, the browser's date/time print header and a line repeated from an earlier page
+//     (a table's header row, a running title) are left out. Works offline once pdf.js is in the browser's cache; if it cannot
+//     load, one plain line. The file never leaves her device. No database writes (Add's writes are CHECKFIX's, unchanged).
+//   · Mom-only; phone width; finger-sized buttons; no kid's name.
+const PDFC_MAX_BYTES=15*1024*1024, PDFC_MAX_PAGES=40, PDFC_MAX_CHARS=60000;
+const PDFC_CELL_GAP=0.9;   // a gap wider than 0.9 × the font size between two pieces of text = a new cell (a word space is ~0.25)
+const PDFC_MSG={
+  big:"That PDF is over 15 MB — too big to read here. Copy the list out of it and paste it in the box.",
+  noLib:"The PDF reader couldn’t load (offline?). Copy the list out of the PDF and paste it in the box instead.",
+  open:"Couldn’t open that PDF. Copy the list out of it and paste it in the box instead.",
+  locked:"That PDF is locked with a password. Open it, copy the list and paste it in the box.",
+  noKey:"Reading a picture needs a Claude key — Admin ▸ Settings ▸ ✨ AI key. Typing or pasting the lines always works.",
+  paste:"Typing or pasting the lines always works."};
+const PDFC_CHROME=[/^(?:page\s*)?\d{1,4}(?:\s*(?:of|\/)\s*\d{1,4})?$/i, /^(?:https?:\/\/|www\.)\S+$/i, /^\d{1,2}\/\d{1,2}\/\d{2,4},?\s+\d{1,2}:\d{2}(?:\s*[AP]M)?(?:\t.*)?$/i];
+// one page's text items (pdf.js getTextContent().items) → its lines; cells apart by a wide gap are joined with a tab
+function pdfItemsLines(items){
+  const T=(items||[]).filter(it=>it&&typeof it.str==="string"&&it.str.trim()&&Array.isArray(it.transform)).map(it=>{ const t=it.transform, h=Math.abs(+it.height||0)||Math.hypot(+t[2]||0,+t[3]||0)||10;
+    return {s:it.str,x:+t[4]||0,y:+t[5]||0,w:Math.abs(+it.width||0)||it.str.length*h*0.5,h:h}; });
+  T.sort((a,b)=>(b.y-a.y)||(a.x-b.x));
+  const lines=[]; T.forEach(it=>{ const L=lines[lines.length-1]; if(L&&Math.abs(L.y-it.y)<=Math.max(1,0.5*Math.min(L.h,it.h))) L.items.push(it); else lines.push({y:it.y,h:it.h,items:[it]}); });
+  return lines.map(L=>{ L.items.sort((a,b)=>a.x-b.x); let out="", end=null, ph=0;
+    L.items.forEach(it=>{ if(end==null) out=it.s; else { const gap=it.x-end, fs=Math.max(ph,it.h);
+      if(gap>fs*PDFC_CELL_GAP) out=out.replace(/\s+$/,"")+"\t"+it.s.replace(/^\s+/,"");
+      else if(gap>fs*0.15&&!/\s$/.test(out)&&!/^\s/.test(it.s)) out+=" "+it.s; else out+=it.s; }
+      end=Math.max(end==null?-Infinity:end,it.x+it.w); ph=it.h; });
+    return out.replace(/[  ]{2,}/g," ").replace(/ *\t[\t ]*/g,"\t").trim(); }).filter(Boolean);
+}
+// a page-number / link / print-header line (or one whose every cell is one) is the page's frame, not a card
+function pdfcChrome(l){ const t=re=>re.test(l); if(PDFC_CHROME.some(t)) return true; const c=l.split("\t"); return c.length>1&&c.every(x=>PDFC_CHROME.some(re=>re.test(x))); }
+// every page's lines → one text for cardSplit (pure). {text, lines, pages, empty (pages with no text), scan, cut}
+function pdfPagesText(pages){
+  const out=[], seen=new Set(); let empty=0, chars=0, cut=false;
+  (pages||[]).forEach((items,pi)=>{ const L=pdfItemsLines(items); if(!L.length){ empty++; return; } const here=new Set();
+    L.forEach(l=>{ if(pdfcChrome(l)) return; const k=l.toLowerCase(); if(pi>0&&seen.has(k)) return; here.add(k);
+      if(chars+l.length+1>PDFC_MAX_CHARS){ cut=true; return; } chars+=l.length+1; out.push(l); });
+    here.forEach(k=>seen.add(k)); });
+  const n=(pages||[]).length;
+  return {text:out.join("\n"),lines:out.length,pages:n,empty:empty,scan:n>0&&!out.length&&empty>=n,cut:cut};
+}
+function pdfFileBytes(file){ if(file&&typeof file.arrayBuffer==="function") return file.arrayBuffer();
+  return new Promise((res,rej)=>{ try{ const rd=new FileReader(); rd.onload=()=>res(rd.result); rd.onerror=()=>rej(new Error("read")); rd.readAsArrayBuffer(file); }catch(e){ rej(e); } }); }
+// read a PDF's text on this device. lib = pdf.js (loaded on demand when not handed in). Throws Error(plain line).
+async function pdfReadText(file,lib){
+  if(!file) throw new Error(PDFC_MSG.open);
+  if((+file.size||0)>PDFC_MAX_BYTES) throw new Error(PDFC_MSG.big);
+  if(!lib){ if(typeof nbLoadPdfJs!=="function") throw new Error(PDFC_MSG.noLib); try{ lib=await nbLoadPdfJs(); }catch(e){ throw new Error(PDFC_MSG.noLib); } }
+  if(!lib||typeof lib.getDocument!=="function") throw new Error(PDFC_MSG.noLib);
+  let buf; try{ buf=await pdfFileBytes(file); }catch(e){ throw new Error(PDFC_MSG.open); }
+  let doc; try{ doc=await lib.getDocument({data:new Uint8Array(buf)}).promise; }catch(e){ throw new Error(e&&e.name==="PasswordException"?PDFC_MSG.locked:PDFC_MSG.open); }
+  try{
+    const total=+doc.numPages||0, n=Math.min(total,PDFC_MAX_PAGES), pages=[];
+    for(let p=1;p<=n;p++){ const pg=await doc.getPage(p); const tc=await pg.getTextContent(); pages.push((tc&&tc.items)||[]); try{ if(pg.cleanup) pg.cleanup(); }catch(e){} }
+    const r=pdfPagesText(pages); r.total=total; return r;
+  }catch(e){ throw new Error(PDFC_MSG.open); }
+  finally{ try{ if(doc&&doc.destroy) doc.destroy(); }catch(e){} }
+}
+function pdfcEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function pdfcPl(n,w){ return n+" "+w+(n===1?"":"s"); }
+// the plain line after a read: what was read, what was skipped — and that nothing left the device
+function pdfcExtra(r){ const m=[];
+  if(r.total>r.pages) m.push("Only the first "+r.pages+" of "+r.total+" pages were read.");
+  if(r.empty) m.push(pdfcPl(r.empty,"page")+" had no text (a picture) and "+(r.empty===1?"was":"were")+" skipped.");
+  if(r.cut) m.push("The text was long, so only the first part was read.");
+  return m.join(" "); }
+function pdfcDoneMsg(name,r){ const x=pdfcExtra(r); return "✓ Read “"+name+"” on this device — "+pdfcPl(r.pages,"page")+". Nothing was uploaded; check the cards below."+(x?" "+x:""); }
+function pdfcCanAsk(){ return (typeof ubCanAsk==="function")&&ubCanAsk(); }   // a key exists (never read or shown here)
+function pdfcMom(){ return !(typeof momHere==="function"&&!momHere()); }
+const PDFC_BTN="display:inline-flex;align-items:center;gap:4px;min-height:40px;padding:8px 14px;border-radius:10px;border:1.5px solid #a7f3d0;background:#f0fdf4;color:#15803d;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;box-sizing:border-box";
+// ── the saved unit's ＋ Add cards sheet ──
+function pdfCardsSheetBarHTML(S){
+  return '<div data-pdfc-bar="1" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">'+
+    '<label style="'+PDFC_BTN+'"><input type="file" id="card-sheet-pdf" accept="application/pdf,.pdf" onchange="pdfCardsSheetPick(this)" style="display:none">\u{1F4C4} PDF</label>'+
+    '</div><div id="card-sheet-file">'+pdfCardsSheetNoteHTML(S)+'</div>'; }
+function pdfCardsSheetNoteHTML(S){ const F=S&&S.file; if(!F) return "";
+  const line=(t,c,b)=>'<div style="font-size:12px;line-height:1.5;color:'+c+';background:'+b+';border-radius:9px;padding:7px 10px;margin-top:6px">'+t+'</div>';
+  if(F.busy) return line(pdfcEsc(F.busyText||"⏳ Reading the PDF on this device…"),"#15803d","#f0fdf4");
+  if(F.scan){ let h='<b>“'+pdfcEsc(F.name)+'” is a scan</b> — a picture of the page, with no text in it the app can read.';
+    if(pdfcCanAsk()&&typeof cardSheetAskPdf==="function") h+='<div style="margin-top:6px"><button data-pdfc="scan" onclick="cardSheetAskPdf()" style="'+PDFC_BTN+';border-color:#fcd34d;background:#fffbeb;color:#92400e">✨ Read it with Claude</button></div><div style="font-size:11px;color:var(--muted);margin-top:4px">Claude reads the page; each card it finds waits for your look before Add.</div>';
+    else h+=' '+(pdfcCanAsk()?PDFC_MSG.paste:PDFC_MSG.noKey);
+    return line(h,"#92400e","#fffbeb"); }
+  if(F.msg) return line(pdfcEsc(F.msg),/^✓/.test(F.msg)?"#15803d":"#b45309",/^✓/.test(F.msg)?"#f0fdf4":"#fffbeb");
+  return ""; }
+function pdfCardsSheetNote(){ if(typeof document==="undefined"||typeof cardSheet==="undefined") return; const el=document.getElementById("card-sheet-file"); if(el) el.innerHTML=pdfCardsSheetNoteHTML(cardSheet); }
+async function pdfCardsSheetPick(input){
+  const S=(typeof cardSheet!=="undefined")?cardSheet:null, file=input&&input.files&&input.files[0]; if(input) input.value=""; if(!S||!file||!pdfcMom()) return null;
+  const name=String(file.name||"the PDF");
+  S.file={name:name,busy:true}; pdfCardsSheetNote();
+  let r; try{ r=await pdfReadText(file); }catch(e){ if(cardSheet===S){ S.file={name:name,msg:String(e&&e.message||e)}; pdfCardsSheetNote(); } return null; }
+  if(cardSheet!==S) return null;   // she closed the sheet while it read
+  if(r.scan){ S.file={name:name,scan:true,blob:file}; pdfCardsSheetNote(); return r; }
+  const el=(typeof document!=="undefined")?document.getElementById("unit-batch-txt"):null, had=(el&&typeof el.value==="string")?el.value:(S.text||"");
+  const text=(String(had).trim()?String(had).replace(/\s+$/,"")+"\n":"")+r.text;
+  if(el) el.value=text;
+  S.file={name:name,msg:pdfcDoneMsg(name,r)};
+  cardSheetInput(text); pdfCardsSheetNote(); return r; }
+// ── the Builder's 🃏 Cards box: a PDF picked there is read the same way first ──
+function pdfcSameBox(f,di){ return !!(f&&f.pdf)&&String(f.pdf.di)===String(ubDi(di)); }
+function pdfCardsBoxNoteHTML(di){ const f=(typeof ubForm!=="undefined")?ubForm:null; if(!pdfcSameBox(f,di)) return ""; const P=f.pdf;
+  if(P.busy) return '<div style="font-size:12px;font-weight:700;color:#15803d;margin-top:6px">⏳ Reading the PDF on this device…</div>';
+  if(!P.scan) return "";
+  let h='<div data-pdfc-scan="1" style="font-size:12px;line-height:1.5;color:#92400e;background:#fffbeb;border-radius:9px;padding:7px 10px;margin-top:6px"><b>'+pdfcEsc(P.names.map(n=>"“"+n+"”").join(", "))+(P.names.length>1?" are scans":" is a scan")+'</b> — a picture of the page, with no text in it the app can read.';
+  if(pdfcCanAsk()) h+='<div style="margin-top:6px"><button data-pdfc="scan" onclick="pdfCardsBuilderScan()" style="'+PDFC_BTN+';border-color:#fcd34d;background:#fff;color:#92400e">✨ Read it with Claude</button></div>';
+  else h+=' '+PDFC_MSG.noKey;
+  return h+'</div>'; }
+async function pdfCardsBuilder(di,files){
+  const f=(typeof ubForm!=="undefined")?ubForm:null; if(!f||!pdfcMom()) return 0; di=ubDi(di);
+  const pdfs=(files||[]).filter(ubIsPdf).slice(0,3); if(!pdfs.length) return 0;
+  f.pdf={di:di,busy:true}; f.msg=""; ubRe();
+  const texts=[], scans=[], notes=[]; let err="";
+  for(const file of pdfs){ try{ const r=await pdfReadText(file); if(r.scan) scans.push(file); else { texts.push(r.text); const m=pdfcExtra(r); if(m) notes.push(m); } }
+    catch(e){ err=String(e&&e.message||e); } }
+  if(ubForm!==f) return 0;
+  f.pdf=scans.length?{di:di,scan:true,names:scans.map(x=>String(x.name||"the PDF")),files:scans}:null;
+  let n=0;
+  if(texts.length){ const L=ubList(di,"cards"), cs=cardSplit(texts.join("\n"));
+    if(L){ const items=cs.rows.map(r=>({id:ubId(),front:ubStr(r.name,120),back:ubStr(r.back,400)})).filter(x=>x.front); items.forEach(x=>L.push(x)); n=items.length; if(n) f.sources.push({kind:"pdftext",box:"cards",n:n,ts:Date.now()}); }
+    const left=[]; if(cs.heading) left.push("the heading “"+cs.heading+"”"); if(cs.columns) left.push("the column names"); if(cs.heads.length) left.push("section headings"); if(cs.dupInPaste) left.push(cs.dupInPaste+" listed twice");
+    f.msg=n?("✓ "+pdfcPl(n,"card")+" read from the PDF on this device — no AI, nothing uploaded. Check each one."+(left.length?" Left out: "+left.join(", ")+".":"")+(notes.length?" "+notes.join(" "):""))
+      :"No cards found in that PDF’s text — copy the list and paste it in the box instead."; }
+  else if(err) f.msg=err;
+  ubRe(); return n; }
+async function pdfCardsBuilderScan(){
+  const f=(typeof ubForm!=="undefined")?ubForm:null; if(!f||!f.pdf||!f.pdf.scan||!pdfcMom()) return 0; const P=f.pdf;
+  if(!pdfcCanAsk()){ f.msg=PDFC_MSG.noKey; ubRe(); return 0; }
+  f.pdf=null; let content=[];
+  try{ const docs=await Promise.all(P.files.map(ubPdfB64)); docs.forEach((b64,i)=>{ content.push({type:"text",text:"PDF "+(i+1)+":"}); content.push({type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}}); }); }
+  catch(e){ if(ubForm===f){ f.msg=String(e&&e.message||e); ubRe(); } return 0; }
+  return ubAsk(P.di,"cards",content,{kind:"pdf",pdfs:P.files.length}); }
+// PDFCARDS_END
 // ── Unit card editor: edit shared photo + bio (applies to every enrolled kid) ──
 // ── Batch add: paste many cards into a unit deck at once ("front | back" per line) ────
 // New cards append to the registry deck AND flow immediately to every enrolled kid:
