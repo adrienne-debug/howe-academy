@@ -518,6 +518,7 @@ console.log("\n(h) no new Firebase write path in the curriculum region");
   "\"unitStudies/\"+unitId+\"/activities/\"+i+\"/points\"",
   "\"unitStudies/\"+unitId+\"/activityClaims/\"+kid+\"/\"+actKey",
   "\"unitStudies/\"+unitId+\"/activityLog/\"+kid+\"/\"+actKey",
+  "\"unitStudies/\"+unitId+\"/decks\"",   // CHECKFIX 2026-11-22: ＋ Add cards → a new deck, ONE transaction appending the Builder's deck shape
   "\"unitStudies/\"+unitId+\"/decks/\"+di+\"/flipFace\"",
   "\"unitStudies/\"+unitId+\"/enrolled/\"+kid",
   "\"unitStudies/\"+unitId+\"/kidStage/\"+kid",

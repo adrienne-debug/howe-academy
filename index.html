@@ -44353,6 +44353,15 @@ function ubList(di,kind){ const f=ubForm; if(!f) return null; di=ubDi(di); if(di
 function ubAddLines(di,kind){
   if(!ubForm) return 0; const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById("ub-in-"+kind+"-"+(di==null?"all":di)):null; const text=el?el.value:"";
   if(!ubList(di,kind)) return 0;
+  if(kind==="cards"&&typeof cardSplit==="function"){   // CARDSPLIT: the cards box reads a list by the same rules as ＋ Add cards FIRST; Claude only when they find nothing (prose) and a key exists
+    const cs=cardSplit(text);
+    if(!cs.found&&cs.lines>=2&&ubCanAsk()){ if(el) el.value=""; return ubAsk(di,kind,[{type:"text",text:"Pasted text:\n"+String(text).slice(0,60000)}],{kind:"pasted",text:text}); }
+    const L=ubList(di,kind), items=cs.rows.map(r=>({id:ubId(),front:ubStr(r.name,120),back:ubStr(r.back,400)})).filter(x=>x.front); items.forEach(x=>L.push(x));
+    if(items.length) ubForm.sources.push({kind:"typed",box:kind,n:items.length,ts:Date.now()});
+    const left=[]; if(cs.heading) left.push("the heading \u201C"+cs.heading+"\u201D"); if(cs.columns) left.push("the column names"); if(cs.heads.length) left.push("section headings"); if(cs.intro.length) left.push("ChatGPT\u2019s chat line"+(cs.intro.length>1?"s":"")); if(cs.dupInPaste) left.push(cs.dupInPaste+" pasted twice");
+    if(left.length) ubForm.msg="Left out: "+left.join(", ")+".";
+    if(el) el.value=""; ubRe(); return items.length;
+  }
   if(ubMessy(kind,text)&&ubCanAsk()){ if(el) el.value=""; return ubAsk(di,kind,[{type:"text",text:"Pasted text:\n"+String(text).slice(0,60000)}],{kind:"pasted",text:text}); }   // UBANYPASTE
   const items=ubParse(kind,text); const L=ubList(di,kind); items.forEach(x=>L.push(x)); if(items.length) ubForm.sources.push({kind:"typed",box:kind,n:items.length,ts:Date.now()});
   if(el) el.value=""; ubRe(); return items.length;
@@ -54729,7 +54738,7 @@ function renderUnitDetail(u){
     h+='<div style="font-size:13px;font-weight:800;color:#1f2937">'+esc(d.key)+' <span style="font-size:11px;color:var(--muted);font-weight:600">· '+((d.cards||[]).length)+' cards · '+(d.mode||"flip")+' · '+(d.introCap||5)+' at a time</span></div>';
     const _ff=d.flipFace||"desc";
     const _ffBtn=(mode,label)=>'<button onclick="unitSetFlipFace(\''+u.id+'\',\''+esc(d.key)+'\',\''+mode+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid '+(_ff===mode?"#2d6a4f":"var(--border)")+';background:'+(_ff===mode?"#f2faf5":"#fff")+';color:'+(_ff===mode?"#2d6a4f":"var(--muted)")+';font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>';
-    if(isMom) h+='<div style="display:flex;gap:6px;align-items:center;margin:7px 0 4px;flex-wrap:wrap"><span style="font-size:10px;color:var(--muted);font-weight:700">Flip drill:</span>'+_ffBtn("desc","📖 Name → facts")+_ffBtn("name","🖼️ Photo → name")+'<button onclick="unitBatchAdd(\''+u.id+'\',\''+esc(d.key).replace(/\'/g,"\\'")+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px dashed #2d6a4f;background:#f2faf5;color:#2d6a4f;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F4E6} Batch add</button></div>';
+    if(isMom) h+='<div style="display:flex;gap:6px;align-items:center;margin:7px 0 4px;flex-wrap:wrap"><span style="font-size:10px;color:var(--muted);font-weight:700">Flip drill:</span>'+_ffBtn("desc","📖 Name → facts")+_ffBtn("name","🖼️ Photo → name")+'<button onclick="unitBatchAdd(\''+u.id+'\',\''+esc(d.key).replace(/\'/g,"\\'")+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px dashed #2d6a4f;background:#f2faf5;color:#2d6a4f;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\uFF0B Add cards</button></div>';
     h+='<div style="font-size:10.5px;color:var(--muted);margin:3px 0 9px">'+(isMom?'Tap a card to add a photo, edit its facts or bio — changes apply to every kid using this unit.':'Tap a card to read its story.')+'</div>';
     // Sections: a deck with groupBy (house / family / group / chapter) shows one titled block per
     // group, in card order; cards with no group value collect in "Other" at the end. No groupBy →
@@ -55418,6 +55427,268 @@ function unitPrintActivity(unitId,actKey,kid){
 }
 // UNITACTPG_END
 
+// CARDSPLIT_START — ＋ Add cards: ONE splitter for every list shape, and a preview before anything is saved (her words
+//   2026-11-19: "if they just write a list and send it in, it doesn't need that little line that's on the keyboard … she had to
+//   do that by hand for the fish unit"; her go 2026-11-22: "build as many in as many sessions you need … go with her answers";
+//   PLAN_unit_easy_import_2026-11-19.md §2.1, §2.2, §6, slice A; a beta mom 11/20: her lists come out of ChatGPT).
+//   · cardSplit(text, opts) is pure: bullets, numbers, **bold**, table edge pipes and ---|--- rule lines come off; the separator
+//     is chosen for the WHOLE paste by counting lines (tab › | › spaced dash › colon › = › arrow; a comma only when every line
+//     has exactly one); a first line with no separator over lines that split is a heading (suggested deck name, not a card);
+//     a table's header row (the row over a ---|--- rule, or "Word | Meaning") is the columns, not a card; name / meaning on two
+//     lines are paired; short lines with nothing to split are names with no meaning; a line without the paste's separator splits
+//     at its own tab / dash / colon; ChatGPT's chat lines ("Here is your list:", "Let me know if…") are left out; a second copy
+//     of a name inside the paste is left out. found=false means the rules found nothing (prose) — only then may the Builder ask
+//     Claude, and only with a key (ubAddLines). No AI here, no key, works offline.
+//   · 📦 Batch add on a saved unit's deck row becomes "＋ Add cards": paste anything, see the rows (editable), tap Add. Add hands
+//     the rows to unitBatchSave's EXISTING writes unchanged (deck cards transaction · each enrolled kid's bank transaction +
+//     definitions update — no items started). Rows with no meaning are shown amber and left out (today the whole batch was
+//     refused); names already in the deck are left out, as before. Plain-rule rows need no per-row tick (her Q1 answer).
+//   · Mom-only (unitBatchAdd checks momHere()), phone width, no kid's name in code.
+const CS_SEPS={tab:{label:"tab",re:/\t+/},pipe:{label:"|",re:/\s*\|\s*/},dash:{label:"dash",re:/\s+[–—-]+\s+/},colon:{label:"colon",re:/\s*:\s+/},equals:{label:"=",re:/\s*=\s+/},arrow:{label:"arrow",re:/\s*(?:→|->|=>|⇒)\s*/},comma:{label:"comma",re:/\s*,\s*/}};
+const CS_ORDER=["tab","pipe","dash","colon","equals","arrow"];
+const CS_CHAT_TOP=/^(?:here(?:'s|’s| is| are)\b|sure[,!.]|certainly[,!.]|of course[,!.]|absolutely[,!.]|great[,!.]|below (?:is|are)\b)/i;
+const CS_CHAT_ANY=/^(?:let me know|i hope|hope this|feel free|would you like|do you want|want me to|if you(?:'d|’d| would) like|happy to help)/i;
+const CS_FRONT_WORDS=/^(?:word|words|term|terms|name|names|front|vocab(?:ulary)?|card|cards|question|questions|item|items|english|german|spanish|french|latin)$/i;
+const CS_BACK_WORDS=/^(?:meaning|meanings|definition|definitions|def|back|answer|answers|description|descriptions|fact|facts|explanation|what it means|translation|english|german|spanish|french|latin)$/i;
+function csNorm(s){ return String(s==null?"":s).toLowerCase().replace(/\s+/g," ").trim(); }
+function csWords(s){ return String(s||"").trim().split(/\s+/).filter(Boolean).length; }
+// one line made plain: **bold** / __bold__, table edge pipes, a leading bullet or number, a markdown # heading mark
+function csClean(l,letters){ let t=String(l==null?"":l).replace(/\*\*|__/g,"").trim().replace(/^\|/,"").replace(/\|$/,"").trim();
+  const md=/^#{1,6}\s+/.test(t); t=t.replace(/^#{1,6}\s+/,"");
+  t=t.replace(/^(?:[-*+•▪▫◦·○●■□►➤✓✔]|\(?\d{1,3}[.)])\s+/,"").trim();
+  if(letters) t=t.replace(/^\(?[a-z][.)]\s+/i,"").trim();
+  return {t:t,md:md}; }
+function csIsRule(l){ return /^[\s|:–—\-=*_]+$/.test(String(l||"")); }
+// cut one line at a mark → [name, back] (both non-empty), or null
+function csCut(t,key){ const S=CS_SEPS[key]; if(!S) return null; t=String(t||"");
+  if(key==="pipe"||key==="tab"){ if(!S.re.test(t)) return null; const c=t.split(S.re).map(x=>x.trim()); const name=c[0], back=c.slice(1).filter(Boolean).join(" — "); return (name&&back)?[name,back]:null; }
+  if(key==="comma"){ const i=t.indexOf(","); if(i<1) return null; const a=t.slice(0,i).trim(), b=t.slice(i+1).trim(); return (a&&b)?[a,b]:null; }
+  const re=new RegExp(S.re.source); const m=re.exec(t); if(!m||m.index<1) return null; const a=t.slice(0,m.index).trim(), b=t.slice(m.index+m[0].length).trim(); return (a&&b)?[a,b]:null; }
+function csOwnCut(t){ for(const k of CS_ORDER){ const c=csCut(t,k); if(c) return [c,k]; } return null; }
+function csCommas(t){ return (String(t||"").match(/,/g)||[]).length; }
+function csHeaderCells(c){ return !!(c&&c.length>=2&&(CS_BACK_WORDS.test(c[1])||CS_FRONT_WORDS.test(c[0]))&&c.every(x=>csWords(x)<=3)); }
+function csHeadingLike(x){ const t=x.t; return x.md||/:$/.test(t)||(/[A-Z]{2}/.test(t)&&!/[a-z]/.test(t)); }
+function cardSplit(text,opts){
+  opts=opts||{}; const out={rows:[],sep:"",sepLabel:"",heading:"",intro:[],columns:null,heads:[],found:false,paired:false,namesOnly:false,lines:0,dupInPaste:0,unsafe:0};
+  const raw=String(text==null?"":text).replace(/\r\n?/g,"\n").split("\n");
+  let L=[];
+  raw.forEach(r=>{ if(!String(r).trim()) return; if(csIsRule(r.trim())){ if(L.length) L[L.length-1].beforeRule=true; return; } L.push({raw:r,indent:/^[ \t]+\S/.test(r)}); });
+  const letters=L.length>=2&&L.filter(x=>/^\s*\(?[a-z][.)]\s+/i.test(x.raw)).length*2>=L.length;
+  L.forEach(x=>{ const c=csClean(x.raw,letters); x.t=c.t; x.md=c.md; }); L=L.filter(x=>x.t&&!csIsRule(x.t));
+  out.lines=L.length; if(!L.length) return out;
+  // the paste's separator: the mark on most lines (ties: the order above); a comma only when every line has exactly one
+  let sep=opts.sep&&CS_SEPS[opts.sep]?opts.sep:"";
+  if(!sep){ let best=0; CS_ORDER.forEach(k=>{ const n=L.filter(x=>csCut(x.t,k)).length; if(n>best){ best=n; sep=k; } });
+    if(!sep){ const ones=L.filter(x=>csCommas(x.t)===1).length; if(L.length>=2&&(ones===L.length||(L.length>=3&&csCommas(L[0].t)===0&&ones===L.length-1))) sep="comma"; } }
+  const cut=x=>sep?csCut(x.t,sep):null;
+  const isChat=(x,i)=>!cut(x)&&((i<=1&&CS_CHAT_TOP.test(x.t))||CS_CHAT_ANY.test(x.t));
+  L=L.filter((x,i)=>{ if(isChat(x,i)){ out.intro.push(x.t); return false; } return true; });
+  if(!L.length) return out;
+  // the first line: a heading over lines that split, or a table's header row
+  if(sep){ const first=L[0], rest=L.slice(1), restSplit=rest.filter(x=>cut(x)).length;
+    if((sep==="pipe"||sep==="tab")&&cut(first)){ const cells=first.t.split(CS_SEPS[sep].re).map(s=>s.trim()).filter(Boolean);
+      if(opts.heading!==false&&(opts.heading===true||first.beforeRule||csHeaderCells(cells))&&rest.length){ out.columns=cells; L=rest; } }
+    else if(!cut(first)&&rest.length&&opts.heading!==false&&(opts.heading===true||restSplit*2>=rest.length)){ out.heading=first.t.replace(/:$/,"").trim(); L=rest; } }
+  else if(opts.heading===true&&L.length>1){ out.heading=L[0].t.replace(/:$/,"").trim(); L=L.slice(1); }
+  const rows=[];
+  // pairs on two lines: no separator, a name line then its meaning line (indented, or clearly longer)
+  const pairable=A=>{ if(A.length<2||A.length%2) return false; let ind=true, len=true; for(let i=0;i<A.length;i+=2){ const n=A[i], m=A[i+1]; if(n.indent||!m.indent) ind=false; if(csWords(n.t)>6||/[.!?]$/.test(n.t)||csWords(m.t)<4||csWords(m.t)<=csWords(n.t)) len=false; } return ind||len; };
+  if(!sep){
+    let P=null; if(pairable(L)) P=L; else if(L.length>=3&&L.length%2===1&&opts.heading!==false&&csWords(L[0].t)<=8&&pairable(L.slice(1))){ out.heading=L[0].t.replace(/:$/,"").trim(); P=L.slice(1); }
+    if(P){ out.paired=true; for(let i=0;i<P.length;i+=2) rows.push({name:P[i].t,back:P[i+1].t,how:"pair"}); }
+    else if(L.every(x=>csWords(x.t)<=6)){ out.namesOnly=true; L.forEach(x=>rows.push({name:x.t.replace(/:$/,""),back:"",how:"name"})); }
+    else L.forEach(x=>rows.push({name:x.t,back:"",how:"none"}));
+  } else {
+    L.forEach((x,i)=>{ const c=cut(x); if(c){ rows.push({name:c[0],back:c[1],how:"sep"}); return; }
+      const nx=L[i+1]; if(nx&&cut(nx)&&csHeadingLike(x)&&!csOwnCut(x.t)){ out.heads.push(x.t.replace(/:$/,"").trim()); return; }   // a section heading inside the list
+      const o=csOwnCut(x.t); if(o){ rows.push({name:o[0][0],back:o[0][1],how:"own",own:o[1]}); return; }
+      rows.push({name:x.t,back:"",how:"name"}); });
+  }
+  // a second copy of a name inside the paste is left out; names already in the deck are marked
+  const seen=new Set(), have=new Set((opts.have||[]).map(csNorm));
+  rows.forEach(r=>{ const k=csNorm(r.name); if(!k) return; if(seen.has(k)){ out.dupInPaste++; return; } seen.add(k); if(have.has(k)) r.dup=true; if(/[.#$\[\]\/]/.test(r.name)) out.unsafe++; out.rows.push(r); });
+  out.sep=sep; out.sepLabel=sep?CS_SEPS[sep].label:"";
+  out.found=out.paired||out.namesOnly||out.rows.some(r=>r.back);
+  return out;
+}
+// ── the ＋ Add cards sheet on a saved unit (the 📦 Batch add dialog, now with a preview) ──
+let cardSheet=null;   // {unitId, deckKey, text, opts, res, rows:[{id,name,back,how,dup,drop}]}
+let _csSeq=0;
+function csEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function cardSheetDeckNames(S){ const u=S&&(typeof unitStudies!=="undefined")&&unitStudies[S.unitId]; const d=u&&(u.decks||[]).find(x=>x&&x.key===S.deckKey); return ((d&&d.cards)||[]).map(c=>c&&c.name).filter(Boolean); }
+function cardSheetSplit(S){ S=S||cardSheet; if(!S) return null; S.res=cardSplit(S.text||"",Object.assign({have:cardSheetDeckNames(S)},S.opts||{})); S.rows=S.res.rows.map(r=>Object.assign({id:"r"+(++_csSeq)},r)); return S; }
+// the rows Add will write: a name and a meaning, not dropped, not already in the deck
+function cardSheetReady(S){ S=S||cardSheet; return ((S&&S.rows)||[]).filter(r=>!r.drop&&!r.dup&&String(r.name||"").trim()&&String(r.back||"").trim()); }
+function cardSheetCounts(S){ const R=((S&&S.rows)||[]).filter(r=>!r.drop); return {ready:cardSheetReady(S).length,amber:R.filter(r=>!r.dup&&String(r.name||"").trim()&&!String(r.back||"").trim()).length,dup:R.filter(r=>r.dup).length}; }
+function cardSheetGoLabel(S){ const n=cardSheetCounts(S).ready; return n?("Add "+n+" card"+(n>1?"s":"")):"Add cards"; }
+function cardSheetRowStyle(r){ const amber=!String(r.back||"").trim(); return "display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap;padding:6px;border:1.5px solid "+(amber?"#f59e0b":"#86efac")+";border-radius:9px;margin-top:5px;background:"+(amber?"#fffbeb":"#f0fdf4"); }
+function cardSheetRowHTML(r){ const inp="min-width:0;box-sizing:border-box;padding:7px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff";
+  return '<div id="cs-row-'+r.id+'" data-cs-row="'+r.id+'" style="'+cardSheetRowStyle(r)+'">'+
+    '<input value="'+csEsc(r.name)+'" aria-label="Card name" oninput="cardSheetEdit(\''+r.id+'\',\'name\',this.value)" style="'+inp+';flex:1 1 110px;font-weight:700">'+
+    '<textarea rows="1" aria-label="Meaning" placeholder="type the meaning" oninput="cardSheetEdit(\''+r.id+'\',\'back\',this.value)" style="'+inp+';flex:2 1 170px;resize:vertical">'+csEsc(r.back)+'</textarea></div>'; }
+function cardSheetNotesHTML(S){ const R=S.res||{}, k=cardSheetCounts(S), out=[];
+  if(R.columns) out.push("Columns: "+R.columns.map(csEsc).join(", ")+" — that row is not a card.");
+  if(R.heads&&R.heads.length) out.push("Section heading"+(R.heads.length>1?"s":"")+" left out: "+R.heads.map(csEsc).join(", ")+".");
+  if(R.intro&&R.intro.length) out.push("Chat line"+(R.intro.length>1?"s":"")+" (“"+csEsc(R.intro[0].slice(0,40))+"…”) left out.");
+  if(R.dupInPaste) out.push(R.dupInPaste+" name"+(R.dupInPaste>1?"s":"")+" pasted twice — kept the first.");
+  if(R.namesOnly) out.push("No meanings found — type them in the boxes.");
+  else if(k.amber) out.push(k.amber+" row"+(k.amber>1?"s have":" has")+" no meaning yet — type one, or "+(k.amber>1?"they’re":"it’s")+" left out.");
+  if(R.unsafe) out.push(R.unsafe+" name"+(R.unsafe>1?"s have":" has")+" a . # $ [ ] or / — still fine, the meaning rides the card.");
+  return out.map(t=>'<div style="font-size:11px;color:#92400e;margin-top:3px;line-height:1.45">'+t+'</div>').join(""); }
+function cardSheetPreviewHTML(S){ S=S||cardSheet; if(!S||!S.res||!S.res.lines) return '<div style="font-size:11px;color:var(--muted);margin-top:8px">The cards show here as soon as you paste.</div>';
+  cfMarkDups(S);   // CHECKFIX: doubles of the deck the cards go to show greyed
+  const R=S.res, shown=S.rows.filter(r=>!r.drop), nNew=shown.filter(r=>!r.dup).length;
+  let h='<div style="font-size:12.5px;font-weight:800;color:#1a3a2a;margin-top:10px">Check — '+nNew+' card'+(nNew===1?"":"s")+' found'+(R.sepLabel?' <span style="font-weight:600;color:var(--muted)">(split at: '+csEsc(R.sepLabel)+')</span>':(R.paired?' <span style="font-weight:600;color:var(--muted)">(name, then its meaning on the next line)</span>':''))+'</div>';
+  h+=checkFixToolbarHTML(S);   // CHECKFIX: Split at · heading / card
+  h+=cardSheetNotesHTML(S);
+  shown.forEach(r=>{ h+=checkFixRowHTML(S,r); });   // CHECKFIX: ↔ ⤓ ✂ ✕ on each row; doubles greyed
+  h+=checkFixDestHTML(S);   // CHECKFIX: this deck or a new one · database or active learning
+  return h; }
+function cardSheetDraw(){ const S=cardSheet; if(!S||typeof document==="undefined") return; const p=document.getElementById("card-sheet-prev"); if(p) p.innerHTML=cardSheetPreviewHTML(S); const g=document.getElementById("card-sheet-go"); if(g) g.textContent=cardSheetGoLabel(S); }
+function cardSheetInput(v){ if(!cardSheet) return; cardSheet.text=String(v==null?"":v); cardSheetSplit(cardSheet); cardSheetDraw(); }
+// typing in a row changes that row only (no redraw — the box she is typing in keeps its place)
+function cardSheetEdit(id,field,v){ const S=cardSheet; const r=S&&S.rows.find(x=>x.id===id); if(!r||(field!=="name"&&field!=="back")) return; r[field]=String(v==null?"":v).trim();
+  if(typeof document!=="undefined"){ const el=document.getElementById("cs-row-"+id); if(el&&el.style) el.style.cssText=cardSheetRowStyle(r); const g=document.getElementById("card-sheet-go"); if(g) g.textContent=cardSheetGoLabel(S); } }
+function cardSheetHTML(S){ const btn="flex:1;padding:12px;border-radius:10px;border:none;font-size:13.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif";
+  return '<div class="dlg-box" style="max-width:520px;width:calc(100vw - 32px);box-sizing:border-box;text-align:left;max-height:88vh;overflow:auto">'+
+    '<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:700;color:#1a3a2a">＋ Add cards — '+csEsc(S.deckKey)+'</div>'+
+    '<div style="font-size:11.5px;color:var(--muted);margin:6px 0 4px;line-height:1.5">Paste or type here — any shape works: one card per line, “word - meaning”, a table, a numbered list… New cards go into this unit and into every enrolled kid’s drill bank.</div>'+
+    '<div style="font-size:11.5px;color:#2d6a4f;font-weight:700;margin:0 0 8px">Made it in ChatGPT? Copying and pasting the list works too.</div>'+
+    '<textarea id="unit-batch-txt" oninput="cardSheetInput(this.value)" placeholder="Guppy - a tiny, colorful fish&#10;Platy - a peaceful round fish" style="width:100%;box-sizing:border-box;min-height:130px;padding:9px 11px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;line-height:1.55">'+csEsc(S.text||"")+'</textarea>'+
+    '<div id="card-sheet-prev">'+cardSheetPreviewHTML(S)+'</div>'+
+    '<div id="unit-batch-msg" style="font-size:11.5px;font-weight:600;color:#b45309;margin-top:6px"></div>'+
+    '<div style="display:flex;gap:8px;margin-top:12px;position:sticky;bottom:0;background:#fff;padding-top:6px">'+
+      '<button onclick="unitBatchClose()" style="'+btn+';background:#f3f4f6;color:#374151">Cancel</button>'+
+      '<button id="card-sheet-go" onclick="unitBatchSave()" style="'+btn+';background:#2d6a4f;color:#fff">'+cardSheetGoLabel(S)+'</button>'+
+    '</div></div>'; }
+// CARDSPLIT_END
+// CHECKFIX_START — the ＋ Add cards check screen: one-tap fixes and where the cards go (PLAN_unit_easy_import_2026-11-19.md
+//   §2.4, §6, slice B; her go 2026-11-22: "go with her answers and build"; her standing rule: the app asks DATABASE vs ACTIVE
+//   LEARNING, it never decides silently).
+//   · each row: ↔ Swap (name and meaning the wrong way round) · ⤓ Join with the next row (a meaning that wrapped) · ✂ Split the
+//     name where the meaning starts (at the spot she tapped in the name; else its first comma, else after the first word) · ✕ drop.
+//   · above the rows: "Split at" chips (tab · dash · colon · comma · |) re-read the whole paste her way; "It's a card" / "First
+//     line is a heading"; a heading offers itself as a new deck; names already in the deck show greyed, never added.
+//   · Where: the deck she opened (default) or a new deck — the Builder's deck shape {key, mode:"flip", introCap:3, cards}
+//     appended to unitStudies/<id>/decks by ONE transaction (a name that matches a deck already there adds to that deck).
+//   · Kids enrolled → she is always shown the choice: 📚 Database (bank, the default — learned in turn, as Batch add did) or
+//     ⚡ Active learning (start now). Start now writes items only for the ticked cards, in unitEnroll's item shape, by index
+//     update of mastery/<kid> (as unitEnroll does). A new deck also gets its cat_modes / cat_intro_max for each enrolled kid.
+//   · Mom-only (momHere()), every write behind db && !_dryRun() — a dry run writes nothing and says so. Phone width; buttons
+//     finger-sized (a beta family is on iPads, fingers only).
+function cfLive(){ return !!(typeof db!=="undefined"&&db)&&!((typeof _dryRun==="function")&&_dryRun()); }
+function cfKids(u){ const e=(u&&u.enrolled)||{}; return Object.keys(e).filter(k=>e[k]); }
+function cfName(k){ return (typeof cap==="function")?cap(k):k; }
+function cfRows(S){ return ((S&&S.rows)||[]).filter(r=>!r.drop); }
+function cfRow(S,id){ return ((S&&S.rows)||[]).find(r=>r.id===id)||null; }
+function cfRedraw(){ if(typeof cardSheetDraw==="function") cardSheetDraw(); }
+// where the cards go: {kind:"deck"} (the deck she opened) or {kind:"new", name}
+function cfDest(S){ return (S&&S.dest)||{kind:"deck",name:""}; }
+function cfUnit(S){ return S&&(typeof unitStudies!=="undefined")&&unitStudies[S.unitId]; }
+function cfNewKey(S){ const d=cfDest(S); return d.kind==="new"?String(d.name||"").replace(/\s+/g," ").trim().slice(0,60):""; }
+// the deck index a new-deck name lands in when a deck by that name is already there (any case), else -1
+function cfMatchDeck(u,key){ const k=String(key||"").toLowerCase(); return k?((u&&u.decks)||[]).findIndex(d=>d&&String(d.key||"").toLowerCase()===k):-1; }
+// names in the destination deck (for greying doubles)
+function cfDestNames(S){ const u=cfUnit(S); if(!u) return []; const nk=cfNewKey(S); const di=nk?cfMatchDeck(u,nk):(u.decks||[]).findIndex(d=>d&&d.key===S.deckKey); const d=di>=0?u.decks[di]:null; return ((d&&d.cards)||[]).map(c=>c&&c.name).filter(Boolean); }
+function cfMarkDups(S){ if(!S||!S.rows) return S; const have=new Set(cfDestNames(S).map(csNorm)); S.rows.forEach(r=>{ r.dup=have.has(csNorm(r.name)); }); return S; }
+// ── the one-tap fixes (pure on the sheet's state; each redraws the preview) ──
+function cfSwap(S,id){ const r=cfRow(S,id); if(!r) return false; const n=r.name; r.name=r.back||""; r.back=n||""; r.how="fixed"; cfMarkDups(S); return true; }
+function cfJoin(S,id){ const R=S&&S.rows; if(!R) return false; const i=R.findIndex(r=>r.id===id); if(i<0) return false; let j=i+1; while(j<R.length&&R[j].drop) j++; if(j>=R.length) return false;
+  const r=R[i], nx=R[j]; r.back=[r.back,nx.name,nx.back].map(x=>String(x||"").trim()).filter(Boolean).join(" "); r.how="fixed"; R.splice(j,1); return true; }
+function cfSplitAt(name,at){ name=String(name||""); let i=(typeof at==="number"&&at>0&&at<name.length)?at:-1;
+  if(i<0){ const c=name.indexOf(","); if(c>0) i=c; } if(i<0){ const s=name.indexOf(" "); if(s>0) i=s; } if(i<0) return null;
+  const a=name.slice(0,i).replace(/[\s,:;–—-]+$/,"").trim(), b=name.slice(i).replace(/^[\s,:;–—-]+/,"").trim(); return (a&&b)?[a,b]:null; }
+function cfSplit(S,id,at){ const r=cfRow(S,id); if(!r) return false; const c=cfSplitAt(r.name,at==null?r.caret:at); if(!c) return false; r.name=c[0]; r.back=[c[1],r.back].map(x=>String(x||"").trim()).filter(Boolean).join(" "); r.how="fixed"; delete r.caret; cfMarkDups(S); return true; }
+function cfDrop(S,id){ const r=cfRow(S,id); if(!r) return false; r.drop=true; return true; }
+// re-read the whole paste: "Split at" a mark, or the first line is / isn't a heading (her row edits give way to the re-read)
+function cfSep(S,key){ if(!S) return; S.opts=Object.assign({},S.opts||{}); if(key&&CS_SEPS[key]) S.opts.sep=key; else delete S.opts.sep; cardSheetSplit(S); cfMarkDups(S); }
+function cfHeading(S,on){ if(!S) return; S.opts=Object.assign({},S.opts||{}); S.opts.heading=!!on; cardSheetSplit(S); if(!on&&cfDest(S).kind==="new"&&S.dest.fromHeading) S.dest={kind:"deck",name:""}; cfMarkDups(S); }
+function cfSetDest(S,kind,name){ if(!S) return; S.dest={kind:kind==="new"?"new":"deck",name:String(name==null?((S.dest&&S.dest.name)||(S.res&&S.res.heading)||""):name)}; cfMarkDups(S); }
+function cfHeadingToDeck(S){ if(!S||!S.res||!S.res.heading) return; S.dest={kind:"new",name:S.res.heading,fromHeading:true}; cfMarkDups(S); }
+// Database (bank, default) vs Active learning (start now); with start now each row carries a tick (on unless she unticks it)
+function cfSetStart(S,on){ if(S) S.start=!!on; }
+function cfTick(S,id,on){ const r=cfRow(S,id); if(r) r.start=!!on; }
+function cfStartNames(S){ return new Set(cfRows(S).filter(r=>r.start!==false).map(r=>String(r.name||"").trim())); }
+// ── handlers the sheet's buttons call ──
+function checkFixDo(op,id,arg){ const S=(typeof cardSheet!=="undefined")?cardSheet:null; if(!S) return;
+  if(op==="swap") cfSwap(S,id); else if(op==="join") cfJoin(S,id); else if(op==="split") cfSplit(S,id,arg); else if(op==="drop") cfDrop(S,id);
+  else if(op==="sep") cfSep(S,arg); else if(op==="heading") cfHeading(S,arg); else if(op==="headdeck") cfHeadingToDeck(S);
+  else if(op==="dest") cfSetDest(S,arg); else if(op==="start") cfSetStart(S,arg); else if(op==="tick"){ cfTick(S,id,arg); }
+  cfRedraw(); }
+function checkFixCaret(id,pos){ const S=(typeof cardSheet!=="undefined")?cardSheet:null; const r=cfRow(S,id); if(r&&typeof pos==="number") r.caret=pos; }
+function checkFixDestName(v){ const S=(typeof cardSheet!=="undefined")?cardSheet:null; if(!S) return; S.dest={kind:"new",name:String(v==null?"":v)}; cfMarkDups(S);
+  if(typeof document!=="undefined"){ const g=document.getElementById("card-sheet-go"); if(g&&typeof cardSheetGoLabel==="function") g.textContent=cardSheetGoLabel(S); const r=document.getElementById("cf-dest-new"); if(r) r.checked=true; } }   // typing a name picks "a new deck" (no redraw — the box keeps its place)
+// ── what the check screen draws (phone width; finger-sized buttons) ──
+const CF_BTN="min-width:38px;min-height:36px;padding:5px 8px;border-radius:9px;border:1.5px solid var(--border);background:#fff;color:#374151;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif";
+const CF_CHIP=on=>"padding:7px 12px;min-height:34px;border-radius:999px;border:1.5px solid "+(on?"#2d6a4f":"var(--border)")+";background:"+(on?"#2d6a4f":"#fff")+";color:"+(on?"#fff":"#374151")+";font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif";
+function checkFixToolbarHTML(S){ const R=S.res||{}, cur=R.sep||"", h=[];
+  h.push('<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px"><span style="font-size:11px;font-weight:700;color:var(--muted)">Split at:</span>'+
+    [["tab","tab"],["dash","dash"],["colon","colon"],["comma","comma"],["pipe","|"]].map(x=>'<button data-cf-sep="'+x[0]+'" onclick="checkFixDo(\'sep\',null,\''+x[0]+'\')" style="'+CF_CHIP(cur===x[0])+'">'+x[1]+'</button>').join("")+'</div>');
+  if(R.heading) h.push('<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:7px;font-size:12px;color:#1f2937">Heading “<b>'+csEsc(R.heading)+'</b>” — not a card. '+
+    (cfDest(S).kind==="new"&&cfNewKey(S)===R.heading?'<span style="color:#2d6a4f;font-weight:700">✓ new deck</span>':'<button data-cf="headdeck" onclick="checkFixDo(\'headdeck\')" style="'+CF_CHIP(false)+'">Make it a new deck</button>')+
+    '<button data-cf="headcard" onclick="checkFixDo(\'heading\',null,false)" style="'+CF_CHIP(false)+'">It’s a card</button></div>');
+  else if(R.columns) h.push('<div style="margin-top:7px"><button data-cf="headcard" onclick="checkFixDo(\'heading\',null,false)" style="'+CF_CHIP(false)+'">The column row is a card</button></div>');
+  else if(cfRows(S).length>1) h.push('<div style="margin-top:7px"><button data-cf="headon" onclick="checkFixDo(\'heading\',null,true)" style="'+CF_CHIP(false)+'">First line is a heading</button></div>');
+  return h.join(""); }
+function checkFixRowHTML(S,r){
+  if(r.dup) return '<div data-cs-row="'+r.id+'" data-cf-dup="1" style="display:flex;gap:6px;align-items:center;padding:8px;border:1.5px dashed #d1d5db;border-radius:9px;margin-top:5px;background:#f9fafb;color:#9ca3af;font-size:12.5px"><b style="text-decoration:line-through">'+csEsc(r.name)+'</b><span>— already in this deck</span></div>';
+  const inp="min-width:0;box-sizing:border-box;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-size:13.5px;font-family:'DM Sans',sans-serif;background:#fff";
+  const id=r.id, b=(op,label,title,arg)=>'<button data-cf="'+op+'" title="'+title+'" aria-label="'+title+'" onclick="checkFixDo(\''+op+'\',\''+id+'\''+(arg!==undefined?','+arg:'')+')" style="'+CF_BTN+'">'+label+'</button>';
+  return '<div id="cs-row-'+id+'" data-cs-row="'+id+'" style="'+cardSheetRowStyle(r)+'">'+
+    (S.start?'<label style="display:flex;align-items:center;min-height:36px;padding:0 2px"><input type="checkbox" data-cf-tick="'+id+'" '+(r.start!==false?"checked":"")+' onchange="checkFixDo(\'tick\',\''+id+'\',this.checked)" style="width:20px;height:20px" aria-label="Start this card now"></label>':'')+
+    '<input value="'+csEsc(r.name)+'" aria-label="Card name" oninput="cardSheetEdit(\''+id+'\',\'name\',this.value)" onkeyup="checkFixCaret(\''+id+'\',this.selectionStart)" onclick="checkFixCaret(\''+id+'\',this.selectionStart)" onselect="checkFixCaret(\''+id+'\',this.selectionStart)" style="'+inp+';flex:1 1 110px;font-weight:700">'+
+    '<textarea rows="1" aria-label="Meaning" placeholder="type the meaning" oninput="cardSheetEdit(\''+id+'\',\'back\',this.value)" style="'+inp+';flex:2 1 170px;resize:vertical">'+csEsc(r.back)+'</textarea>'+
+    '<div style="display:flex;gap:4px;flex-wrap:wrap">'+b("swap","↔","Swap name and meaning")+b("join","⤓","Join with the next row")+b("split","✂","Split the name where you tapped")+b("drop","✕","Drop this row")+'</div></div>'; }
+function checkFixDestHTML(S){ const u=cfUnit(S); if(!u) return ""; const d=cfDest(S), kids=cfKids(u), rad="display:flex;align-items:flex-start;gap:8px;padding:8px 6px;font-size:12.5px;color:#1f2937;cursor:pointer;min-height:36px";
+  let h='<div style="margin-top:12px;padding:10px;border:1.5px solid var(--border);border-radius:11px;background:#fafaf9"><div style="font-size:12px;font-weight:800;color:#1a3a2a">Where do they go?</div>'+
+    '<label style="'+rad+'"><input type="radio" id="cf-dest-deck" name="cf-dest" data-cf-dest="deck" '+(d.kind!=="new"?"checked":"")+' onchange="checkFixDo(\'dest\',null,\'deck\')" style="width:20px;height:20px;margin:0"> <span>This deck: <b>'+csEsc(S.deckKey)+'</b></span></label>'+
+    '<label style="'+rad+';flex-wrap:wrap"><input type="radio" id="cf-dest-new" name="cf-dest" data-cf-dest="new" '+(d.kind==="new"?"checked":"")+' onchange="checkFixDo(\'dest\',null,\'new\')" style="width:20px;height:20px;margin:0"> <span>A new deck:</span>'+
+    '<input value="'+csEsc(d.kind==="new"?d.name:((S.res&&S.res.heading)||""))+'" placeholder="deck name" oninput="checkFixDestName(this.value)" style="flex:1 1 150px;min-width:0;box-sizing:border-box;padding:7px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif"></label>';
+  if(d.kind==="new"&&cfNewKey(S)&&cfMatchDeck(u,cfNewKey(S))>=0) h+='<div style="font-size:11px;color:#92400e;padding:0 6px">There’s already a deck called that — the cards go into it.</div>';
+  h+='</div>';
+  if(kids.length){ const who=kids.map(cfName).join(", ");
+    h+='<div style="margin-top:8px;padding:10px;border:1.5px solid #bfdbfe;border-radius:11px;background:#eff6ff"><div style="font-size:12px;font-weight:800;color:#1e3a8a">'+csEsc(who)+(kids.length>1?" are":" is")+' enrolled — database or active learning?</div>'+
+      '<label style="'+rad+'"><input type="radio" name="cf-start" data-cf-start="bank" '+(!S.start?"checked":"")+' onchange="checkFixDo(\'start\',null,false)" style="width:20px;height:20px;margin:0"> <span>\u{1F4DA} <b>Database</b> — into the bank; learned in turn</span></label>'+
+      '<label style="'+rad+'"><input type="radio" name="cf-start" data-cf-start="now" '+(S.start?"checked":"")+' onchange="checkFixDo(\'start\',null,true)" style="width:20px;height:20px;margin:0"> <span>⚡ <b>Active learning</b> — start now (the ticked cards)</span></label></div>'; }
+  return h; }
+// ── the writes Add makes beyond today's Batch add (each behind db && !_dryRun()) ──
+// Start now: items for the ticked cards only, in unitEnroll's item shape, appended by index update of mastery/<kid>
+function checkFixStartItems(kid,deckKey,cards){ let items=(typeof masteryData!=="undefined")?masteryData[kid]:null; if(!Array.isArray(items)){ items=items?Object.values(items):[]; if(typeof masteryData!=="undefined") masteryData[kid]=items; }
+  const have=new Set(items.filter(i=>i&&i.subject===deckKey).map(i=>i.prompt)), start=items.length;
+  cards.forEach(c=>{ if(have.has(c.name)) return; const ne={id:kid.slice(0,3)+"_u_"+String(deckKey).replace(/[^a-z0-9]/gi,"").slice(0,6).toLowerCase()+"_"+(c.order||items.length),
+      subject:deckKey,type:"card",prompt:c.name,review_mode:"flash",status:"introduction",tier:"daily",cycle:1,tally_dots:0,drop_count:0,consecutive_correct:0};
+    if(c.def&&typeof mastDefKeyOk==="function"&&!mastDefKeyOk(c.name)){ ne.answer=c.def; ne.review_mode="recite"; }
+    items.push(ne); have.add(c.name); });
+  const iu={}; for(let i=start;i<items.length;i++) iu[i]=items[i];
+  if(cfLive()&&Object.keys(iu).length) db.ref("mastery/"+kid).update(iu);
+  return iu; }
+// the order numbers the deck transaction will give these cards (on from the highest order on this device's copy)
+function checkFixOrders(deck,fresh){ let mo=0; ((deck&&deck.cards)||[]).forEach(c=>{ if(c&&(c.order||0)>mo) mo=c.order||0; }); return fresh.map(c=>({name:c.name,def:c.def,order:++mo})); }
+// A new deck: the Builder's deck shape appended by ONE transaction; each enrolled kid gets the bank entries, definitions, the deck's
+// mode and intro cap (as unitEnroll sets them), and — start now — items for the ticked cards
+function checkFixNewDeck(unitId,key,fresh,kids,startNames){ if(!cfLive()) return null;
+  const cards=fresh.map((c,i)=>({name:c.name,def:c.def,order:i+1}));
+  db.ref("unitStudies/"+unitId+"/decks").transaction(cur=>{
+    const arr=cur==null?[]:(Array.isArray(cur)?cur:Object.values(cur));
+    const at=arr.findIndex(d=>d&&d.key===key);
+    if(at<0){ arr.push({key:key,mode:"flip",introCap:3,cards:cards}); return arr; }
+    const have=Array.isArray(arr[at].cards)?arr[at].cards:Object.values(arr[at].cards||{}); let mo=0; have.forEach(c=>{ if(c&&(c.order||0)>mo) mo=c.order||0; });
+    cards.forEach(c=>{ if(!have.some(e=>e&&e.name===c.name)) have.push({name:c.name,def:c.def,order:++mo}); }); arr[at].cards=have; return arr;
+  });
+  kids.forEach(kid=>{
+    db.ref("mastery/"+kid+"_custom_items").transaction(cur=>{
+      const arr=cur==null?[]:(Array.isArray(cur)?cur:Object.values(cur));
+      fresh.forEach(c=>{ if(!arr.some(e=>e&&e.cat===key&&e.name===c.name)) arr.push({cat:key,name:c.name,def:c.def}); });
+      return arr;
+    });
+    const defsU={}; fresh.forEach(c=>{ if(mastDefKeyOk(c.name)) defsU[c.name]=c.def; });
+    if(Object.keys(defsU).length) db.ref("mastery/"+kid+"_settings/definitions").update((typeof haKeys==="function"?haKeys(defsU):defsU));
+    db.ref("mastery/"+kid+"_settings/cat_modes").update((typeof haKeys==="function"?haKeys({[key]:"flip"}):{[key]:"flip"}));
+    db.ref("mastery/"+kid+"_settings/cat_intro_max").update((typeof haKeys==="function"?haKeys({[key]:3}):{[key]:3}));
+    if(startNames) checkFixStartItems(kid,key,cards.filter(c=>startNames.has(c.name)));
+  });
+  return cards; }
+// CHECKFIX_END
 // ── Unit card editor: edit shared photo + bio (applies to every enrolled kid) ──
 // ── Batch add: paste many cards into a unit deck at once ("front | back" per line) ────
 // New cards append to the registry deck AND flow immediately to every enrolled kid:
@@ -55430,39 +55701,38 @@ function unitBatchAdd(unitId,deckKey){
   if(!momHere()) return;
   const u=unitStudies[unitId]; const deck=u&&(u.decks||[]).find(d=>d&&d.key===deckKey); if(!deck) return;
   unitBatch={unitId,deckKey};
+  cardSheet={unitId:unitId,deckKey:deckKey,text:"",opts:{},res:null,rows:[]};   // CARDSPLIT: the ＋ Add cards sheet (paste → check → Add)
   let ov=document.getElementById("unit-batch-dlg"); if(ov) ov.remove();
   ov=document.createElement("div"); ov.id="unit-batch-dlg"; ov.className="dlg-overlay"; ov.style.display="flex"; ov.style.zIndex="9999";
-  ov.innerHTML='<div class="dlg-box" style="max-width:520px;text-align:left;max-height:88vh;overflow:auto">'+
-    '<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:700;color:#1a3a2a">\u{1F4E6} Batch add — '+deckKey+'</div>'+
-    '<div style="font-size:11px;color:var(--muted);margin:6px 0 10px;line-height:1.5">One card per line: <b>front | back</b> — the sentence, a pipe, then the rule or definition. New cards go into this unit AND into every enrolled kid’s drill bank; their auto-pull learns them in turn.</div>'+
-    '<textarea id="unit-batch-txt" placeholder="Sara lives in Boston. | Capitalize the names of cities.&#10;We visited France last summer. | Capitalize the names of countries." style="width:100%;box-sizing:border-box;min-height:180px;padding:9px 11px;border:1.5px solid var(--border);border-radius:9px;font-size:12.5px;font-family:\'DM Mono\',monospace;line-height:1.6"></textarea>'+
-    '<div id="unit-batch-msg" style="font-size:11px;font-weight:600;color:#b45309;margin-top:6px"></div>'+
-    '<div style="display:flex;gap:8px;margin-top:12px">'+
-      '<button onclick="unitBatchClose()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#f3f4f6;color:#374151;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button>'+
-      '<button onclick="unitBatchSave()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#2d6a4f;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Add cards</button>'+
-    '</div></div>';
+  ov.innerHTML=cardSheetHTML(cardSheet);
   document.body.appendChild(ov);
 }
-function unitBatchClose(){ unitBatch=null; const ov=document.getElementById("unit-batch-dlg"); if(ov) ov.remove(); }
+function unitBatchClose(){ unitBatch=null; cardSheet=null; const ov=document.getElementById("unit-batch-dlg"); if(ov) ov.remove(); }
 function unitBatchSave(){
   if(!unitBatch) return;
+  if(!momHere()) return;   // CHECKFIX: Mom-only
   const u=unitStudies[unitBatch.unitId]; if(!u) return;
-  const di=(u.decks||[]).findIndex(d=>d&&d.key===unitBatch.deckKey); if(di<0) return;
-  const deck=u.decks[di];
-  const txt=(document.getElementById("unit-batch-txt")||{}).value||"";
+  let di=(u.decks||[]).findIndex(d=>d&&d.key===unitBatch.deckKey); if(di<0) return;
+  let deck=u.decks[di];
   const msg=document.getElementById("unit-batch-msg");
-  const fresh=[]; const bad=[]; const seen=new Set((deck.cards||[]).map(c=>c&&c.name));
-  txt.split("\n").forEach(line=>{
-    const t=line.trim(); if(!t) return;
-    const p=t.indexOf("|");
-    if(p<1){ bad.push(t.slice(0,30)); return; }
-    const name=t.slice(0,p).trim(), def=t.slice(p+1).trim();
-    if(!name||!def){ bad.push(t.slice(0,30)); return; }
-    if(seen.has(name)) return;   // duplicate of an existing card — skip silently
-    fresh.push({name:name,def:def}); seen.add(name);
-  });
-  if(bad.length){ if(msg) msg.textContent="⚠️ "+bad.length+" line(s) missing the | separator — “"+bad[0]+"…”"; return; }
-  if(!fresh.length){ if(msg) msg.textContent="Nothing new to add (blank or all duplicates)."; return; }
+  // CARDSPLIT: the rows come from the ＋ Add cards preview (any list shape, no | needed); the writes below are unchanged
+  if(!cardSheet||cardSheet.unitId!==unitBatch.unitId||cardSheet.deckKey!==unitBatch.deckKey) return;
+  const _csEl=document.getElementById("unit-batch-txt"); if(_csEl&&typeof _csEl.value==="string"&&_csEl.value!==cardSheet.text) cardSheetInput(_csEl.value);
+  // CHECKFIX: a new deck (or the deck already called that), then doubles of THAT deck
+  const _cfKey=cfNewKey(cardSheet), _cfAt=_cfKey?cfMatchDeck(u,_cfKey):-1; if(_cfAt>=0){ di=_cfAt; deck=u.decks[di]; }
+  const _cfNew=(_cfKey&&_cfAt<0)?_cfKey:"";
+  if(cfDest(cardSheet).kind==="new"&&!_cfKey){ if(msg) msg.textContent="Give the new deck a name."; return; }
+  cfMarkDups(cardSheet);
+  const fresh=[]; const seen=new Set((_cfNew?[]:(deck.cards||[])).map(c=>c&&c.name));
+  cardSheetReady(cardSheet).forEach(r=>{ const name=String(r.name).trim(), def=String(r.back).trim(); if(seen.has(name)) return; fresh.push({name:name,def:def}); seen.add(name); });   // already in the deck — left out, as before
+  const _csLeft=cardSheetCounts(cardSheet).amber;
+  if(!fresh.length){ if(msg) msg.textContent=_csLeft?"Each card needs a meaning \u2014 type one in the amber rows.":"Nothing new to add (blank or all already in this deck)."; return; }
+  // CHECKFIX: database (bank, the default) or active learning (start now: the ticked cards) — asked whenever a kid is enrolled
+  const _cfStart=(cardSheet.start&&cfKids(u).length)?cfStartNames(cardSheet):null;
+  const _cfOrd=_cfNew?null:checkFixOrders(deck,fresh);   // the orders the deck transaction will give them (read before it runs)
+  const _cfWhere=_cfNew?("a new deck, "+_cfNew):deck.key, _cfHow=cfKids(u).length?(_cfStart?" \u2014 started now":" \u2014 into the bank"):"";
+  if(typeof _dryRun==="function"&&_dryRun()){ if(msg) msg.textContent="Dry run \u2014 nothing written. "+fresh.length+" card"+(fresh.length>1?"s":"")+" would go to "+_cfWhere+_cfHow+"."; return; }
+  if(_cfNew){ const _k=cfKids(u); checkFixNewDeck(unitBatch.unitId,_cfNew,fresh,_k,_cfStart); unitBatchClose(); alert("\u2713 "+fresh.length+" card"+(fresh.length>1?"s":"")+" added to "+_cfWhere+(_k.length?" ("+_k.map(cap).join(", ")+_cfHow+")":"")+(_csLeft?" \u00B7 "+_csLeft+" left out (no meaning)":"")); return; }
   // 1) registry deck — transaction append with order numbers continuing from the freshest max
   if(db) db.ref("unitStudies/"+unitBatch.unitId+"/decks/"+di+"/cards").transaction(cur=>{
     const arr=cur==null?[]:(Array.isArray(cur)?cur:Object.values(cur));
@@ -55482,8 +55752,9 @@ function unitBatchSave(){
     fresh.forEach(c=>{ if(mastDefKeyOk(c.name)) defsU[c.name]=c.def; });
     if(db&&Object.keys(defsU).length) db.ref("mastery/"+kid+"_settings/definitions").update((typeof haKeys==="function"?haKeys(defsU):defsU));
   });
+  if(_cfStart) kids.forEach(kid=>checkFixStartItems(kid,deck.key,_cfOrd.filter(c=>_cfStart.has(c.name))));   // CHECKFIX: active learning — items for the ticked cards only
   unitBatchClose();
-  alert("✓ "+fresh.length+" card"+(fresh.length>1?"s":"")+" added to "+deck.key+(kids.length?" — flowing to "+kids.map(cap).join(", ")+" via auto-pull":""));
+  alert("✓ "+fresh.length+" card"+(fresh.length>1?"s":"")+" added to "+deck.key+(kids.length?(_cfStart?" — started now for "+kids.map(cap).join(", "):" — flowing to "+kids.map(cap).join(", ")+" via auto-pull"):"")+(_csLeft?" · "+_csLeft+" left out (no meaning)":""));
 }
 function unitEditCard(unitId,deckKey,order){
   if(!momHere()){ showUnitCardBio(unitId,deckKey,order); return; } // kids read, Mom edits
