@@ -148,13 +148,36 @@ console.log("── his tablet: the box beside the page ──");
   ok("no write ever outside his own unitWork page leaves", w.writes.every(x => x[0] === "set" && /^unitWork\/k1\/harv\/seed_sheet\/(t\/)?\d$/.test(x[1])));
 }
 
+console.log("── the viewer's own fields stay the viewer's ──");
+{
+  const OWN = ["bookId", "kid", "page", "strokes", "dirty", "tool", "penOnly", "sawPen", "ans", "rules", "eic", "cover", "assignment"];
+  const BOARD = ["scratch", "bg", "ar", "uid", "dayId", "key", "saving", "msg", "msgOk", "msgRev", "savedRev", "kSaved"];
+  const w = world({ kc: "k1", do: "either", store: { [TXT("k1")]: "old" } });
+  w.call(OPEN("k1"));
+  const v = w.ctx.wbView, at = {}; OWN.forEach(k => { at[k] = v[k]; });
+  await flush();
+  type(w, "new text"); w.runTimers(); await flush();
+  w.stroke([[100, 100], [200, 150]]); w.runTimers(); await flush();
+  ok("after open + the box + load + typing + save: wbView.ans is still the viewer's own number, 0", v.ans === 0 && typeof v.ans === "number");
+  ok("the typed state lives only in wbView.typed", !!v.typed && v.typed.text === "new text" && v.typed.saved === "new text" && v.typed.page === 1 &&
+    Object.keys(v).filter(k => v[k] && typeof v[k] === "object" && "text" in v[k]).join() === "typed");
+  ok("rules / eic / cover / assignment are the very values wbOpen made (not replaced)", ["rules", "eic", "cover", "assignment"].every(k => v[k] === at[k]) && J(v.rules) === "[]" && v.eic === null && J(v.cover) === "[]" && v.assignment === null);
+  ok("strokes / dirty / tool / bookId / kid / page are the viewer's, used as the viewer means them", Array.isArray(v.strokes) && v.strokes.length === 1 && v.dirty === false && v.tool === "pen" && v.bookId === "uact~harv~seed_sheet" && v.kid === "k1" && v.page === 1);
+  ok("none of the whiteboard's fields is set on a printable's view", BOARD.every(k => !(k in v)), BOARD.filter(k => k in v));
+  const mine = Object.keys(v).filter(k => OWN.indexOf(k) < 0 && !/^_/.test(k));
+  ok("the fields the 4c blocks add are their own names only (penW is the viewer's pen hook)", mine.every(k => /^(typed|penW|uasc[A-Z]\w*)$/.test(k)), mine);
+  const src4c = code(SCR) + code(BLK);
+  const sets = [...new Set([...src4c.matchAll(/\b(?:v|wbView)\.([A-Za-z_]\w*)\s*(?:=(?!=)|\+\+|\+=)/g)].map(m => m[1]))].sort();
+  ok("in the source, the blocks assign on the view only: dirty, penW, typed and uasc* names", J(sets) === J(["dirty", "penW", "typed", "uascCloseAnyway", "uascMsg", "uascMsgOk", "uascSaving"]), sets);
+}
+
 console.log("── Mom: his text beside the page, read-only ──");
 {
   const w = world({ mom: true, do: "either", store: { [TXT("k1")]: "1. seeds\n2. a pod" } });
   w.call(OPEN("k1")); await flush();
   ok("no box to type in: his text shows read-only, under “⌨️ Ada’s answers · page 1”", !TA(w) && RO(w).textContent === "1. seeds\n2. a pod" && w.reg["uasc-ans-lbl"].textContent === "⌨️ Ada’s answers · page 1");
   ok("her bar says “⌨️ Answers”", /uascAnsGo\(\)"[^>]*>⌨️ Answers</.test(w.bar()));
-  ok("she cannot type into his text (refused even if called)", w.call("uascAnsInput({value:'oops'})") === false && w.ctx.wbView.ans.text === "1. seeds\n2. a pod");
+  ok("she cannot type into his text (refused even if called)", w.call("uascAnsInput({value:'oops'})") === false && w.ctx.wbView.typed.text === "1. seeds\n2. a pod");
   w.stroke([[300, 300], [320, 330]]);
   await w.call("uascClose()"); await flush();
   ok("closing writes her red ink only — his text is never written from her screen", sets(w).length === 1 && sets(w)[0][1] === INK("k1") && !w.writes.some(x => /\/t\//.test(x[1])));
@@ -166,13 +189,13 @@ console.log("── refused, said plainly, what he typed kept ──");
 {
   const w = world({ kc: "k1", do: "either", setFails: true }); w.call(OPEN("k1")); await flush();
   type(w, "my answer"); w.runTimers(); await flush();
-  ok("the database says no: the line under the box says so, the text stays in the box", /Didn’t save — the database said no\. What you typed is still here/.test(STL(w)) && TA(w).value === "my answer" && w.ctx.wbView.ans.saved === "");
+  ok("the database says no: the line under the box says so, the text stays in the box", /Didn’t save — the database said no\. What you typed is still here/.test(STL(w)) && TA(w).value === "my answer" && w.ctx.wbView.typed.saved === "");
   await w.call("uascGo(1)"); await flush();
   ok("▶ stays on the page", w.ctx.wbView.page === 1);
   await w.call("uascClose()"); await flush();
   ok("✕ stays open once (“Tap ✕ again”), then closes", !!w.ctx.wbView && /Tap ✕ again/.test(w.bar()) && (await w.call("uascClose()"), !w.ctx.wbView));
   const s = world({ kc: "k1", do: "either" }); s.call(OPEN("k1")); await flush();
-  s.ctx.kcKid = "k2"; TA(s).value = "mine"; s.ctx.wbView.ans.text = "mine"; await s.call("uascAnsSave(wbView)");
+  s.ctx.kcKid = "k2"; TA(s).value = "mine"; s.ctx.wbView.typed.text = "mine"; await s.call("uascAnsSave(wbView)");
   ok("the tablet switched to a sibling: nothing written, said plainly", sets(s).length === 0 && /isn’t open to this tablet/.test(STL(s)));
   const d = world({ kc: "k1", do: "either", dry: true }); d.call(OPEN("k1")); await flush();
   type(d, "dry"); d.runTimers(); await flush();

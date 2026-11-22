@@ -43923,6 +43923,8 @@ function uapgLine(r){
 //   · REFUSED, said plainly in the bar, his writing left on the page: the database says no, no connection, not his page. ✕ on a
 //     page that didn't save stays open and says so; a second ✕ closes. Dry run: "Dry run — nothing saved."
 //   · No answer anywhere: there is no key; the app reads and checks nothing. No kid's or family's name in code.
+//   · Its own state on the viewer's wbView is uasc-named (uascMsg, uascMsgOk, uascSaving, uascCloseAnyway); it sets only two of the
+//     viewer's own fields, as the viewer means them: penW (the pen-width hook) and dirty (cleared after a save, as wbSave does).
 const UASC_PEN_W=0.004;   // of the page's width; the workbook pen is 0.0026 (a Pencil) — a finger needs a fatter line
 const UASC_DO=[["paper","\u{1F5A8} paper"],["screen","✍️ screen"],["either","either"]];
 let uascPicked={};   // the 🖨 box (utaaKey) → the "How it's done" chip Mom tapped this sitting, until ✎ Save
@@ -44030,17 +44032,17 @@ function uascOpen(uid,key,kid,page){
   if(typeof uascAnsMount==="function") uascAnsMount(wbView);   // UACTANS: ⌨️ My answers beside the page
   return true;
 }
-function uascSay(v,msg,good){ v.msg=msg||""; v.msgOk=!!good; if(typeof wbView!=="undefined"&&wbView===v) wbBarRender(); }
+function uascSay(v,msg,good){ v.uascMsg=msg||""; v.uascMsgOk=!!good; if(typeof wbView!=="undefined"&&wbView===v) wbBarRender(); }
 // wbSave's hook: his page's ink at its own path — true = saved (or nothing to save), false = refused (his writing stays on the page)
 async function uascSave(v,quiet){
   if(!v) return false; const rev=v._rev||0;
   if(uascDryRun()){ v.dirty=false; uascSay(v,"Dry run — nothing saved."); return true; }
   if(typeof db==="undefined"||!db){ uascSay(v,"Not connected — your writing is still here, but it isn’t saved."); return false; }
   let path=""; try{ path=wbInkPath(v.kid,v.bookId,v.page); }catch(e){ uascSay(v,"Didn’t save — this page isn’t open to this tablet."); return false; }
-  v.saving=true; if(wbView===v) wbBarRender();
+  v.uascSaving=true; if(wbView===v) wbBarRender();
   try{ await db.ref(path).set({v:1,s:v.strokes,ts:Date.now()}); }   // one page, one path — the workbook record
-  catch(e){ v.saving=false; uascSay(v,"Didn’t save — the database said no. Your writing is still here; try 💾 again."); return false; }
-  v.saving=false; if((v._rev||0)===rev) v.dirty=false; uascSay(v,"",true); return true;
+  catch(e){ v.uascSaving=false; uascSay(v,"Didn’t save — the database said no. Your writing is still here; try 💾 again."); return false; }
+  v.uascSaving=false; if((v._rev||0)===rev) v.dirty=false; uascSay(v,"",true); return true;
 }
 function uascSaveNow(){ const v=(typeof wbView!=="undefined")?wbView:null; if(v&&uascIs(v.bookId)) return uascSave(v); return false; }
 // ◀ ▶: save first; a page that didn't save stays open (said in the bar)
@@ -44055,11 +44057,11 @@ async function uascGo(d){
 // ✕: save, then close; a page that didn't save stays open once and says so — a second ✕ closes without it
 async function uascClose(){
   const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!uascIs(v.bookId)){ wbClose(); return true; }
-  if(!v.closeAnyway){
+  if(!v.uascCloseAnyway){
     let ok=true;
     if(v.dirty) ok=await uascSave(v);
     if(ok&&typeof uascAnsFlush==="function") ok=await uascAnsFlush(v);   // UACTANS
-    if(!ok){ v.closeAnyway=true; uascSay(v,(v.msg?v.msg+" ":"")+"Tap ✕ again to close without it."); return false; }
+    if(!ok){ v.uascCloseAnyway=true; uascSay(v,(v.uascMsg?v.uascMsg+" ":"")+"Tap ✕ again to close without it."); return false; }
   }
   v.dirty=false; wbClose(); return true;
 }
@@ -44074,9 +44076,9 @@ function uascBarHTML(v,btn){
     btn("◀","uascGo(-1)")+'<span style="font-size:12px;font-weight:700;color:#475569;min-width:64px;text-align:center">p '+v.page+' / '+(b.pages||"?")+'</span>'+btn("▶","uascGo(1)")+
     btn("✏️","wbTool(\'pen\')",v.tool==="pen")+btn("\u{1FA79} Erase","wbTool(\'erase\')",v.tool==="erase")+
     btn("↩︎ Undo","wbUndo()")+btn("\u{1F9FD} Clear","wbClear()")+btn(v.penOnly?"✍️ Pencil only":"\u{1F446} Finger too","wbTogglePen()",v.penOnly)+
-    btn(v.saving?"Saving…":(v.dirty?"\u{1F4BE} Save":"✓ Saved"),"uascSaveNow()",v.dirty)+
+    btn(v.uascSaving?"Saving…":(v.dirty?"\u{1F4BE} Save":"✓ Saved"),"uascSaveNow()",v.dirty)+
     ((typeof uascAnsBtnHTML==="function")?uascAnsBtnHTML(v,btn):"")+   // UACTANS: ⌨️ jump to the box
-    (v.msg?'<span data-uasc-msg="1" style="font-size:12px;font-weight:700;color:'+(v.msgOk?'#15803d':'#b91c1c')+'">'+dcEsc(v.msg)+'</span>':'');
+    (v.uascMsg?'<span data-uasc-msg="1" style="font-size:12px;font-weight:700;color:'+(v.uascMsgOk?'#15803d':'#b91c1c')+'">'+dcEsc(v.uascMsg)+'</span>':'');
 }
 // UACTSCREEN_END
 // UACTANS_START — ⌨️ "My answers", typed beside the page (piece 4c, PLAN_unit_activity_types §7.1; a beta mom 2026-11-20, asked how a
@@ -44097,6 +44099,7 @@ function uascBarHTML(v,btn){
 //     stay the red pen. A sibling's tablet never opens the page (UACTSCREEN), and the save asks again before writing.
 //   · REFUSED, said plainly under the box, what he typed left in it: the database says no, no connection, not his page; ◀ ▶ stay
 //     and ✕ stays open once (UACTSCREEN's close). Dry run: "Dry run — nothing saved." No kid's or family's name in code.
+//   · Its state lives in wbView.typed — never wbView.ans, which is the viewer's answer-key page number (0 on a printable).
 const UASC_ANS_MAX=2000;
 let _uascAnsT=null, _uascVV=false;
 function uascAnsPath(kid,id,page){ const ink=uascInkPath(kid,id,page); return ink.slice(0,ink.lastIndexOf("/"))+"/t/"+parseInt(page,10); }   // UACTSCREEN's gate, then …/t/<page>
@@ -44119,35 +44122,35 @@ function uascAnsMount(v){
 }
 // the label, the box's words, the line under it (full = also the text; while he types, only the line)
 function uascAnsPaint(v,full){
-  const a=v&&v.ans; if(!a||typeof wbView==="undefined"||wbView!==v) return;
+  const a=v&&v.typed; if(!a||typeof wbView==="undefined"||wbView!==v) return;
   const lbl=uascAnsEl("uasc-ans-lbl"), st=uascAnsEl("uasc-ans-st"), ta=uascAnsEl("uasc-ans-ta"), ro=uascAnsEl("uasc-ans-ro");
   if(lbl) lbl.textContent=(ta?"⌨️ My answers":"⌨️ "+dcName(v.kid)+"’s answers")+" · page "+a.page;
   if(full&&ta){ ta.value=a.text; ta.disabled=!a.loaded; }
   if(full&&ro){ ro.textContent=a.loaded?(a.text||"Nothing typed on this page yet."):"Loading…"; ro.style.color=a.text?"#0f172a":"#64748b"; }
   if(st){ st.textContent=a.msg||(!a.loaded?"Loading…":(a.saving?"Saving…":(ta&&a.text!==a.saved?"…":(ta&&a.text?"✓ Saved":"")))); st.style.color=a.msgOk===false?"#b91c1c":"#15803d"; }
 }
-function uascAnsSay(v,msg,good){ if(v&&v.ans){ v.ans.msg=msg||""; v.ans.msgOk=msg?!!good:null; uascAnsPaint(v,false); } }
+function uascAnsSay(v,msg,good){ if(v&&v.typed){ v.typed.msg=msg||""; v.typed.msgOk=msg?!!good:null; uascAnsPaint(v,false); } }
 // read the page's text once (a page turn reads the new page's)
 function uascAnsLoad(v){
   if(!v||!uascIs(v.bookId)) return; const page=v.page; clearTimeout(_uascAnsT); _uascAnsT=null;
-  v.ans={page:page,text:"",saved:"",loaded:false,msg:"",msgOk:null}; uascAnsPaint(v,true);
+  v.typed={page:page,text:"",saved:"",loaded:false,msg:"",msgOk:null}; uascAnsPaint(v,true);
   let path=""; try{ path=uascAnsPath(v.kid,v.bookId,page); }catch(e){ uascAnsSay(v,"This page isn’t open to this tablet."); return; }
-  if(typeof db==="undefined"||!db){ v.ans.loaded=true; uascAnsPaint(v,true); uascAnsSay(v,uascAnsMine(v)?"Not connected — what you type won’t save.":"Not connected."); return; }
-  try{ db.ref(path).once("value").then(function(s){ if(wbView!==v||!v.ans||v.ans.page!==page) return; const t=s&&typeof s.val==="function"?s.val():null;
-      v.ans.text=v.ans.saved=(typeof t==="string")?t.slice(0,UASC_ANS_MAX):""; v.ans.loaded=true; uascAnsPaint(v,true); },
-    function(){ if(wbView===v&&v.ans&&v.ans.page===page) uascAnsSay(v,"Couldn’t read the answers — close the page and open it again."); }); }
+  if(typeof db==="undefined"||!db){ v.typed.loaded=true; uascAnsPaint(v,true); uascAnsSay(v,uascAnsMine(v)?"Not connected — what you type won’t save.":"Not connected."); return; }
+  try{ db.ref(path).once("value").then(function(s){ if(wbView!==v||!v.typed||v.typed.page!==page) return; const t=s&&typeof s.val==="function"?s.val():null;
+      v.typed.text=v.typed.saved=(typeof t==="string")?t.slice(0,UASC_ANS_MAX):""; v.typed.loaded=true; uascAnsPaint(v,true); },
+    function(){ if(wbView===v&&v.typed&&v.typed.page===page) uascAnsSay(v,"Couldn’t read the answers — close the page and open it again."); }); }
   catch(e){ uascAnsSay(v,"Couldn’t read the answers — close the page and open it again."); }
 }
 // he types: kept on the page at once, saved 2.5 s after he stops
 function uascAnsInput(el){
-  const v=(typeof wbView!=="undefined")?wbView:null, a=v&&v.ans; if(!a||!a.loaded||!uascAnsMine(v)) return false;
+  const v=(typeof wbView!=="undefined")?wbView:null, a=v&&v.typed; if(!a||!a.loaded||!uascAnsMine(v)) return false;
   a.text=String((el&&el.value)||"").slice(0,UASC_ANS_MAX); a.msg=""; a.msgOk=null; uascAnsPaint(v,false);
   clearTimeout(_uascAnsT); _uascAnsT=setTimeout(function(){ _uascAnsT=null; if(wbView===v) uascAnsSave(v); },2500);
   return true;
 }
 // true = nothing to save, or saved · false = refused (what he typed stays in the box)
 async function uascAnsSave(v){
-  const a=v&&v.ans; if(!a||!a.loaded||a.text===a.saved) return true;
+  const a=v&&v.typed; if(!a||!a.loaded||a.text===a.saved) return true;
   if(!uascAnsMine(v)){ uascAnsSay(v,"Didn’t save — this page isn’t open to this tablet."); return false; }
   if(uascDryRun()){ a.saved=a.text; uascAnsSay(v,"Dry run — nothing saved."); return true; }
   if(typeof db==="undefined"||!db){ uascAnsSay(v,"Not connected — what you typed is still here, but it isn’t saved."); return false; }
@@ -44159,7 +44162,7 @@ async function uascAnsSave(v){
 }
 // before ◀ ▶ and ✕ (UACTSCREEN's hooks): what's in the box now, saved now
 function uascAnsFlush(v){
-  clearTimeout(_uascAnsT); _uascAnsT=null; const a=v&&v.ans; if(!a||!uascAnsMine(v)) return Promise.resolve(true);
+  clearTimeout(_uascAnsT); _uascAnsT=null; const a=v&&v.typed; if(!a||!uascAnsMine(v)) return Promise.resolve(true);
   const ta=uascAnsEl("uasc-ans-ta"); if(ta&&a.loaded) a.text=String(ta.value||"").slice(0,UASC_ANS_MAX);
   return uascAnsSave(v);
 }
