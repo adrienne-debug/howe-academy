@@ -8,7 +8,8 @@
  *   kid_a  🌅 Brush teeth (daily, 0 ⭐) · Feed the rabbit (Mon Wed Fri, 15) · Start your laundry (the line's Thursday load)
  *          🧹 Make the bed (daily 2) · Vacuum the den (Tue 10) · Dust the shelves (Wed 10) · Wipe the baseboards (Mon 10) ·
  *             Empty the trash (Mon Wed Fri 5, 3+ a week) · Wash the car (Sun 10)   ·   🌙 Lay out clothes (daily 0)
- *   kid_b  🧹 Sweep the porch (Tue 6)   ·   kid_c  🧹 Toys in the bin (daily 3)   ·   kid_d  nothing
+ *          ☀️ Pick up the den / Pick up the porch (daily 5, 🔄 takes turns with kid_b; not done in week 1, done every day of week 2)
+ *   kid_b  🧹 Sweep the porch (Tue 6) · ☀️ the other 🔄 turn   ·   kid_c  🧹 Toys in the bin (daily 3)   ·   kid_d  nothing
  * Week 1: everything on its day but the rabbit on Fri 11/20 (last week's ✖). Week 2: Sun 11/22 the car missed, ticked Mon (8 of 10,
  * L2's ⭐ Give); Mon the baseboards (gone Thu) and the trash (gone Wed) missed; Tue the vacuum missed (⏳ Thu, day 2 of 2, pays 6 of 10);
  * Wed the dust (⏳ Thu, pays 8 of 10), the trash (⏳ Thu, "1 day late", pays 4 of 5), the bed and the rabbit missed; Thu the bed, the
@@ -61,6 +62,8 @@ const FAM = () => ({
   a_base: K({ label: "Wipe the baseboards", emoji: "🧽", who: "kid_a", slot: "chores", cad: "wk:0", pts: 10, order: 4 }),
   a_trash: K({ label: "Empty the trash", emoji: "🗑", who: "kid_a", slot: "chores", cad: "wk:0,2,4", pts: 5, order: 5 }),
   a_car: K({ label: "Wash the car", emoji: "🚗", who: "kid_a", slot: "chores", cad: "wk:6", pts: 10, order: 6 }),
+  a_pick: K({ label: "Pick up the den", emoji: "🧸", who: "kid_a", slot: "afternoon", cad: "daily", area: "pickup", rot: "pick", pts: 5, order: 0 }),   // 🔄 a job that takes turns with kid_b's
+  b_pick: K({ label: "Pick up the porch", emoji: "🪣", who: "kid_b", slot: "afternoon", cad: "daily", area: "pickup", rot: "pick", pts: 5, order: 0 }),
   a_clothes: K({ label: "Lay out clothes", emoji: "👕", who: "kid_a", slot: "evening", cad: "daily", area: "health", order: 0 }),
   b_porch: K({ label: "Sweep the porch", emoji: "🧺", who: "kid_b", slot: "chores", cad: "wk:1", pts: 6, order: 0 }),
   c_toys: K({ label: "Toys in the bin", emoji: "🧩", who: "kid_c", slot: "chores", cad: "daily", pts: 3, order: 0 })
@@ -118,6 +121,7 @@ for (let n = 0; n <= 10; n++) {
     await go(w, n, 8); daily(B, n, dow); await w.flush();
     await go(w, n, 16);
     if (n < 6) { if (dow === 0) tick(B, "chores", "kid_a", "Wipe the baseboards"); if ([0, 2, 4].includes(dow)) tick(B, "chores", "kid_a", "Empty the trash"); if (dow === 1) { tick(B, "chores", "kid_a", "Vacuum the den"); tick(B, "chores", "kid_b", "Sweep the porch"); } if (dow === 2) tick(B, "chores", "kid_a", "Dust the shelves"); }
+    if (n >= 6) { tick(B, "afternoon", "kid_a", "Pick up the"); tick(B, "afternoon", "kid_b", "Pick up the"); }   // 🔄 week 2 only: week 1's turns stay not done (last week's 🔄 rows)
     if (n === 7) tick(B, "chores", "kid_a", "Wash the car");   // Sunday's, 1 day late: 8 of 10
     if (n === 8) tick(B, "chores", "kid_b", "Sweep the porch");
     await w.flush(); await go(w, n, 18);
@@ -130,7 +134,7 @@ for (let n = 0; n <= 10; n++) {
   const a = scr(X), b = scr(BW), diff = Object.keys(a).filter(k => J(a[k]) !== J(b[k]));
   const pa = pops(X, n), pb = pops(BW, n), btn = {}, pd = Object.keys(pa).filter(k => { btn[k] = (pa[k].match(EXC) || []).length + (pa[k].match(UND) || []).length; return stripX(pa[k]) !== pb[k]; });
   S.same.push([n, diff, tree(w) === tree(BW.w), w.db.log.length === BW.w.db.log.length]);
-  S.pop.push([n, pd, btn, pd.length ? [pa[pd[0]].slice(0, 300), pb[pd[0]].slice(0, 300)] : null, Object.keys(pa).every(k => rowsRaw(pa[k]).every(r => /lgExcuse\(/.test(r) === (/^[○⏳✖] (?!🌅)/.test(txt(r)) && !/, late \(see that day\)/.test(txt(r)))))]);
+  S.pop.push([n, pd, btn, pd.length ? [pa[pd[0]].slice(0, 300), pb[pd[0]].slice(0, 300)] : null, Object.keys(pa).every(k => rowsRaw(pa[k]).every(r => /lgExcuse\(/.test(r) === (/^[○⏳✖] (?!🌅|🔄 a job that takes turns)/.test(txt(r)) && !/, late \(see that day\)/.test(txt(r)))))]);
 }
 A.run("lgClose();1");
 const wk = A.run("activeWk()"), pwk = A.run("_prevWkKey()");
@@ -142,7 +146,7 @@ console.log("\n── A · while nobody taps: every screen, the pop-up (but the 
 ok("11 days: the kids' lists (every list, every kid, Morning too), Mom's Day, Dad's Day, Kids' Corner, the Star Bank, the Click-off Log = the app before, byte for byte", S.same.every(s => s[1].length === 0), S.same.filter(s => s[1].length));
 ok("…and the whole database and the number of writes = the app before, every day (drawing the buttons writes nothing)", S.same.every(s => s[2] && s[3]), S.same.filter(s => !(s[2] && s[3])));
 ok("the 📒 pop-up, every kid, Today, every day back to Monday, This week and last week = the app before once ➖ Excuse / Undo are taken out", S.pop.every(p => p[1].length === 0), S.pop.filter(p => p[1].length));
-ok("…on every kid, every day, every view: ➖ Excuse is on exactly the rows not done (○ · ⏳ · ✖, not a turn done late), never on a done, ➖, 🌅 or ⏸ row", S.pop.every(p => p[4]), S.pop.filter(p => !p[4]).map(p => p[0]));
+ok("…on every kid, every day, every view: ➖ Excuse is on exactly the rows not done (○ · ⏳ · ✖, not a turn done late), never on a done, ➖, 🌅 or ⏸ row, nor on last week's 🔄 rows", S.pop.every(p => p[4]), S.pop.filter(p => !p[4]).map(p => p[0]));
 
 // ── B ──
 console.log("\n── B · where ➖ Excuse is, Thursday 11/26 ──");
@@ -312,6 +316,16 @@ console.log("\n── I · dryrun writes nothing ──");
   const u = Dr.run("lgExcuseUndo('kid_a','" + wk + "','wednesday','chores'," + I.dust + ")"); await w.flush();
   ok("…and its Undo writes nothing either", u === true && writes(w, m).length === 0);
   w.devs.splice(w.devs.indexOf(Dr), 1); }
+
+// ── K ──
+console.log("\n── K · a row that cannot be excused even when called directly: last week's 🔄, a 🌅 sent-to-morning row ──");
+{ const ri = idxOf(A, "afternoon", "kid_a", "Pick up the"), h = pop(A, -6), raw = rowRaw(h, "🔄 a job that takes turns"), m = w.mark(), t0 = tree(w);
+  ok("last week (Fri 11/20): kid_a's 🔄 row \"✖ 🔄 a job that takes turns not done 5 ⭐\" draws no ➖ Excuse (its turn is not worked out for last week)", ri >= 0 && txt(raw) === "✖ 🔄 a job that takes turns not done 5 ⭐" && !/lgExcuse/.test(raw), [ri, txt(raw)]);
+  ok("…and lgExcuse called on it directly says no and writes nothing", A.run("lgExcuse('kid_a','" + pwk + "','friday','afternoon'," + ri + ")") === false && (await w.flush(), writes(w, m).length === 0) && tree(w) === t0, WS(w, m));
+  A.run("amSend('chores','kid_a',_todayDay," + I.bed + ");1"); await w.flush();
+  const hs = pop(A, 0), rs = rowRaw(hs, "Make the bed"), m2 = w.mark(), t1 = tree(w);
+  ok("a 🌅 row (today's bed, sent to tomorrow morning): \"🌅 🛏 Make the bed sent to tomorrow morning\", no ➖ Excuse", txt(rs) === "🌅 🛏 Make the bed sent to tomorrow morning" && !/lgExcuse/.test(rs), txt(rs));
+  ok("…and lgExcuse called on it directly says no and writes nothing (it is the morning list's now)", A.run("lgExcuse('kid_a','" + wk + "','thursday','chores'," + I.bed + ")") === false && (await w.flush(), writes(w, m2).length === 0) && tree(w) === t1, WS(w, m2)); }
 
 // ── P ──
 console.log("\n── P · plan rows (the plan ON): ✕ today's record is the plan's skip ──");
