@@ -141,6 +141,7 @@ console.log("\n── C · one tap: one bank line of the missing stars; the tota
 const wk3 = A.run("activeWk()"), carI = idxOf(A, "chores", "kid_a", "Wash the car"), CAR = "lgb_" + wk3 + "_monday_kid_a_cstep" + carI, carArgs = "'kid_a','" + wk3 + "','monday','chores'," + carI;
 let before, after;
 { loadH(Dd, HJS);
+  if (process.env.LGB_DUMP) A.run("HA_LS.setItem('ha_ledger_hello','1');1");   // the preview page's drawings, without the first-minute card
   S.wk0 = top(LG(A, "lgGo('kid_a',0,1)")); before = LG(A, "lgGo('kid_a',0,0)"); const b0 = bal(A, "kid_a"), lists0 = kidLists(B), m = w.mark();
   ok("Monday 11/30 before: \"✅ 🚗 Wash the car paid 8 of 10 ⭐ · due Sun +8 ⭐ … ⭐ Give stars back\"; the top line \"earned 25 ⭐ · fell short 2 ⭐\" (the rabbit 15, the bed 2, the car 8)", /^✅ 🚗 Wash the car paid 8 of 10 ⭐ · due Sun \+8 ⭐ .* ⭐ Give stars back$/.test(rowT(before, "Wash the car")) && /^Today: earned 25 ⭐ · fell short 2 ⭐/.test(top(before)), [rowT(before, "Wash the car"), top(before)]);
   ok("the tap is Mom's: lgGive answers yes", A.run("lgGive(" + carArgs + ")") === true);
@@ -151,6 +152,7 @@ let before, after;
   ok("the Star Bank: +2 on every device, the newest line reads \"⭐ Mom gave back: 🚗 Wash the car\" +2", bal(A, "kid_a") === b0 + 2 && bal(B, "kid_a") === b0 + 2 && bal(Dd, "kid_a") === b0 + 2 && /⭐ Mom gave back: 🚗 Wash the car/.test(B.run("JSON.stringify(bankLedger('kid_a').slice(0,3))")), [b0, bal(A, "kid_a"), bal(B, "kid_a")]);
   after = LG(A, "lgGo('kid_a',0,0)");
   ok("after: the row still reads late (\"paid 8 of 10 ⭐ · due Sun +8 ⭐\"), the button's place says \"⭐ Mom gave back +2 ⭐\" and Undo", /^✅ 🚗 Wash the car paid 8 of 10 ⭐ · due Sun \+8 ⭐ \S+ [AP]M ⭐ Mom gave back \+2 ⭐ Undo$/.test(rowT(after, "Wash the car")) && !/lgGive\(/.test(after) && /lgGiveUndo\('kid_a'/.test(after), rowT(after, "Wash the car"));
+  S.dump = { before, after };
   ok("the top line adds up: \"earned 27 ⭐\", no \"fell short\" (25 + 2; 2 − 2)", /^Today: earned 27 ⭐( ·|$)/.test(top(after)) && !/fell short/.test(top(after)), top(after));
   const x = JSON.parse(A.run("JSON.stringify(lgDayData('kid_a',0))")), bank = JSON.parse(A.run("(function(){ let n=0; const a=bank.kid_a.adjustments; Object.keys(a).forEach(function(k){ const x=a[k]; if(x&&x.src==='earn'&&!x.held&&x.wk===activeWk()&&x.day==='monday') n+=x.amount||0; }); return n; })()"));
   ok("…earned 27 = kid_a's bank lines for Monday (the rabbit +15, the tick's own +8, the bed +2, the give-back +2)", x.earned === 27 && bank === 27 && x.short === 0, [x.earned, bank, x.short]);
@@ -181,7 +183,7 @@ console.log("\n── E · Undo removes exactly that line ──");
   await w.flush(); const ws = writes(w, m), keys1 = Object.keys(adj(w, "kid_a")).sort();
   ok("one write: a remove of bank/kid_a/adjustments/" + CAR + "; every other bank line untouched", ws.length === 1 && ws[0].op === "remove" && ws[0].path === "bank/kid_a/adjustments/" + CAR && J(keys1) === J(keys0.filter(k => k !== CAR)), ws.map(e => [e.op, e.path]));
   ok("the Star Bank back where it was on every device", bal(A, "kid_a") === b0 && bal(B, "kid_a") === b0 && bal(Dd, "kid_a") === b0);
-  const h = LG(A, "lgGo('kid_a',0,0)");
+  const h = LG(A, "lgGo('kid_a',0,0)"); S.dump.undo = h;
   ok("the pop-up is the one from before the tap again, byte for byte (button, \"fell short 2 ⭐\", earned 25)", h === before, [top(h), rowT(h, "Wash the car")]);
   const m2 = w.mark();
   ok("Undo again: no, nothing written", A.run("lgGiveUndo(" + carArgs + ")") === false && writes(w, m2).length === 0);
@@ -257,6 +259,7 @@ console.log("\n── I · dryrun writes nothing ──");
   w.devs.splice(w.devs.indexOf(Dr), 1);
 }
 
+if (process.env.LGB_DUMP) fs.writeFileSync(process.env.LGB_DUMP, J(S.dump));   // read only by the preview page's builder
 console.log("\n" + pass + " passed, " + fail + " failed");
 try { fs.unlinkSync(BASE_IDX); } catch (e) {}
 process.exit(fail ? 1 : 0);
