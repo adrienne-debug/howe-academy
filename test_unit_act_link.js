@@ -38,7 +38,7 @@ function world(o) {
 }
 const G = (c, id) => ({ day: c.utRef("harv", c.utDay(c.unitStudies.harv, id)), u: c.unitStudies.harv, first: null, present: [] });
 const A1 = "unitStudies/harv/activities/3";
-const box = (line, url, kid) => ({ "utaa-harv-d1-line": { value: line }, "utaa-harv-d1-url": { value: url || "" }, "utaa-harv-d1-kidopen": { checked: !!kid }, "uak-harv-d1-link": { style: {} } });
+const box = (line, url, kid) => ({ "utaa-harv-d1-line": { value: line }, "utaa-harv-d1-url": { value: url || "" }, "utaa-harv-d1-kidopen": { checked: !!kid }, "uak-harv-d1-box-link": { style: {} } });
 
 console.log("── the block ──");
 ok("UACTLINK is a marked block right after UACTKIND", BLK.length > 1500 && src.indexOf("// UACTLINK_START") === src.indexOf("// UACTKIND_END") + "// UACTKIND_END\n".length);
@@ -56,10 +56,10 @@ console.log("\n── the box ──");
 {
   const w = world({ dom: box("x") }); const c = w.ctx, u = c.unitStudies.harv;
   const h = c.utaaEditorHTML(u, c.utDay(u, "d1"));
-  ok("+ Add box: the address row is there, hidden while 📓 is picked; tick off", /id="uak-harv-d1-link" data-uak-kind="link" style="display:none/.test(h) && /id="utaa-harv-d1-url" type="url"/.test(h) && /id="utaa-harv-d1-kidopen" type="checkbox">/.test(h) && /Kids may open it alone/.test(h));
-  c.uakPick("harv-d1", "link"); ok("tapping 🔗 shows it in place (no full render)", w.dom["uak-harv-d1-link"].style.display === "block" && c.repaints === 0);
-  c.uakPick("harv-d1", "screen"); ok("tapping another kind hides it again", w.dom["uak-harv-d1-link"].style.display === "none");
-  ok("a render with 🔗 picked draws it open", (c.uakPick("harv-d1", "link"), /id="uak-harv-d1-link" data-uak-kind="link" style="display:block/.test(c.utaaEditorHTML(u, c.utDay(u, "d1")))));
+  ok("+ Add box: the address row is there, hidden while 📓 is picked; tick off", /id="uak-harv-d1-box-link" data-uak-kind="link" style="display:none/.test(h) && /id="utaa-harv-d1-url" type="url"/.test(h) && /id="utaa-harv-d1-kidopen" type="checkbox">/.test(h) && /Kids may open it alone/.test(h));
+  c.uakPick("harv-d1", "link"); ok("tapping 🔗 shows it in place (no full render)", w.dom["uak-harv-d1-box-link"].style.display === "block" && c.repaints === 0);
+  c.uakPick("harv-d1", "screen"); ok("tapping another kind hides it again", w.dom["uak-harv-d1-box-link"].style.display === "none");
+  ok("a render with 🔗 picked draws it open", (c.uakPick("harv-d1", "link"), /id="uak-harv-d1-box-link" data-uak-kind="link" style="display:block/.test(c.utaaEditorHTML(u, c.utDay(u, "d1")))));
   const e = c.utaaEditorHTML(u, c.utDay(u, "d3"));
   ok("✎ on a 🔗 activity: 🔗 pressed, its address and tick filled in", /id="uak-harv-d3-link" aria-pressed="true"/.test(e) && /value="https:\/\/www.youtube.com\/watch\?v=abc"/.test(e) && /id="utaa-harv-d3-kidopen" type="checkbox" checked>/.test(e) && /data-uak-kind="link" style="display:block/.test(e));
   ok("the address row fits a phone (full width, no fixed px width)", /id="utaa-harv-d1-url" type="url"[^>]*width:100%;box-sizing:border-box/.test(h));
@@ -136,6 +136,28 @@ const row = (h, t) => { const i = h.indexOf(t); return i < 0 ? "" : h.slice(i, (
   ok("no link on the day: the card byte-identical to the tree minus UACTLINK (Mom)", A.ctx.dcDayHTML(G(A.ctx, "d2")) === B.ctx.dcDayHTML(G(B.ctx, "d2")));
   const C = world({ unit: JSON.parse(J(u)), mom: false, kcKid: "k1" }), D = world({ unit: JSON.parse(J(u)), mom: false, kcKid: "k1", before: true });
   ok("…and on a kid's device", C.ctx.dcDayHTML(G(C.ctx, "d2")) === D.ctx.dcDayHTML(G(D.ctx, "d2")));
+}
+
+console.log("\n── element ids: unique, as a browser needs them ──");
+{
+  const ids = h => [...h.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]);
+  const dup = L => L.filter((x, i) => L.indexOf(x) !== i);
+  const c = world().ctx, u = c.unitStudies.harv;
+  const hNew = c.utaaEditorHTML(u, c.utDay(u, "d1")), hLink = c.utaaEditorHTML(u, c.utDay(u, "d3"));
+  const pNew = c.uakPickerHTML("harv-d1", null), pLink = c.uakPickerHTML("harv-d3", u.activities[2]);
+  ok("the picker alone (a new box): every id unique", ids(pNew).length >= 8 && dup(ids(pNew)).length === 0, dup(ids(pNew)));
+  ok("the picker alone (an existing 🔗 activity): every id unique", ids(pLink).length >= 8 && dup(ids(pLink)).length === 0, dup(ids(pLink)));
+  ok("the whole day-editor box (+ Add and ✎ on 🔗): every id unique — chips, the kind's box and the utaa-… inputs", ids(hNew).length >= 9 && dup(ids(hNew)).length === 0 && ids(hLink).length >= 11 && dup(ids(hLink)).length === 0, [dup(ids(hNew)), dup(ids(hLink))]);
+  ok("no chip id is reused by any input or box", (() => { const chips = ids(hLink).filter(x => /^uak-harv-d3-(notebook|screen|print|link|hands)$/.test(x)); return chips.length === 5 && ids(hLink).filter(x => chips.indexOf(x) >= 0).length === 5; })());
+  // a browser-like document: every element the HTML draws, getElementById = the FIRST with that id
+  const browser = h => { const els = []; for (const m of h.matchAll(/<(\w+)\b([^>]*)>/g)) { const id = (m[2].match(/\bid="([^"]+)"/) || [])[1]; if (!id) continue; const st = (m[2].match(/\bstyle="([^"]*)"/) || [])[1] || ""; const disp = (st.match(/display:(\w+)/) || [])[1] || ""; els.push({ id, tag: m[1], style: { display: disp }, attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, value: "", checked: false }); } return { els, getElementById: id => els.find(e => e.id === id) || null }; };
+  const w = world(); const cc = w.ctx, uu = cc.unitStudies.harv; const doc = browser(cc.utaaEditorHTML(uu, cc.utDay(uu, "d1"))); cc.document = doc;
+  const chip = doc.getElementById("uak-harv-d1-link"), boxEl = doc.els.find(e => e.tag === "div" && e.id === "uak-harv-d1-box-link");
+  ok("browser-like document: the 🔗 chip and the address box are two different elements", !!chip && chip.tag === "button" && !!boxEl && chip !== boxEl);
+  cc.uakPick("harv-d1", "link");
+  ok("…tapping 🔗 reveals the address box and leaves the 🔗 chip showing", !!boxEl && !!chip && boxEl.style.display === "block" && chip.style.display === "" && chip.attrs["aria-pressed"] === "true");
+  cc.uakPick("harv-d1", "screen");
+  ok("…tapping 📱 hides the box, the 🔗 chip still showing (not pressed)", !!boxEl && !!chip && boxEl.style.display === "none" && chip.style.display === "" && chip.attrs["aria-pressed"] === "false");
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
