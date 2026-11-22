@@ -22869,7 +22869,7 @@ function blStapleHave(stId){
 const BL_CHIP='cursor:pointer;display:inline-flex;align-items:center;gap:3px;margin-left:6px;font-size:10.5px;font-weight:800;padding:1px 8px;border-radius:10px;white-space:nowrap;vertical-align:middle;font-family:\'DM Sans\',sans-serif;';
 function blGo(sid){ try{ grFromDad=false; }catch(e){} if(typeof grSetStore==="function") grSetStore(sid||"all"); if(typeof mpGoto==="function") mpGoto("grocery"); }
 function blRowChipHTML(it){
-  if(!blMom()||!it||!it.id) return "";
+  if(!blMom()||!it||!it.id||it.print) return "";   // UACTPRINT: 🖨 Print rows are not shopping
   const had=blFind(it.id);
   if(!had&&(it.weeks||[]).length&&it.weeks.every(w=>typeof lrTicked==="function"&&lrTicked(it.id,w))) return "";   // got it (ticked for every week it is on) → nothing to buy
   if(had){ const sid=((had.it.stores||[])[0])||""; return '<span onclick="blGo(\''+blEsc(sid)+'\')" role="button" title="Open the '+blEsc(blListName(sid))+'" style="'+BL_CHIP+'border:1.5px solid #3A7D44;background:#f0fdf4;color:#166534">🛒 on the '+blEsc(blListName(sid))+(had.it.done?' · in the cart':'')+'</span>'; }
@@ -22917,7 +22917,7 @@ function blPickAdd(){ const inp=(typeof document!=="undefined")?document.getElem
 function blAutoSend(L){
   const r=blRule(); if(!r||!r.auto||!blMom()||!L||!L.items||!L.items.length) return 0; let n=0;
   L.items.forEach(it=>{
-    if(blFind(it.id)||blCleared(it.id)) return;
+    if(it.print||blFind(it.id)||blCleared(it.id)) return;   // UACTPRINT: 🖨 Print rows are not shopping
     if((it.weeks||[]).length&&(it.weeks||[]).every(w=>typeof lrTicked==="function"&&lrTicked(it.id,w))) return;   // already got
     if(blSend(it,blRuleStore(it),true)) n++;
   });
@@ -41438,6 +41438,7 @@ function lrBuildList(opts){
     kids.push({kid:kid,kinds:kinds});
   });
   try{ const _fr=(typeof frBuildFamily==="function")?frBuildFamily(w0,w1,today):null; if(_fr){ _fr.kinds.forEach(k=>k.items.forEach(it=>all.push(it))); kids.push(_fr); } }catch(e){}   // FAMRES: the 🏡 Family group
+  try{ if(typeof uapSundayAdd==="function") uapSundayAdd(kids,all,w0,w1,today,roster,_laySig); }catch(e){}   // UACTPRINT: 🖨 Print ×N, the week before
   const staples=lrStaplesNeeded(opts.staples);
   return {w0:w0,w1:w1,today:today,kids:kids,items:all,staples:staples,n:all.length+staples.length};
 }
@@ -41452,7 +41453,7 @@ function lrDueSoon(list,ticks0,ticks1){
   return out.sort((a,b)=>(a.byISO<b.byISO?-1:a.byISO>b.byISO?1:0));
 }
 function lrNowRowHTML(it){
-  const verb=it.kind==="books"?"📚 Check out":it.kind==="orders"?"🛒 Order":"🎒 Get";
+  const verb=it.kind==="books"?"📚 Check out":it.kind==="orders"?"🛒 Order":it.print?"":"🎒 Get";   // UACTPRINT: "🖨 Print ×N: …" says it
   const who=lrCap(it.kid)+" · "+lrEsc(lrSubjName(it.kid,it.sk));
   return '<div style="display:flex;align-items:center;gap:6px;padding:7px 10px;background:#ecfeff;border-left:3px solid #0891b2;border-radius:8px;margin-bottom:6px;flex-wrap:wrap">'
     +'<span style="flex:1;min-width:180px;font-size:13px">'+verb+' <b>'+lrEsc(it.name)+'</b> <span style="color:#0e7490;font-weight:700">'+lrEsc(it.by)+'</span> <span style="color:var(--muted);font-size:11px">'+who+'</span></span>'
@@ -43482,19 +43483,19 @@ function uakKindHTML(kk,t,a){
   h+='<input id="utaa-'+kk+'-url" type="url" inputmode="url" autocomplete="off" value="'+utEsc((a&&a.url)||"")+'" placeholder="https://… the web page or video" style="'+inp+'">';
   h+='<label style="display:flex;gap:6px;align-items:center;margin-top:6px;font-size:11.5px;font-weight:700;color:#1f2937;cursor:pointer"><input id="utaa-'+kk+'-kidopen" type="checkbox"'+((a&&a.kidOpen)?' checked':'')+'> Kids may open it alone</label>';
   h+='<div style="font-size:10.5px;color:var(--muted);margin-top:2px">Off: on a kid’s tablet the card says “\u{1F469} Mom opens it”. Mom and the big screen always get the button.</div>';
-  return h+'</div>';
+  return h+'</div>'+((typeof uapKindHTML==="function")?uapKindHTML(kk,t,a):"");   // UACTPRINT: 🖨 the PDF box
 }
 // the box's id is uak-<kk>-box-<kind>, never uak-<kk>-<kind>: that is the chip's id (a browser's getElementById returns the first)
-function uakKindShow(kk,t){ try{ const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById("uak-"+kk+"-box-link"):null; if(el&&el.style) el.style.display=(t==="link")?"block":"none"; }catch(e){} }
+function uakKindShow(kk,t){ try{ const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById("uak-"+kk+"-box-link"):null; if(el&&el.style) el.style.display=(t==="link")?"block":"none"; }catch(e){} if(typeof uapKindShow==="function") uapKindShow(kk,t); }
 // + Add: a 🔗 needs an https address; kidOpen only when ticked (absent = Mom opens it)
 function uakKindAdd(kk,t,act){
-  if(t!=="link") return true;
+  if(t!=="link") return (typeof uapKindAdd==="function")?uapKindAdd(kk,t,act):true;   // UACTPRINT
   const url=uakUrl(utaaVal("utaa-"+kk+"-url")); if(!url){ uakToast("\u{1F517} Put in the web address — it starts with https://"); return false; }
   act.url=url; if(uakChecked("utaa-"+kk+"-kidopen")) act.kidOpen=true; return true;
 }
 // ✎ Save: url and kidOpen, each its own path, only when changed
 function uakKindEdit(kk,t,a,upd,base){
-  if(t!=="link") return true;
+  if(t!=="link") return (typeof uapKindEdit==="function")?uapKindEdit(kk,t,a,upd,base):true;   // UACTPRINT
   const url=uakUrl(utaaVal("utaa-"+kk+"-url")); if(!url){ uakToast("\u{1F517} Put in the web address — it starts with https://"); return false; }
   const kid=uakChecked("utaa-"+kk+"-kidopen");
   if(url!==a.url){ a.url=url; upd[base+"url"]=url; }
@@ -43505,11 +43506,231 @@ function uakKindEdit(kk,t,a,upd,base){
 function uakKidDevice(){ const mom=(typeof dcMom==="function"&&dcMom())||(typeof momHere==="function"&&momHere()); if(mom) return false; try{ return typeof kcKid!=="undefined"&&!!kcKid; }catch(e){ return false; } }
 // Today's card, inside the activity's row (DCACTS)
 function uakCardHTML(g,act){
-  if(!act||uakType(act)!=="link") return ""; const url=uakUrl(act.url); if(!url) return "";
+  if(!act||uakType(act)!=="link") return (act&&typeof uapCardHTML==="function")?uapCardHTML(g,act):"";   // UACTPRINT: 🖨 "Finish the paper Mom printed"
+  const url=uakUrl(act.url); if(!url) return "";
   if(uakKidDevice()&&!act.kidOpen) return '<div data-uak-link="mom" style="margin-top:10px;font-size:17px;font-weight:800;color:#fde68a">\u{1F469} Mom opens it</div>';
   return '<div data-uak-link="open" style="margin-top:10px">'+((typeof dcLinkBtn==="function")?dcLinkBtn({url:url,label:"Open: "+(act.title||"the link")}):"")+'</div>';
 }
 // UACTLINK_END
+// UACTPRINT_START — 🖨 a Printable activity (slice 4 of PLAN_unit_activity_types_2026-11-19 §2(c), §3.1; her words 2026-11-19: "We need
+//   another type of activity … or multiple types"; a beta mom 2026-11-20: reminded "The week before on my weekend list", and a family-time
+//   sheet is one for everyone (§7.1 "How many to print"); her go 2026-11-22: "go with her answers and build").
+//   · THE BOX: when 🖨 is picked in the day editor's 🎨 box — "📄 Add a PDF" (up to UAP_PDF_MAX_MB, a PDF only) and one tick, "One for
+//     the family", off by default. The file goes to Storage pictures/units/<unitId>/activities/<key>/<name>_<stamp>.pdf (UNITDAY_EXTRAS's
+//     put: content type PDF, cached a year); the record keeps only the https link. A failed upload is refused and said plainly
+//     ("Didn't save: …") — never a data URI in the database. Replacing a PDF leaves the old file in Storage (stamped names, never reused).
+//     On a day with no activity yet, the picked file waits on this device until + Add, then uploads under the new activity's key.
+//   · THE WRITES (Mom only, behind db && !_dryRun(), each its own targeted path):
+//       unitStudies/<id>/activities/<j>/pdf = {url, title}  (title = the file's name; the shape UNITGATHER already reads)
+//       unitStudies/<id>/activities/<j>/type = "print"      (only when the activity was not one yet — Mom picked 🖨 and added a file)
+//       unitStudies/<id>/activities/<j>/oneCopy = true|null  (the tick; + Add carries it in UTADDACT's one update)
+//     Dry run: nothing uploaded, nothing written, the line says so.
+//   · TODAY'S CARD (every device — the board, Mom, a kid's tablet): the activity's row says "🖨 Finish the paper Mom printed: <title>".
+//     Text only: the file is never offered to a kid, and an old TV may have no PDF viewer (§3.3).
+//   · THE 🧺 SUNDAY LIST (lrBuildList's one hook) and so Mom's Day "🧺 Sunday list — due soon": "🖨 Print ×N: <title>" for a unit day
+//     laid this week or next, due the Sunday before that day's week, with ✓ Got it — the tick is the Sunday list's own,
+//     <week>/supplies/<id>. N = the kids whose own subject lays the day; ×1 on Family Time or when Mom ticked "One for the family".
+//     A family-time day sits under 🏡 Family; a kids' day under the first of its kids (one row, never one per kid). The row's
+//     "open →" is the PDF. It is never sent to the 🛒 shopping list (BUYLINK skips it) and never on a kid's "🎒 bring" line.
+//   No kid's or family's name in code. A unit with no 🖨 activity draws and lists exactly as before.
+const UAP_PDF_MAX_MB=20;
+let uapStatus={}, uapPend={};   // the box (utaaKey) → its line under the button · a file picked before + Add (this device, until + Add)
+function uapDry(){ return (typeof _dryRun==="function")?!!_dryRun():false; }
+function uapSay(kk,msg){ uapStatus[kk]=msg||""; try{ const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById("uap-st-"+kk):null; if(el) el.textContent=msg||""; }catch(e){} }
+function uapPdfOf(a){ const p=a&&a.pdf; if(!p||typeof p!=="object") return null; const url=uakUrl(p.url); return url?{url:url,title:utaaStr(p.title,120)}:null; }
+function uapFileOk(file){
+  if(!file) return "Pick a PDF first.";
+  if(!(/^application\/pdf$/i.test(String(file.type||""))||/\.pdf$/i.test(String(file.name||"")))) return "Please pick a PDF.";
+  if(!(file.size<=UAP_PDF_MAX_MB*1024*1024)) return "That PDF is too large (max "+UAP_PDF_MAX_MB+" MB).";
+  return "";
+}
+function uapName(file){ return utaaStr(String((file&&file.name)||"").replace(/\.pdf$/i,"").replace(/[_-]+/g," "),120)||"Printable"; }
+function uapPdfPath(uid,key,name){ const base=String(name||"printable").replace(/\.pdf$/i,""); return ((typeof picStorePath==="function")?picStorePath(["units",uid,"activities",key,base]):"pictures/units/"+uid+"/activities/"+key+"/printable_"+Date.now().toString(36)+".jpg").replace(/\.jpg$/,".pdf"); }
+// the box key → its unit and day (the key is utaaKey(uid, dayId))
+function uapWhere(kk){ const us=utUnits(); for(const uid of Object.keys(us)){ const u=us[uid]; const d=utDays(u).find(x=>utaaKey(uid,x.id)===kk); if(d) return {uid:uid,dayId:d.id,u:u,d:d}; } return null; }
+// ── the box (UACTLINK's uakKindHTML calls it), shown only while 🖨 is picked ──
+function uapKindHTML(kk,t,a){
+  const p=uapPdfOf(a), btn='display:inline-flex;align-items:center;gap:4px;padding:5px 11px;border-radius:999px;border:1.5px solid #1d4ed8;background:#fff;color:#1d4ed8;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  let h='<div id="uak-'+kk+'-box-print" data-uak-kind="print" style="display:'+(t==="print"?'block':'none')+';margin-bottom:6px">';
+  if(p) h+='<div data-uap-has="1" style="font-size:11.5px;font-weight:700;color:#1f2937;margin-bottom:6px;overflow-wrap:anywhere">\u{1F4C4} '+utEsc(p.title||"The PDF")+' <a href="'+utEsc(p.url)+'" target="_blank" rel="noopener noreferrer" style="font-size:11px;color:#1d4ed8">open →</a></div>';
+  h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label style="'+btn+'">\u{1F4C4} '+(p?'Replace the PDF':'Add a PDF')+'<input type="file" accept="application/pdf,.pdf" onchange="uapFile(\''+utJ(kk)+'\',this)" style="display:none"></label>';
+  h+='<span id="uap-st-'+kk+'" style="font-size:11px;color:#1d4ed8;font-weight:700;overflow-wrap:anywhere">'+utEsc(uapStatus[kk]||"")+'</span></div>';
+  h+='<label style="display:flex;gap:6px;align-items:center;margin-top:6px;font-size:11.5px;font-weight:700;color:#1f2937;cursor:pointer"><input id="utaa-'+kk+'-onecopy" type="checkbox"'+((a&&a.oneCopy)?' checked':'')+'> One for the family</label>';
+  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:2px">A PDF up to '+UAP_PDF_MAX_MB+' MB. The \u{1F9FA} Sunday list says “\u{1F5A8} Print” the week before: one per kid who does it, or one in all when ticked (always one on Family Time).</div>';
+  return h+'</div>';
+}
+function uapKindShow(kk,t){ try{ const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById("uak-"+kk+"-box-print"):null; if(el&&el.style) el.style.display=(t==="print")?"block":"none"; }catch(e){} }
+// + Add: the tick onto the record; a file picked before + Add uploads right after the one update, under the new key
+function uapKindAdd(kk,t,act){
+  if(t!=="print"){ delete uapPend[kk]; return true; }
+  if(uakChecked("utaa-"+kk+"-onecopy")) act.oneCopy=true;
+  const p=uapPend[kk]; if(p){ delete uapPend[kk]; const key=act.key; Promise.resolve().then(()=>uapUpload(p.uid,key,p.file,kk)); }
+  return true;
+}
+// ✎ Save: the tick, its own path, only when it changed (the PDF itself saves the moment it uploads)
+function uapKindEdit(kk,t,a,upd,base){
+  if(t!=="print") return true;
+  const one=uakChecked("utaa-"+kk+"-onecopy");
+  if(one!==!!a.oneCopy){ if(one) a.oneCopy=true; else delete a.oneCopy; upd[base+"oneCopy"]=one?true:null; }
+  return true;
+}
+// ── the file: picked → (an activity on the day) upload now · (none yet) wait for + Add ──
+async function uapFile(kk,input){
+  const file=input&&input.files&&input.files[0]; if(input) input.value=""; if(!utMom()) return false;
+  const why=uapFileOk(file); if(why){ uapSay(kk,why); return false; }
+  if(uapDry()){ uapSay(kk,"Dry run — nothing uploaded, nothing written."); return false; }
+  const w=uapWhere(kk); if(!w){ uapSay(kk,"That day isn’t on the unit any more."); return false; }
+  const x=utaaOfDay(w.u,w.d);
+  if(!x){ uapPend[kk]={file:file,uid:w.uid}; uapSay(kk,"\u{1F4C4} "+uapName(file)+" — it uploads when you tap + Add."); return true; }
+  return uapUpload(w.uid,x.a.key,file,kk);
+}
+// the record: …/pdf (and …/type when it was not 🖨 yet) — one update, targeted paths
+function uapWritePdf(uid,key,pdf){
+  const u=utUnits()[uid]; const x=utaaActs(u).find(y=>y.a.key===key); if(!x) return null;
+  const base="unitStudies/"+uid+"/activities/"+x.k+"/", upd={};
+  x.a.pdf=pdf; upd[base+"pdf"]=pdf;
+  if(uakType(x.a)!=="print"){ x.a.type="print"; upd[base+"type"]="print"; }
+  if(utaaLive()) db.ref().update(upd);
+  return x;
+}
+async function uapUpload(uid,key,file,kk){
+  if(!utMom()) return false;
+  if(uapDry()){ uapSay(kk,"Dry run — nothing uploaded, nothing written."); return false; }
+  const title=uapName(file); let url="", pth="";
+  uapSay(kk,"Saving the PDF…");
+  try{
+    if(typeof firebase==="undefined"||!firebase||typeof firebase.storage!=="function") throw new Error("Storage isn’t ready on this device");
+    const ref=firebase.storage().ref(pth=uapPdfPath(uid,key,file.name));
+    await ref.put(file,{contentType:"application/pdf",cacheControl:"public,max-age=31536000"}); url=await ref.getDownloadURL();
+    if(!/^https:\/\//i.test(String(url||""))) throw new Error("no link came back — nothing saved");   // never a data URI in the record
+  }catch(e){ uapSay(kk,"Didn’t save: "+((e&&e.message)||e)); return false; }
+  if(!uapWritePdf(uid,key,{url:url,title:title})){ uapSay(kk,"Didn’t save: that activity isn’t on the unit any more."); return false; }
+  const more=(typeof uapgPages==="function")?uapgLine(await uapgPages(uid,key,file,pth,url,kk)):"";   // UACTPAGES (4b): its pages, ≤ 20
+  uapSay(kk,"✓ Saved the PDF: "+title+more); utaaRe(); return true;
+}
+// ── Today's card: the activity's row (UACTLINK's uakCardHTML hands a non-link activity here) ──
+function uapCardHTML(g,act){
+  if(!act||uakType(act)!=="print") return "";
+  return '<div data-uap-paper="1" style="margin-top:10px;font-size:17px;font-weight:800;color:#fde68a">\u{1F5A8} Finish the paper Mom printed: '+utEsc(act.title||"the printable")+'</div>';
+}
+// ── the 🧺 Sunday list: which 🖨 activities have a day laid this week or next, and for whom ──
+let _uapLaidMemo={};
+// one kid's ONE subject laid between two dates — lrLaidLessons' own steps for that one subject (so the whole kid is never re-laid)
+function uapLaid(kid,sk,from,to,sig){
+  const k=kid+"|"+sk+"|"+from+"|"+to, hit=_uapLaidMemo[k]; if(sig&&hit&&hit.sig===sig) return hit.out;
+  const out=[], L=(((typeof currData!=="undefined"&&currData&&currData.lessons)||{})[kid])||{}, today=lrToday(); let der=null;
+  try{ if(typeof planBacked==="function"&&planBacked(kid,sk)&&typeof gvDerivedColumn==="function"){ const d=gvDerivedColumn(kid,sk); if(d&&!d.err) der=d; } }catch(e){ der=null; }
+  Object.keys(L).forEach(dn=>{ const l=L[dn]; if(!l||!l.date||l.date<from||l.date>to) return; let text=String(l[sk]||""), lid=null;
+    if(der&&l.date>=today){ const e=(der.byDate||{})[l.date]; if(e&&lrFilled(e.text)){ text=String(e.text); lid=e.lid||null; } }
+    if(lrFilled(text)) out.push({key:lid?String(lid):lrKeyForText(kid,sk,text),text:text,date:l.date}); });
+  if(sig) _uapLaidMemo[k]={sig:sig,out:out}; return out;
+}
+// a unit day's 🖨 activities: the one its nb names + every one whose day is the day's number (the day card's rule)
+function uapDayActs(u,d){ return ((typeof _unitActs==="function")?_unitActs(u):[]).filter(a=>a&&a.key&&uakType(a)==="print"&&((d.nb&&d.nb.activity===a.key)||(d.n&&utInt(a.day)===d.n))); }
+// the unit's days in one week → [{d, ds, fam, kid, sk, text}] (family time: famGridDates → famCellState → utDayForFam; a kid's subject: its lay)
+function uapHits(u,range,sig){
+  const out=[], defs=(typeof famDefs==="function")?famDefs():{}, ptrs=((typeof psPointers==="function")?psPointers(u.id):[]).filter(p=>!(p.kind==="fam"&&p.off));
+  const keep=(d,ds,fam,kid,sk,text)=>{ if(d&&d.uid===u.id&&!d.off&&d.id) out.push({d:d,ds:ds,fam:fam,kid:kid,sk:sk,text:text}); };
+  const dates=((typeof famGridDates==="function")?famGridDates():[]).map(r=>r.date).filter(x=>x>=range.from&&x<=range.to);
+  ptrs.filter(p=>p.kind==="fam").forEach(p=>{ const b=defs[p.id]; const it=b?famList(b.items).find(x=>x&&x.key===p.key):null; if(!it) return;
+    let map=null; try{ map=famLessonMap(b,p.id,it); }catch(e){ map=null; }
+    dates.forEach(ds=>{ let c=null; try{ c=famCellState(b,it,ds); }catch(e){ c=null; } if(!c||!c.runs||!c.kids||!c.kids.length) return;
+      const lbl=map?String((map.byDate||{})[ds]||""):""; let d=null; try{ d=utDayForFam(p.id,it,ds,lbl); }catch(e){ d=null; }
+      keep(d,ds,true,(typeof FR_KID!=="undefined")?FR_KID:"_family",(typeof frSk==="function")?frSk(p.id,p.key):p.id,lbl||String(it.name||"Family time")); }); });
+  ptrs.filter(p=>p.kind==="kid").forEach(p=>{ uapLaid(p.kid,p.sk,range.from,range.to,sig).forEach(x=>{ let ds=[]; try{ ds=utDaysForKey(p.kid,p.sk,x.key); }catch(e){ ds=[]; } ds.forEach(d=>keep(d,x.date,false,p.kid,p.sk,x.text)); }); });
+  return out;
+}
+// due by the Sunday before the day's week (Mon–Sun, the Sunday list's weeks) — Mom's Day shows it from two days before
+function uapByISO(ds){ const t=new Date(ds+"T12:00:00"); t.setDate(t.getDate()-((t.getDay()+6)%7)-1); return lrISO(t); }
+// lrBuildList's hook: the rows join its groups and its items (so lrDueSoon and the ticks treat them as any supply)
+function uapSundayAdd(kids,all,w0,w1,today,roster,sig){
+  const us=utUnits(), uids=Object.keys(us).filter(id=>us[id]&&((typeof _unitActs==="function")?_unitActs(us[id]):[]).some(a=>uakType(a)==="print"));
+  if(!uids.length) return 0;
+  const FK=(typeof FR_KID!=="undefined")?FR_KID:"_family", R=roster||[], byK={}, order=[];
+  uids.forEach(uid=>{ const u=us[uid];
+    [[w0,0],[w1,1]].forEach(pair=>{ uapHits(u,pair[0],sig).forEach(h=>{ uapDayActs(u,h.d).forEach(a=>{
+      const k=uid+"\u0001"+a.key; let it=byK[k]; if(!it){ it=byK[k]={u:u,a:a,fam:false,kids:[],weeks:[],lessons:[],byISO:"",home:null}; order.push(k); }
+      if(h.fam) it.fam=true; else if(it.kids.indexOf(h.kid)<0) it.kids.push(h.kid);
+      if(it.weeks.indexOf(pair[1])<0) it.weeks.push(pair[1]);
+      const by=uapByISO(h.ds); if(!it.byISO||by<it.byISO) it.byISO=by;
+      if(!it.lessons.some(x=>x.text===h.text&&x.date===h.ds)) it.lessons.push({sk:h.sk,text:h.text,date:h.ds,w:pair[1],kid:h.kid,fam:h.fam});
+    }); }); });
+  });
+  let n=0;
+  order.forEach(k=>{ const it=byK[k], a=it.a;
+    const kid=it.fam?FK:(it.kids.slice().sort((x,y)=>{ const i=R.indexOf(x), j=R.indexOf(y); return (i<0?1e9:i)-(j<0?1e9:j); })[0]);
+    const L=it.lessons.filter(x=>it.fam?x.fam:x.kid===kid), sk=(L[0]||it.lessons[0]).sk;
+    const N=(it.fam||a.oneCopy===true)?1:Math.max(1,it.kids.length), p=uapPdfOf(a);
+    const row={id:lrItemId(kid,sk,"print",it.u.id+" "+a.key),kid:kid,sk:sk,kind:"supplies",name:lrStr("\u{1F5A8} Print ×"+N+": "+(a.title||a.key),120),detail:"",url:p?p.url:"",byISO:it.byISO,weeks:it.weeks.sort(),lessons:L.map(x=>({sk:x.sk,text:x.text,date:x.date,w:x.w})),print:true};
+    row.by=lrByLabel(row.byISO,today);
+    let K=kids.find(g=>g.kid===kid);
+    if(!K){ K={kid:kid,kinds:[]}; const ri=R.indexOf(kid); let at=kids.length;
+      if(kid!==FK) at=kids.findIndex(g=>g.kid===FK||(R.indexOf(g.kid)>ri)); if(at<0) at=kids.length; kids.splice(at,0,K); }
+    let S=K.kinds.find(x=>x.kind==="supplies"); if(!S){ S={kind:"supplies",label:LR_KIND_LABEL.supplies,items:[]}; K.kinds.unshift(S); }
+    S.items.push(row); all.push(row); n++;
+  });
+  return n;
+}
+// UACTPRINT_END
+// UACTPAGES_START — 📄 a Printable's pages, made at upload (piece 4b of PLAN_unit_activity_types_2026-11-19 §6.5, §6.7 row 4b, §6.10 Q3:
+//   "Pages at upload, always, up to 20 pages (so the switch can flip later; longer PDFs stay paper-only)"; a beta mom 2026-11-20: a
+//   page done "Either. I'd pick page by page" — so a printable needs its pages before the on-screen switch (4c) can offer it;
+//   her go 2026-11-22: "go with her answers and build").
+//   · WHEN: right after UACTPRINT has stored the PDF and written …/pdf. Mom's device reads the SAME local file with pdf.js — loaded
+//     here, on demand (nbLoadPdfJs: cdnjs 3.11.174, as 📕 Workbooks; never on a kid's device) — and draws each page the way
+//     wbAddBook does (scale 1.6, white under the page, JPEG 0.84). Why now and why pictures: a Storage link carries no
+//     cross-origin header, so pdf.js can never read the PDF back later; an <img> can show the page anywhere (wbAddBook's note).
+//   · STORAGE: pictures/units/<unitId>/activities/<key>/<the PDF's own stamped name>_p<n>.jpg — beside the PDF, so a replaced PDF
+//     never overwrites a page another device may be showing (stamped names are never reused; old files stay, as UNITDAY_EXTRAS's).
+//   · THE WRITE: ONE update, one leaf per page — unitStudies/<id>/activities/<j>/pdf/pages/<n> = <https link> (the workbook's
+//     imgs{n:url} shape) — only once every page is in Storage, and only if the activity still holds the PDF these pages came from.
+//     A page that fails, a link that is not https, or no pdf.js (offline) → no pages at all: the printable stays paper only.
+//   · At most UAPG_MAX (20) pages: a longer PDF makes none. On screen: nothing new except the upload line — "… — and N pages.",
+//     "… — over 20 pages (N), so paper only.", or why the pages didn't make. Mom only (UACTPRINT's gate); dry run: nothing.
+//     Nothing reads pages yet (the on-screen viewer is 4c). No kid's or family's name in code.
+const UAPG_MAX=20;
+function uapgRender(doc,p){
+  return doc.getPage(p).then(page=>{ const vp=page.getViewport({scale:1.6});   // 1.6: small print stays readable under a finger or a pen
+    const cv=document.createElement("canvas"); cv.width=Math.round(vp.width); cv.height=Math.round(vp.height);
+    const c2=cv.getContext("2d"); c2.fillStyle="#fff"; c2.fillRect(0,0,cv.width,cv.height);
+    return page.render({canvasContext:c2,viewport:vp}).promise.then(()=>new Promise(res=>cv.toBlob(res,"image/jpeg",0.84))); });
+}
+// → {n} pages made · {over: numPages} · {err: why}
+async function uapgPages(uid,key,file,pdfPath,pdfUrl,kk){
+  if(!utMom()||uapDry()) return {err:"nothing made in a dry run"};
+  let doc=null;
+  try{
+    if(typeof nbLoadPdfJs!=="function") throw new Error("the PDF reader isn’t in this app");
+    const lib=(await nbLoadPdfJs())||(typeof window!=="undefined"&&window.pdfjsLib); if(!lib||typeof lib.getDocument!=="function") throw new Error("the PDF reader didn’t load");
+    doc=await lib.getDocument({data:await file.arrayBuffer()}).promise;
+    const total=parseInt(doc&&doc.numPages,10)||0;
+    if(total>UAPG_MAX) return {over:total};
+    if(total<1) throw new Error("no pages in it");
+    const base=String(pdfPath||"").replace(/\.pdf$/i,""), urls={};
+    for(let p=1;p<=total;p++){
+      uapSay(kk,"Making the pages… ("+p+"/"+total+")");
+      const blob=await uapgRender(doc,p); if(!blob) throw new Error("page "+p+" didn’t draw");
+      const ref=firebase.storage().ref(base+"_p"+p+".jpg");
+      await ref.put(blob,{contentType:"image/jpeg",cacheControl:"public,max-age=31536000"}); const url=await ref.getDownloadURL();
+      if(!/^https:\/\//i.test(String(url||""))) throw new Error("no link came back for page "+p);   // never a data URI in the record
+      urls[p]=url;
+    }
+    const x=utaaActs(utUnits()[uid]).find(y=>y.a.key===key);
+    if(!x||!x.a.pdf||x.a.pdf.url!==pdfUrl) throw new Error("the activity has another PDF now");
+    const upd={}, at="unitStudies/"+uid+"/activities/"+x.k+"/pdf/pages/", pages={};
+    Object.keys(urls).forEach(n=>{ upd[at+n]=urls[n]; pages[n]=urls[n]; });
+    x.a.pdf.pages=pages;
+    if(utaaLive()) db.ref().update(upd);
+    return {n:total};
+  }catch(e){ return {err:(e&&e.message)||String(e)}; }
+  finally{ try{ if(doc&&typeof doc.destroy==="function") doc.destroy(); }catch(e){} }
+}
+function uapgLine(r){
+  if(!r) return ""; if(r.n) return " — and "+r.n+" page"+(r.n===1?"":"s")+".";
+  if(r.over) return " — over "+UAPG_MAX+" pages ("+r.over+"), so paper only.";
+  return " — the pages didn’t make ("+r.err+"), so paper only for now.";
+}
+// UACTPAGES_END
 // UNITDAY_EXTRAS_START — 🖼 Pictures & documents and 🍎 Snack on a unit day (her words 2026-11-11, for Sara, a beta mom: "Sarah would
 //   like to add on day 6 a gratitude scavenger hunt. She has a picture of it. So it would be good if on each day another section that
 //   they could add to that is pictures and documents that would open when they click it on that day. Also, a section for snacks that
@@ -51470,7 +51691,7 @@ function unitGather(u,opts){
   const actInto=(a,day,n)=>{ const ty=ugType(a), title=ugStr(a.title,120)||String(a.key);
     ugActSupplies(a).forEach(s=>sup(s,"act",day));
     if(ty==="notebook") put("prints","nb:"+a.key,()=>({title:title,kind:"notebook",url:""}),day,n);
-    if(ty==="print"){ const p=ugActPdf(a); put("prints","act:"+a.key,()=>({title:title,kind:"print",url:p?p.url:""}),day,n); }
+    if(ty==="print"){ const p=ugActPdf(a); put("prints","act:"+a.key,()=>({title:title,kind:"print",url:p?p.url:""}),day,a.oneCopy===true?1:n); }   // UACTPRINT: "One for the family" = ×1
     return {key:a.key,title:title,emoji:ugStr(a.emoji,8),type:ty,points:a.points};
   };
   const days=on.filter(d=>!only||only.indexOf(String(d.id))>=0).map(d=>{
