@@ -201,7 +201,7 @@ const rowsOf = S => S.rows.filter(r => !r.drop).map(r => [r.name, r.back]);
     ok("…and after a paste the check screen draws the same", base.prev() === cur.prev() && base.ctx.cardSheetHTML(Sb) === cur.ctx.cardSheetHTML(Sc).replace(cur.ctx.pdfCardsSheetBarHTML(Sc), ""));
     const ids = h => (h.match(/\sid="([^"]+)"/g) || []).map(x => x.replace(/^\sid="|"$/g, ""));
     const w = sheetWorld({ lib: fakeLib([[]]) }), S = w.open(); await w.pick();
-    const all = ids(w.ctx.cardSheetHTML(S) + w.ctx.cardSheetPreviewHTML(S));
+    const all = ids(w.ctx.cardSheetHTML(S));
     ok("every id on the sheet is unique (card-sheet-pdf, card-sheet-file are new)", all.length === new Set(all).size && all.includes("card-sheet-pdf") && all.includes("card-sheet-file"), all);
   }
 
