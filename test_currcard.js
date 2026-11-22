@@ -518,6 +518,7 @@ console.log("\n(h) no new Firebase write path in the curriculum region");
   "\"unitStudies/\"+unitId+\"/activities/\"+i+\"/points\"",
   "\"unitStudies/\"+unitId+\"/activityClaims/\"+kid+\"/\"+actKey",
   "\"unitStudies/\"+unitId+\"/activityLog/\"+kid+\"/\"+actKey",
+  "\"unitStudies/\"+unitId+\"/decks\"",   // CHECKFIX 2026-11-22: ＋ Add cards → a new deck, ONE transaction appending the Builder's deck shape
   "\"unitStudies/\"+unitId+\"/decks/\"+di+\"/flipFace\"",
   "\"unitStudies/\"+unitId+\"/enrolled/\"+kid",
   "\"unitStudies/\"+unitId+\"/kidStage/\"+kid",
@@ -553,6 +554,7 @@ console.log("\n(h) no new Firebase write path in the curriculum region");
   "base+\"/game\"",
   "base+\"/pre\"",
   "dir+\"p\"+p+\".jpg\"",
+  "base+\"_p\"+p+\".jpg\"",   // UACTPAGES (2026-11-22): a 🖨 Printable's page pictures beside its PDF in Storage (Mom only, at upload)
   "lrPath(kid,sk,key,part)",
   "nbtInkPath(v.kid,v.wk,pg)",
   "nbtInkPath(v.kid,v.wk,v.page)",
@@ -563,7 +565,9 @@ console.log("\n(h) no new Firebase write path in the curriculum region");
   "pr[1]",
   "\"seasonJobs/\"+k",   // SEASONJOBS 2026-11-21: Kids' Corner ✨ Our plans button — ONE once-read of a kid's planner jobs (not a write; outside the curriculum)
   "uxPdfPath(uid,dayId,file.name)",
+  "pth=uapPdfPath(uid,key,file.name)",   // UACTPRINT (2026-11-22): 🖨 a Printable activity's PDF → Storage pictures/units/<id>/activities/<key>/ (Mom only)
   "wbInkPath(v.kid,v.bookId,v.page)",
+  "wbdBoardPath(k,uid,key)",   // WBDKID 2026-11-22: a kid's saved whiteboard, unitWork/<kid>/<unitId>/<key>/board — one set (his Save) + one listener (Mom's 🖼 Board)
   "wk+\"/supplies\"",
   "wk+\"/supplies/\"+id",
   "x"

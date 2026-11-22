@@ -13,6 +13,7 @@ const cut = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); if (i <
 const fn = name => { const i = src.indexOf("function " + name + "("); if (i < 0) throw new Error("no " + name); let d = 0, j = i, seen = false; for (; j < src.length; j++) { const c = src[j]; if (c === "{") { d++; seen = true; } else if (c === "}") { d--; if (seen && d === 0) break; } } return src.slice(i, j + 1); };
 const UT = cut("// UNITTRACK_START", "// UNITTRACK_END"), AA = cut("// UTADDACT_START", "// UTADDACT_END"), DC = cut("// DAYCARD_START", "// DAYCARD_END");
 const KIND = cut("// UACTKIND_START", "// UACTKIND_END"), BLK = cut("// UACTLINK_START", "// UACTLINK_END") + "// UACTLINK_END\n";
+const PRINT = src.indexOf("// UACTPRINT_START") >= 0 ? cut("// UACTPRINT_START", "// UACTPRINT_END") : "";   // 🖨 (slice 4) draws its box beside 🔗's — loaded so the id checks see the whole box
 const SIGN = ["_unitActs", "_nbActKeys", "_nbActWrite", "_nbActRemove", "unitActPoints", "unitActivityClaim", "unitActivityDone"].map(fn).join("\n");
 const LR = "const LR_PARTS=[\"links\",\"supplies\",\"books\",\"orders\",\"notes\"];\n" + ["lrSafeUrl", "lrList", "lrStr", "lrDate", "lrClean", "lrHost"].map(fn).join("\n");
 let pass = 0, fail = 0;
@@ -33,7 +34,7 @@ function world(o) {
     db: { ref: p => ({ set: v => writes.push(["set", p === undefined ? "" : p, JSON.parse(J(v === undefined ? null : v))]), update: v => writes.push(["update", p === undefined ? "" : p, JSON.parse(J(v))]), remove: () => writes.push(["remove", p]), transaction: () => {}, child: () => null }) },
     renderAll: () => { ctx.repaints = (ctx.repaints || 0) + 1; }, repaints: 0, document: { getElementById: id => (id in dom) ? dom[id] : null } };
   vm.createContext(ctx);
-  vm.runInContext(LR + "\n" + UT + "\n" + AA + "\n" + KIND + "\n" + (o.before ? "" : BLK) + "\n" + DC + "\n" + SIGN + "\n" + fn("ubSlug"), ctx);
+  vm.runInContext(LR + "\n" + UT + "\n" + AA + "\n" + KIND + "\n" + (o.before ? "" : BLK) + "\n" + PRINT + "\n" + DC + "\n" + SIGN + "\n" + fn("ubSlug"), ctx);
   return { ctx, writes, toasts, dom };
 }
 const G = (c, id) => ({ day: c.utRef("harv", c.utDay(c.unitStudies.harv, id)), u: c.unitStudies.harv, first: null, present: [] });
@@ -148,6 +149,7 @@ console.log("\n── element ids: unique, as a browser needs them ──");
   ok("the picker alone (a new box): every id unique", ids(pNew).length >= 8 && dup(ids(pNew)).length === 0, dup(ids(pNew)));
   ok("the picker alone (an existing 🔗 activity): every id unique", ids(pLink).length >= 8 && dup(ids(pLink)).length === 0, dup(ids(pLink)));
   ok("the whole day-editor box (+ Add and ✎ on 🔗): every id unique — chips, the kind's box and the utaa-… inputs", ids(hNew).length >= 9 && dup(ids(hNew)).length === 0 && ids(hLink).length >= 11 && dup(ids(hLink)).length === 0, [dup(ids(hNew)), dup(ids(hLink))]);
+  ok("the 🖨 box (when the tree has it) is in the same box with its own ids", !PRINT || ["uak-harv-d1-box-print", "utaa-harv-d1-onecopy", "uap-st-harv-d1"].every(x => ids(hNew).indexOf(x) >= 0) && dup(ids(hNew)).length === 0);
   ok("no chip id is reused by any input or box", (() => { const chips = ids(hLink).filter(x => /^uak-harv-d3-(notebook|screen|print|link|hands)$/.test(x)); return chips.length === 5 && ids(hLink).filter(x => chips.indexOf(x) >= 0).length === 5; })());
   // a browser-like document: every element the HTML draws, getElementById = the FIRST with that id
   const browser = h => { const els = []; for (const m of h.matchAll(/<(\w+)\b([^>]*)>/g)) { const id = (m[2].match(/\bid="([^"]+)"/) || [])[1]; if (!id) continue; const st = (m[2].match(/\bstyle="([^"]*)"/) || [])[1] || ""; const disp = (st.match(/display:(\w+)/) || [])[1] || ""; els.push({ id, tag: m[1], style: { display: disp }, attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, value: "", checked: false }); } return { els, getElementById: id => els.find(e => e.id === id) || null }; };
