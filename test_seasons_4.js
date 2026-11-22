@@ -22,13 +22,13 @@ const TODAY = "2026-11-20";
 function world() {
   const el = id => ({ id, innerHTML: "", value: "", style: {}, focus() {}, appendChild() {} });
   const nodes = {}, root = el("root");
-  const o = { writes: [], timers: [], dry: false, mom: true, kioskD: false, LS: {}, root, repaints: 0 };
+  const o = { writes: [], timers: [], onces: [], fireOnce: {}, dry: false, mom: true, kioskD: false, LS: {}, root, repaints: 0 };
   const document = { getElementById(id) { return nodes[id] || (nodes[id] = el(id)); }, createElement(t) { return el(t); }, head: { appendChild() {} } };
   const db = { ref(p) { const P = p === undefined ? "" : p; return {
     set(v) { o.writes.push({ op: "set", path: P, val: JSON.parse(JSON.stringify(v)) }); },
     update(v) { o.writes.push({ op: "update", path: P, val: JSON.parse(JSON.stringify(v)) }); },
     remove() { o.writes.push({ op: "remove", path: P }); },
-    on() {} }; } };
+    on() {}, once(ev, fn) { o.onces.push(P); o.fireOnce[P] = () => fn({ val: () => null }); } }; } };
   const ctx = { console: { log: console.log, warn() {} }, Date, Math, JSON, document, db, _todayStr: () => TODAY, _dryRun: () => o.dry, momHere: () => o.mom, _kioskD: () => o.kioskD,
     gwShowToast() {}, HA_LS: { getItem: k => (k in o.LS ? o.LS[k] : null), setItem: (k, v) => { o.LS[k] = String(v); } },
     tab: "moms-plan", mpSubView: "seasons", momSchedView: false, renderMomsPlan() { o.repaints++; }, mpGoto() {},
@@ -41,7 +41,7 @@ function world() {
   o.dd = () => vm.runInContext("daddayData", ctx);
   // a timer left from the last world runs first, on the last world
   o.set = (d, s, ev, dd) => { o.timers.splice(0).forEach(f => f()); o.writes.length = 0; o.T.setData(d || {}, s || {}); o.T.reset(); o.cal().events = ev || {};
-    const D = o.dd(); for (const k in D) delete D[k]; Object.assign(D, JSON.parse(JSON.stringify(dd || {}))); o.T.setRoot(root, ""); };
+    const D = o.dd(); for (const k in D) delete D[k]; Object.assign(D, JSON.parse(JSON.stringify(dd || {}))); o.T.setRoot(root, ""); o.T.ddFresh(true); };
   o.sync = () => { o.writes.length = 0; const n = o.T.dadSync(); return n; };
   o.last = () => o.writes[o.writes.length - 1];
   return o;
@@ -69,7 +69,7 @@ console.log("\n# the guard: ONE more kind of path, nothing else on Dad's day");
   ok("refused: Dad's own to-dos, his chores, his whole day, anything else", bad.every(p => { const u = {}; u[p] = { x: 1 }; return T.apply(u) === false; }) && o.writes.length === 0, bad.filter(p => T.OK.test(p)));
   const code = SRC.replace(/^\s*\/\/.*$/gm, "");
   ok("every dadday path this file builds is <day>/todos/sn<id>", (code.match(/"dadday\/"/g) || []).length === 4 && (code.match(/"dadday\/"\+[A-Za-z.]+\+"\/todos\/(sn"|"\+k)/g) || []).length === 4);
-  ok("still no new listener: Dad's list is read from the app's own daddayData", (code.match(/db\.ref\(/g) || []).length === 3 && /daddayData/.test(code));
+  ok("no listener on Dad's list: it is read from the app's own daddayData, plus ONE once-read to know it is fresh", (code.match(/db\.ref\(/g) || []).length === 4 && /db\.ref\("dadday"\)\.once\("value"/.test(code) && /daddayData/.test(code));
 }
 
 console.log("\n# a Dad to-do with a date lands on his list by itself");
@@ -250,6 +250,51 @@ console.log("\n# who runs it");
   S(); Object.assign(o.dd(), { "2026-11-19": { todos: { t1: { text: "Oil change", done: false, ts: 1 }, snq: { text: "From elsewhere", done: false, ts: 2 } }, chores: { c1: true } } });
   o.sync();
   ok("his own to-dos, his chores and any sn-record not from the planner are never touched", DADP(o.last()).every(p => p.indexOf("2026-11-19") < 0));
+}
+
+console.log("\n# hub fix 1: never on a stale copy of Dad's list");
+{
+  // the planner + calendar are in; Dad's list on this device is an OLD copy: it still shows a copy Dad has since ✕'d, and one he has since ticked
+  o.set(SEASON({ t1: { t: "Buy frosting", who: "dad", due: "2026-12-03", dadOn: "2026-12-03" }, t2: { t: "Old words", who: "dad", due: "2026-12-04", dadOn: "2026-12-04" } }), {}, EV(),
+    { "2026-12-03": { todos: { snt1: { text: "Buy frosting (🏠 Gingerbread houses)", done: false, ts: 1, src: "season", sn: "xmas/g1/t1" } } },
+      "2026-12-04": { todos: { snt2: { text: "Old words (🏠 Gingerbread houses)", done: false, ts: 1, src: "season", sn: "xmas/g1/t2" } } } });
+  T.ddFresh(false);
+  W.snLine("todo", "g1", "t2"); W.snSet("t", "New words"); W.snSave();               // she re-words the one Dad ✕'d
+  const up = {}; up["seasons/ideas/xmas/g1/todo/t1"] = null; T.apply(up);               // and deletes the one Dad ticked
+  ok("until the server has answered for Dad's list, the sync writes NOTHING", o.sync() === 0 && o.writes.length === 0);
+  // the server's answer arrives: Dad ✕'d t2 and ticked t1
+  const D = o.dd(); delete D["2026-12-04"].todos.snt2; Object.assign(D["2026-12-03"].todos.snt1, { done: true, doneOn: TODAY });
+  T.ddFresh(true);
+  o.sync();
+  ok("after the fresh list: no ghost — the ✕'d copy is not re-worded back onto his list", !o.writes.some(x => x.val && Object.keys(x.val).some(p => /2026-12-04\/todos\/snt2/.test(p))) && !o.dd()["2026-12-04"].todos.snt2);
+  ok("…and the copy he ticked is left as his history", o.dd()["2026-12-03"].todos.snt1.done === true && !o.writes.some(x => x.val && ("dadday/2026-12-03/todos/snt1" in x.val)));
+  // the real hook: snListen asks ONCE for dadday and turns the sync on when it answers
+  const w3 = world(); w3.T.setData(SEASON({ t1: { t: "Buy frosting", who: "dad", due: "2026-12-03" } }), {}); w3.cal().events = EV(); w3.T.ddFresh(false);
+  w3.W.seasonNowLines();   // Home Base asks → snListen
+  ok("snListen asks the server ONCE for dadday", w3.onces.join() === "dadday");
+  ok("before the answer: nothing", (w3.writes.length = 0, w3.T.dadSync()) === 0);
+  w3.fireOnce["dadday"]();
+  ok("the answer turns it on and asks for a sync", w3.T.ddFresh() === true && w3.timers.length >= 1);
+  w3.timers.splice(0).forEach(f => f());
+  ok("…which puts the copy on his list", !!((w3.dd()["2026-12-03"] || {}).todos || {}).snt1);
+}
+
+console.log("\n# hub fix 2: Mom ticks a Dad to-do before his copy is showing");
+{
+  o.set(SEASON({ t1: { t: "Buy frosting", who: "dad", due: "2026-12-03" } }), {}, EV());
+  o.sync(); o.writes.length = 0;
+  W.snTodoTick("xmas", "g1", "t1"); let w = o.last();
+  ok("copy on a LATER day → removed (not ticked) and dadOn cleared, in the same update as her tick", w.val["seasons/ideas/xmas/g1/todo/t1/done"] === TODAY && w.val["dadday/2026-12-03/todos/snt1"] === null && w.val["seasons/ideas/xmas/g1/todo/t1/dadOn"] === null && !("dadday/2026-12-03/todos/snt1/done" in w.val), w.val);
+  ok("…so Dad never gets a crossed-out line he never saw", !(o.dd()["2026-12-03"] && o.dd()["2026-12-03"].todos && o.dd()["2026-12-03"].todos.snt1));
+  ok("nothing more to sync while it's done", o.sync() === 0);
+  o.writes.length = 0; W.snTodoTick("xmas", "g1", "t1"); w = o.last();
+  ok("her un-tick only clears done (there is no copy to un-tick)", w.val["seasons/ideas/xmas/g1/todo/t1/done"] === null && paths(w).length === 1);
+  o.sync();
+  ok("…and the sync puts his copy back on its show day by itself", !!o.last().val["dadday/2026-12-03/todos/snt1"] && o.last().val["seasons/ideas/xmas/g1/todo/t1/dadOn"] === "2026-12-03");
+  // showing already (today) → crossed off today, as before
+  o.set(SEASON({ t1: { t: "Buy frosting", who: "dad", due: TODAY } }), {}, EV());
+  o.sync(); o.writes.length = 0; W.snTodoTick("xmas", "g1", "t1"); w = o.last();
+  ok("copy already showing → ticked (crossed off today, gone tomorrow), not removed", w.val["dadday/2026-11-20/todos/snt1/done"] === true && w.val["dadday/2026-11-20/todos/snt1/doneOn"] === TODAY && !("dadday/2026-11-20/todos/snt1" in w.val));
 }
 
 console.log("\n# Home Base 🔴 NOW and the timer");

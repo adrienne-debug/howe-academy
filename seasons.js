@@ -62,6 +62,7 @@
 "use strict";
 let snData={}, snSecret={}, snOn=false, snLoaded=false, snGot=0, snSid=null, snFilter="all", snEdit=null, snRoot=null, snAh="", snFor={}, snPast=false, snFocus=false;
 let snView="ideas", snAsk=null, snNowWant=false;
+let snDdFresh=false;   // SEASONJOBS fix (hub review 11/21): Dad's list has come from the server at least once — never sync against a stale copy
 const SN_BOOK_DAYS=7, SN_NOW_MAX=5;   // 🎟 a book-by date shows in 🔴 NOW from a week ahead · NOW lists at most this many lines
 const SN_STARS=3;   // her answer 2026-11-20: "three ⭐ each per season"
 const SN_KINDS=[["holiday","🎄","Holiday season"],["summer","☀️","Summer bucket list"],["season","🍂","A season"],["trip","🧳","Trip"],["party","🎂","Party or event"],["someday","💭","Someday list"]];
@@ -216,7 +217,7 @@ function dadPlan(){const want={};seasons().forEach(s=>lines(s.id,"todo").forEach
 // Make Dad's list hold exactly what dadPlan says — ONE update, only the differences, never a copy he ticked.
 // Mom's device only, once the planner AND the calendar have loaded ("N days before" needs the calendar), and never in a dry run.
 function dadSync(){
-  if(!snLoaded||!live())return 0;
+  if(!snLoaded||!live()||!snDdFresh)return 0;   // never on a stale copy of Dad's list (a ✕'d copy could come back as a ghost; a ticked one could be removed)
   try{if(typeof momHere!=="function"||!momHere())return 0;if(typeof _kioskD==="function"&&_kioskD())return 0;}catch(e){return 0;}
   const c0=cal();if(!c0.events||typeof c0.events!=="object")return 0;
   let D={};try{D=(typeof daddayData!=="undefined"&&daddayData)||{};}catch(e){}
@@ -796,7 +797,9 @@ function snTodoTick(sid,iid,lid){
   const L=line(sid,iid,"todo",lid);if(!L)return;const on=!tdDone(L),t=today(),up={};
   up[lineBase(L,"todo")+"/done"]=on?t:null;
   if(tdCopy(L)){const m="momday/"+L.r.list+"/todos/sn"+lid+"/";up[m+"done"]=on;up[m+"doneOn"]=on?t:null;}
-  if(dadCopy(L)){const m="dadday/"+L.r.dadOn+"/todos/sn"+lid+"/";up[m+"done"]=on;up[m+"doneOn"]=on?t:null;}   // SEASONJOBS: and Dad's copy
+  if(dadCopy(L)){const m="dadday/"+L.r.dadOn+"/todos/sn"+lid;
+    if(on&&L.r.dadOn>t){up[m]=null;up[lineBase(L,"todo")+"/dadOn"]=null;}   // SEASONJOBS fix: not showing yet → off his list (her un-tick lets the sync put it back)
+    else{up[m+"/done"]=on;up[m+"/doneOn"]=on?t:null;}}   // showing → crossed off today, gone tomorrow, like anything he ticks
   apply(up);repaint();
 }
 // → My list today: ONE copy onto Mom's own daily to-do list (her answer 10, Mom's half). The to-do remembers the day (`list`), so it
@@ -855,6 +858,7 @@ function snListen(){
   if(typeof db==="undefined"||!db){snLoaded=true;return;}
   const got=()=>{if(++snGot>=2&&!snLoaded){snLoaded=true;if(snNowWant)homeRepaint();}if(snLoaded&&onPage()&&!snEdit)draw();};   // Home Base asked for its lines → repaint it ONCE when the data is in
   let a=false,b=false;
+  try{db.ref("dadday").once("value",()=>{snDdFresh=true;syncSoon();});}catch(e){}   // SEASONJOBS fix: wait for the server's answer for Dad's list (the app's own listener keeps daddayData current after)
   db.ref("seasons").on("value",s=>{snData=s.val()||{};if(!a){a=true;got();}else if(onPage()&&!snEdit)draw();if(snLoaded)syncSoon();});
   db.ref("seasonSecret").on("value",s=>{snSecret=s.val()||{};if(!b){b=true;got();}else if(onPage()&&!snEdit)draw();if(snLoaded)syncSoon();});
 }
@@ -977,5 +981,5 @@ Object.assign(window,{snNewSeason,snKind,snEditSeason,snDelSeason,snPick,snPastT
 window._snTest={data:()=>snData,secret:()=>snSecret,setData:(d,s)=>{snData=d||{};snSecret=s||{};snLoaded=true;},reset:()=>{snSid=null;snFilter="all";snEdit=null;snFor={};snPast=false;snView="ideas";snAsk=null;},
   lines,line,tdDue,tdState,tdDone,supState,bookState,shopLabel,nowItems,ideaDay,view:()=>snView,ask:()=>snAsk,
   setRoot:(el,ah)=>{snRoot=el;snAh=ah||"";},draw,edit:()=>snEdit,seasons,season,ideasOf,idea,whens,state,counts,picks,openDays,dayInfo,mins,starsUsed,starMax,apply,schedRange,kindDefaults,fmtDay,curSid,OK:SN_OK,
-  dadSync,dadPlan,dadWhy,dadCopy,dadNote,showDay,tdDue,tdDone,line,lines,syncPending:()=>!!snSyncT};
+  dadSync,dadPlan,dadWhy,dadCopy,dadNote,showDay,tdDue,tdDone,line,lines,syncPending:()=>!!snSyncT,ddFresh:v=>{if(v!==undefined)snDdFresh=!!v;return snDdFresh;}};
 })();
