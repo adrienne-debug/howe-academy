@@ -11276,6 +11276,7 @@ function renderClaimQueue(){
     const pts=unitActPoints(c.act);
     h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0">';
     h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px"><b style="color:'+(PACE_KCOL[c.kid]||"#111827")+'">'+cap(c.kid)+'</b> · '+(c.u.emoji||"📘")+' '+esc(c.act.title)+(pts?' <b style="color:#b45309">⭐'+pts+'</b>':'')+' <span style="color:var(--muted);font-size:10px">'+when+'</span></span>';
+    h+=((typeof uascLookBtnHTML==="function")?uascLookBtnHTML(c.unitId,c.kid,c.act):"");   // UACTSCREEN: 👁 Look at his page
     h+='<button onclick="unitActivityApprove(\''+c.unitId+'\',\''+c.kid+'\',\''+esc(c.act.key)+'\')" title="I saw the project — post the points" style="flex-shrink:0;padding:4px 12px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Approve</button>';
     h+='<button onclick="unitActivityReject(\''+c.unitId+'\',\''+c.kid+'\',\''+esc(c.act.key)+'\')" style="flex-shrink:0;padding:4px 10px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✗</button>';
     h+='</div>';
@@ -43720,6 +43721,7 @@ function uapKindHTML(kk,t,a){
   h+='<span id="uap-st-'+kk+'" style="font-size:11px;color:#1d4ed8;font-weight:700;overflow-wrap:anywhere">'+utEsc(uapStatus[kk]||"")+'</span></div>';
   h+='<label style="display:flex;gap:6px;align-items:center;margin-top:6px;font-size:11.5px;font-weight:700;color:#1f2937;cursor:pointer"><input id="utaa-'+kk+'-onecopy" type="checkbox"'+((a&&a.oneCopy)?' checked':'')+'> One for the family</label>';
   h+='<div style="font-size:10.5px;color:var(--muted);margin-top:2px">A PDF up to '+UAP_PDF_MAX_MB+' MB. The \u{1F9FA} Sunday list says “\u{1F5A8} Print” the week before: one per kid who does it, or one in all when ticked (always one on Family Time).</div>';
+  if(typeof uascDoHTML==="function") h+=uascDoHTML(kk,a);   // UACTSCREEN: How it's done — 🖨 paper · ✍️ screen · either
   return h+'</div>';
 }
 function uapKindShow(kk,t){ try{ const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById("uak-"+kk+"-box-print"):null; if(el&&el.style) el.style.display=(t==="print")?"block":"none"; }catch(e){} }
@@ -43735,6 +43737,7 @@ function uapKindEdit(kk,t,a,upd,base){
   if(t!=="print") return true;
   const one=uakChecked("utaa-"+kk+"-onecopy");
   if(one!==!!a.oneCopy){ if(one) a.oneCopy=true; else delete a.oneCopy; upd[base+"oneCopy"]=one?true:null; }
+  if(typeof uascDoEdit==="function") uascDoEdit(kk,a,upd,base);   // UACTSCREEN: …/do, only when it changed
   return true;
 }
 // ── the file: picked → (an activity on the day) upload now · (none yet) wait for + Add ──
@@ -43774,7 +43777,8 @@ async function uapUpload(uid,key,file,kk){
 // ── Today's card: the activity's row (UACTLINK's uakCardHTML hands a non-link activity here) ──
 function uapCardHTML(g,act){
   if(!act||uakType(act)!=="print") return "";
-  return '<div data-uap-paper="1" style="margin-top:10px;font-size:17px;font-weight:800;color:#fde68a">\u{1F5A8} Finish the paper Mom printed: '+utEsc(act.title||"the printable")+'</div>';
+  const h='<div data-uap-paper="1" style="margin-top:10px;font-size:17px;font-weight:800;color:#fde68a">\u{1F5A8} Finish the paper Mom printed: '+utEsc(act.title||"the printable")+'</div>';
+  return (typeof uascCardHTML==="function")?uascCardHTML(g,act,h):h;   // UACTSCREEN: ✍️ on the screen (paper → this line, unchanged)
 }
 // ── the 🧺 Sunday list: which 🖨 activities have a day laid this week or next, and for whom ──
 let _uapLaidMemo={};
@@ -43883,6 +43887,7 @@ async function uapgPages(uid,key,file,pdfPath,pdfUrl,kk){
     const upd={}, at="unitStudies/"+uid+"/activities/"+x.k+"/pdf/pages/", pages={};
     Object.keys(urls).forEach(n=>{ upd[at+n]=urls[n]; pages[n]=urls[n]; });
     x.a.pdf.pages=pages;
+    if(typeof uascDoNew==="function") uascDoNew(x,upd,"unitStudies/"+uid+"/activities/"+x.k+"/");   // UACTSCREEN: no `do` yet → either
     if(utaaLive()) db.ref().update(upd);
     return {n:total};
   }catch(e){ return {err:(e&&e.message)||String(e)}; }
@@ -43894,6 +43899,292 @@ function uapgLine(r){
   return " — the pages didn’t make ("+r.err+"), so paper only for now.";
 }
 // UACTPAGES_END
+// UACTSCREEN_START — ✍️ a Printable done ON THE SCREEN (piece 4c of PLAN_unit_activity_types_2026-11-19 §6.5, §6.7 row 4c, §7.1;
+//   her words 2026-11-19: "i think also a pdf can be editable together like worksheets?" · "develop that"; a beta mom 2026-11-20: a
+//   page done "Either. I'd pick page by page", her kids have "No, fingers only", and she checks "later on my own screen";
+//   her go 2026-11-22: "go with her answers and build").
+//   · THE SWITCH on the 🖨 box: "How it's done: 🖨 paper · ✍️ screen · either" → unitStudies/<id>/activities/<j>/do, written by
+//     ✎ Save (its own path, only when it changed; Mom only, UTADDACT's gate, dry-run inert). No `do` = paper, so every record that
+//     exists today draws and acts exactly as before. A printable with no pages (none made, over 20, offline at upload) offers
+//     paper only and says why. A NEW printable starts as "either" the moment its pages are made: UACTPAGES' one update carries
+//     …/do = "either" too, only when the record has no `do` (Mom's own pick is never overwritten).
+//   · TODAY'S CARD (the day card on every device): paper → the 🖨 line, byte for byte. either → the 🖨 line + the screen door;
+//     screen → the screen door only. The door: a kid's own device (Kids' Corner picked him, Mom mode off, he is in the unit) →
+//     "✍️ Do it on the screen"; Mom (momHere) → "👁 Look · <name>" per kid in the unit; the shared board → a line, no button.
+//     Mom's Day "⏳ waiting for your check" gets the same "👁 Look" beside ✓ Approve on a claimed screen printable.
+//   · THE VIEWER = 📕 Workbooks' own (wbOpen: page picture, ink layer, ◀ ▶, ✏️ 🩹 ↩︎ 🧽 👆) on a "book" made from the activity —
+//     wbBook's one hook hands back {id, name, pages, imgs{n:url}} from activities/<j>/pdf/pages (read like a workbook's imgs: the
+//     database hands a 1..n list back with an empty first slot). Its own bar (wbBarRender's hook): ✕ · the title · whose page ·
+//     ◀ p n / N ▶ · the viewer's tools · 💾. A thicker pen for a finger (UASC_PEN_W, the viewer's penW hook). Mom writes red,
+//     the kid blue — the viewer's own rule (momHere at pen-down).
+//   · HIS WRITING: the workbook record shape, one page one path — unitWork/<kid>/<unitId>/<key>/<page> = {v:1, s:[…], ts} — set
+//     3 s after the pen lifts, on a page turn and on ✕ (wbSave's hook → uascSave, behind db && !_dryRun). wbInkPath's hook sends
+//     a unit page there and NEVER to workbookWork/; it refuses (throws, so nothing is read or written) unless this device may
+//     open that kid's page: Mom, or the kid's own device for himself, he being in the unit. A sibling's device cannot.
+//   · REFUSED, said plainly in the bar, his writing left on the page: the database says no, no connection, not his page. ✕ on a
+//     page that didn't save stays open and says so; a second ✕ closes. Dry run: "Dry run — nothing saved."
+//   · No answer anywhere: there is no key; the app reads and checks nothing. No kid's or family's name in code.
+//   · Its own state on the viewer's wbView is uasc-named (uascMsg, uascMsgOk, uascSaving, uascCloseAnyway); it sets only two of the
+//     viewer's own fields, as the viewer means them: penW (the pen-width hook) and dirty (cleared after a save, as wbSave does).
+const UASC_PEN_W=0.004;   // of the page's width; the workbook pen is 0.0026 (a Pencil) — a finger needs a fatter line
+const UASC_DO=[["paper","\u{1F5A8} paper"],["screen","✍️ screen"],["either","either"]];
+let uascPicked={};   // the 🖨 box (utaaKey) → the "How it's done" chip Mom tapped this sitting, until ✎ Save
+function uascSeg(s){ s=String(s==null?"":s); return !!s&&s.length<=120&&!/[.#$\[\]\/~]/.test(s); }
+function uascDryRun(){ return (typeof _dryRun==="function")?!!_dryRun():false; }
+// a printable's pages, read like a workbook's imgs: {1:url, …} or [ , url1, url2 …] → {n, imgs} (only https; page 1 onward, no gaps)
+function uascPages(a){
+  const raw=a&&a.pdf&&a.pdf.pages, imgs={}; let n=0; if(!raw||typeof raw!=="object") return {n:0,imgs:imgs};
+  while(n<UAPG_MAX){ const url=raw[n+1]; if(typeof url!=="string"||!/^https:\/\//i.test(url)) break; imgs[n+1]=url; n++; }
+  return {n:n,imgs:imgs};
+}
+// how it's done: the stored pick, or paper (no field = paper — every record from before this piece)
+function uascDo(a){ const d=a&&a.do; return (d==="screen"||d==="either")?d:"paper"; }
+// the screen is offered: a 🖨 activity with pages, set to screen or either
+function uascAllowed(a){ return !!a&&uakType(a)==="print"&&uascDo(a)!=="paper"&&uascPages(a).n>0; }
+function uascAct(uid,key){ const u=(typeof unitStudies!=="undefined"&&unitStudies)?unitStudies[uid]:null; return u?(((typeof _unitActs==="function")?_unitActs(u):[]).find(a=>a&&a.key===key)||null):null; }
+function uascMom(){ return (typeof momHere==="function")&&!!momHere(); }
+// this device's kid: Kids' Corner picked one on the roster and Mom mode is off (WBDROW's rule)
+function uascDevKid(){
+  try{ if((typeof dcMom==="function"&&dcMom())||uascMom()) return "";
+    const R=(typeof ROSTER!=="undefined"&&Array.isArray(ROSTER))?ROSTER:[]; return (typeof kcKid!=="undefined"&&kcKid&&R.indexOf(kcKid)>=0)?String(kcKid):""; }catch(e){ return ""; }
+}
+// may THIS device open (and write) <kid>'s page of this activity? Mom: any kid in the unit, while the pages exist.
+// A kid's own device: himself only, and only while Mom allows the screen. Anyone else: no.
+function uascMay(uid,key,kid){
+  if(!uascSeg(uid)||!uascSeg(key)||!uascSeg(kid)) return false;
+  const u=(typeof unitStudies!=="undefined"&&unitStudies)?unitStudies[uid]:null, a=uascAct(uid,key);
+  if(!u||!a||uakType(a)!=="print"||!uascPages(a).n||typeof dcActKids!=="function"||dcActKids(u).indexOf(kid)<0) return false;
+  if(uascMom()) return true;
+  return uascDevKid()===kid&&uascAllowed(a);
+}
+// the viewer's "book" id for an activity: uact~<unitId>~<key> (both checked by uascSeg, so the split is exact)
+function uascId(uid,key){ return "uact~"+uid+"~"+key; }
+function uascIs(id){ return typeof id==="string"&&/^uact~[^~]+~[^~]+$/.test(id); }
+function uascParse(id){ const p=String(id).split("~"); return (p.length===3&&uascSeg(p[1])&&uascSeg(p[2]))?{uid:p[1],key:p[2]}:null; }
+// wbBook's hook: the activity as a book {id, name, pages, imgs} — live from the record, so a re-made page shows at once
+function uascBook(id){ const w=uascParse(id), a=w?uascAct(w.uid,w.key):null; if(!a) return null; const pg=uascPages(a); if(!pg.n) return null;
+  return {id:id,name:"\u{1F5A8} "+String(a.title||"Printable"),pages:pg.n,imgs:pg.imgs,uid:w.uid,key:w.key}; }
+// wbInkPath's hook: unitWork/<kid>/<unitId>/<key>/<page> — or refuse (throw: the viewer's read and write both catch it)
+function uascInkPath(kid,id,page){
+  const w=uascParse(id), p=parseInt(page,10);
+  if(!w||!(p>=1&&p<=UAPG_MAX)||!uascMay(w.uid,w.key,kid)) throw new Error("not this device’s page");
+  return "unitWork/"+kid+"/"+w.uid+"/"+w.key+"/"+p;
+}
+// ── the 🖨 box (UACTPRINT's uapKindHTML): How it's done ──
+function uascDoStyle(on){ return 'min-height:34px;padding:5px 12px;border-radius:999px;border:1.5px solid '+(on?'#1d4ed8':'var(--border)')+';background:'+(on?'#dbeafe':'#fff')+';color:'+(on?'#1e3a8a':'var(--muted)')+';font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif'; }
+function uascDoHTML(kk,a){
+  const n=uascPages(a).n, lbl='<span style="font-size:11.5px;font-weight:800;color:#1f2937">How it’s done:</span>';
+  let h='<div data-uasc-do="'+utEsc(kk)+'" style="margin-top:8px">';
+  if(!n){
+    h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'+lbl+'<span style="'+uascDoStyle(true)+';cursor:default;display:inline-flex;align-items:center">\u{1F5A8} paper</span></div>';
+    h+='<div data-uasc-why="1" style="font-size:10.5px;color:var(--muted);margin-top:2px">'+(a&&uapPdfOf(a)?'Paper only: this PDF has no pages made for the screen (over '+UAPG_MAX+' pages, or they didn’t make at upload). Add it again to try.':'Paper only for now: the screen needs the PDF’s pages, made when you add a PDF of '+UAPG_MAX+' pages or fewer. Then it starts as “either”.')+'</div>';
+    return h+'</div>';
+  }
+  const cur=uascOk(uascPicked[kk])?uascPicked[kk]:uascDo(a);
+  h+='<div role="group" aria-label="How it’s done" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'+lbl;
+  UASC_DO.forEach(x=>{ h+='<button type="button" id="uasc-'+kk+'-do-'+x[0]+'" aria-pressed="'+(x[0]===cur?'true':'false')+'" onclick="uascDoPick(\''+utJ(kk)+'\',\''+x[0]+'\')" style="'+uascDoStyle(x[0]===cur)+'">'+x[1]+'</button>'; });
+  h+='</div><div style="font-size:10.5px;color:var(--muted);margin-top:2px">✍️ screen: the kid writes on the '+n+' page'+(n===1?'':'s')+' on his own tablet (a finger is fine) — you look from the day’s card. Either: both are on the card.</div>';
+  return h+'</div>';
+}
+function uascOk(d){ return UASC_DO.some(x=>x[0]===d); }
+function uascDoPick(kk,d){
+  if(!(typeof utMom==="function"&&utMom())||!uascOk(d)) return false; uascPicked[kk]=d;
+  try{ if(typeof document!=="undefined"&&document.getElementById) UASC_DO.forEach(x=>{ const el=document.getElementById("uasc-"+kk+"-do-"+x[0]); if(el){ el.setAttribute("style",uascDoStyle(x[0]===d)); el.setAttribute("aria-pressed",x[0]===d?"true":"false"); } }); }catch(e){}
+  return true;
+}
+// ✎ Save (UACTPRINT's uapKindEdit): …/do, its own path, only when it changed; only with pages (no pages → nothing to switch)
+function uascDoEdit(kk,a,upd,base){
+  const d=uascPicked[kk]; delete uascPicked[kk];
+  if(!uascOk(d)||!uascPages(a).n||d===uascDo(a)) return;
+  a.do=d; upd[base+"do"]=d;
+}
+// UACTPAGES' one update: a printable that has just got its pages and no `do` yet starts as "either" (a beta mom's default)
+function uascDoNew(x,upd,base){ if(x&&x.a&&x.a.do==null){ x.a.do="either"; upd[base+"do"]="either"; } }
+// ── Today's card (UACTPRINT's uapCardHTML hands its 🖨 line here) ──
+function uascBtnStyle(c){ return 'display:inline-flex;align-items:center;gap:6px;min-height:48px;box-sizing:border-box;padding:10px 18px;border-radius:14px;border:2px solid '+c+';background:rgba(255,255,255,.08);color:#fff;font-size:17px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif'; }
+function uascCardHTML(g,act,paper){
+  if(!uascAllowed(act)) return paper;   // paper: today's line, byte for byte
+  const u=g&&g.u, uid=g&&g.day&&g.day.uid; if(!u||!uascSeg(uid)||!uascSeg(act.key)) return paper;
+  const kids=((typeof dcActKids==="function")?dcActKids(u):[]).filter(uascSeg), either=uascDo(act)==="either";
+  let h=either?paper:"";
+  if(uascMom()){
+    if(!kids.length) return h;
+    h+='<div data-uasc-look="1" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">';
+    kids.forEach(k=>{ h+='<button data-uasc-look-kid="'+dcEsc(k)+'" onclick="uascOpen(\''+dcJ(uid)+'\',\''+dcJ(act.key)+'\',\''+dcJ(k)+'\')" style="'+uascBtnStyle('#93c5fd')+'">\u{1F441} Look · '+dcEsc(dcName(k))+'</button>'; });
+    return h+'</div>';
+  }
+  const me=uascDevKid();
+  if(me&&kids.indexOf(me)>=0) return h+'<div style="margin-top:10px"><button data-uasc-open="'+dcEsc(me)+'" onclick="uascOpen(\''+dcJ(uid)+'\',\''+dcJ(act.key)+'\',\''+dcJ(me)+'\')" style="'+uascBtnStyle('#fde68a')+'">✍️ Do it on the screen</button></div>';
+  return h+'<div data-uasc-board="1" style="margin-top:10px;font-size:17px;font-weight:800;color:#fde68a">✍️ '+(either?'Or':'Do it')+' on the screen — on your own tablet</div>';
+}
+// Mom's Day ⏳ row (renderClaimQueue's hook): 👁 Look beside ✓ Approve, for a claimed screen printable
+function uascLookBtnHTML(uid,kid,act){
+  if(!uascMom()||!act||!uascAllowed(act)||!uascMay(uid,act.key,kid)) return "";
+  return '<button data-uasc-look-kid="'+dcEsc(kid)+'" onclick="uascOpen(\''+dcJ(uid)+'\',\''+dcJ(act.key)+'\',\''+dcJ(kid)+'\')" style="flex-shrink:0;min-height:32px;padding:4px 12px;border-radius:8px;border:1.5px solid #1d4ed8;background:#fff;color:#1d4ed8;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F441} Look</button>';
+}
+// ── open: the workbook viewer on the activity's pages, for one kid ──
+function uascOpen(uid,key,kid,page){
+  if(typeof document==="undefined"||!document.body||typeof wbOpen!=="function") return false;
+  if(typeof wbView!=="undefined"&&wbView){ if(typeof uakToast==="function") uakToast("Close the page that’s open first."); return false; }
+  if(!uascMay(uid,key,kid)){ if(typeof uakToast==="function") uakToast("That page isn’t open to this tablet."); return false; }
+  const id=uascId(uid,key); wbOpen(id,kid,page||1);
+  if(!wbView||wbView.bookId!==id) return false;
+  wbView.penW=UASC_PEN_W; wbBarRender();
+  if(typeof uascAnsMount==="function") uascAnsMount(wbView);   // UACTANS: ⌨️ My answers beside the page
+  return true;
+}
+function uascSay(v,msg,good){ v.uascMsg=msg||""; v.uascMsgOk=!!good; if(typeof wbView!=="undefined"&&wbView===v) wbBarRender(); }
+// wbSave's hook: his page's ink at its own path — true = saved (or nothing to save), false = refused (his writing stays on the page)
+async function uascSave(v,quiet){
+  if(!v) return false; const rev=v._rev||0;
+  if(uascDryRun()){ v.dirty=false; uascSay(v,"Dry run — nothing saved."); return true; }
+  if(typeof db==="undefined"||!db){ uascSay(v,"Not connected — your writing is still here, but it isn’t saved."); return false; }
+  let path=""; try{ path=wbInkPath(v.kid,v.bookId,v.page); }catch(e){ uascSay(v,"Didn’t save — this page isn’t open to this tablet."); return false; }
+  v.uascSaving=true; if(wbView===v) wbBarRender();
+  try{ await db.ref(path).set({v:1,s:v.strokes,ts:Date.now()}); }   // one page, one path — the workbook record
+  catch(e){ v.uascSaving=false; uascSay(v,"Didn’t save — the database said no. Your writing is still here; try 💾 again."); return false; }
+  v.uascSaving=false; if((v._rev||0)===rev) v.dirty=false; uascSay(v,"",true); return true;
+}
+function uascSaveNow(){ const v=(typeof wbView!=="undefined")?wbView:null; if(v&&uascIs(v.bookId)) return uascSave(v); return false; }
+// ◀ ▶: save first; a page that didn't save stays open (said in the bar)
+async function uascGo(d){
+  const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!uascIs(v.bookId)) return false;
+  if(v.dirty&&!(await uascSave(v))) return false;
+  if(typeof uascAnsFlush==="function"&&!(await uascAnsFlush(v))) return false;   // UACTANS: his typed answers first
+  await wbGo(d);
+  if(typeof uascAnsLoad==="function") uascAnsLoad(v);
+  return true;
+}
+// ✕: save, then close; a page that didn't save stays open once and says so — a second ✕ closes without it
+async function uascClose(){
+  const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!uascIs(v.bookId)){ wbClose(); return true; }
+  if(!v.uascCloseAnyway){
+    let ok=true;
+    if(v.dirty) ok=await uascSave(v);
+    if(ok&&typeof uascAnsFlush==="function") ok=await uascAnsFlush(v);   // UACTANS
+    if(!ok){ v.uascCloseAnyway=true; uascSay(v,(v.uascMsg?v.uascMsg+" ":"")+"Tap ✕ again to close without it."); return false; }
+  }
+  v.dirty=false; wbClose(); return true;
+}
+// wbBarRender's hook: the bar, with the viewer's own button
+function uascBarHTML(v,btn){
+  const b=wbBook(v.bookId)||{}, col=(typeof SL_KCOL!=="undefined"&&SL_KCOL[v.kid])||"#64748b";
+  return btn("✕","uascClose()")+
+    '<span style="font-weight:800;font-size:13px;color:#0f172a;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+dcEsc(b.name||"Printable")+'</span>'+
+    '<span style="padding:3px 9px;border-radius:999px;background:'+col+';color:#fff;font-size:11px;font-weight:800">'+dcEsc(dcName(v.kid))+'</span>'+
+    (uascMom()?'<span style="font-size:11px;font-weight:800;color:#dc2626">\u{1F441} your pen is red</span>':'')+
+    '<span style="flex:1"></span>'+
+    btn("◀","uascGo(-1)")+'<span style="font-size:12px;font-weight:700;color:#475569;min-width:64px;text-align:center">p '+v.page+' / '+(b.pages||"?")+'</span>'+btn("▶","uascGo(1)")+
+    btn("✏️","wbTool(\'pen\')",v.tool==="pen")+btn("\u{1FA79} Erase","wbTool(\'erase\')",v.tool==="erase")+
+    btn("↩︎ Undo","wbUndo()")+btn("\u{1F9FD} Clear","wbClear()")+btn(v.penOnly?"✍️ Pencil only":"\u{1F446} Finger too","wbTogglePen()",v.penOnly)+
+    btn(v.uascSaving?"Saving…":(v.dirty?"\u{1F4BE} Save":"✓ Saved"),"uascSaveNow()",v.dirty)+
+    ((typeof uascAnsBtnHTML==="function")?uascAnsBtnHTML(v,btn):"")+   // UACTANS: ⌨️ jump to the box
+    (v.uascMsg?'<span data-uasc-msg="1" style="font-size:12px;font-weight:700;color:'+(v.uascMsgOk?'#15803d':'#b91c1c')+'">'+dcEsc(v.uascMsg)+'</span>':'');
+}
+// UACTSCREEN_END
+// UACTANS_START — ⌨️ "My answers", typed beside the page (piece 4c, PLAN_unit_activity_types §7.1; a beta mom 2026-11-20, asked how a
+//   page done on the iPad should be answered: "Type answers in boxes beside the page" — "Because we don’t have a pen, they could type";
+//   she checks "later on my own screen"; her go 2026-11-22: "go with her answers and build").
+//   · WHERE: in the viewer UACTSCREEN opens (a 🖨 printable done on the screen) — the page and, beside it, ONE box "⌨️ My answers".
+//     Beside it on a wide screen (landscape: the page 560 px+, the box 280–520 px, the box stays in view while the page scrolls);
+//     UNDER it on an iPad held upright (portrait: the box takes its own row). "⌨️ My answers" in the bar jumps to it.
+//   · THE KEYBOARD: while the box has the cursor, the viewer is fitted to the part of the screen the keyboard leaves
+//     (visualViewport: its height and top) and the box is scrolled into view; it goes back when the box lets go. Text 18 px (an
+//     iPad zooms a smaller box). No autocorrect, no spell-check, no word suggestions the app can switch off: the spelling is his.
+//   · WHAT IS SAVED: one leaf per page, APART from the ink (the ink's whole-page set at …/<page> can never touch it):
+//     unitWork/<kid>/<unitId>/<key>/t/<page> = the text (≤ UASC_ANS_MAX letters; empty → the leaf goes). Saved 2.5 s after typing
+//     stops, before ◀ ▶ and on ✕, behind db && !_dryRun. Read once when the page opens. Nothing for Mom to set up, no questions,
+//     no answer key; the app reads nothing into it and checks nothing.
+//   · WHO: the kid on his own tablet types in his own box (UACTSCREEN's rule: Kids' Corner picked him, Mom mode off). Mom sees
+//     "<name>'s answers" beside the page, READ-ONLY — she has no box to type in, so she can never be taken for him; her marks
+//     stay the red pen. A sibling's tablet never opens the page (UACTSCREEN), and the save asks again before writing.
+//   · REFUSED, said plainly under the box, what he typed left in it: the database says no, no connection, not his page; ◀ ▶ stay
+//     and ✕ stays open once (UACTSCREEN's close). Dry run: "Dry run — nothing saved." No kid's or family's name in code.
+//   · Its state lives in wbView.typed — never wbView.ans, which is the viewer's answer-key page number (0 on a printable).
+const UASC_ANS_MAX=2000;
+let _uascAnsT=null, _uascVV=false;
+function uascAnsPath(kid,id,page){ const ink=uascInkPath(kid,id,page); return ink.slice(0,ink.lastIndexOf("/"))+"/t/"+parseInt(page,10); }   // UACTSCREEN's gate, then …/t/<page>
+function uascAnsMine(v){ return !!v&&!uascMom()&&uascDevKid()===v.kid; }
+function uascAnsEl(id){ return (typeof document!=="undefined"&&document.getElementById)?document.getElementById(id):null; }
+// the box, appended to the viewer's stage beside (or under) #wb-hold
+function uascAnsMount(v){
+  const st=uascAnsEl("wb-stage"), hold=uascAnsEl("wb-hold"); if(!v||!st||!hold||typeof document.createElement!=="function") return false;
+  hold.style.flex="1 1 560px"; hold.style.maxWidth="900px"; hold.style.minWidth="0";
+  const mine=uascAnsMine(v), box=document.createElement("div"); box.id="uasc-ans";
+  box.innerHTML='<style>#uasc-ans{flex:1 1 280px;max-width:520px;min-width:0;box-sizing:border-box;background:#fff;border:2px solid #bfdbfe;border-radius:12px;padding:10px 12px;font-family:\'DM Sans\',sans-serif;line-height:1.35}'+
+    '@media (orientation:portrait){#uasc-ans{flex-basis:100%;max-width:900px}}@media (orientation:landscape){#uasc-ans{position:sticky;top:0}}</style>'+
+    '<div id="uasc-ans-lbl" style="font-size:15px;font-weight:800;color:#1e3a8a;margin-bottom:6px"></div>'+
+    (mine?'<textarea id="uasc-ans-ta" maxlength="'+UASC_ANS_MAX+'" rows="7" disabled autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type your answers here" oninput="uascAnsInput(this)" onfocus="uascAnsFocus()" onblur="uascAnsFocus()" style="display:block;width:100%;box-sizing:border-box;min-height:150px;padding:10px;border:2px solid #cbd5e1;border-radius:10px;font-size:18px;line-height:1.4;font-family:\'DM Sans\',sans-serif;resize:vertical;background:#fff;color:#0f172a"></textarea>'
+      :'<div id="uasc-ans-ro" style="min-height:60px;padding:10px;border:1.5px dashed #cbd5e1;border-radius:10px;font-size:16px;line-height:1.45;color:#0f172a;white-space:pre-wrap;overflow-wrap:anywhere"></div>')+
+    '<div id="uasc-ans-st" aria-live="polite" style="min-height:18px;margin-top:6px;font-size:13px;font-weight:700"></div>';
+  st.appendChild(box);
+  if(!_uascVV){ _uascVV=true; try{ const vv=(typeof window!=="undefined")?window.visualViewport:null; if(vv&&typeof vv.addEventListener==="function") vv.addEventListener("resize",function(){ if(typeof wbView!=="undefined"&&wbView&&uascIs(wbView.bookId)) uascAnsFit(); }); }catch(e){} }
+  uascAnsLoad(v); return true;
+}
+// the label, the box's words, the line under it (full = also the text; while he types, only the line)
+function uascAnsPaint(v,full){
+  const a=v&&v.typed; if(!a||typeof wbView==="undefined"||wbView!==v) return;
+  const lbl=uascAnsEl("uasc-ans-lbl"), st=uascAnsEl("uasc-ans-st"), ta=uascAnsEl("uasc-ans-ta"), ro=uascAnsEl("uasc-ans-ro");
+  if(lbl) lbl.textContent=(ta?"⌨️ My answers":"⌨️ "+dcName(v.kid)+"’s answers")+" · page "+a.page;
+  if(full&&ta){ ta.value=a.text; ta.disabled=!a.loaded; }
+  if(full&&ro){ ro.textContent=a.loaded?(a.text||"Nothing typed on this page yet."):"Loading…"; ro.style.color=a.text?"#0f172a":"#64748b"; }
+  if(st){ st.textContent=a.msg||(!a.loaded?"Loading…":(a.saving?"Saving…":(ta&&a.text!==a.saved?"…":(ta&&a.text?"✓ Saved":"")))); st.style.color=a.msgOk===false?"#b91c1c":"#15803d"; }
+}
+function uascAnsSay(v,msg,good){ if(v&&v.typed){ v.typed.msg=msg||""; v.typed.msgOk=msg?!!good:null; uascAnsPaint(v,false); } }
+// read the page's text once (a page turn reads the new page's)
+function uascAnsLoad(v){
+  if(!v||!uascIs(v.bookId)) return; const page=v.page; clearTimeout(_uascAnsT); _uascAnsT=null;
+  v.typed={page:page,text:"",saved:"",loaded:false,msg:"",msgOk:null}; uascAnsPaint(v,true);
+  let path=""; try{ path=uascAnsPath(v.kid,v.bookId,page); }catch(e){ uascAnsSay(v,"This page isn’t open to this tablet."); return; }
+  if(typeof db==="undefined"||!db){ v.typed.loaded=true; uascAnsPaint(v,true); uascAnsSay(v,uascAnsMine(v)?"Not connected — what you type won’t save.":"Not connected."); return; }
+  try{ db.ref(path).once("value").then(function(s){ if(wbView!==v||!v.typed||v.typed.page!==page) return; const t=s&&typeof s.val==="function"?s.val():null;
+      v.typed.text=v.typed.saved=(typeof t==="string")?t.slice(0,UASC_ANS_MAX):""; v.typed.loaded=true; uascAnsPaint(v,true); },
+    function(){ if(wbView===v&&v.typed&&v.typed.page===page) uascAnsSay(v,"Couldn’t read the answers — close the page and open it again."); }); }
+  catch(e){ uascAnsSay(v,"Couldn’t read the answers — close the page and open it again."); }
+}
+// he types: kept on the page at once, saved 2.5 s after he stops
+function uascAnsInput(el){
+  const v=(typeof wbView!=="undefined")?wbView:null, a=v&&v.typed; if(!a||!a.loaded||!uascAnsMine(v)) return false;
+  a.text=String((el&&el.value)||"").slice(0,UASC_ANS_MAX); a.msg=""; a.msgOk=null; uascAnsPaint(v,false);
+  clearTimeout(_uascAnsT); _uascAnsT=setTimeout(function(){ _uascAnsT=null; if(wbView===v) uascAnsSave(v); },2500);
+  return true;
+}
+// true = nothing to save, or saved · false = refused (what he typed stays in the box)
+async function uascAnsSave(v){
+  const a=v&&v.typed; if(!a||!a.loaded||a.text===a.saved) return true;
+  if(!uascAnsMine(v)){ uascAnsSay(v,"Didn’t save — this page isn’t open to this tablet."); return false; }
+  if(uascDryRun()){ a.saved=a.text; uascAnsSay(v,"Dry run — nothing saved."); return true; }
+  if(typeof db==="undefined"||!db){ uascAnsSay(v,"Not connected — what you typed is still here, but it isn’t saved."); return false; }
+  let path=""; try{ path=uascAnsPath(v.kid,v.bookId,a.page); }catch(e){ uascAnsSay(v,"Didn’t save — this page isn’t open to this tablet."); return false; }
+  const txt=a.text; a.saving=true; uascAnsPaint(v,false);
+  try{ await db.ref(path).set(txt?txt:null); }   // one leaf per page, apart from the ink; empty → the leaf goes
+  catch(e){ a.saving=false; uascAnsSay(v,"Didn’t save — the database said no. What you typed is still here; it tries again when you type."); return false; }
+  a.saving=false; a.saved=txt; uascAnsSay(v,""); return true;
+}
+// before ◀ ▶ and ✕ (UACTSCREEN's hooks): what's in the box now, saved now
+function uascAnsFlush(v){
+  clearTimeout(_uascAnsT); _uascAnsT=null; const a=v&&v.typed; if(!a||!uascAnsMine(v)) return Promise.resolve(true);
+  const ta=uascAnsEl("uasc-ans-ta"); if(ta&&a.loaded) a.text=String(ta.value||"").slice(0,UASC_ANS_MAX);
+  return uascAnsSave(v);
+}
+// the keyboard: fit the viewer to what it leaves, and bring the box into view
+function uascAnsFit(){
+  const ov=uascAnsEl("wb-view"), ta=uascAnsEl("uasc-ans-ta"); if(!ov||!ov.style) return false;
+  const vv=(typeof window!=="undefined")?window.visualViewport:null, on=!!ta&&typeof document!=="undefined"&&document.activeElement===ta;
+  if(on&&vv&&vv.height>120){ ov.style.top=Math.round(vv.offsetTop||0)+"px"; ov.style.bottom="auto"; ov.style.height=Math.round(vv.height)+"px"; }
+  else { ov.style.top="0"; ov.style.bottom="0"; ov.style.height=""; }
+  if(on){ try{ ta.scrollIntoView({block:"nearest"}); const b=uascAnsEl("uasc-ans"); if(b&&b.scrollIntoView) b.scrollIntoView({block:"end"}); }catch(e){} }
+  return on;
+}
+function uascAnsFocus(){ uascAnsFit(); setTimeout(uascAnsFit,350); }   // again once the keyboard has slid up
+// the bar's "⌨️ My answers": jump to the box (and, on his tablet, put the cursor in it)
+function uascAnsGo(){
+  const ta=uascAnsEl("uasc-ans-ta"), b=uascAnsEl("uasc-ans");
+  try{ if(ta&&!ta.disabled&&typeof ta.focus==="function") ta.focus(); if(b&&b.scrollIntoView) b.scrollIntoView({block:"start"}); }catch(e){}
+  return !!b;
+}
+function uascAnsBtnHTML(v,btn){ return btn(uascAnsMine(v)?"⌨️ My answers":"⌨️ Answers","uascAnsGo()"); }
+// UACTANS_END
 // UNITDAY_EXTRAS_START — 🖼 Pictures & documents and 🍎 Snack on a unit day (her words 2026-11-11, for Sara, a beta mom: "Sarah would
 //   like to add on day 6 a gratitude scavenger hunt. She has a picture of it. So it would be good if on each day another section that
 //   they could add to that is pictures and documents that would open when they click it on that day. Also, a section for snacks that
@@ -50723,8 +51014,8 @@ const WB_MAXP=400;              // Reading Detective Beginning is 193; leave hea
 const WB_PEN="#1d4ed8", WB_MOMPEN="#dc2626";
 
 function wbList(){ return Object.values(wbBooks||{}).filter(b=>b&&b.id).sort((a,b)=>(a.added||0)-(b.added||0)); }
-function wbBook(id){ return (wbBooks||{})[id]||null; }
-function wbInkPath(kid,bookId,page){ return "workbookWork/"+kid+"/"+bookId+"/"+page; }
+function wbBook(id){ if(typeof uascIs==="function"&&uascIs(id)) return uascBook(id); return (wbBooks||{})[id]||null; }   // UACTSCREEN: a 🖨 printable's pages as a book
+function wbInkPath(kid,bookId,page){ if(typeof uascIs==="function"&&uascIs(bookId)) return uascInkPath(kid,bookId,page); return "workbookWork/"+kid+"/"+bookId+"/"+page; }   // UACTSCREEN: unitWork/<kid>/<unitId>/<key>/<page>, never workbookWork
 
 // ── Lesson label → page. A subject links to a book (subject.workbook = bookId) and the
 // book carries its table of contents (workbooks/<id>/toc = {ex:{n:bookPage}, pre, post,
@@ -51446,6 +51737,7 @@ function wbBarRender(){
   const b=wbBook(wbView.bookId)||{}; const v=wbView;
   const btn=(lbl,fn,on)=>'<button onclick="'+fn+'" style="padding:7px 11px;border-radius:9px;border:1.5px solid '+(on?"#1d4ed8":"#cbd5e1")+';background:'+(on?"#dbeafe":"#fff")+';font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
   bar.innerHTML=(v.scratch&&typeof wbdBarHTML==="function")?wbdBarHTML(v,btn):   // WBOARD: the whiteboard's own bar (no book, no pages, no save)
+    (typeof uascIs==="function"&&uascIs(v.bookId))?uascBarHTML(v,btn):   // UACTSCREEN: a 🖨 printable's own bar
     btn("✕","wbClose()")+
     '<span style="font-weight:800;font-size:13px;color:#0f172a;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(b.name||"Workbook")+'</span>'+
     '<span style="padding:3px 9px;border-radius:999px;background:'+((typeof SL_KCOL!=="undefined"&&SL_KCOL[v.kid])||"#64748b")+';color:#fff;font-size:11px;font-weight:800">'+((typeof SL_KLBL!=="undefined"&&SL_KLBL[v.kid])||v.kid)+'</span>'+
@@ -51584,6 +51876,7 @@ function wbAutoSaveSoon(){
 }
 async function wbSave(quiet){
   const v=wbView; if(!v||v.scratch) return;   // WBOARD: a scratch whiteboard never writes
+  if(typeof uascIs==="function"&&uascIs(v.bookId)) return uascSave(v,quiet);   // UACTSCREEN: a 🖨 page saves at its own path, refusals said in the bar
   if(!db||_dryRun()){ v.dirty=false; wbBarRender(); return; }
   const rev=v._rev||0;
   try{
