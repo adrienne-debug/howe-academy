@@ -3357,6 +3357,30 @@ let _abActiveWkNull = false;  // 🆕 ABFIRST: the server answered ha_active_wk 
 let fbHistoryLoaded = false;
 let fbCurrLoaded = false;   // curriculum once() answered (even empty) — subjNoCarry flags readable
 let fbArchiveLoaded = false; // archive listener answered — cursor math has the full completion record
+// ARCHENSURE_START — wait for EVERY past week before a build, a write, or the History page (her "Start slice 2" 2026-11-22,
+// PLAN_archive_window_2026-11-21.md §4 rule 1). archiveEnsureAll() is true once the full archive is here (fbArchiveLoaded keeps that
+// meaning) or with no connection object. archiveWhenAll(fn): true = go ahead now; false = not yet, fn runs again once the full
+// archive arrives (the caller returns; fn is the caller re-run with the same arguments). Main screens (group D,
+// pinned by test_archive_core.js) never wait. Today the start-up listener is the full archive, so this only holds the first
+// second before it answers; it is the guard that has to be in place before slice 4 starts devices on the trimmed copy.
+let _archWaitFns=[], _archWaitShown=false;
+function archiveEnsureAll(){
+  if(fbArchiveLoaded||typeof db==="undefined"||!db) return true;
+  _archWaitShown=true;
+  return false;
+}
+function archiveWhenAll(fn){
+  if(archiveEnsureAll()) return true;
+  if(_archWaitFns.indexOf(fn)<0) _archWaitFns.push(fn);   // a second tap while waiting doesn't queue it twice
+  try{ if(typeof gwShowToast==="function") gwShowToast("Loading past weeks…"); }catch(e){}
+  return false;
+}
+function _archAllArrived(){
+  const fns=_archWaitFns; _archWaitFns=[];
+  fns.forEach(f=>{ try{ f(); }catch(e){ console.log("[HA] waited for past weeks",e); } });
+  if(_archWaitShown){ _archWaitShown=false; if(typeof renderAllSoon==="function") renderAllSoon(); }
+}
+// ARCHENSURE_END
 let cascadeDebounce = null;
 let fbTasksHighWater = 0; // max task count ever seen from Firebase — guards against accidental wipes
 // Dry-run mode (?dryrun=1 or localStorage ha_dryrun=1): reads work, writes are no-ops.
@@ -4564,6 +4588,7 @@ function initFb() {
       // 5 archive writes — HA_LS drops "ha_archive" (NO_MIRROR, LS_ARCHIVE 10/22), so it only turned 2.85 MB into text to be thrown away.
       if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
+      try{ if(typeof _archAllArrived==="function") _archAllArrived(); }catch(eA){}   // ARCHENSURE: the full archive is here — run what waited, redraw a Loading page
     });
     db.ref("notebookStories").on("value",s=>{
       notebookStories=s.val()||{};
@@ -26306,6 +26331,7 @@ function _mpSchWkArr(o){ return Array.isArray(o)?o.filter(Boolean):Object.keys(o
 function mpSchWkLoad(wn){
   const k="week"+wn;
   if(mpSchWkCache[k]&&(mpSchWkCache[k].loading||mpSchWkCache[k].tasks.length)) return mpSchWkCache[k];
+  if(wn<_mpSchWkCurNum()&&typeof archiveEnsureAll==="function"&&!archiveEnsureAll()) return {loading:true,tasks:[]};   // ARCHENSURE: a past week waits for the full record (not cached)
   const arch=(typeof archive==="object"&&archive&&archive[k])||null;
   const local=()=>{
     const ls=(typeof ld==="function"?ld(k+"_tasks"):null), lc=(typeof ld==="function"?ld(k+"_checked"):null), lm=(typeof ld==="function"?ld(k+"_meta"):null);
@@ -27846,6 +27872,7 @@ function digestEnsure(){
 function digestFreezeIfNeeded(wkKey){
   if(wkKey===WK) return null;
   if(typeof digestEnsure==="function"&&!digestEnsure()) return null;   // DIGESTLAZY: never freeze before digest/ has arrived
+  if(typeof archiveEnsureAll==="function"&&!archiveEnsureAll()) return null;   // ARCHENSURE: never freeze a week from part of the archive
   const have=((digestData||{}).report||{})[wkKey];
   if(have) return have;
   if(!archive[wkKey]) return null;
@@ -27873,6 +27900,7 @@ function digestFreezeIfNeeded(wkKey){
 // W1.5 — open the official weekly record for printing. Same window.open pattern
 // as printWeekReport, which stays untouched until this document proves itself.
 function printRecordReport(wkKey){
+  if(typeof archiveWhenAll==="function"&&!archiveWhenAll(()=>printRecordReport(wkKey))) return;   // ARCHENSURE
   wkKey=wkKey||WK;
   const data=digestGatherData(wkKey);
   const now=new Date();
@@ -28277,6 +28305,7 @@ function histRenderRows(rows,groupPrefix){
 }
 
 function renderHistory(el){
+  if(typeof archiveEnsureAll==="function"&&!archiveEnsureAll()){ el.innerHTML='<div style="text-align:center;color:var(--muted);padding:40px 20px">📚 Loading past weeks…</div>'; return; }   // ARCHENSURE
   const histKids=(kid!=="all"&&kid!=="mom")?[kid]:[...ROSTER];
   const _btn=(on)=>'flex:1;padding:8px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?'var(--header)':'transparent')+';color:'+(on?'#fff':'var(--muted)');
   let h='<div style="display:flex;gap:6px;padding:12px 12px 4px">';
@@ -28823,6 +28852,7 @@ function renderAttendanceHtml(){
 }
 
 function printAttendance(onlyKid){
+  if(typeof archiveWhenAll==="function"&&!archiveWhenAll(()=>printAttendance(onlyKid))) return;   // ARCHENSURE
   const GOAL=180, kids=onlyKid?[onlyKid]:[...ROSTER];
   const atd={}; kids.forEach(k=>atd[k]=buildKidAttendance(k));
   let body='';
@@ -28851,6 +28881,7 @@ function printAttendance(onlyKid){
 }
 
 function printWeekReport(weekKey,filterKid){
+  if(typeof archiveWhenAll==="function"&&!archiveWhenAll(()=>printWeekReport(weekKey,filterKid))) return;   // ARCHENSURE
   const fk=filterKid||(kid!=="all"&&kid!=="mom"?kid:null);
   let tasks,chk,dates,label,hist;
   if(!weekKey||weekKey===WK){
@@ -28938,6 +28969,7 @@ function printWeekReport(weekKey,filterKid){
 }
 
 function addManualAttWeek(label){
+  if(typeof archiveWhenAll==="function"&&!archiveWhenAll(()=>addManualAttWeek(label))) return;   // ARCHENSURE
   const raw=label||"";
   const wkKey=raw.trim().toLowerCase().replace(/\s+/g,"");
   if(!wkKey){ alert("Please enter a week label (e.g. week1)"); return; }
@@ -28980,6 +29012,7 @@ function setAttOverride(wkKey,day,kid,val){
   _preserveUI(function(){ const el=document.getElementById("content"); if(el) renderHistory(el); });
 }
 function setAttDate(wkKey,day,val){
+  if(typeof archiveWhenAll==="function"&&!archiveWhenAll(()=>setAttDate(wkKey,day,val))) return;   // ARCHENSURE
   if(!archive[wkKey]) return;
   if(!archive[wkKey].dates) archive[wkKey].dates={};
   archive[wkKey].dates[day]=val.trim();
@@ -29021,6 +29054,7 @@ function renderSitter(el){
 
 // ── JSON LOAD ─────────────────────────────────────────────────────
 function loadJson(){
+  if(typeof archiveWhenAll==="function"&&!archiveWhenAll(loadJson)) return;   // ARCHENSURE
   const f=document.getElementById("json-input").files[0];
   if(!f){document.getElementById("admin-msg").textContent="No file selected.";return;}
   const r=new FileReader();
@@ -34054,6 +34088,7 @@ function ceWalkGather(){
   return out;
 }
 function ceWalkToggle(){
+  if(!ceWalkOpen&&typeof archiveWhenAll==="function"&&!archiveWhenAll(ceWalkToggle)) return;   // ARCHENSURE
   ceWalkOpen=!ceWalkOpen; ceWalkSel=new Set();
   if(ceWalkOpen&&walkbackData===null){
     walkbackData={};
@@ -34076,6 +34111,7 @@ function ceWalkToggleItem(i,el){
   }
 }
 function ceWalkApply(){
+  if(typeof archiveWhenAll==="function"&&!archiveWhenAll(ceWalkApply)) return;   // ARCHENSURE
   const items=_ceWalkItems.filter((it,i)=>ceWalkSel.has(i));
   if(!items.length) return;
   const noteEl=document.getElementById("ce-walk-note");
@@ -34755,7 +34791,7 @@ function ceRenderEditSheet(){
     h+='<button style="border:1.5px solid var(--border);border-radius:10px;background:#fff;padding:7px 12px;font-size:12px;cursor:pointer" onclick="ceWalkToggle()">🧹 '+cw("fixFalse")+'…</button>';
     h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Un-check work marked done that didn’t really happen. Saves a snapshot with a note; the lessons come back around.</div>';
   }else{
-    _ceWalkItems=ceWalkGather(); _ceWalkCursor=cursorPos;
+    _ceWalkItems=(typeof archiveEnsureAll!=="function"||archiveEnsureAll())?ceWalkGather():[]; _ceWalkCursor=cursorPos;   // ARCHENSURE: the panel only opens once every week is here
     h+='<div style="border:1.5px solid var(--border);border-radius:10px;padding:8px">';
     if(!_ceWalkItems.length){
       h+='<div style="font-size:11px;color:var(--muted)">No check-offs found for this subject.</div>';
@@ -35490,6 +35526,7 @@ function lidImportPending(){
 let _lidImportUndo=null;
 function gvImportDone(){
   if(!(momModeActive||adminPinUnlocked)||!db) return;
+  if(typeof archiveWhenAll==="function"&&!archiveWhenAll(gvImportDone)) return;   // ARCHENSURE
   const plans=lidImportPending().map(x=>lidImportPlan(x.kid,x.sk)).filter(Boolean);
   if(!plans.length) return;
   const lines=plans.map(p=>"• "+cap(p.kid)+" · "+p.disp+": "+p.matched+" matched of "+p.nEvidence+(p.offset?(" +"+p.offset+" start-offset"):"")+" → "+p.doneAfter+"/"+p.nList+" done"+(p.unmatched.length?("  ⚠ "+p.unmatched.length+" unmatched"):"")+(p.adjust?("  ⚠ hand-adjust "+p.adjust+" ignored"):""));
@@ -46352,7 +46389,7 @@ function relayWeek(why,info){
 }
 function _rlwFire(att){
   const pend=_rlwPend; if(!pend) return;
-  const ready=(typeof fbCheckedLoaded==="undefined"||fbCheckedLoaded)&&(typeof fbTasksLoaded==="undefined"||fbTasksLoaded)&&(typeof fbHistoryLoaded==="undefined"||fbHistoryLoaded)&&(typeof fbCurrLoaded==="undefined"||fbCurrLoaded);
+  const ready=(typeof fbCheckedLoaded==="undefined"||fbCheckedLoaded)&&(typeof fbTasksLoaded==="undefined"||fbTasksLoaded)&&(typeof fbHistoryLoaded==="undefined"||fbHistoryLoaded)&&(typeof fbCurrLoaded==="undefined"||fbCurrLoaded)&&(typeof archiveEnsureAll!=="function"||archiveEnsureAll());   // ARCHENSURE: a re-lay builds from every past week — wait for them like the rest
   if(!ready||(typeof lockHeldByOther==="function"&&lockHeldByOther())){
     if(att<20){ _rlwTimer=setTimeout(function(){ _rlwFire(att+1); },500); return; }   // ~10 s for a passing sweep / the data
     _rlwPend=null; if(typeof gwShowToast==="function") gwShowToast("Another device is updating the schedule — the week catches up on its next sweep"); return;
@@ -91618,6 +91655,7 @@ function gwHasCarry(c){ return c && Object.keys(c).some(k=>Object.keys(c[k]).len
 function generateWeek(config){
   const weekNum=parseInt(config.weekNum);
   if(!weekNum) return {error:"Week number required"};
+  if(typeof archiveEnsureAll==="function"&&!archiveEnsureAll()) return {error:"Past weeks are still loading — try again in a moment."};   // ARCHENSURE: never build on part of the archive
   const weekLabel="week"+weekNum;
 
   let dayData, weekCursors=null, weekCatchup=null, weekServed=null;
@@ -92850,6 +92888,7 @@ function gwNoPastNew(tasks,oldTasks,c){
 // REGENNOPAST_END
 function gwCommit(){
   if(!gwResult) return;
+  if(typeof archiveEnsureAll==="function"&&!archiveEnsureAll()){ if(typeof gwShowToast==="function") gwShowToast("Past weeks are still loading — try again in a moment."); return; }   // ARCHENSURE
   // Build a fake file-load event to reuse loadJson's write logic
   const d=gwResult;
 

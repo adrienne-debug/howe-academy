@@ -119,6 +119,7 @@ const ALLOWED_FN=["cpuWatch",   // 📦 CPUNIT (2026-10-28): a unit's catalog en
   "cplkLoad","cplkPics",   // 🧩 CPLINCOLNSKILLS (2026-11-17): his class's skills layer arriving (classSkills/<cid>, read once through his mirror), and the picture index landing
   "amAttach",   // 🌅 SENDAM (2026-11-15): a kid's carried-to-morning items arriving (amCarry/<kid> listener)
   "hdAttach","hdRefused","hdSweepOff",   // 🚪 HOUSEDAY (house step 4, 2026-11-17): the day's plan arriving (houseDay listener), a refused save's answer, Kid Off's re-hand from the minute tick — never a tap
+  "_archAllArrived",   // ⏳ ARCHENSURE (slice 2, 2026-11-22): every past week arriving (the archive listener's one helper) redraws a "Loading past weeks…" page — a listener, never a tap
   "digestEnsure","msScanEnsure",   // ⚡ 3a (2026-11-19): digest/ arriving when the weekly report opens (DIGESTLAZY), one sprint book's list arriving (SCANLAZY) — listener callbacks, never a tap
   "giftDadFlagListen",   // 🎁 GIFTS_DAD (2026-11-20): the no-names flag giftShare arriving (Mom shared / unshared something) — Dad's Day redraws its "🎁 Gifts 🔒" row; a listener, never a tap
   "skJobsN",   // 🧹 SEASONJOBS (2026-11-21): a kid's planner-job count arriving for the ✨ Our plans button (seasonJobs/<kid>, read once) — never a tap

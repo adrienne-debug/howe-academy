@@ -73,9 +73,10 @@ function fbNorm(v) {
 // ── 1. WHO READS `archive` (static) ───────────────────────────────────────────────────────────────────────────────────────
 const GROUPS = {
   A: ["initFb", "boot", "getCarryOverPool", "addManualAttWeek", "setAttDate", "loadJson", "ceWalkGather", "ceWalkApply", "lidImportPlan", "gwCommit", "digestFreezeIfNeeded"],
-  B: ["digestArchiveView", "digestGatherData", "renderHistoryReport", "renderHistoryTrends", "renderHistory", "buildKidAttendance", "printWeekReport", "paceStreak", "mpSchWkLoad"],
+  B: ["digestArchiveView", "digestGatherData", "renderHistoryReport", "renderHistoryTrends", "renderHistory", "buildKidAttendance", "printWeekReport", "mpSchWkLoad"],
   C: ["scpPrevWeek", "scpGather", "haPrevWeekSummary", "_sucPrevArchive", "dmWeeks"],
-  D: ["tsWeekDays", "tsCardsDay", "completedLessonKeys", "famRecordAt", "famMadeUpSet", "famRecSig", "paceDoneTitles", "paceAutoCount", "ktPaceSig"]
+  // paceStreak moved B → D in slice 2 (11/22): the Kids' Corner trophy shelf shows it (paceWins), a main screen that never waits
+  D: ["tsWeekDays", "tsCardsDay", "completedLessonKeys", "famRecordAt", "famMadeUpSet", "famRecSig", "paceDoneTitles", "paceAutoCount", "ktPaceSig", "paceStreak"]
 };
 // Blank out comments, strings, template text and regex literals (same length, same newlines) so only real code is searched.
 function codeOnly(raw) {
@@ -185,7 +186,9 @@ const CALLS = fam => `(function(){
     T("haPrevWeekSummary|"+k,()=>haPrevWeekSummary(k));
     T("haNbContext|"+k,()=>haNbContext(k));
     T("scpGather|"+k,()=>{ const g=scpGather(k); return g; });
+    T("paceStreak|"+k,()=>paceStreak(k));
   });
+  T("paceStreak|all",()=>paceStreak("all"));
   T("completedLessonKeys",()=>[...completedLessonKeys()].sort());
   const today=cbTodayISO(); let wd={}; T("tsWeekDays",()=>(wd=tsWeekDays(today)));
   kids.forEach(k=>Object.keys(wd).forEach(iso=>T("tsCardsDay|"+k+"|"+iso,()=>tsCardsDay(k,iso,wd))));
