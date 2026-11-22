@@ -1557,15 +1557,16 @@ function lgDayData(kid,k){
         if(x&&x.iso===D.iso){ r.c=1; r.ts=x.ts||""; if(x.src==="list"){ r.ic="✅"; r.note+=" · ticked on its own list"; } else if(lgHeld(kid,x.bid)){ r.ic="⏸"; r.held=x.pts||0; r.note+=" · waiting for your ✓"; } else { r.ic="✅"; r.pts=x.pts||0; } }
         else { r.c=0; r.ic=D.k===0?"○":"✖"; r.note+=D.k===0?" · not done yet":" · not done"; }
         rows.push(r); });
-      steps.forEach(function(st,i){ if(!st||(D.prev&&st.house)) return; const r=lgRow(slot,kid,D,i,st); if(!r) return;
+      steps.forEach(function(st,i){ if(!st||(D.prev&&st.house)) return; let r=lgRow(slot,kid,D,i,st); if(typeof lgXRow==="function") r=lgXRow(r,slot,kid,D,i,st);   // ➖ LEDGERX (L3): Excuse / Undo on the row
+        if(!r) return;
         if(D.prev&&st.rot) r.nm="🔄 a job that takes turns";   // last week's turn is not worked out again here (rtApplyRot reads this week's dates)
         rows.push(r); });
       const b=lgBonus(kid,m[D.wk+"_"+D.dn+"_"+kid+"_"+slot],"🏁","List complete bonus"); if(b) rows.push(b);
       if(rows.length) out.lists.push({slot:slot,title:LG_LIST[slot]||slot,rows:rows,done:rows.filter(function(r){ return r.c===1; }).length,tot:rows.filter(function(r){ return r.c===0||r.c===1; }).length});
       // gone from the list that day: the turn due on its last day before this one left the list today
       if(lgCarried(slot)) steps.forEach(function(st,i){ if(!st||st.house||!/^wk:/.test(st.cad||"")) return; const E=lgDueBefore(st,D); if(!E||!lgMap(E)) return;
-        const er=lgRec(slot,kid,E,i); if((er&&er.done)||lgWaved(slot,kid,E,i)) return;
-        const f=lgFate(slot,kid,i,st,E,D.k); if(f&&f.gone&&f.gone.k===D.k) out.gone.push({ic:"✖",nm:(st.emoji?st.emoji+" ":"")+(st.label||"Chore"),id:st.house||st._hh||"",note:"due "+lgWd(E.iso)+", not done in time"}); });
+        const er=lgRec(slot,kid,E,i); if((er&&er.done)||(lgWaved(slot,kid,E,i)&&!(typeof lgXHere==="function"&&lgXHere(kid,D,slot,i,E)))) return;   // ➖ LEDGERX: excused here just now → kept in its spot
+        const f=lgFate(slot,kid,i,st,E,D.k); if(f&&f.gone&&f.gone.k===D.k){ const g={ic:"✖",nm:(st.emoji?st.emoji+" ":"")+(st.label||"Chore"),id:st.house||st._hh||"",note:"due "+lgWd(E.iso)+", not done in time"}; if(typeof lgXGone==="function") lgXGone(g,slot,kid,D,E,i,st); out.gone.push(g); } });
     });
     const db2=lgBonus(kid,m[D.wk+"_"+D.dn+"_"+kid+"_day"],"🏆","Whole day complete"); if(db2) out.lists.push({slot:"day",title:"🏆 Whole day",rows:[db2],done:0,tot:0});
   } finally { day=pd; _prevSlWk=pw; }
@@ -1583,7 +1584,7 @@ function lgRowHTML(r){
   return '<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;padding:5px 2px;border-bottom:1px solid #f3f4f6;font-size:13px'+(r.c===0||r.ic==="➖"?';color:#6b7280':'')+'">'
     +'<span style="width:18px;text-align:center;flex-shrink:0">'+r.ic+'</span><span style="flex:1 1 180px;min-width:0">'+nm+(r.note?' <span style="font-size:11.5px;color:#6b7280">'+esc(r.note)+'</span>':'')+'</span>'
     +(r.pts?'<span style="font-weight:800;color:#b45309;white-space:nowrap">+'+lgStar(r.pts)+'</span>':(r.c===0&&r.want?'<span style="color:#9ca3af;white-space:nowrap">'+lgStar(r.want)+'</span>':''))
-    +(r.ts?'<span style="font-size:10.5px;color:#9ca3af;white-space:nowrap">'+esc(String(r.ts).replace(/\s+[A-Z][a-z]{2} \d{1,2}$/,""))+'</span>':'')+(r.gbH||'')+'</div>'; }   // the time: the stamp's date is the day on screen
+    +(r.ts?'<span style="font-size:10.5px;color:#9ca3af;white-space:nowrap">'+esc(String(r.ts).replace(/\s+[A-Z][a-z]{2} \d{1,2}$/,""))+'</span>':'')+(r.xH||'')+(r.gbH||'')+'</div>'; }   // the time: the stamp's date is the day on screen
 function lgListsHTML(x,kid){
   let h='';
   x.lists.forEach(function(L){ h+='<div style="margin-top:9px;font-size:12.5px;font-weight:800;color:#374151">'+L.title+(L.tot?' <span style="font-weight:700;color:#9ca3af">'+L.done+' of '+L.tot+'</span>':'')+'</div>'+L.rows.map(lgRowHTML).join(''); });
@@ -1667,6 +1668,62 @@ function lgGiveUndo(kid,wk,dn,slot,i){
   if(db&&!_dryRun()) obRemove("bank/"+kid+"/adjustments/"+id,a);
   lgGbDone(); return true; }
 // LEDGERGB_END
+// LEDGERX_START — ➖ Excuse on a 📒 Ledger row, and its Undo (DESIGN_chore_ledger_2026-11-21 §3, slice L3; her "go" 2026-11-22). Her
+// words 11/21: "no, let's don't take that away for this one"; her rule: "merge in things and not repeat things" — so Excuse writes the
+// SAME record ✕ today writes (rtWave: waved/<wk>/<day>/<kid>/<slot>step<i> + the Click-off Log's "— waved by Mom" line; a plan row:
+// hdSkipToggle, houseDay/<iso>/skip/<id> + lastSkip + the same log line), on the chore's OWN day (the day it was due), never the day of
+// the tap. Then the lists' own rules do the rest: a waved due day is not late (rtLateDays → 0), so it no longer waits or falls, files no
+// "— not done", and 📊 How often shows it "not counted". ✕ today in the Kids today pop-ups is untouched. Nothing is taken from a bank
+// for a chore that was not done (C2: "Nothing is ever taken from a bank here"), so there is nothing to give back yet (the take-away is
+// a later slice). Undo = the same rtWave tap again, which removes the record; the row reads as it did.
+// On: a row not done on its day (○ today, ✖ an earlier day, whatever became of it after), ⏳ still on the list from an earlier day,
+// ✖ gone from the list. Not on: a done, held, 🌅 or already excused row, a turn done late (that is the done row's ⭐ Give stars
+// back), last week's 🔄 rows (their turn is not worked out for last week). Undo on every ➖ excused row (✕ today's too: one record).
+// Who: Mom, or Dad with his code in (dadAwardOk) — the ✕ today gate, because rtWave and hdSkipToggle refuse anyone else.
+// A ⏳ or gone row's record is on an earlier day, so after the tap that row would leave the day on screen; lgXJ keeps it in its spot
+// as "➖ excused · due Wed" with Undo on this device until the page reloads (its home is then its own day). Memory only.
+const lgXJ={};
+function lgXOk(){ const m=typeof momHere==="function"&&momHere(); return m||(typeof _kioskD==="function"&&_kioskD()&&typeof dadAwardOk==="function"&&dadAwardOk()); }   // the pop-up's gate (Mom or Dad's link) and ✕ today's (Mom or Dad unlocked)
+function lgXDone(){ if(typeof renderAll==="function"){ try{ renderAll(); }catch(e){} } if(document.getElementById("lg-pop")) lgDraw(); }
+function lgXBtn(fn,args,lab,tip){ return '<button onclick="'+fn+'('+args+')"'+(tip?' title="'+tip+'"':'')+' style="border:1.5px solid '+(lab==="Undo"?'var(--border)':'#d1d5db')+';background:#fff;color:'+(lab==="Undo"?'#374151':'#6b7280')+';border-radius:8px;padding:2px 9px;font-size:11.5px;font-weight:'+(lab==="Undo"?700:800)+';cursor:pointer;white-space:nowrap">'+lab+'</button>'; }
+function lgXArgs(kid,E,slot,i,here,g){ return "'"+kid+"','"+E.wk+"','"+E.dn+"','"+slot+"',"+i+(here?",'"+here+"'"+(g?",1":""):""); }
+function lgXEx(kid,E,slot,i,here,g){ return lgXOk()?lgXBtn("lgExcuse",lgXArgs(kid,E,slot,i,here,g),"➖ Excuse","Not the kid's fault: the same as ✕ today on "+lgWd(E.iso)+". It costs nothing and is not a miss."):''; }
+function lgXUn(kid,E,slot,i){ return lgXOk()?lgXBtn("lgExcuseUndo",lgXArgs(kid,E,slot,i),"Undo",""):''; }
+// The row as the lists had it on its own day E (the steps of that day, last week's laid for that week), the global day pinned.
+function lgXStep(slot,kid,E,i){ const pd=day; day=E.dn; try{ return (E.prev?lgPrevSteps(slot,kid,E):(rtStepsFor(slot,kid,false,E.dn)||[]))[i]||null; } finally{ day=pd; } }
+// Can turn i, due on E, be excused? Due that day, not done, not ✕ / 🌅 already, not done late, not a row last week cannot name.
+function lgXCan(slot,kid,E,i,st){ if(!st||!E||!lgMap(E)||(E.prev&&(st.rot||st.house))) return false; const pd=day; day=E.dn;
+  try{ if(!lgDue(st,E)||lgWaved(slot,kid,E,i)) return false; const r=lgRec(slot,kid,E,i); if(r&&r.done) return false;
+    if(typeof amGet==="function"&&amGet(kid,slot,i,E.iso)) return false; const f=E.k<0?lgFate(slot,kid,i,st,E):null; return !(f&&f.done); } finally{ day=pd; } }
+// The hook on a list row: Excuse on a not-done row (its own day, or the day a ⏳ row was due), Undo on an excused one.
+function lgXRow(r,slot,kid,D,i,st){
+  if(!r){ const E=lgXHere(kid,D,slot,i); return E?{ic:"➖",nm:(st.emoji?st.emoji+" ":"")+(st.label||"Chore"),id:st.house||st._hh||"",note:"excused · due "+lgWd(E.iso),xH:lgXUn(kid,E,slot,i)}:r; }
+  if(r.ic==="➖"){ r.xH=lgXUn(kid,D,slot,i); return r; }
+  if(r.c!==0) return r;
+  if(r.ic==="⏳"){ const E=lgDueBefore(st,D), n=(typeof mdLateDays==="function")?mdLateDays(slot,kid,D.dn,i,st):0; if(E&&n>0&&E.k===D.k-n&&lgXCan(slot,kid,E,i,lgXStep(slot,kid,E,i))) r.xH=lgXEx(kid,E,slot,i,D.iso); return r; }
+  if(lgXCan(slot,kid,D,i,st)) r.xH=lgXEx(kid,D,slot,i,""); return r; }
+// The hook on a "Gone from the list" row (the turn due on E): Excuse, or — excused here just now — "➖ excused" with Undo.
+function lgXGone(g,slot,kid,D,E,i,st){
+  if(lgWaved(slot,kid,E,i)){ g.ic="➖"; g.note="due "+lgWd(E.iso)+" · excused"; g.xH=lgXUn(kid,E,slot,i); return; }
+  if(lgXCan(slot,kid,E,i,lgXStep(slot,kid,E,i))) g.xH=lgXEx(kid,E,slot,i,D.iso,1); }
+// This device excused turn i from day D's ⏳ row (no E) or gone row (E: the turn's day) and it is still excused: its day, else null
+function lgXHere(kid,D,slot,i,E){ const v=lgXJ[kid+"|"+D.iso+"|"+slot+"|"+i]; if(!v||!v.g!==!E) return null; const T=lgXDay(v.wk,v.dn); if(!T||(E&&(E.wk!==T.wk||E.dn!==T.dn))||!lgWaved(slot,kid,T,i)) return null; return T; }
+function lgXDay(wk,dn){ for(let k=0;k>=lgMin();k--){ const D=lgDay(k); if(D&&D.wk===wk&&D.dn===dn) return D; } return null; }
+function lgXArgOk(kid,slot,i){ return SL_KIDS.indexOf(kid)>=0&&SL_SLOTS.indexOf(slot)>=0&&i===(i|0)&&i>=0; }
+// The tap. The turn is read again now (never trusted from the drawing); the write is rtWave's, the ✕ today record, on its own day.
+function lgExcuse(kid,wk,dn,slot,i,here,g){
+  if(!lgXOk()||!lgXArgOk(kid,slot,i)) return false; const E=lgXDay(wk,dn), st=E&&lgXStep(slot,kid,E,i);
+  if(!lgXCan(slot,kid,E,i,st)){ lgXDone(); return false; }   // done, excused already (this device or another), or not a row that can be
+  rtWave(slot,kid,E.dn,i,E.wk,st); const on=lgWaved(slot,kid,E,i);
+  if(on&&here&&here!==E.iso) lgXJ[kid+"|"+here+"|"+slot+"|"+i]={wk:E.wk,dn:E.dn,g:g?1:0};
+  lgXDone(); return on; }
+function lgExcuseUndo(kid,wk,dn,slot,i){
+  if(!lgXOk()||!lgXArgOk(kid,slot,i)) return false; const E=lgXDay(wk,dn), st=E&&lgXStep(slot,kid,E,i);
+  if(!E||!st||!lgMap(E)||!lgWaved(slot,kid,E,i)){ lgXDone(); return false; }
+  rtWave(slot,kid,E.dn,i,E.wk,st); const off=!lgWaved(slot,kid,E,i);
+  if(off) Object.keys(lgXJ).forEach(function(k){ const v=lgXJ[k]; if(v.wk===E.wk&&v.dn===E.dn&&k.split("|")[0]===kid&&k.split("|").slice(2).join("|")===slot+"|"+i) delete lgXJ[k]; });
+  lgXDone(); return off; }
+// LEDGERX_END
 // HOUSESWITCH_START — 🚪 the real switch and today's stored plan on 👤 By person (Household by room, step 4; DESIGN §4.3 doors, §5 last
 // bullet, her yes 2026-11-17). Mom only. ON first PROVES a houseDay save works (houseDay/<today>/hello) and only then writes
 // household/meta/engine = {mode:"on", on:<today>} together with each house chore's last-done date filled once from the 8 weeks of
