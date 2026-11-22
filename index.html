@@ -50976,11 +50976,7 @@ function haBuildUnitInsight(kid,u){
   // as a self-contained spec — notebooks.js renders it as a 3rd insert page.
   const activities=[];
   _nbActKeys(u,kid).forEach(nbKey=>{ const a=_unitActs(u).find(x=>x.key===nbKey); if(!a) return;
-    const spec={key:a.key,title:a.title,emoji:a.emoji||"🎨",desc:a.desc||"",kind:a.kind||"sheet",lines:a.lines||0,
-      points:unitActPoints(a),steps:Array.isArray(a.steps)?a.steps:Object.values(a.steps||{}),entries:[]};
-    if(a.kind==="timeline"){ const td=(u.decks||[]).find(d=>d&&d.key===(a.deckKey||cd.key));
-      spec.entries=((td&&td.cards)||[]).slice().sort((x,y)=>(x.order||0)-(y.order||0)).map(c=>({year:c.year||c.reign||"",name:c.name})); }
-    activities.push(spec); });
+    activities.push(uapSpec(u,a,kid,cd)); });   // UNITACTPG: the same spec the Units tab's 🖨 Print hands notebooks.js
   return { unitId:u.id,title:u.title,emoji:u.emoji||"📘",days:nbUnitDays(kid,u.id),learning,learned,next:next.slice(0,6),extras,extrasTitle,activity:activities[0]||null,activities };
 }
 // UNITWEEK_START — 🧾 "This week we will…" on the kids' weekly unit notebook page (PLAN_unit_sheet_2026-11-19.md §4.1, §5 row 1;
@@ -54922,74 +54918,39 @@ function unitSetActivityPoints(unitId,actKey){
   if(db) db.ref("unitStudies/"+unitId+"/activities/"+i+"/points").set(n);
   renderAll();
 }
-// Cards this kid has finished learning (past introduction) in one deck — the pick-from pool
-// for bio/compare activity sheets.
-function _unitLearnedCards(u,kid,deckKey){
-  const deck=(u.decks||[]).find(d=>d&&d.key===deckKey); if(!deck) return [];
-  let items=masteryData[kid]; if(!Array.isArray(items)) items=Object.values(items||{});
-  const byName={}; items.forEach(i=>{ if(i&&i.subject===deckKey) byName[i.prompt]=i; });
-  return (deck.cards||[]).filter(c=>{ const it=byName[c.name]; return it&&it.status&&it.status!=="introduction"&&it.status!=="parked"; })
-    .slice().sort((a,b)=>(a.order||0)-(b.order||0));
+// UNITACTPG_START — 🎨 the activity page, one renderer (PLAN_unit_sheet_2026-11-19.md §4.3, §5 row 4; her words 2026-11-22: "go with
+// her answers and build"). The 🖨 Print button on the Units tab used to draw its own copy of the four layouts (a second
+// renderer: a 720px sheet, a different pick-from pool, and a footer that printed one family's school name on every family's page), while the
+// notebook drew its own in notebooks.js; the two could drift. Now there is one page (notebooks.js UNITACTPG: unitActivityPage) and
+// one spec (uapSpec, also what haBuildUnitInsight queues into the notebook), so 🖨 Print gives the very page the notebook prints for
+// that kid: the same pool of learned cards (the insert's), the kid's grade band (dcLevel → little · early · middle · upper), the
+// kid's notebook colours (unitPageTheme), the target week's number. No family name anywhere; no footer. Nothing is written.
+function uapSpec(u,a,kid,cd){
+  const spec={key:a.key,title:a.title,emoji:a.emoji||"🎨",desc:a.desc||"",kind:a.kind||"sheet",lines:a.lines||0,
+    points:unitActPoints(a),steps:Array.isArray(a.steps)?a.steps:Object.values(a.steps||{}),entries:[],
+    band:(typeof dcLevel==="function")?dcLevel(kid):"middle"};
+  cd=cd||((typeof _unitCharDeck==="function")?_unitCharDeck(u):null);
+  if(a.kind==="timeline"){ const td=(u.decks||[]).find(d=>d&&d.key===(a.deckKey||(cd&&cd.key)));
+    spec.entries=((td&&td.cards)||[]).slice().sort((x,y)=>(x.order||0)-(y.order||0)).map(c=>({year:c.year||c.reign||"",name:c.name})); }
+  return spec;
 }
-// Printable activity page — generic over the 4 template kinds (sheet/bio/compare/timeline).
-function _unitActivityHtml(u,act,kid){
-  const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
-  const GD="#1a3a2a",GM="#2d6a4f",GL="#b7e4c7",GOLD="#c9a84c",MUT="#6b7280";
-  const deckKey=act.deckKey||((_unitCharDeck(u)||{}).key)||"";
-  const kidName=(typeof SL_KLBL!=="undefined"&&SL_KLBL[kid])||kid;
-  const lines=n=>{ let s=""; for(let i=0;i<n;i++) s+='<div style="border-bottom:1.5px solid #cbd5d1;height:26px"></div>'; return s; };
-  const face=(name,sz)=>{ const p=_unitPortrait(u,kid,deckKey,name);
-    if(p&&p.img) return '<img src="'+esc(p.img)+'" style="width:'+sz+'px;height:'+sz+'px;object-fit:cover;border-radius:8px;border:2px solid '+GL+'">';
-    return '<div style="width:'+sz+'px;height:'+sz+'px;border-radius:8px;border:2px solid '+GL+';background:#f2faf5;display:flex;align-items:center;justify-content:center;font-size:'+Math.round(sz*0.5)+'px">'+((p&&p.emoji)||u.emoji||"⭐")+'</div>'; };
-  let h='<div style="max-width:720px;margin:0 auto;font-family:\'DM Sans\',-apple-system,sans-serif;color:#1c1c1e">';
-  h+='<div style="background:'+GD+';border-radius:12px 12px 0 0;padding:16px 24px;display:flex;justify-content:space-between;align-items:flex-end">';
-  h+='<div><div style="font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:'+GL+';margin-bottom:3px">'+esc(u.title)+' · Unit Activity</div>';
-  h+='<div style="font-size:24px;font-weight:800;color:#fff">'+(act.emoji||"🎨")+' '+esc(act.title)+'</div></div>';
-  h+='<div style="font-size:13px;font-weight:700;color:'+GOLD+'">'+esc(kidName)+' · Date: ______</div></div>';
-  h+='<div style="height:5px;background:repeating-linear-gradient(90deg,'+GM+' 0,'+GM+' 18px,'+GOLD+' 18px,'+GOLD+' 22px,'+GM+' 22px,'+GM+' 40px)"></div>';
-  h+='<div style="border:1.5px solid '+GL+';border-top:none;border-radius:0 0 12px 12px;padding:18px 24px">';
-  const _pp=unitActPoints(act);
-  if(_pp) h+='<div style="display:inline-block;border:1.5px solid '+GOLD+';background:#fdf8ee;border-radius:9px;padding:4px 12px;font-size:12px;font-weight:800;color:#9a7d2e;margin-bottom:10px">⭐ Worth '+_pp+' points — show Mom your finished work, then tap “I finished it!” in the app</div>';
-  if(act.desc) h+='<div style="font-size:13px;line-height:1.55;margin-bottom:12px">'+esc(act.desc)+'</div>';
-  const steps=Array.isArray(act.steps)?act.steps:Object.values(act.steps||{});
-  if(steps.length){ h+='<div style="margin-bottom:14px">';
-    steps.forEach(st=>{ h+='<div style="display:flex;gap:9px;align-items:flex-start;padding:3px 0;font-size:12.5px;line-height:1.45"><span style="width:15px;height:15px;border:2px solid '+GM+';border-radius:4px;flex-shrink:0;margin-top:1px"></span><span>'+esc(st)+'</span></div>'; });
-    h+='</div>'; }
-  if(act.kind==="timeline"){
-    const deck=(u.decks||[]).find(d=>d&&d.key===deckKey);
-    const cards=((deck&&deck.cards)||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0));
-    cards.forEach(c=>{ h+='<div style="display:flex;gap:10px;align-items:baseline;padding:5px 0;border-bottom:1px solid #eef2f0;font-size:12.5px">'
-      +'<span style="font-weight:800;color:'+GM+';min-width:72px">'+esc(c.year||c.reign||"")+'</span>'
-      +'<span style="font-weight:700;min-width:150px">'+esc(c.name)+'</span>'
-      +'<span style="flex:1;border-bottom:1.5px solid #cbd5d1;height:18px"></span></div>'; });
-  } else if(act.kind==="bio"||act.kind==="compare"){
-    const learned=_unitLearnedCards(u,kid,deckKey);
-    h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;color:'+GM+';margin:4px 0 8px">'+(act.kind==="compare"?"Pick two you’ve learned":"Pick one you’ve learned")+'</div>';
-    if(learned.length){ h+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">';
-      learned.forEach(c=>{ h+='<div style="width:64px;text-align:center">'+face(c.name,48)+'<div style="font-size:8px;font-weight:700;margin-top:2px;line-height:1.1">'+esc(c.name)+'</div></div>'; });
-      h+='</div>'; }
-    else h+='<div style="font-size:11px;color:'+MUT+';margin-bottom:12px">You haven’t finished learning any yet — do a few drill sessions first!</div>';
-    if(act.kind==="compare"){
-      h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">';
-      [1,2].forEach(()=>{ h+='<div><div style="border-bottom:2px solid '+GM+';height:26px;margin-bottom:8px"></div>'+lines(Math.max(4,Math.round((act.lines||8)/2)))+'</div>'; });
-      h+='</div><div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;color:'+GOLD+';margin-bottom:6px">What do they share?</div>'+lines(3);
-    } else h+='<div style="border-bottom:2px solid '+GM+';height:26px;margin-bottom:8px"></div>'+lines(act.lines||10);
-  } else { // "sheet" — instructions + a big make/draw box
-    h+='<div style="border:2px dashed '+GM+';border-radius:12px;min-height:520px;margin-top:6px"></div>';
-    if(act.lines) h+='<div style="margin-top:12px">'+lines(act.lines)+'</div>';
-  }
-  h+='<div style="text-align:right;font-size:10px;color:#c4b8ae;font-weight:700;margin-top:14px">Howe Academy · '+esc(u.title)+'</div>';
-  h+='</div></div>';
-  return h;
+// The printable page for one activity and one kid — notebooks.js's page, wrapped for printing. "" when the notebook code isn't loaded.
+function uapPrintDoc(u,act,kid){
+  const NB=window.HoweNotebooks; if(!u||!act||!NB||!NB.unitActivityPage||!NB.unitPrintDoc) return "";
+  let ins=null; try{ ins=haBuildUnitInsight(kid,u); }catch(e){ ins=null; }
+  const page=NB.unitActivityPage(uapSpec(u,act,kid),{title:u.title||"Unit Study",emoji:u.emoji||"\u{1F4D8}",weekNum:(typeof nbTargetWkNum==="function")?nbTargetWkNum():"",
+    theme:NB.unitPageTheme?NB.unitPageTheme(kid,(typeof ucLook==="function")?ucLook(kid):{}):null,pool:(ins&&ins.learned)||[]});
+  return NB.unitPrintDoc(String(act.title||"Activity"),['<div class="page-label">Unit Study — '+String(u.title||"").replace(/&/g,"&amp;").replace(/</g,"&lt;")+' · activity</div>\n'+page]);
 }
 function unitPrintActivity(unitId,actKey,kid){
   const u=unitStudies[unitId]; if(!u) return;
   const act=_unitActs(u).find(a=>a.key===actKey); if(!act) return;
-  const html=_unitActivityHtml(u,act,kid);
+  const doc=uapPrintDoc(u,act,kid); if(!doc){ alert("The notebook pages haven’t loaded yet — try again in a moment."); return; }
   const w=window.open("","_blank"); if(!w){ alert("Allow pop-ups to print."); return; }
-  w.document.write('<!doctype html><html><head><title>'+String(act.title||"Activity")+'</title><style>body{margin:16px;background:#fff}@media print{body{margin:0}}</style></head><body>'+html+'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print()},250)}</scr'+'ipt></body></html>');
+  w.document.write(doc.replace("</body>",'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print()},250)}</scr'+'ipt></body>'));
   w.document.close();
 }
+// UNITACTPG_END
 
 // ── Unit card editor: edit shared photo + bio (applies to every enrolled kid) ──
 // ── Batch add: paste many cards into a unit deck at once ("front | back" per line) ────
