@@ -70,7 +70,7 @@ ok("it writes nothing: no db, no Storage, no localStorage, no fetch", !/db\.ref|
 ok("no 🔀, no data URI", WBD.indexOf("\u{1F500}") < 0 && !/data:image/.test(WBD));
 ok("the opener for the activity rows is wbOpen's sibling wbdOpen(opts)", /\nfunction wbdOpen\(opts\)\{/.test(WBD));
 ok("exactly four hooks outside the block, each guarded (DAYCARD door · bar · pen width · save)", HOOKS.every(([a]) => src.split(a).length === 2) && (src.replace(WBD, "").match(/WBOARD:/g) || []).length === 4);
-ok("the door hook sits in DAYCARD's top bar (dcPageHTML), not in the activity rows", fnOf(src, "dcPageHTML").indexOf(HOOKS[0][0].trim()) > 0 && !/wbd/.test(fnOf(src, "dcDayHTML")) && !/wbd/.test(cut(src, "// UNITACTCHK_START", "// UNITACTCHK_END")));
+ok("the door hook sits in DAYCARD's top bar (dcPageHTML); the rows have only WBDROW's own guarded hook", fnOf(src, "dcPageHTML").indexOf(HOOKS[0][0].trim()) > 0 && !/wbd/.test(fnOf(src, "dcDayHTML").replace('+((typeof wbdRowBtnHTML==="function")?wbdRowBtnHTML(g,act):"")', "")) && !/wbd/.test(cut(src, "// UNITACTCHK_START", "// UNITACTCHK_END")));
 
 console.log("── baselines: the tree minus the feature ──");
 {
