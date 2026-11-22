@@ -51051,7 +51051,7 @@ function uwWeekOf(kid,u,tasks,dates){
 function uwAttach(kid,units,tasks,dates){
   units=units||[]; let add=false; const out=[];
   ((typeof haKidUnits==="function")?haKidUnits(kid):[]).filter(u=>u&&u.nbInsert!==false).forEach(u=>{
-    const ins=units.find(x=>x&&x.unitId===u.id); const wk=uwWeekOf(kid,u,tasks,dates);
+    const ins=units.find(x=>x&&x.unitId===u.id); const wk=(typeof uwListOn!=="function"||uwListOn(u))?uwWeekOf(kid,u,tasks,dates):null;   // UNITWEEKSW: Mom's 📅 This week list switch
     if(ins){ if(wk) ins.week=wk; out.push(ins); return; }
     if(!wk) return; add=true;
     out.push({unitId:u.id,title:u.title,emoji:u.emoji||"\u{1F4D8}",days:(typeof nbUnitDays==="function")?nbUnitDays(kid,u.id):{},learning:[],learned:[],next:[],extras:[],extrasTitle:"",activity:null,activities:[],week:wk}); });
@@ -51060,6 +51060,34 @@ function uwAttach(kid,units,tasks,dates){
   return out;
 }
 // UNITWEEK_END
+// UNITWEEKSW_START — 📅 a per-unit switch for the "This week we will…" list (PLAN_unit_sheet_2026-11-19.md §8.2 slice 1b, pick 7). A
+// beta mom's answer 2026-11-20: the week list "Only for some units"; her go 2026-11-22: "build as many in as many sessions you need to
+// get done. go with her answers and build". On the unit page, under 📓 Include in notebooks (Mom only, a unit with days):
+// "📅 This week list", ON by default. Off = that unit's weekly notebook page prints exactly as it did before UNITWEEK: the cards
+// pages only, and a unit with days but no cards prints nothing (uwAttach asks uwListOn: no ins.week, no bare insert).
+// One stored field: unitStudies/<id>/weekList = false while off; turning it back on removes the field (absent = on), so every unit
+// that exists reads as on with no write. ONE targeted set, Mom only (momHere), live only (db && !_dryRun()).
+function uwListOn(u){ return !(u&&u.weekList===false); }
+function uwSwHtml(u){
+  if(!u||!u.id||!momHere()||!(typeof utHasDays==="function"&&utHasDays(u))) return "";
+  const on=uwListOn(u), id=String(u.id).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  return '<div data-uwsw="1" style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:10px">'+
+    '<span style="flex:1;min-width:150px;font-size:12px;font-weight:700;color:#1f2937">\u{1F4C5} This week list'+(on?'':' <span style="font-weight:800;color:#b45309">\u00B7 off</span>')+
+    '<div style="font-size:10.5px;font-weight:600;color:var(--muted);line-height:1.4;margin-top:2px">A \u201CThis week we will\u2026\u201D list on this unit\u2019s notebook page: each unit day of the week with its book, video and activity. Turn off to print the cards page only.</div></span>'+
+    '<button onclick="unitToggleWeekList(\''+id+'\')" style="padding:7px 14px;border-radius:10px;border:1.5px solid '+(on?'#86efac':'var(--border)')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#15803d':'#b45309')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+(on?'\u2713 On':'\u25CB Off')+'</button></div>';
+}
+function unitToggleWeekList(unitId){
+  if(!momHere()) return false;   // what's in the notebook is Mom's call
+  const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[unitId]; if(!u) return false;
+  const next=!uwListOn(u);
+  if(next) delete u.weekList; else u.weekList=false;
+  const live=(typeof db!=="undefined"&&!!db&&!_dryRun());
+  if(live) db.ref("unitStudies/"+unitId+"/weekList").set(next?null:false);   // ONE targeted set; on = the field removed
+  else if(typeof gwShowToast==="function") gwShowToast("\u{1F4C5} This week list "+(next?"on":"off")+" (dry run \u2014 nothing saved)");
+  if(typeof renderAll==="function") renderAll();
+  return true;
+}
+// UNITWEEKSW_END
 // In-app status page(s) for every unit a kid is enrolled in.
 // Notebook tab shows a status card per enrolled unit — but only for units set to go to the
 // notebook (nbInsert !== false). A unit shelved from notebooks (Units tab toggle off) drops
@@ -54075,6 +54103,7 @@ function renderUnitDetail(u){
       h+='<button onclick="unitToggleNbInsert(\''+u.id+'\')" style="padding:7px 14px;border-radius:10px;border:1.5px solid '+(nbOn?'#86efac':'var(--border)')+';background:'+(nbOn?'#f0fdf4':'#fff')+';color:'+(nbOn?'#15803d':'#b45309')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+(nbOn?'✓ On':'○ Off')+'</button>';
       h+='</div>';
     }
+    if(typeof uwSwHtml==="function") h+=uwSwHtml(u);   // UNITWEEKSW: 📅 This week list switch, under 📓 Include in notebooks
     if(typeof unitMixPicsHtml==="function") h+=unitMixPicsHtml(u);   // UNITMULTIPIC: 🎲 Multiple pictures switch
     h+=_unitPicsBtnHtml(u);   // UNIT_PICS: 🖼 Find pictures (Wikipedia, in this browser)
     if(typeof laIrrHtml==="function") h+=laIrrHtml(u,esc);   // LAIRR: ＋ Add Irregulars (Language Arts unit only; units step 9, 2026-10-26)
