@@ -1,7 +1,7 @@
 /*
  * Node tests for retrieval Row 2: optional second retrieval card per kid per day.
  * Runs the real RETRWEEK helper block (retrWeek/retrWeek2/retrDayKinds), the real
- * retrAdmin* editor slice (init/cycle/save), and the real GWRETR generator block
+ * retrAdmin* editor slice (init/save — numbers only since DRILLPOINT), and the real GWRETR generator block
  * (gwInjectRetrieval) against fixture weeks.
  *
  *   run:  node test_retr_row2.js
@@ -138,34 +138,19 @@ console.log("generator:");
 }
 
 console.log("admin editor:");
-{
-  const env = mkEnv({});
-  env.retrAdminInit();
-  ok("init mirrors empty week2", eq(env.__admin().week2, {}));
-  env.retrAdminCycleDay("mon", 2);                            // off -> sprint (cycle order)
-  ok("cycle row 2 doesn't touch row 1", env.__admin().week.mon === "match" && env.__admin().week2.mon === "sprint");
-  env.retrAdminCycleDay("mon");                               // row 1 default: match -> recheck
-  ok("row-less cycle still edits row 1", env.__admin().week.mon === "recheck" && env.__admin().week2.mon === "sprint");
-  env.retrAdminSave();
-  const u = env.updates[env.updates.length - 1];
-  ok("save targets the kid's plan path", u.p === "mastery/retrievalPlan/julian");
-  ok("save persists week2", eq(u.u.week2, { mon: "sprint" }), u.u.week2);
-}
+// DRILLPOINT (slice 6, her pick 2026-11-22 "Yes, replace them"): the Mastery panel's Row 1 / Row 2 day buttons are gone — the
+// days (all three rows) are set in Curriculum. The editor holds the numbers only and its save never carries week / week2.
 {
   const env = mkEnv({ julian: { week: { mon: "drill", tue: "drill", wed: "drill", thu: "drill", fri: "drill" }, week2: { mon: "match", tue: "drill" } } });
   env.retrAdminInit();
-  env.retrAdminSave();
+  ok("init holds no rows (numbers only)", env.__admin().week === undefined && env.__admin().week2 === undefined, Object.keys(env.__admin()));
+  ok("the day-button tap is gone", typeof env.retrAdminCycleDay === "undefined");
+  env.retrAdminNum("gate_pct", "85");
   const u = env.updates[env.updates.length - 1];
-  ok("save drops row2 day equal to row1", eq(u.u.week2, { mon: "match" }), u.u.week2);
-}
-{
-  const env = mkEnv({ julian: { week: { mon: "drill" }, week2: { mon: "match" } } });
-  env.retrAdminInit();
-  env.retrAdminCycleDay("mon", 2); env.retrAdminCycleDay("mon", 2); env.retrAdminCycleDay("mon", 2);  // match->recheck->drill->off
-  ok("row 2 cycles back to off", env.__admin().week2.mon === "off");
-  env.retrAdminSave();
-  const u = env.updates[env.updates.length - 1];
-  ok("cleared row 2 saves as {} (node cleared)", eq(u.u.week2, {}), u.u.week2);
+  ok("save targets the kid's plan path", u.p === "mastery/retrievalPlan/julian");
+  ok("save carries the numbers only — no week, no week2", JSON.stringify(Object.keys(u.u)) === '["settings"]' && u.u.settings.gate_pct === 85, u.u);
+  ok("the stored Row 2 is left as it was", eq(env.masteryData.retrievalPlan.julian.week2, { mon: "match", tue: "drill" }));
+  ok("…and the builder still reads it", eq(env.retrDayKinds("julian", "mon"), ["drill", "match"]));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

@@ -10,6 +10,10 @@
  * The fix stamps the kid onto the editor state and re-inits on mismatch, which covers every
  * entry point that sets masteryKid rather than trusting each to reset.
  *
+ * DRILLPOINT (slice 6, her pick 2026-11-22 "Yes, replace them"): the panel's day buttons are gone (the days are set in
+ * Curriculum) and its save writes the numbers only — so the per-kid cases below drive the editor with a number box
+ * (retrAdminNum), and the old Row 2 save rules became "a save carries no days".
+ *
  *   run:  node test_retr_admin.js
  */
 const fs = require("fs");
@@ -37,7 +41,7 @@ function extractFn(name) {
 const a = src.indexOf("// RETRWEEK_START"), b = src.indexOf("// RETRWEEK_END");
 if (a < 0 || b < 0) throw new Error("RETRWEEK markers not found");
 const BLOCK = src.slice(a, b) + "\n" +
-  ["retrAdminInit", "retrAdminCycleDay", "retrAdminSave", "drPlanWrite"].map(extractFn).join("\n") +
+  ["retrAdminInit", "retrAdminNum", "retrAdminSave", "drPlanWrite"].map(extractFn).join("\n") +
   "\nlet retrAdminLocal=null;";
 
 let pass = 0, fail = 0;
@@ -74,20 +78,19 @@ console.log("\n── the editor state belongs to one kid ──");
 }
 {
   const w = world();
-  w.run("retrAdminCycleDay('mon',2);");                 // touch Lincoln's Row 2
-  const lincolnRow2 = JSON.stringify(w.get().week2);
-  w.run("masteryKid='lucy'; retrAdminCycleDay('tue',2);");
+  w.run("retrAdminNum('gate_pct','91');");              // touch Lincoln's numbers
+  w.run("masteryKid='lucy'; retrAdminNum('sprint_seconds','45');");
   ok("switching kids rebuilds the editor state", w.get().kid === "lucy", w.get().kid);
-  ok("Lucy does not inherit Lincoln's Row 2",
-    JSON.stringify(w.get().week2) !== lincolnRow2 || !w.get().week2.mon, w.get().week2);
-  ok("Lucy's Row 1 is Lucy's, not Lincoln's",
-    w.get().week.tue === "match" && w.get().week.mon === "sprint", w.get().week);
+  ok("Lucy does not inherit Lincoln's numbers",
+    w.get().settings.gate_pct === undefined && w.get().settings.sprint_seconds === 45, w.get().settings);
+  ok("the editor holds no days (DRILLPOINT: they are read, never copied)",
+    w.get().week === undefined && w.get().week2 === undefined, Object.keys(w.get()));
 }
 
 console.log("\n── Save can never cross kids ──");
 {
   const w = world();
-  w.run("retrAdminCycleDay('mon',2);");                 // Lincoln edit (RETRSAVE 2026-11-19: the tap saves Lincoln at once)
+  w.run("retrAdminNum('gate_pct','91');");              // Lincoln edit (RETRSAVE 2026-11-19: it saves Lincoln at once)
   const before = JSON.stringify(w.writes);
   w.run("masteryKid='lucy';");                          // switch WITHOUT rendering
   w.run("retrAdminSave();");
@@ -96,28 +99,27 @@ console.log("\n── Save can never cross kids ──");
 }
 {
   const w = world();
-  w.run("retrAdminCycleDay('mon',2); retrAdminSave();");
+  w.run("retrAdminNum('gate_pct','91'); retrAdminSave();");
   ok("a same-kid Save writes to that kid's node",
     !!w.writes["mastery/retrievalPlan/lincoln"], Object.keys(w.writes));
   ok("and to nobody else", Object.keys(w.writes).length === 1, Object.keys(w.writes));
 }
 {
   const w = world();
-  w.run("masteryKid='lucy'; retrAdminCycleDay('mon',2); retrAdminSave();");
+  w.run("masteryKid='lucy'; retrAdminNum('gate_pct','91'); retrAdminSave();");
   ok("editing Lucy writes only Lucy",
     !!w.writes["mastery/retrievalPlan/lucy"] && !w.writes["mastery/retrievalPlan/lincoln"],
     Object.keys(w.writes));
 }
 
-console.log("\n── Row 2 save rules (unchanged behaviour) ──");
+console.log("\n── a save carries no days (DRILLPOINT) ──");
 {
   const w = world();
-  // Lincoln Row 1 mon is "sprint"; make Row 2 mon "sprint" too → must be dropped on save
-  w.run("retrAdminInit(); retrAdminLocal.week2={mon:'sprint',tue:'drill',wed:'off'}; retrAdminSave();");
+  // even an editor copy in the old shape (with Row 1 / Row 2 days) writes the numbers only
+  w.run("retrAdminInit(); retrAdminLocal.week={mon:'drill'}; retrAdminLocal.week2={mon:'sprint',tue:'drill'}; retrAdminLocal.settings.gate_pct=88; retrAdminSave();");
   const p = w.writes["mastery/retrievalPlan/lincoln"];
-  ok("Row 2 drops a day that matches Row 1", p && p.week2.mon === undefined, p && p.week2);
-  ok("Row 2 drops an 'off' day", p && p.week2.wed === undefined, p && p.week2);
-  ok("Row 2 keeps a real extra", p && p.week2.tue === "drill", p && p.week2);
+  ok("the payload is {settings} only", p && JSON.stringify(Object.keys(p)) === '["settings"]', p);
+  ok("with the number in it", p && p.settings.gate_pct === 88, p && p.settings);
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

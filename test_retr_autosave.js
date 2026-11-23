@@ -12,6 +12,10 @@
  *      build (the REAL gwInjectRetrieval) makes the same cards under the same ids
  *   3. once after the tapping settles: four taps → one relayWeek; two kids → one run; never for a kid's device / dry run;
  *      the door runs pass R alone (no sweep), one targeted multi-path update, a what-moved line that says "taken off"
+ * DRILLPOINT (slice 6, her pick 2026-11-22 "Yes, replace them"): the panel's day buttons are gone — the days are set in
+ * Curriculum, which saves through the same one plan write (drPlanWrite, o.rhythm → the live pass). §1 now pins the panel as
+ * it is (numbers save themselves, no Save button, Reset the numbers); §2–§3 replay the old day tap through that one write
+ * (tap(), below), so the live-week checks are unchanged.
  *   run:  node test_retr_autosave.js
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
@@ -71,53 +75,40 @@ function world(o) {
   return env;
 }
 const lastWrite = env => env.writes[env.writes.length - 1];
+// DRILLPOINT: the old day button's cycle, replayed through the one plan write the Curriculum page uses (week = the whole row
+// as shown, week2 cleaned, the live pass queued) — the same days payload the button sent, without the panel.
+const CYCLE = ["sprint", "match", "recheck", "drill", "off"], D3 = ["mon", "tue", "wed", "thu", "fri"];
+function tap(w, day, row) {
+  const kid = w.masteryKid, w1 = Object.assign({}, w.retrWeek(kid)), w2 = Object.assign({}, w.retrWeek2(kid));
+  const map = row === 2 ? w2 : w1;
+  map[day] = CYCLE[(CYCLE.indexOf(map[day] || "off") + 1) % CYCLE.length];
+  const week = {}, week2 = {};
+  D3.forEach(d => { week[d] = w1[d] || "off"; });
+  D3.forEach(d => { const k = w2[d]; if (k && k !== "off" && k !== week[d]) week2[d] = k; });
+  return w.drPlanWrite(kid, { week, week2 }, { rhythm: true });
+}
 
 // ───────────────────────────────────────────────────────────────────────────────────────────────
 console.log("1. the page saves by itself");
 {
-  const w = world({ kid: "kidb" });
-  w.retrAdminInit();
-  w.retrAdminCycleDay("mon");                                       // off → sprint
-  const u = lastWrite(w);
-  ok("one tap writes at once, to that kid's node", w.writes.length === 1 && u.p === "mastery/retrievalPlan/kidb", w.writes);
-  ok("…and stores the WHOLE row as shown (the other four days as off)", JSON.stringify(u.v.week) === JSON.stringify({ mon: "sprint", tue: "off", wed: "off", thu: "off", fri: "off" }), u.v.week);
-  ok("same payload shape as the old Save button: settings, week, week2", Object.keys(u.v).sort().join() === "settings,week,week2", Object.keys(u.v));
-  ok("the local mirror has it too", w.masteryData.retrievalPlan.kidb.week.mon === "sprint");
-}
-{
+  // DRILLPOINT: the day buttons and their tap are gone; the panel's save is numbers only
   const w = world({ kid: "kida", plan: { kida: { week: { mon: "drill", tue: "match" }, mathfacts_order: ["x"] } } });
-  w.retrAdminInit();
-  w.retrAdminCycleDay("wed");                                       // off → sprint
+  ok("no day-button tap in the panel any more", typeof w.retrAdminCycleDay === "undefined");
+  w.retrAdminInit(); w.retrAdminNum("gate_pct", "85");
   const u = lastWrite(w);
-  ok("a kid with a partly stored row: the tap keeps every other day as shown", JSON.stringify(u.v.week) === JSON.stringify({ mon: "drill", tue: "match", wed: "sprint", thu: "off", fri: "off" }), u.v.week);
-  ok("the mirror keeps the kid's other keys (update() does too)", JSON.stringify(w.masteryData.retrievalPlan.kida.mathfacts_order) === '["x"]');
-  w.retrAdminCycleDay("wed"); w.retrAdminCycleDay("wed");
-  ok("the editor state is kept between taps — no other day flips", JSON.stringify(w.__admin().week) === JSON.stringify({ mon: "drill", tue: "match", wed: "recheck" }), w.__admin().week);
-  ok("every tap saved (3 taps → 3 writes)", w.writes.length === 3, w.writes.length);
-}
-{
-  const w = world({ kid: "kida", plan: { kida: { week: { mon: "match", tue: "off", wed: "off", thu: "off", fri: "off" } } } });
-  w.retrAdminInit();
-  w.retrAdminCycleDay("mon", 2);                                    // Row 2: off → sprint
-  ok("Row 2 extra saved", lastWrite(w).v.week2.mon === "sprint", lastWrite(w).v.week2);
-  w.retrAdminCycleDay("mon", 2);                                    // sprint → match = same as Row 1
-  ok("Row 2 day equal to Row 1 is dropped from the payload", lastWrite(w).v.week2.mon === undefined, lastWrite(w).v.week2);
-  ok("…but the editor still shows it, so the next tap moves on (no reset to off mid-cycle)", w.__admin().week2.mon === "match");
-  w.retrAdminCycleDay("mon", 2);                                    // match → recheck
-  ok("next tap goes on to recheck and saves it", lastWrite(w).v.week2.mon === "recheck" && w.__admin().week2.mon === "recheck", lastWrite(w).v.week2);
-  w.retrAdminCycleDay("mon", 2); w.retrAdminCycleDay("mon", 2);    // recheck → drill → off
-  ok("Row 2 back to off saves as {} (clears the node)", JSON.stringify(lastWrite(w).v.week2) === "{}", lastWrite(w).v.week2);
+  ok("a number writes at once, to that kid's node, settings only", w.writes.length === 1 && u.p === "mastery/retrievalPlan/kida" && JSON.stringify(Object.keys(u.v)) === '["settings"]', w.writes);
+  ok("the stored days are untouched and the kid's other keys kept", JSON.stringify(w.masteryData.retrievalPlan.kida.week) === JSON.stringify({ mon: "drill", tue: "match" }) && JSON.stringify(w.masteryData.retrievalPlan.kida.mathfacts_order) === '["x"]');
 }
 {
   const w = world({ kid: "kida" });
-  w.retrAdminInit(); w.retrAdminCycleDay("mon");
+  w.retrAdminInit(); w.retrAdminNum("gate_pct", "85");
   const n = w.writes.length;
   w.masteryKid = "kidb";                                            // kid switched without a repaint
   const r = w.retrAdminSave();
   ok("wrong-kid guard: a stale editor never writes to the kid on screen", r === false && w.writes.length === n && !w.writes.some(x => /kidb$/.test(x.p)), w.writes);
   ok("…and the editor reloads for the kid on screen", w.__admin().kid === "kidb");
-  w.retrAdminCycleDay("tue");
-  ok("the next tap writes only that kid", /kidb$/.test(lastWrite(w).p) && lastWrite(w).v.week.tue === "sprint");
+  w.retrAdminNum("sprint_seconds", "40");
+  ok("the next change writes only that kid", /kidb$/.test(lastWrite(w).p) && lastWrite(w).v.settings.sprint_seconds === 40);
 }
 {
   const w = world({ kid: "kida" });
@@ -139,12 +130,12 @@ console.log("1. the page saves by itself");
   const w = world({ kid: "kida" });
   const h0 = w.retrAdminHtml();
   ok("no Save button in the page", !/Save Retrieval Plan/.test(h0) && !/retrAdminSave\(/.test(h0));
-  ok("Reset is still there", /onclick="retrAdminReset\(\)"/.test(h0));
-  ok("the saved line sits by the rhythm, with an id", /id="retrAdminSaved"/.test(h0) && h0.indexOf('id="retrAdminSaved"') > h0.indexOf("Weekly rhythm") - 400 && h0.indexOf('id="retrAdminSaved"') < h0.indexOf("Row 2"));
+  ok("Reset is still there (\"Reset the numbers\")", /onclick="retrAdminReset\(\)"[^>]*>Reset the numbers</.test(h0));
+  ok("the saved line sits by Reset, with an id, once (DRILLPOINT: no rhythm rows above it any more)", h0.split('id="retrAdminSaved"').length === 2 && h0.indexOf('id="retrAdminSaved"') < h0.indexOf('onclick="retrAdminReset()"') && h0.indexOf('id="retrAdminSaved"') > h0.indexOf("Days are set in Curriculum") && !/Weekly rhythm|Row 2/.test(h0));
   ok("before any change it says changes save by themselves", /changes save by themselves/.test(h0));
-  w.retrAdminCycleDay("mon");
+  w.retrAdminNum("gate_pct", "85");
   const h1 = w.retrAdminHtml();
-  ok("after a tap the page shows Saved ✓ and that the week follows", /Saved ✓/.test(h1) && /this week’s cards update in a moment/.test(h1));
+  ok("after a change the page shows Saved ✓", /Saved ✓/.test(h1));
   ok("the number inputs still use onchange (no per-keystroke repaint)", !/oninput=/.test(h1));
   ok("the old Save button is gone from the whole app", !/>Save Retrieval Plan</.test(src) && !/onclick="retrAdminSave\(/.test(src));
 }
@@ -152,16 +143,17 @@ console.log("1. the page saves by itself");
   const w = world({ kid: "kida", plan: { kida: { week: { mon: "drill" } } } });
   w.confirmAnswer = false;
   w.retrAdminReset();
-  ok("Reset still asks first — No changes nothing", w.confirms === 1 && w.removes.length === 0 && w.masteryData.retrievalPlan.kida, w.removes);
+  ok("Reset still asks first — No changes nothing", w.confirms === 1 && w.removes.length === 0 && w.writes.length === 0 && w.masteryData.retrievalPlan.kida, w.removes);
   w.confirmAnswer = true;
   w.retrAdminReset();
-  ok("Reset → Yes removes the kid's plan as before", w.removes.length === 1 && w.removes[0] === "mastery/retrievalPlan/kida" && !w.masteryData.retrievalPlan.kida);
-  ok("…and the live week follows the built-in rhythm too (queued)", w.timers.some(t => t.live));
+  // DRILLPOINT: "Reset the numbers" — one targeted update {settings:null}; the plan (its days) is never removed
+  ok("Reset → Yes clears the numbers only (no remove of the plan)", w.removes.length === 0 && w.writes.length === 1 && JSON.stringify(lastWrite(w).v) === '{"settings":null}' && w.masteryData.retrievalPlan.kida.week.mon === "drill");
+  ok("…and the live week is not queued (the days did not change)", !w.timers.some(t => t.live));
 }
 {
   const w = world({ kid: "kida", dry: true });
-  w.retrAdminInit(); w.retrAdminCycleDay("mon");
-  ok("?dryrun=1: a tap writes nothing to the database", w.writes.length === 0);
+  w.retrAdminInit(); w.retrAdminNum("gate_pct", "85");
+  ok("?dryrun=1: a change writes nothing to the database", w.writes.length === 0);
   ok("?dryrun=1: and never queues the live week", w.timers.length === 0);
 }
 
@@ -201,14 +193,14 @@ const retr = (ts, k) => ts.filter(t => t.subjectKey === "retrieval" && (!k || t.
   w.weekData.tasks = clone(week);
   // Mom: kida thu drill → off (4 taps: drill→off), fri match → recheck (1 tap… match→recheck), Row 2 thu sprint
   w.masteryKid = "kida"; w.retrAdminInit();
-  w.retrAdminCycleDay("thu");                                       // drill → off
-  w.retrAdminCycleDay("fri");                                       // match → recheck
-  w.retrAdminCycleDay("wed");                                       // sprint → match (a PAST day)
-  w.retrAdminCycleDay("thu", 2);                                    // Row 2 thu: off → sprint
+  tap(w, "thu");                                       // drill → off
+  tap(w, "fri");                                       // match → recheck
+  tap(w, "wed");                                       // sprint → match (a PAST day)
+  tap(w, "thu", 2);                                    // Row 2 thu: off → sprint
   // kidb (no ladder): every day → sprint (drill→off→sprint), then thu → match
   w.masteryKid = "kidb"; w.retrAdminInit();
-  ["mon", "tue", "wed", "thu", "fri"].forEach(d => { w.retrAdminCycleDay(d); w.retrAdminCycleDay(d); });   // drill → off → sprint
-  w.retrAdminCycleDay("thu");                                       // sprint → match
+  ["mon", "tue", "wed", "thu", "fri"].forEach(d => { tap(w, d); tap(w, d); });   // drill → off → sprint
+  tap(w, "thu");                                       // sprint → match
   ok("each tap saved (15 taps → 15 writes)", w.writes.length === 15, w.writes.length);
   ok("…but the live week is NOT touched per tap", JSON.stringify(w.weekData.tasks) === JSON.stringify(week));
 
@@ -271,7 +263,7 @@ const retr = (ts, k) => ts.filter(t => t.subjectKey === "retrieval" && (!k || t.
   // after school today: today is left alone, later days still follow
   const w = world({ plan: OLD, mode: "tomorrow", now: "2026-11-19T17:00:00" });
   w.weekData.tasks = build(world({ plan: OLD, now: "2026-11-15T19:00:00" }), baseWeek());
-  w.masteryKid = "kida"; w.retrAdminInit(); w.retrAdminCycleDay("thu", 2); w.retrAdminCycleDay("fri", 2);
+  w.masteryKid = "kida"; w.retrAdminInit(); tap(w, "thu", 2); tap(w, "fri", 2);
   const d = w.retrLiveDiff("kida", w.weekData.tasks, w.retrLiveCtx("kida"));
   ok("after school ends, nothing is added on today", !d.added.some(c => c.day === "thursday") && d.added.some(c => c.day === "friday"), d.added.map(c => c.day));
 }
@@ -280,7 +272,7 @@ const retr = (ts, k) => ts.filter(t => t.subjectKey === "retrieval" && (!k || t.
   const w = world({ plan: OLD });
   w.weekData.tasks = build(world({ plan: OLD, now: "2026-11-15T19:00:00" }), baseWeek());
   w.masteryKid = "kidb"; w.retrAdminInit();
-  ["mon", "tue", "wed", "thu", "fri"].forEach(d => w.retrAdminCycleDay(d));   // drill → off
+  ["mon", "tue", "wed", "thu", "fri"].forEach(d => tap(w, d));   // drill → off
   const d = w.retrLiveDiff("kidb", w.weekData.tasks, w.retrLiveCtx("kidb"));
   ok("all days off: today's and later open cards are taken off, past ones stay", d.removed.length === 1 && !d.added.length
     && w.weekData.tasks.find(t => t.id === d.removed[0]).day === "thursday", d.removed);
@@ -291,21 +283,21 @@ console.log("3. once after the tapping settles");
 {
   const w = world({ kid: "kida" });
   w.retrAdminInit();
-  ["thu", "thu", "thu", "thu"].forEach(d => w.retrAdminCycleDay(d));
+  ["thu", "thu", "thu", "thu"].forEach(d => tap(w, d));
   ok("four taps → four saves, one pending timer", w.writes.length === 4 && w.timers.filter(t => t.live).length === 1);
   ok("the wait is long enough to finish a day's cycle", w.timers.filter(t => t.live)[0].ms >= 4000, w.timers[0].ms);
   ok("nothing reaches the week before it settles", w.relays.length === 0);
   w.fire();
   ok("then ONE relayWeek('retrieval') for that kid", w.relays.length === 1 && w.relays[0].why === "retrieval" && JSON.stringify(w.relays[0].info.retr) === '["kida"]', w.relays);
   ok("the line names the kid from the family's own labels", /Kid A/.test(w.relays[0].info.label), w.relays[0].info.label);
-  w.masteryKid = "kida"; w.retrAdminCycleDay("mon"); w.masteryKid = "kidb"; w.retrAdminInit(); w.retrAdminCycleDay("mon");
+  w.masteryKid = "kida"; tap(w, "mon"); w.masteryKid = "kidb"; w.retrAdminInit(); tap(w, "mon");
   w.fire();
   ok("two kids changed together → one run with both", w.relays.length === 2 && JSON.stringify(w.relays[1].info.retr) === '["kida","kidb"]', w.relays[1]);
 }
 {
   const w = world({ kid: "kida", mom: false });
   ok("not Mom (a kid's device) → never queued", w.retrLiveQueue("kida") === false && w.timers.length === 0);
-  ok("only a tap queues it — no listener / render path calls retrLiveQueue", (src.match(/retrLiveQueue\(/g) || []).length === 3, (src.match(/retrLiveQueue\(/g) || []).length);
+  ok("only a day change through the plan write queues it — no listener / render path calls retrLiveQueue (DRILLPOINT: Reset no longer does)", (src.match(/retrLiveQueue\(/g) || []).length === 2, (src.match(/retrLiveQueue\(/g) || []).length);
 }
 {
   // the door: pass R alone under the relay's lock, its snapshot / diff / line; no sweep
@@ -313,7 +305,7 @@ console.log("3. once after the tapping settles");
   const consts = /const RLW_WAIT_MS=[^\n]*\n/.exec(src)[0] + "let relayLogData={};\nlet _rlwPend=null, _rlwTimer=null;\n";
   const w = world({ plan: OLD });
   w.weekData.tasks = build(world({ plan: OLD, now: "2026-11-15T19:00:00" }), baseWeek());
-  w.masteryKid = "kida"; w.retrAdminInit(); w.retrAdminCycleDay("fri");   // match → recheck (Friday: off the old, on the new)
+  w.masteryKid = "kida"; w.retrAdminInit(); tap(w, "fri");   // match → recheck (Friday: off the old, on the new)
   const w0 = w.writes.length;
   let sweeps = 0, locks = 0, released = 0;
   Object.assign(w, { cascadeIntraWeek: () => sweeps++, runCascade: () => sweeps++, _rlwGuard: () => sweeps++, _rlwChain: (l, p, f) => f(),
