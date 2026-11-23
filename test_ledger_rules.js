@@ -14,7 +14,8 @@
  *   the penalty paths included · B each flip's one write (exact path and value, nothing else) · C fall OFF for one kid · D what was paid
  *   stays (a late tick before the flip; the ledger's words and ⭐ Give stars back) · E fall ON again (and off/on the same day) ·
  *   F ⏸ pause and un-pause (the same day) · G Take stars away OFF for one kid: the spot check, the Click-off Log's −100, 🧾's −100 ·
- *   H the two look-only lines · I Dad's link and a kid's device · J dryrun · K a second device sees the flip.
+ *   H the two look-only lines · I Dad's link and a kid's device (and Mom's open panel on a device that leaves Mom mode or turns Dad's
+ *   link) · J dryrun · K a second device sees the flip. C and F also read Kids' Corner's "still to get" and the 🧽 house panel's rows.
  * "The app before" = THIS tree with L4 taken out (no git, no pinned commit): index.html minus STARRULES, the kid argument the falling
  * stars' callers pass and the three take gates; house.js minus LEDGERRULES and its four hooks in LEDGERVIEW (each must match exactly once).
  * LR_INDEX / LR_HJS = other copies (a mutation check). LR_DUMP = a file for the preview page's drawings.
@@ -98,6 +99,10 @@ const draw = (d, kid) => d.run("(function(){ const d0=day; day=_todayDay; try{ r
 const pill = (h, label) => { const r = String(h).split('<div class="mr-step').filter(x => x.indexOf(label + "<") >= 0 || x.indexOf(label + " <") >= 0)[0] || ""; return txt((r.match(/<span class="mr-pts">.*?⭐<\/span>/) || [""])[0]); };
 const pop = (d, kid) => d.run("(function(){ let h=''; const b=document.body.insertAdjacentHTML; document.body.insertAdjacentHTML=function(w,x){ h=x; }; try{ boardStatPop(" + J(kid) + ",'chores',_todayDay); } finally{ document.body.insertAdjacentHTML=b; } return h; })()");
 const kc = (d, kid) => d.run("kcPointsHTML(" + J(kid) + ")");
+// Kids' Corner's "+N still to get" (what is left today, a waiting row counted at what it pays now) · the 🧽 house panel's rows for a kid
+const kcLeft = (d, kid) => { const m = /\+(\d+) still to get/.exec(txt(kc(d, kid))); return m ? +m[1] : null; };
+const hh = (d, kid) => JSON.parse(d.run("JSON.stringify(hhCleanRows(" + J(kid) + ",mwTodayIso(),_todayDay).map(function(r){ return {label:r.label,pts:r.pts,fall:r.fall,late:r.late}; }))"));
+const hhFall = (d, kid, label) => { const r = hh(d, kid).filter(x => x.label === label)[0]; return r ? (r.fall === undefined ? "none" : r.fall) : "missing"; };
 const adj = (w, kid) => (w.get("bank/" + kid + "/adjustments") || {});
 const lines = (w, kid, s) => Object.values(adj(w, kid)).filter(a => a && String(a.note || "").indexOf(s) >= 0).map(a => a.amount);
 const writes = (w, m) => w.since(m || 0).map(l => l.op + " " + l.path);
@@ -174,7 +179,12 @@ console.log("\n── C · Stars fall when late OFF for kid_a only · D · what 
   tick(Kk, "kid_a", "Vacuum the den"); await w.flush();   // a late tick BEFORE the flip: pays 6
   ok("kid_a ticks the vacuum before any flip: one bank line of 6", J(lines(w, "kid_a", "Vacuum the den")) === J([6]));
   const L0 = LG(A, "lgGo('kid_a',0,0)"), v0 = rowRaw(L0, "Vacuum the den");
+  const kc0 = { a: kcLeft(Kk, "kid_a"), b: kcLeft(Kk, "kid_b") }, hh0 = [hhFall(A, "kid_a", "Dust the shelves"), hhFall(A, "kid_a", "Wipe the sink"), hhFall(A, "kid_b", "Sweep the porch")];
+  ok("(before the flip) the 🧽 house panel's late rows carry what they pay now: kid_a's dust 8, sink 8; kid_b's porch 8", J(hh0) === J([8, 8, 8]), hh0);
   A.run("lgRuleFall('kid_a')"); await w.flush();
+  const kc1 = { a: kcLeft(Kk, "kid_a"), b: kcLeft(Kk, "kid_b") };
+  ok("Off for kid_a: Kids' Corner's \"still to get\" counts the dust and the sink at their full stars (+2 each: " + kc0.a + " → " + kc1.a + "); kid_b's stays " + kc0.b + " (the porch still at 8)", kc0.a > 0 && kc1.a === kc0.a + 4 && kc0.b > 0 && kc1.b === kc0.b, [kc0, kc1]);
+  ok("…the 🧽 house panel: kid_a's dust and sink have no fallen number (plain stars); kid_b's porch still 8", hhFall(A, "kid_a", "Dust the shelves") === "none" && hhFall(A, "kid_a", "Wipe the sink") === "none" && hhFall(A, "kid_b", "Sweep the porch") === 8, hh(A, "kid_a"));
   la = draw(Kk, "kid_a"); lb = draw(Kk, "kid_b");
   ok("Off for kid_a: the dust and the sink show the plain stars on kid_a's own list (\"+10 ⭐\")", pill(la, "Dust the shelves") === "+10 ⭐" && pill(la, "Wipe the sink") === "+10 ⭐", [pill(la, "Dust the shelves")]);
   ok("…kid_b is untouched: the porch still 10 → 8", pill(lb, "Sweep the porch") === "10 → 8 ⭐");
@@ -208,7 +218,10 @@ console.log("\n── E · Stars fall when late ON again: only turns due from th
 
 // ── F ──
 console.log("\n── F · ⏸ Pause for everyone, and un-pause the same day ──");
-{ A.run("lgRulePause()"); await w.flush();
+{ const kp0 = { a: kcLeft(Kk, "kid_a"), b: kcLeft(Kk, "kid_b") }, hp0 = [hhFall(A, "kid_a", "Shake the rugs"), hhFall(A, "kid_b", "Rake the leaves")];
+  A.run("lgRulePause()"); await w.flush();
+  const kp1 = { a: kcLeft(Kk, "kid_a"), b: kcLeft(Kk, "kid_b") };
+  ok("Paused: Kids' Corner counts kid_a's rugs and kid_b's leaves at full stars (+2 each: " + J(kp0) + " → " + J(kp1) + "); the 🧽 house panel drops their fallen numbers (8 → none)", kp1.a === kp0.a + 2 && kp1.b === kp0.b + 2 && J(hp0) === J([8, 8]) && hhFall(A, "kid_a", "Shake the rugs") === "none" && hhFall(A, "kid_b", "Rake the leaves") === "none", [kp0, kp1, hp0]);
   ok("Paused: nobody falls — kid_a's rugs and kid_b's leaves show +10", pill(draw(Kk, "kid_a"), "Shake the rugs") === "+10 ⭐" && pill(draw(Kk, "kid_b"), "Rake the leaves") === "+10 ⭐");
   const LA = LG(A, "lgGo('kid_b',0,0)"), LD = LG(Dd, "lgGo('kid_b',0,0)");
   ok("…a banner on the ledger, Mom's (with \"Tap ⚙ to change.\") and Dad's (without)", /⏸ Star rules are paused for everyone: no stars fall and none are taken\. Tap ⚙ to change\./.test(txt(LA)) && /⏸ Star rules are paused for everyone: no stars fall and none are taken\.( |$)/.test(txt(LD)) && !/Tap ⚙/.test(txt(LD)), txt(LD).slice(0, 300));
@@ -291,6 +304,15 @@ console.log("\n── I · Dad's link and a kid's device ──");
 }
 
 // ── J ──
+{ const Sd = w.boot("Sd", "devSd", { mom: true }); await w.flush(); Sd.run(CAP); loadH(Sd, HJS);
+  const open = LG(Sd, "lgShow();lgRulesToggle()");
+  ok("(same device) Mom opens ⚙: the panel is drawn", /id="lg-rules"/.test(open) && Sd.run("lgRulesOpen") === true);
+  Sd.run("haMomOff();1"); const off = LG(Sd, "lgGo('kid_b',0,0)");
+  ok("…Mom mode ends while the pop-up is open: the next drawing (a kid chip) has no panel, no switch and no ⚙", Sd.run("momHere()") === false && Sd.run("lgRulesOpen") === true && off !== "" && !/id="lg-rules"|role="switch"|lgRulesToggle/.test(off), txt(off).slice(0, 200));
+  Sd.run("HA_LS.setItem('ha_kiosk','dad');1"); const dad = LG(Sd, "lgShow()");
+  ok("…the same device on Dad's link: the ledger opens with no panel, no switch and no ⚙ (lgRulesOpen still true from Mom)", Sd.run("_kioskD()") === true && /📒 Ledger/.test(dad) && Sd.run("lgRulesOpen") === true && !/id="lg-rules"|role="switch"|lgRulesToggle/.test(dad), txt(dad).slice(0, 200));
+  Sd.run("lgClose();HA_LS.removeItem('ha_kiosk');1"); }
+
 console.log("\n── J · dryrun writes nothing ──");
 { const Dr = w.boot("Dr", "devDr", { mom: true }); await w.flush(); Dr.run(CAP); Dr.run("HA_LS.setItem('ha_dryrun','1');1"); loadH(Dr, HJS);
   const m = w.mark(); Dr.run("lgRuleTake('kid_c')"); Dr.run("lgRuleFall('kid_c')"); Dr.run("lgRulePause()");
