@@ -1537,7 +1537,7 @@ function lgRow(slot,kid,D,i,st){
     const f=lgFate(slot,kid,i,st,D);
     return Object.assign(r,{ic:"✖",note:"not done"+(!f?"":f.done?" · done "+lgWd(f.done.iso)+", late (see that day)":f.gone?" · gone from "+who+"'s list "+lgWd(f.gone.iso):" · still on "+who+"'s list today")}); }
   if(D.k===0&&lgCarried(slot)){ const n=(typeof mdLateDays==="function")?mdLateDays(slot,kid,D.dn,i,st):0;
-    if(n>0){ const pay=rtFallPay(st,n);
+    if(n>0){ const pay=rtFallPay(st,n,kid);   // ⚙ LEDGERRULES: that kid's switch
       return Object.assign(r,{ic:"⏳",c:0,note:(rtWaitAsBefore(st)?n+" day"+(n>1?"s":"")+" late":"still on "+who+"'s list "+rtWaitNote(n,st).split(" · ")[0])+(pay<full?" · pays "+pay+" of "+full+" ⭐ today":"")}); } }
   return null;
 }
@@ -1608,14 +1608,14 @@ function lgHTML(){
   const lo=lgMin(), t=lgNow(), last=!!(D&&D.prev), when=lgWeek?((D&&D.prev)?'Last week':'This week'):(D?lgDate(D.iso):'Earlier');
   let h='<div id="lg-pop" onclick="lgClose()" style="position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:9000;display:flex;align-items:center;justify-content:center;padding:12px">'
     +'<div onclick="event.stopPropagation()" style="background:#fff;border-radius:16px;max-width:560px;width:100%;max-height:88vh;overflow:auto;padding:14px 14px 16px;box-shadow:0 20px 50px rgba(0,0,0,0.3)">'
-    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="font-family:\'Fraunces\',serif;font-weight:700;font-size:17px;flex:1">📒 Ledger</div><button onclick="lgClose()" style="border:none;background:#f3f4f6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer">✕</button></div>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="font-family:\'Fraunces\',serif;font-weight:700;font-size:17px;flex:1">📒 Ledger</div>'+(typeof lgRulesBtn==="function"?lgRulesBtn():'')+'<button onclick="lgClose()" style="border:none;background:#f3f4f6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer">✕</button></div>'+(typeof lgRulesTop==="function"?lgRulesTop():'')   // ⚙ LEDGERRULES: the panel, the ⏸ banner
     +'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">'+SL_KIDS.map(function(k){ const on=k===kid, col=SL_KCOL[k]||"#666"; return '<span onclick="lgGo(\''+k+'\')" style="cursor:pointer;font-size:13px;font-weight:800;padding:4px 12px;border-radius:14px;border:2px solid '+col+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':col)+'">'+esc(cap(k))+'</span>'; }).join('')+'</div>'
     +'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-bottom:4px"><span style="display:inline-flex;align-items:center;gap:6px">'+(lgWeek?arrow('‹',-(t+2),last):arrow('‹',lgOff-1,lgOff<=lo))+'<b style="font-size:13px;min-width:92px;text-align:center">'+when+'</b>'+(lgWeek?arrow('›',0,!last):arrow('›',lgOff+1,lgOff>=0))+'</span>'
     +'<span style="display:inline-flex;gap:5px">'+chip(!lgWeek&&lgOff===0,'Today',"lgGo('',0,0)")+chip(!lgWeek&&lgOff===-1,'Yesterday',"lgGo('',-1,0)")+chip(lgWeek,'This week',"lgGo('',"+(lgWeek?lgOff:0)+",1)")+'</span></div>';
   if(lgHelloOpen()) h+='<div style="position:relative;margin:8px 0 4px;padding:10px 34px 10px 12px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;font-size:12.5px;line-height:1.5;color:#44403c">'
     +'<button onclick="lgHelloClose()" title="Close for good" style="position:absolute;top:6px;right:6px;border:none;background:none;font-size:14px;cursor:pointer;color:#78716c">✕</button>'
     +'<b>📒 This is everything on '+esc(cap(kid))+'\'s lists '+(lgWeek?'this week':lgOff===0?'today':'that day')+'.</b><br>✅ done · ○ not done yet · ⏳ still on the list from an earlier day (it pays a little less each day) · ✖ gone from the list (not done in time).<br>'
-    +'The line on top adds up the stars.'+((typeof hcGoMom==="function"&&hcGoMom())?' To change how a chore works, tap its name.':'')+'</div>';
+    +'The line on top adds up the stars.'+((typeof hcGoMom==="function"&&hcGoMom())?' To change how a chore works, tap its name.':'')+(typeof lgRulesHello==="function"?lgRulesHello():'')+'</div>';
   h+=lgWeek?lgWeekHTML(kid):lgDayHTML(kid,lgOff);
   return h+'</div></div>'; }
 function lgDraw(){ lgClose(); document.body.insertAdjacentHTML("beforeend",lgHTML()); }
@@ -1738,6 +1738,67 @@ function lgExcuseUndo(kid,wk,dn,slot,i){
   if(off) Object.keys(lgXJ).forEach(function(k){ const v=lgXJ[k]; if(v.wk===E.wk&&v.dn===E.dn&&k.split("|")[0]===kid&&k.split("|").slice(2).join("|")===slot+"|"+i) delete lgXJ[k]; });
   lgXDone(); return off; }
 // LEDGERX_END
+// LEDGERRULES_START — ⚙ the star rules in the 📒 Ledger pop-up (DESIGN_chore_ledger_2026-11-21 §4, slice L4; her "Yes, start it"
+// 2026-11-23). Her words: "have a setting for each kid where, okay, we're not actually doing deductions from them right now"; "Stars fall
+// when late" = "Yes, per kid"; "⏸ Pause for everyone" = "Yes, one switch"; the star rules live here and nowhere else; the panel is Mom's
+// (Dad uses the row buttons: his link gets no ⚙, only the ⏸ banner). index.html STARRULES reads them on every device, kid tablets too
+// (household/ is already listened to at boot): starFallFrom → rtFallDays; starTakeOk → the 🔎 Spot check's extra stars, the Click-off
+// Log's ⚠️ −100 and 🧾 Today's check-offs' −100 (each refuses and says why). "A flip never reaches back":
+//   Stars fall when late OFF → fall/<kid> = {on:false}: from now a late chore pays its full stars for that kid (rows already waiting too).
+//   …ON again → fall/<kid> = {from:<today>}: only turns due from today fall.
+//   Take stars away OFF → take/<kid> = false: those three take nothing from that kid. ON → take/<kid> removed (as before).
+//   ⏸ Pause ON → pause = {on:true}: nothing falls and nothing is taken for anyone; a banner on the ledger. OFF → pause = {from:<today>}.
+// A turn falls only if due on or after the latest of RT_FALL_FROM, the kid's {from} and the pause's {from}. What was paid stays: a tick
+// stores what it paid (toggleRtStep) and the ledger's ✅ rows and ⭐ Give stars back read that stored amount, never today's switches.
+// The two settings that stay where they are ("Leave them until I say") are lines here, not switches: the penalty (settings/spotCheck/
+// penalty, the Spot check card's ⚙) and Mom checks before pay (config/choreVerify, Chores & Stars ▸ Points); each "›" goes there.
+// One small path per tap under household/meta/starRules, through db only when db && !_dryRun(), Mom only (momHere).
+let lgRulesOpen=false;
+function lgRulesOk(){ return typeof momHere==="function"&&momHere(); }
+function lgRToday(){ const t=new Date(); return t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0"); }
+function lgRFallOn(kid){ return ((starRules().fall||{})[kid]||{}).on!==false; }
+function lgRTakeOn(kid){ return (starRules().take||{})[kid]!==false; }
+function lgRPaused(){ return !!(starRules().pause||{}).on; }
+// one small path: this device at once (dryrun too, so the screen answers), the database when it may
+function lgRWrite(rel,v){
+  if(!householdData.meta) householdData.meta={}; const R=householdData.meta.starRules=householdData.meta.starRules||{}, p=rel.split("/");
+  const o=p.length>1?(R[p[0]]=R[p[0]]||{}):R, k=p[p.length-1]; if(v==null) delete o[k]; else o[k]=v;
+  if(typeof db!=="undefined"&&db&&!_dryRun()){ const r=db.ref("household/meta/starRules/"+rel); if(v==null) r.remove(); else r.set(v); }
+  if(typeof renderAll==="function"){ try{ renderAll(); }catch(e){} } if(document.getElementById("lg-pop")) lgDraw(); return true; }
+function lgRKid(kid){ return SL_KIDS.indexOf(kid)>=0; }
+function lgRuleFall(kid){ if(!lgRulesOk()||!lgRKid(kid)) return false; return lgRWrite("fall/"+kid,lgRFallOn(kid)?{on:false}:{from:lgRToday()}); }
+function lgRuleTake(kid){ if(!lgRulesOk()||!lgRKid(kid)) return false; return lgRWrite("take/"+kid,lgRTakeOn(kid)?false:null); }
+function lgRulePause(){ if(!lgRulesOk()) return false; return lgRWrite("pause",lgRPaused()?{from:lgRToday()}:{on:true}); }
+function lgRulesToggle(){ if(!lgRulesOk()) return; lgRulesOpen=!lgRulesOpen; lgDraw(); }
+// ── drawing ──
+function lgRSw(on,js,lab){ return '<button onclick="'+js+'" role="switch" aria-checked="'+on+'" aria-label="'+esc(lab)+'" style="display:inline-flex;align-items:center;gap:6px;border:none;background:none;padding:2px 0;cursor:pointer;font-size:12px;font-weight:800;color:'+(on?'#166534':'#6b7280')+'">'
+  +'<span style="width:34px;height:20px;border-radius:10px;background:'+(on?'#16a34a':'#cbd5e1')+';position:relative;flex-shrink:0"><span style="position:absolute;top:2px;left:'+(on?16:2)+'px;width:16px;height:16px;border-radius:50%;background:#fff"></span></span>'+(on?'On':'Off')+'</button>'; }
+function lgRLine(t,where,js){ return '<div onclick="'+js+'" style="cursor:pointer;padding:4px 0"><b>'+esc(t)+' ›</b><span style="display:block;color:#6b7280;font-size:11px">'+esc(where)+'</span></div>'; }
+function lgRulesHTML(){
+  const P=lgRPaused(), pen=(typeof spPenalty==="function")?spPenalty():{on:false}, cv=((typeof ROSTER!=="undefined"&&ROSTER)||SL_KIDS).filter(function(k){ return typeof choreVerifyOn==="function"&&choreVerifyOn(k); }).map(lgName);
+  const sub='color:#6b7280;font-size:11.5px', sep='border-top:1px solid #e2e8f0;padding:7px 0';
+  let h='<div id="lg-rules" style="margin:0 0 10px;padding:10px 12px;background:#f8fafc;border:1.5px solid #cbd5e1;border-radius:12px;font-size:12.5px;color:#1f2937">'
+    +'<div style="display:flex;align-items:center;gap:8px"><b style="font-size:14px;flex:1">⚙ Star rules</b><button onclick="lgRulesToggle()" style="border:1.5px solid var(--border);background:#fff;border-radius:8px;padding:2px 10px;font-size:12px;font-weight:700;cursor:pointer">Done</button></div>'
+    +'<div style="'+sub+';margin:2px 0 8px">A change counts from now on. Stars already paid or taken stay as they are.</div>'
+    +'<div style="display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;'+sep+'"><span style="flex:1 1 200px"><b>⏸ Pause for everyone</b><span style="display:block;'+sub+'">On: no stars fall and none are taken, for every kid.</span></span>'+lgRSw(P,"lgRulePause()","Pause for everyone")+'</div>'
+    +'<div style="'+sep+(P?';opacity:.55':'')+'">';
+  SL_KIDS.forEach(function(k){ h+='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px 16px;padding:4px 0"><b style="flex:0 0 72px;color:'+(SL_KCOL[k]||'#111827')+'">'+esc(lgName(k))+'</b>'
+    +'<span style="display:inline-flex;align-items:center;gap:6px">Stars fall when late '+lgRSw(lgRFallOn(k),"lgRuleFall('"+k+"')","Stars fall when late for "+lgName(k))+'</span>'
+    +'<span style="display:inline-flex;align-items:center;gap:6px">Take stars away '+lgRSw(lgRTakeOn(k),"lgRuleTake('"+k+"')","Take stars away for "+lgName(k))+'</span></div>'; });
+  if(P) h+='<div style="font-size:11.5px;font-weight:700;color:#92400e;padding-top:2px">Paused: these count again when you turn ⏸ off.</div>';
+  h+='<div style="'+sub+';margin-top:4px"><b>Stars fall when late:</b> a chore done after its day pays a little less each day. Off: it pays its full stars.<br>'
+    +'<b>Take stars away:</b> the 🔎 Spot check\'s extra stars, and the −100 on the Click-off Log and on 🧾 Today\'s check-offs. Off: they take nothing from that kid.</div></div>'
+    +'<div style="'+sep+'">'+lgRLine("Penalty: "+(pen.on?pen.pts+" ⭐":"off"),"Changed on the 🔎 Spot check card's ⚙ (its ✗ Not done). The −100 on the Click-off Log and 🧾 is always 100.","lgRulesGoSpot()")
+    +lgRLine("Mom checks before pay: "+(cv.length?"on for "+cv.join(", "):"off"),"Changed in Chores & Stars ▸ Points.","lgRulesGoPoints()")+'</div>';
+  return h+'</div>'; }
+// the pop-up's hooks (LEDGERVIEW): the ⚙ in the header, the panel and the ⏸ banner above the kids, one sentence on the first-minute card
+function lgRulesBtn(){ return lgRulesOk()?'<button onclick="lgRulesToggle()" title="To change the star rules, tap ⚙" aria-label="Star rules" style="border:none;background:'+(lgRulesOpen?'#e2e8f0':'#f3f4f6')+';border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer">⚙</button>':''; }
+function lgRulesTop(){ const ok=lgRulesOk(); return (ok&&lgRulesOpen?lgRulesHTML():'')+(lgRPaused()?'<div style="margin:0 0 8px;padding:8px 12px;background:#fef3c7;border:1.5px solid #fcd34d;border-radius:10px;font-size:12.5px;font-weight:700;color:#92400e">⏸ Star rules are paused for everyone: no stars fall and none are taken.'+(ok&&!lgRulesOpen?' Tap ⚙ to change.':'')+'</div>':''); }
+function lgRulesHello(){ return lgRulesOk()?' To change the star rules, tap ⚙.':''; }
+// each "›" goes to where that setting is changed today
+function lgRulesGoSpot(){ if(!lgRulesOk()) return false; lgClose(); lgRulesOpen=false; spSetOpen=true; if(typeof _cuRe==="function") _cuRe(); if(typeof _spScroll==="function") _spScroll(); return true; }
+function lgRulesGoPoints(){ if(!lgRulesOk()) return false; lgClose(); lgRulesOpen=false; cpTab="points"; if(cpSlot==="grabs") cpSlot="chores"; setAdminSub("chores"); return true; }
+// LEDGERRULES_END
 // HOUSESWITCH_START — 🚪 the real switch and today's stored plan on 👤 By person (Household by room, step 4; DESIGN §4.3 doors, §5 last
 // bullet, her yes 2026-11-17). Mom only. ON first PROVES a houseDay save works (houseDay/<today>/hello) and only then writes
 // household/meta/engine = {mode:"on", on:<today>} together with each house chore's last-done date filled once from the 8 weeks of
