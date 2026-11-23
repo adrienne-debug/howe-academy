@@ -1710,17 +1710,31 @@ function lgXGone(g,slot,kid,D,E,i,st){
 function lgXHere(kid,D,slot,i,E){ const v=lgXJ[kid+"|"+D.iso+"|"+slot+"|"+i]; if(!v||!v.g!==!E) return null; const T=lgXDay(v.wk,v.dn); if(!T||(E&&(E.wk!==T.wk||E.dn!==T.dn))||!lgWaved(slot,kid,T,i)) return null; return T; }
 function lgXDay(wk,dn){ for(let k=0;k>=lgMin();k--){ const D=lgDay(k); if(D&&D.wk===wk&&D.dn===dn) return D; } return null; }
 function lgXArgOk(kid,slot,i){ return SL_KIDS.indexOf(kid)>=0&&SL_SLOTS.indexOf(slot)>=0&&i===(i|0)&&i>=0; }
+// LEDGERXLOG_START — her answer 2026-11-22 to the L3 report's question 1 ("fix"): a turn that already left the list has its "— not done"
+// line in the Click-off Log (_rtLogLateMiss → _rtLogMiss: routineLog/<kid>/<wk>/<due day>/miss_<slot>_<i>, filed the morning it left).
+// Excuse takes that line out, so the log does not show both "— not done" and "— waved by Mom" for one turn; Undo puts it back through
+// _rtLogMiss itself (the same key, words, list, act and stars; only its time is the Undo's), when the turn is one that left the list by
+// today (lgFate: gone) — so it comes back the same on another device or after a reload. Nothing else reads the line for stars; while
+// the turn is excused no device files it again (_rtLogLateMiss skips a waved due day). The ✕ record is untouched. Plan rows (st.house,
+// their own miss_h_ lines) are not in this. Writes only when db && !_dryRun().
+function lgXMissOff(kid,E,slot,i){ const L=((routineLog[kid]||{})[E.wk]||{})[E.dn], k="miss_"+slot+"_"+i; if(!L||!L[k]) return; delete L[k];
+  if(typeof db!=="undefined"&&db&&!_dryRun()) db.ref("routineLog/"+kid+"/"+E.wk+"/"+E.dn+"/"+k).remove(); }
+function lgXMissOn(kid,E,slot,i,st){ const pd=day; let f=null; day=E.dn; try{ f=lgFate(slot,kid,i,st,E); } finally{ day=pd; }
+  if(f&&f.gone&&typeof _rtLogMiss==="function") _rtLogMiss(kid,slot,i,E.dn,st.label,st.pts||0,E.wk); }
+// LEDGERXLOG_END
 // The tap. The turn is read again now (never trusted from the drawing); the write is rtWave's, the ✕ today record, on its own day.
 function lgExcuse(kid,wk,dn,slot,i,here,g){
   if(!lgXOk()||!lgXArgOk(kid,slot,i)) return false; const E=lgXDay(wk,dn), st=E&&lgXStep(slot,kid,E,i);
   if(!lgXCan(slot,kid,E,i,st)){ lgXDone(); return false; }   // done, excused already (this device or another), or not a row that can be
   rtWave(slot,kid,E.dn,i,E.wk,st); const on=lgWaved(slot,kid,E,i);
+  if(on&&!st.house) lgXMissOff(kid,E,slot,i);   // LEDGERXLOG: its "— not done" line out
   if(on&&here&&here!==E.iso) lgXJ[kid+"|"+here+"|"+slot+"|"+i]={wk:E.wk,dn:E.dn,g:g?1:0};
   lgXDone(); return on; }
 function lgExcuseUndo(kid,wk,dn,slot,i){
   if(!lgXOk()||!lgXArgOk(kid,slot,i)) return false; const E=lgXDay(wk,dn), st=E&&lgXStep(slot,kid,E,i);
   if(!E||!st||!lgMap(E)||!lgWaved(slot,kid,E,i)){ lgXDone(); return false; }
   rtWave(slot,kid,E.dn,i,E.wk,st); const off=!lgWaved(slot,kid,E,i);
+  if(off&&!st.house) lgXMissOn(kid,E,slot,i,st);   // LEDGERXLOG: and back
   if(off) Object.keys(lgXJ).forEach(function(k){ const v=lgXJ[k]; if(v.wk===E.wk&&v.dn===E.dn&&k.split("|")[0]===kid&&k.split("|").slice(2).join("|")===slot+"|"+i) delete lgXJ[k]; });
   lgXDone(); return off; }
 // LEDGERX_END
