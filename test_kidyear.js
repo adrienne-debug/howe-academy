@@ -97,6 +97,10 @@ function panelWorld(S, o) {
   return ctx;
 }
 
+// CURRSIMPLE (slice 6): test_curr_simple.js draws this panel in the Simple and Everything views
+module.exports = { panelWorld, handlers };
+if (require.main !== module) return;   // required (test_curr_simple.js reuses this harness): the definitions only, no checks
+
 // ── 1 · four tabs, every old control ─────────────────────────────────────────
 console.log("── 1 · the four tabs and every control of the two old panels ──");
 {

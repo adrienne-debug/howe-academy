@@ -152,6 +152,10 @@ const ALL_TRUE_OVER = () => { const o = {}; ["order", "restore", "evening", "dai
 const ALL_TRUE_PRE = "currData.lessons.kid[_dns[6]].ghost_subj='leftover';";
 const SLOTS = ["order", "restore", "evening", "daily", "audit", "align", "missing", "pace", "lids", "skiplog", "caps", "days", "plan", "orphans", "capture"];
 
+// CURRSIMPLE (slice 6): test_curr_simple.js renders this same world in the Simple and Everything views
+module.exports = { world, render, OPEN, BANNERS, ALL_TRUE_OVER, ALL_TRUE_PRE, drawerOf, groupOf, gridOf, badge, onclicks };
+if (require.main !== module) return;   // required (test_curr_simple.js reuses this harness): the definitions only, no checks
+
 const BASE = render(src, {}, OPEN);
 const BASE_OC = new Set(onclicks(BASE));
 
