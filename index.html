@@ -61147,7 +61147,7 @@ function kyPanelHTML(kid,col){
     h+=cbRenderRules(col,"door");   // 🏠 family-wide hours, sitter, devices, order of the day → Settings
   } else if(kyTab==="terms"){ try{ h+=ceRenderSessions(kid,col); }catch(e){} }
   else if(kyTab==="lanes"){ if(typeof lnRenderSection==="function") h+=lnRenderSection(kid,col); }
-  else h+=cbRenderRules(col,"table");   // All subjects: the live ⚙ Rules table
+  else h+=((typeof gvColOrderHTML==="function")?gvColOrderHTML(kid,col):"")+cbRenderRules(col,"table");   // All subjects: the live ⚙ Rules table — COLORDER: the Column order list above it
   return h+'</div>';
 }
 // ⤒ Delete & shift up / the audit's Add it back…: the one-time preview, laid from the SAVED fields, in the subject card's
@@ -62512,6 +62512,99 @@ function gvEndSortCols(kid,cols,lanes){
     .map(function(x){ return x.ck; });
 }
 // GRIDEND_END
+// COLORDER_START — ↕ her own column order for the Curriculum grid (Curriculum streamline slice 7,
+//   PLAN_curriculum_streamline_2026-11-10.md §3.3 · §4 row 7 · §5 question 6). Her answer 2026-11-10: "i think alphabetical
+//   order but draggable to be in a customizable order as well" — then "or arrows to change if that's better"; the plan's pick
+//   is arrows, no drag on the headers (they live in a sideways-scrolling box and one tap opens the card). Built on her "Yes,
+//   build them" 2026-11-23.
+//   Columns stay A–Z by default. 📅 Kid's year ▸ All subjects shows a Column order list — the grid's columns in the order the
+//   grid shows them, a 🛤 lane as ONE entry (it is one column) — with ▲ ▼ per entry and, once she has an order, Back to A–Z.
+//   Saved per kid at curriculum/colOrder/<kid> = the array of column keys (<sk>, or lane:<id>). ▲ ▼ set that one small array
+//   for that one kid; Back to A–Z removes that kid's node. Nothing else is written (never curriculum/subjects or lessons,
+//   never another kid). Mom only (momHere), and only when db && !_dryRun().
+//   DISPLAY ONLY: nothing re-lays, no card moves, nothing that lays a week reads this. The per-device "Order columns by end
+//   date" (GRIDEND) stays a view toggle that writes nothing; while a custom order is set the custom order wins, and the ⋯ More
+//   item says so. The 🏡 Family grid has its own grouping and is not touched.
+// pure: the grid's columns (lnFoldColumns' A–Z) in her saved order. No saved order → the same array, untouched. A saved order
+// → those keys first, in that order; a saved key that no longer exists is ignored; any column not in the list (a subject
+// added later) follows, A–Z by labelOf.
+function gvColOrder(cols,saved,labelOf){
+  cols=Array.isArray(cols)?cols:[];
+  const sv=gvColOrderList(saved);
+  if(!sv.length) return cols;
+  const have={}, used={}, out=[];
+  cols.forEach(function(k){ have[k]=1; });
+  sv.forEach(function(k){ if(have[k]&&!used[k]){ used[k]=1; out.push(k); } });
+  const lab=(typeof labelOf==="function")?function(k){ return String(labelOf(k)); }:function(k){ return String(k); };
+  const rest=cols.filter(function(k){ return !used[k]; }).map(function(k,i){ return {k:k,i:i}; })
+    .sort(function(a,b){ return lab(a.k).localeCompare(lab(b.k))||(a.i-b.i); }).map(function(x){ return x.k; });
+  return out.concat(rest);
+}
+// A stored order as a plain list of keys (the database may hand an array back as {0:…,1:…}); anything else → [].
+function gvColOrderList(v){
+  const keep=function(k){ return typeof k==="string"&&k.length>0; };
+  if(Array.isArray(v)) return v.filter(keep);
+  if(v&&typeof v==="object") return Object.keys(v).filter(function(i){ return /^\d+$/.test(i); }).sort(function(a,b){ return a-b; }).map(function(i){ return v[i]; }).filter(keep);
+  return [];
+}
+function gvColSaved(kid){ return gvColOrderList(((((typeof currData!=="undefined"&&currData)||{}).colOrder)||{})[kid]); }
+function gvColOrderSet(kid){ return gvColSaved(kid).length>0; }
+// The label lnFoldColumns sorts by: a lane's name, else the subject's display name, else its key.
+function gvColLabelOf(kid,lanes){
+  const subs=((((typeof currData!=="undefined"&&currData)||{}).subjects)||{})[kid]||{}; lanes=lanes||{};
+  return function(ck){ return lanes[ck]?lanes[ck].name:String((subs[ck]||{}).display||ck); };
+}
+// The one decision the grid and the list share: her order wins while one is set; else end date (when that view is on); else A–Z.
+function gvColPick(kid,cols,lanes){
+  if(gvColOrderSet(kid)) return gvColOrder(cols,gvColSaved(kid),gvColLabelOf(kid,lanes));
+  return (typeof gvEndSortOn==="function"&&gvEndSortOn())?gvEndSortCols(kid,cols,lanes):cols;
+}
+// The grid's columns as renderCurrGrid draws them (paused subjects off, lanes folded), in the order it shows them.
+function gvColShown(kid){
+  const subs=((((typeof currData!=="undefined"&&currData)||{}).subjects)||{})[kid]||{};
+  const raw=gvSubjectCols(kid).filter(function(sk){ return !(subs[sk]&&subs[sk].paused); });
+  const f=(typeof lnFoldColumns==="function")?lnFoldColumns(kid,raw):{cols:raw,lanes:{}};
+  return {cols:gvColPick(kid,f.cols,f.lanes),lanes:f.lanes};
+}
+// ▲ (d=-1) / ▼ (d=+1) on entry i: swap it with its neighbour and save the whole small list for this kid. ▲ on the first and
+// ▼ on the last do nothing. The first tap turns what she sees (A–Z, or the end-date view) into her own order.
+function gvColMove(kid,i,d){
+  if(!momHere()) return;
+  const arr=gvColShown(kid).cols.slice(), j=i+d;
+  if(!(i>=0&&i<arr.length)||j<0||j>=arr.length) return;
+  const t=arr[i]; arr[i]=arr[j]; arr[j]=t;
+  if(!currData.colOrder) currData.colOrder={};
+  currData.colOrder[kid]=arr;
+  if(db&&!_dryRun()) db.ref("curriculum/colOrder/"+kid).set(arr);
+  renderAll();
+}
+// Back to A–Z: this kid's saved order goes away; the grid is alphabetical again (or by end date, if that view is on).
+function gvColOrderReset(kid){
+  if(!momHere()) return;
+  if(currData&&currData.colOrder) delete currData.colOrder[kid];
+  if(db&&!_dryRun()) db.ref("curriculum/colOrder/"+kid).remove();
+  renderAll();
+}
+// The Column order list, above the All subjects table. Mom only; nothing to draw when the grid has no columns.
+function gvColOrderHTML(kid,col){
+  if(!momHere()) return "";
+  const sh=gvColShown(kid), cols=sh.cols, lanes=sh.lanes;
+  if(!cols.length) return "";
+  const set=gvColOrderSet(kid), lab=gvColLabelOf(kid,lanes), endOn=!set&&typeof gvEndSortOn==="function"&&gvEndSortOn();
+  const btn=function(ch,i,d,off,tip){ return '<button onclick="gvColMove(\''+kid+'\','+i+','+d+')"'+(off?' disabled':'')+' title="'+tip+'" style="min-width:44px;min-height:40px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text,#111);font-size:15px;font-weight:700;cursor:'+(off?'default':'pointer')+';opacity:'+(off?'.3':'1')+';font-family:\'DM Sans\',sans-serif">'+ch+'</button>'; };
+  let h='<div class="co-order" style="margin:0 0 16px">';
+  h+='<div style="font-size:11px;font-weight:800;color:'+col+';text-transform:uppercase;letter-spacing:0.4px;margin:0 0 4px">Column order</div>';
+  h+='<div style="font-size:11.5px;color:var(--muted);line-height:1.45;margin:0 0 6px">'+(set?'Your order. A subject added later joins at the end, A–Z.':(endOn?'By end date right now (⋯ More). Tap ▲ or ▼ to make it your own order.':'A–Z. Tap ▲ or ▼ to set your own order.'))+' It only changes how the grid looks — nothing moves on anyone’s week.</div>';
+  cols.forEach(function(ck,i){
+    h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-top:1px solid var(--border)">';
+    h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px">'+(lanes[ck]?'🛤 ':'')+esc(lab(ck))+'</span>';
+    h+=btn('▲',i,-1,i===0,'Move left on the grid')+btn('▼',i,1,i===cols.length-1,'Move right on the grid');
+    h+='</div>';
+  });
+  if(set) h+='<button onclick="gvColOrderReset(\''+kid+'\')" style="margin-top:8px;min-height:40px;padding:6px 14px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text,#111);font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Back to A–Z</button>';
+  return h+'</div>';
+}
+// COLORDER_END
 function gvGrabScroll(){ const w=document.querySelector(".gv-wrap"); if(w){ gvScrollTop=w.scrollTop; gvScrollLeft=w.scrollLeft; } }
 function gvOpenCell(dn,sk){
   // ➡ Move mode armed from THIS grid: the tap picks the destination day instead.
@@ -64406,7 +64499,7 @@ function renderCurrGrid(el){
   const _lnFold=(typeof lnFoldColumns==="function")?lnFoldColumns(gvKid,_colsRaw):{cols:_colsRaw,lanes:{}};
   const _lnCols=_lnFold.lanes;
   // GRIDEND: Mom's "Sort by end date" toggle re-orders the columns in memory only (see GRIDEND_START).
-  const cols=(typeof gvEndSortOn==="function"&&gvEndSortOn())?gvEndSortCols(gvKid,_lnFold.cols,_lnCols):_lnFold.cols;
+  const cols=(typeof gvColPick==="function")?gvColPick(gvKid,_lnFold.cols,_lnCols):((typeof gvEndSortOn==="function"&&gvEndSortOn())?gvEndSortCols(gvKid,_lnFold.cols,_lnCols):_lnFold.cols);   // COLORDER: her own order wins while one is set (else end date, else A–Z)
   const _allSks=[]; cols.forEach(function(ck){ (_lnCols[ck]?_lnCols[ck].members:[ck]).forEach(function(m){ if(_allSks.indexOf(m)<0) _allSks.push(m); }); });
   const dayNums=Object.keys(lessons).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
 
@@ -64693,7 +64786,7 @@ function renderCurrGrid(el){
   if(pastCount) _ctItems.push({fn:"gvTogglePast()",label:cw(gvShowPast?"hidePast":"showPast")+' ('+pastCount+')',on:gvShowPast});
   if(!_csmS||gvSelMode) _ctItems.push({fn:"gvToggleSelMode()",label:(gvSelMode?'✕ '+cw("doneSel"):'☑︎ '+cw("selCells")),on:gvSelMode});   // CURRSIMPLE
   // GRIDEND: Mom-only "Sort by end date" — earliest-ending column first; per-device memory, no Firebase.
-  if((momModeActive||adminPinUnlocked)&&typeof gvEndSortToggle==="function"&&(!_csmS||gvEndSort)) _ctItems.push({fn:"gvEndSortToggle()",title:"Order the columns by each subject's plan end date, earliest first (this device only)",label:(gvEndSort?'✓ ':'')+cw("endSort"),on:gvEndSort});   // CURRSIMPLE
+  if((momModeActive||adminPinUnlocked)&&typeof gvEndSortToggle==="function"&&(!_csmS||gvEndSort)) _ctItems.push({fn:"gvEndSortToggle()",title:"Order the columns by each subject's plan end date, earliest first (this device only)",label:((typeof gvColOrderSet==="function"&&gvColOrderSet(gvKid))?'Order by end date · off while a custom order is set — Back to A–Z first':(gvEndSort?'✓ ':'')+cw("endSort")),on:gvEndSort&&!(typeof gvColOrderSet==="function"&&gvColOrderSet(gvKid))});   // COLORDER: her own order wins · CURRSIMPLE: in Simple only while it is on
   if(gvSelUndo&&!gvSelMode) _ctItems.push({fn:"gvSelUndoApply()",label:"↩ Undo last"});
   h=h.replace("__CT_MORE__",ctMoreHTML(_ctItems.concat([_ctRelay,_csmItem])));   // CURRSIMPLE: + Show everything / Keep it simple
   h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">';

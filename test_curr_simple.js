@@ -18,6 +18,7 @@
  *      stripped; Simple = header + 1–4 (+ 5 · Lane when 2+ subjects have lessons or it sits in a lane) + the footer, nothing else
  *   5. 📅 Kid's year, every tab, and the All-subjects table (rich fixture): Everything = stripped; Simple drops exactly the
  *      advanced columns (Co-op day · Mom days · 📌 new lesson · Right after · If missed · If the day is tight)
+ *   5b. 📅 All subjects ▸ Column order (COLORDER, slice 7 — newer than the plan, not in §3.6): drawn the same in Simple
  *   6. ＋ Add subject, book and class, steps 1–3 with More options open and shut, and Show all options at once:
  *      Everything = stripped; Simple = the same minus More options and what is behind it
  *   7. the card-practice lines and 🃏 Card practice in the Add are not behind the switch
@@ -34,7 +35,7 @@ const CSM_EDITS = [
   ["  let _ctRelay=null, _ctItems=[];\n  const _csmS=(typeof csmSimple===\"function\"&&csmSimple()), _csmItem=(typeof csmMoreItem===\"function\")?csmMoreItem():null;   // CURRSIMPLE: Simple / Everything (family-wide)\n","  let _ctRelay=null, _ctItems=[];\n"],
   ["    h=h.replace(\"__CT_MORE__\",ctMoreHTML([_ctRelay,_csmItem]));   // CURRTOOLS · CURRSIMPLE: + Show everything / Keep it simple","    h=h.replace(\"__CT_MORE__\",ctMoreHTML([_ctRelay]));   // CURRTOOLS"],
   ["  if(!_csmS||gvSelMode) _ctItems.push({fn:\"gvToggleSelMode()\",label:(gvSelMode?'✕ '+cw(\"doneSel\"):'☑︎ '+cw(\"selCells\")),on:gvSelMode});   // CURRSIMPLE","  _ctItems.push({fn:\"gvToggleSelMode()\",label:(gvSelMode?'✕ '+cw(\"doneSel\"):'☑︎ '+cw(\"selCells\")),on:gvSelMode});"],
-  ["  if((momModeActive||adminPinUnlocked)&&typeof gvEndSortToggle===\"function\"&&(!_csmS||gvEndSort)) _ctItems.push({fn:\"gvEndSortToggle()\",title:\"Order the columns by each subject's plan end date, earliest first (this device only)\",label:(gvEndSort?'✓ ':'')+cw(\"endSort\"),on:gvEndSort});   // CURRSIMPLE","  if((momModeActive||adminPinUnlocked)&&typeof gvEndSortToggle===\"function\") _ctItems.push({fn:\"gvEndSortToggle()\",title:\"Order the columns by each subject's plan end date, earliest first (this device only)\",label:(gvEndSort?'✓ ':'')+cw(\"endSort\"),on:gvEndSort});"],
+  ["  if((momModeActive||adminPinUnlocked)&&typeof gvEndSortToggle===\"function\"&&(!_csmS||gvEndSort)) _ctItems.push({fn:\"gvEndSortToggle()\",title:\"Order the columns by each subject's plan end date, earliest first (this device only)\",label:((typeof gvColOrderSet===\"function\"&&gvColOrderSet(gvKid))?'Order by end date · off while a custom order is set — Back to A–Z first':(gvEndSort?'✓ ':'')+cw(\"endSort\")),on:gvEndSort&&!(typeof gvColOrderSet===\"function\"&&gvColOrderSet(gvKid))});   // COLORDER: her own order wins · CURRSIMPLE: in Simple only while it is on", "  if((momModeActive||adminPinUnlocked)&&typeof gvEndSortToggle===\"function\") _ctItems.push({fn:\"gvEndSortToggle()\",title:\"Order the columns by each subject's plan end date, earliest first (this device only)\",label:((typeof gvColOrderSet===\"function\"&&gvColOrderSet(gvKid))?'Order by end date · off while a custom order is set — Back to A–Z first':(gvEndSort?'✓ ':'')+cw(\"endSort\")),on:gvEndSort&&!(typeof gvColOrderSet===\"function\"&&gvColOrderSet(gvKid))});   // COLORDER: her own order wins"],
   ["  h=h.replace(\"__CT_MORE__\",ctMoreHTML(_ctItems.concat([_ctRelay,_csmItem])));   // CURRSIMPLE: + Show everything / Keep it simple","  h=h.replace(\"__CT_MORE__\",ctMoreHTML(_ctItems.concat([_ctRelay])));"],
   ["  h+=(typeof csmSimple===\"function\"&&csmSimple())?'</div>':'<span style=\"flex:1\"></span><button onclick=\"planOpen[\\''+kid+'\\']=!planOpen[\\''+kid+'\\'];renderAll()\" style=\"padding:4px 12px;border-radius:99px;border:1.5px solid var(--border);background:'+(planOpen[kid]?'#111827':'#fff')+';color:'+(planOpen[kid]?'#fff':'#0f172a')+';font-weight:800;font-size:11.5px;cursor:pointer;font-family:\\'DM Sans\\',sans-serif\">'+(planOpen[kid]?'Hide':'Show')+'</button></div>';   // CURRSIMPLE","  h+='<span style=\"flex:1\"></span><button onclick=\"planOpen[\\''+kid+'\\']=!planOpen[\\''+kid+'\\'];renderAll()\" style=\"padding:4px 12px;border-radius:99px;border:1.5px solid var(--border);background:'+(planOpen[kid]?'#111827':'#fff')+';color:'+(planOpen[kid]?'#fff':'#0f172a')+';font-weight:800;font-size:11.5px;cursor:pointer;font-family:\\'DM Sans\\',sans-serif\">'+(planOpen[kid]?'Hide':'Show')+'</button></div>';"],
   ["  if(planOpen[kid]&&!(typeof csmSimple===\"function\"&&csmSimple())){ try{ h+=rmStripHTML(kid); }catch(e){ console.error(\"[HA] roadmap\",e); } try{ h+=scStripHTML(kid); }catch(e){ console.error(\"[HA] scores\",e); } try{ h+=ntStripHTML(kid); }catch(e){ console.error(\"[HA] notes\",e); } }   // CURRSIMPLE","  if(planOpen[kid]){ try{ h+=rmStripHTML(kid); }catch(e){ console.error(\"[HA] roadmap\",e); } try{ h+=scStripHTML(kid); }catch(e){ console.error(\"[HA] scores\",e); } try{ h+=ntStripHTML(kid); }catch(e){ console.error(\"[HA] notes\",e); } }"],
@@ -276,6 +277,18 @@ const KY = require("./test_kidyear.js");
   ADV.forEach(f => { const ps = sks.map(sk => pill(sk, f)).filter(Boolean); ok("Simple hides the " + f + " pill on every row; Everything draws it", ps.length > 0 && ps.every(p => s.indexOf(p) < 0 && e.indexOf(p) >= 0)); });
   KEEP.forEach(f => { const ps = sks.map(sk => pill(sk, f)).filter(Boolean); ok("Simple keeps the " + f + " pill on every row", ps.every(p => s.indexOf(p) >= 0)); });
   ok("Simple: every handler in the table is one Everything draws (nothing new)", hAll(s).every(x => hAll(e).indexOf(x) >= 0));
+}
+
+console.log("── 5b. Column order (COLORDER, newer than the plan) stays in Simple ──");
+{
+  const CO = require("./test_col_order.js");
+  const SET = 'currData.colOrder={kid:["plain","lane:math","zoo","art"]};';
+  const Ws = CO.world(src), We = CO.world(src), W0 = CO.world(SRC0);
+  Ws.run(SV + SET); We.run(EV + SET); W0.run(SET);
+  const ls = CO.listOf(Ws.panel()), le = CO.listOf(We.panel()), l0 = CO.listOf(W0.panel());
+  ok("📅 All subjects ▸ Column order: drawn in Simple, the same list (▲ ▼ · Back to A–Z) as Everything and the stripped tree", ls.length > 500 && ls === le && le === l0 && /gvColBack|A–Z/.test(ls));
+  ok("…and the grid follows her saved order in Simple too", JSON.stringify(CO.headOrder(Ws.grid())) === JSON.stringify(CO.headOrder(W0.grid())) && JSON.stringify(CO.headOrder(Ws.grid())) === JSON.stringify(["plain", "lane:math", "zoo", "art"]));
+  ok("with a saved order, Everything's grid page = the stripped tree's (plus Keep it simple)", noSwitch(We.grid(OPEN)) === W0.grid(OPEN));
 }
 
 console.log("── 6. ＋ Add subject ──");
