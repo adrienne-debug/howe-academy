@@ -57,7 +57,7 @@ So the passages are meant to be **fun first** (something a kid wants to read), a
 
 **Comfortable, not hard.** Each level averages at or a little under its own grade on the estimate. Checking against your words, I found **2nd grade was the exception**: it averaged 2.4, a stretch for a child reading alone. Five g2 passages were rewritten in shorter sentences with the same facts and questions, and g2 now averages 1.9. A child placed on a level should find most passages easy to get through, and the questions are where the thinking happens.
 
-**Stretch words.** None at most levels' easiest passages, and never more than two per passage. Each is explained right in the sentence, so the word question can be answered from the page, never from what the child already happens to know.
+**Stretch words.** Never more than two in a passage (the table counts them per level). Each is explained right in the sentence, so the word question can be answered from the page, never from what the child already happens to know.
 
 **Getting ready for the test.** The question kinds are the ones on the reading tests at each age — find it, work it out, word meaning, main idea, and from 5th grade author's purpose and which detail supports a claim. Choices go 3 → 4 → 5 to match.
 
