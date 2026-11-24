@@ -214,7 +214,7 @@ for (let n = 0; n <= 16; n++) {
     const b0 = bal(B, "kid_a"); m = w.mark(); const g1 = A.run("lgZeroGive(" + args + ")"); await w.flush();
     ok("H · ⭐ Give stars back (Mom): ONE update — the bank line removed, zero.gb = {by:\"mom\", ts, at, line} on the day's line", g1 === true && J(WS(w, m)) === J(["update  [" + lk + "/zero/gb,bank/kid_a/adjustments/" + L.id + "]"]) && w.get("bank/kid_a/adjustments/" + L.id) == null && w.get(lk + "/zero/gb/by") === "mom" && J(w.get(lk + "/zero/gb/line")) === J((({ id, ...x }) => x)(L)), WS(w, m));
     ok("…her balance +1 exactly, on every device", bal(B, "kid_a") === b0 + 1 && bal(Kk, "kid_a") === b0 + 1);
-    const p2 = LG(A, "lgGo('kid_a',0,0)");
+    const p2 = LG(A, "lgGo('kid_a',0,0)"); S.dump.ledgerGb = p2;
     ok("…the row: \"… not done 2 days in a row ➖ Excuse ⭐ Mom gave back +1 ⭐ Undo\"; the day's line no longer counts it", /−1 ⭐ this morning: not done 2 days in a row ➖ Excuse ⭐ Mom gave back \+1 ⭐ Undo$/.test(txt(rowOf(p2, "Brush teeth"))) && !/taken/.test(top(p2)), [txt(rowOf(p2, "Brush teeth")), top(p2)]);
     m = w.mark(); for (let r2 = 0; r2 < 10; r2++) { drawAll(B); drawAll(Kk); } const R3 = w.boot("R3", "devR3"); R3.run(CAP); await w.flush(); drawAll(R3); await w.flush(); drawAll(R3); { const t = BW.w.boot("R3", "devR3"); t.run(CAP); await BW.w.flush(); BW.w.devs.splice(BW.w.devs.indexOf(t), 1); }
     A.run("lgRuleZero(0)"); await w.flush(); drawAll(B); await w.flush(); A.run("lgRuleZero(5)"); await w.flush(); drawAll(B); await w.flush();
@@ -224,7 +224,7 @@ for (let n = 0; n <= 16; n++) {
     m = w.mark(); const u1 = A.run("lgZeroUndo(" + args + ")"); await w.flush();
     ok("H · Undo: ONE update — that exact line back (byte for byte), the gb mark removed; the balance back", u1 === true && writes(w, m).length === 1 && J(w.get("bank/kid_a/adjustments/" + L.id)) === J((({ id, ...x }) => x)(L)) && w.get(lk + "/zero/gb") == null && bal(B, "kid_a") === b0, WS(w, m));
     ok("…the day's line is the one filed this morning again (byte for byte)", J(w.get(lk)) === J(S.teethWedLog));
-    const cl = txt(A.run("chSettingsClickoffLogHTML()"));
+    S.dump.clog = A.run("chSettingsClickoffLogHTML()"); const cl = txt(S.dump.clog);
     ok("H · the Click-off Log tab (Mom): \"↩ Brush teeth — not done 2 days −1 ⭐\"", /↩ Brush teeth — not done 2 days −1 ⭐ Morning/.test(cl), cl.slice(0, 300));
     ok("…the app before's log has no such line (C6's lines are its only difference there)", !/not done 2 days/.test(txt(BW.A.run("chSettingsClickoffLogHTML()"))));
   }
@@ -245,7 +245,7 @@ for (let n = 0; n <= 16; n++) {
     A.run("lgExcuse(" + xargs + ")"); await w.flush(); BW.A.run("lgExcuse(" + xargs + ")"); await BW.w.flush();   // and excused for good (its case below)
     // Dad
     const ti = idxOf(A, "morning", "kid_a", "Brush teeth"), dargs = "'kid_a'," + J(S.wk[n]) + ",'thursday','morning'," + ti, dl = "routineLog/kid_a/" + S.wk[n] + "/thursday/zero_a_teeth";
-    Dd.run("dadUnlocked=false;1"); const rL = LG(Dd, "lgGo('kid_a',0,0)"), bL = bal(B, "kid_a");
+    Dd.run("dadUnlocked=false;1"); const rL = LG(Dd, "lgGo('kid_a',0,0)"), bL = bal(B, "kid_a"); S.dump.ledgerDad = rL; S.dump.ledgerC = LG(A, "lgGo('kid_c',0,0)");
     ok("H · Dad's link LOCKED: the row reads \"… −1 ⭐ this morning: not done 3 days in a row\" with no ⭐ Give stars back button", /−1 ⭐ this morning: not done 3 days in a row$/.test(txt(rowOf(rL, "Brush teeth"))) && !/lgZeroGive|Give stars back/.test(rowOf(rL, "Brush teeth")), txt(rowOf(rL, "Brush teeth")));
     m = w.mark(); const gL = Dd.run("lgZeroGive(" + dargs + ")"); await w.flush();
     ok("…a tap anyway is refused: zero writes, the balance unchanged", gL === false && writes(w, m).length === 0 && bal(B, "kid_a") === bL, WS(w, m));
