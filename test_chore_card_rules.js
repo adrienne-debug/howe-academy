@@ -99,9 +99,36 @@ console.log("\n── A · the setter: each setting saves exactly its own field 
     ["clock", "b_two", "'roll'"], ["clock", "c_mop", "'roll'"], ["wait", "b_three", "2"], ["cover", "c_mop", "1"], ["wait", "a_table", "2"], ["keep", "a_table", "true"], ["wait", "a_teeth", "1"], ["wait", "no_such", "1"], ["label", "w_auto", "'x'"], ["pts", "w_auto", "1"]];
   const t0 = jobsOf(w), m = w.mark(); const bad = refused.map(([f, id, v]) => [f, id, v, writesOf(A, "cdrSet('" + id + "','" + f + "'," + v + ")")]).filter(x => x[3].ret !== false || x[3].w.length);
   await w.flush(); ok("refused, nothing written: a wait of 7, −1, 2.5 or a word · Skip \"next\" or 9 · a clock that is not roll/fixed · 📌 \"yes\" · Rolling on a 2-day or an every-N chore · Waits on a 3-a-week chore · Skip on a rolling chore · anything on a daily · another field · a chore that is not there", bad.length === 0 && w.since(m).length === 0 && J(jobsOf(w)) === J(t0), bad.map(x => x.slice(0, 3)));
+  // only the four fields: any other field name is refused for every value, a clearing one too (a clear skips cdrOk, so this guard is all
+  // that keeps a "" / null / "auto" tap from wiping the chore's real who / stars / days / words / status)
+  { const OTHER = ["who", "pts", "cad", "label", "status", "emoji", "slot", "order", "lastDone", "can", "minutes", "room", "level", "area", "verdict", "src", "", "__proto__", "constructor", "clocks", "Wait"],
+      VALS = ["''", "null", "undefined", "'auto'", "0", "3", "'next'", "'roll'", "true", "false", "'x'"];
+    const t1 = jobsOf(w), j1 = A.run("JSON.stringify(hhJobs())"), m5 = w.mark(), bad = [];
+    for (const f of OTHER) for (const v of VALS) { const r = writesOf(A, "cdrSet('w_auto'," + J(f) + "," + v + ")"); if (r.ret !== false || r.w.length) bad.push([f, v, r]); }
+    for (const v of ["''", "null", "'auto'"]) for (const id of ["a_table", "c_mop", "b_three", "m_oven"]) for (const f of ["who", "pts", "cad", "label", "status"]) { const r = writesOf(A, "cdrSet(" + J(id) + "," + J(f) + "," + v + ")"); if (r.ret !== false || r.w.length) bad.push([id, f, v, r]); }
+    await w.flush();
+    ok("a field outside the four (who, pts, cad, label, status, …, \"\", __proto__) is refused for every value, \"\" / null / undefined / \"auto\" included: false, nothing written, the chore unchanged on the device and in the database (" + (OTHER.length * VALS.length + 60) + " taps)", bad.length === 0 && w.since(m5).length === 0 && A.run("JSON.stringify(hhJobs())") === j1 && J(jobsOf(w)) === J(t1), bad.slice(0, 4)); }
   A.run("cdrSet('w_auto','clock','roll')"); await w.flush(); const m3 = w.mark(); const rc = writesOf(A, "cdrSet('w_auto','cover',2)");
   ok("Skip on a chore switched to Rolling is refused (not needed: the clock already restarted)", rc.ret === false && rc.w.length === 0 && w.since(m3).length === 0);
   A.run("cdrSet('w_auto','clock','fixed')"); await w.flush();
+  // right after a clear, on the device that tapped and before the database's echo comes back: no such field, the card and ⚙ Rules show
+  // Auto / Fixed / not kept, and the lists wait by Auto (a clear that left 0 behind would read as None / Never here)
+  { A.run(String.raw`globalThis.__look=function(){ const j=hhJobs().w_auto, c=(hcOpen('w_auto'),hcCardHTML()), r=hcRulesHTML('kitchen',['w_auto']), st=(rtStepsFor('chores','kid_a',true)||[]).find(function(x){ return x&&x._hh==='w_auto'; });
+      const has=function(h,s){ return h.indexOf(s)>=0; };
+      return JSON.stringify({has:['clock','wait','cover','keep'].filter(function(f){ return f in j; }), wait:st?rtWaitDays(st):-1, own:st?rtWaitOwn(st):-1,
+        cW:has(c,'<button class="ce-chip sel" onclick="cdrSet(\'w_auto\',\'wait\',\'\')"'), cC:has(c,'<button class="ce-chip sel" onclick="cdrSet(\'w_auto\',\'cover\',\'\')"'),
+        cF:has(c,'<button class="ce-chip sel" onclick="cdrSet(\'w_auto\',\'clock\',\'fixed\')"'), cK:has(c,'<button title="Keep until done" class="ce-chip sel"'),
+        rW:/onchange="cdrSet\('w_auto','wait',this\.value\)"[^>]*><option value="" selected>Auto: 2 days</.test(r), rC:/onchange="cdrSet\('w_auto','cover',this\.value\)"[^>]*><option value="" selected>Auto: 2 days</.test(r),
+        rF:has(r,'<button class="ce-chip sel" onclick="cdrSet(\'w_auto\',\'clock\',\'fixed\')"'), rK:has(r,'<button title="Keep until done" class="ce-chip sel"') }); };`);
+    const look = () => "__look()";
+    const AUTO = { has: [], wait: 2, own: null, cW: true, cC: true, cF: true, cK: false, rW: true, rC: true, rF: true, rK: false };
+    ok("(sanity) a chore with nothing set looks like that", J(JSON.parse(A.run(look()))) === J(AUTO), A.run(look()));
+    for (const [f, v, clear] of [["wait", "0", "''"], ["wait", "5", "'auto'"], ["cover", "0", "null"], ["cover", "4", "''"], ["clock", "'roll'", "'fixed'"], ["keep", "true", "false"]]) {
+      A.run("cdrSet('w_auto','" + f + "'," + v + ")"); await w.flush(); const set = JSON.parse(A.run(look()));
+      const now = JSON.parse(A.run("(function(){ cdrSet('w_auto','" + f + "'," + clear + "); return " + look() + "; })()")), pend = w.sched && typeof w.sched.pending === "function" ? w.sched.pending() : null;
+      await w.flush(); const later = JSON.parse(A.run(look()));
+      ok(f + " " + v + " then cleared (" + clear + "): at once on the same device, before the database answers — no " + f + " field, the card and ⚙ Rules show Auto / Fixed / not kept, the lists wait by Auto (2 days); the same after the echo", J(set) !== J(AUTO) && J(now) === J(AUTO) && J(later) === J(AUTO) && !(f in jobsOf(w).w_auto), [set, now, later, pend]); }
+  }
   const k = writesOf(B, "[cdrSet('w_auto','wait',3),cdrSet('w_auto','keep',true),cdrSet('w_auto','clock','roll'),cdrSet('w_auto','cover',1)]");
   ok("a kid's device (not Mom): every setter refuses, nothing written, nothing changed", J(k.ret) === J([false, false, false, false]) && k.w.length === 0 && B.run("JSON.stringify(hhJobs().w_auto)") === J(jobsOf(w).w_auto), k);
   A.run("_dryRun=function(){ return true; }"); const m4 = w.mark(); const d = writesOf(A, "[cdrSet('w_auto','wait',3),cdrSet('w_auto','keep',true),cdrSet('w_auto','clock','roll'),cdrSet('w_2','wait','')]"); await w.flush();
