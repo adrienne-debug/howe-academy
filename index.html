@@ -37343,7 +37343,8 @@ function haNbContext(kid){
   // No field = the kid's notebook exactly as before.
   let nbRec={}; try{ nbRec=ROSTER_DEF.find(k=>k&&k.id===kid)||{}; }catch(e){}
   const nbNm=v=>(typeof v==="string"&&v.trim())||null;
-  return { nbKidName:cap(kid), kidName:nbNm((((notebookSettings||{})[kid])||{}).notebookName)||nbNm(nbRec.notebookName)||nbNm(nbRec.name), notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), nbGrade:nbGradeOf(kid), spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, loe:loe, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, wordCursor:luWordsCursorOf(kid), numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true }; // KIDNAME_ROSTER
+  const nbLv=nbLevelCtx(kid);   // NBLEVEL: ctx.grade + ctx.gradeBand
+  return { nbKidName:cap(kid), kidName:nbNm((((notebookSettings||{})[kid])||{}).notebookName)||nbNm(nbRec.notebookName)||nbNm(nbRec.name), notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), nbGrade:nbGradeOf(kid), grade:nbLv.grade, gradeBand:nbLv.gradeBand, spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, loe:loe, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, wordCursor:luWordsCursorOf(kid), numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true }; // KIDNAME_ROSTER
 }
 // LU_WORDS_WIRE_START — 🔤 Lucy's Sight Word of the Day keeps its place week to week (notebooks.js LU_WORDS; her go-ahead
 // 2026-11-21 for slice 1 of PLAN_notebook_lucy_2026-11-10.md). The context reads notebookSettings/<kid>/wordCursor; the builder
@@ -37487,7 +37488,7 @@ function haNbPickerRows(lib){
   return kids.map(k=>{
     const g=lib.GENERATORS[k]||{label:cap(k)+" (starter notebook)"}; // KIDNAME_ROSTER
     return `<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border)">
-      <div style="flex:1;font-weight:700;font-size:13px;color:#1f2937">${g.label}</div>
+      <div style="flex:1;font-weight:700;font-size:13px;color:#1f2937">${nbKidLabel(k,g.label)}</div>
       <!-- NBPRINT: 🖨 Print = the letter-size PDF (prints right from Safari/iPad/AirPrint), her call 2026-10-03 for every family; 👁 = the quick page view -->
       <button onclick="haNbPdf('${k}','student')" title="Makes a letter-size PDF — prints right from any browser, iPad or iPhone" style="padding:7px 12px;border-radius:9px;border:none;background:#ea580c;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🖨 Print</button>
       <button onclick="haNbPdf('${k}','parent')" title="The parent guide as a letter-size PDF" style="padding:7px 12px;border-radius:9px;border:1.5px solid #ea580c;background:#fff7ed;color:#9a3412;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🖨 Parent</button>
@@ -49804,6 +49805,57 @@ function nbSetLevel(kid,key){ if(!momHere()) return;
   if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
 }
 // PREKLEVEL_WIRE_END
+// NBLEVEL_START — one level (notebooks study step 2, approved 2026-11-23: "Notebook reads the Family grade (Pre-K to 8th), with
+// an override … Headers show the right grade; the 5th/6th mismatch goes away. No content change."). A kid's notebook grade =
+// the Notebook tab override (notebookSettings/<kid>/gradeOverride — Mom-only, one targeted value), else the Settings ▸ Family
+// grade (roster .grade: "PreK", "K", "1"–"12"), else today's behaviour. haNbContext passes ctx.grade (the grade word — only when
+// Mom set one of the two, so a kid with no grade set prints byte for byte what printed before) and ctx.gradeBand (Pre-K · K ·
+// 1st–2nd · 3rd–4th · 5th–6th · 7th–8th; above 8th = 7th–8th for now — for later builds). notebooks.js NBLEVEL turns ctx.grade
+// into the grade words on the pages; the kid's label on the Notebook tab ("Lincoln (5th 🐍)") follows it here (nbKidLabel).
+// Grade words only — which notebook a kid gets (isPreK, GENERATORS), its content and level switches don't change.
+// nbGradeOf (the US Path page's grade, which changes that page's content) is left as it is.
+const NB_LEVEL_CHOICES=["PreK","K","1","2","3","4","5","6","7","8"];   // the override picker: Pre-K to 8th
+function nbLvKey(v){ const g=String(v==null?"":v).trim(); if(!g) return ""; if(/^pre-?\s*k/i.test(g)) return "PreK"; if(/^k$|^kinder/i.test(g)) return "K";
+  const m=g.match(/^(\d{1,2})(?!\d)/), n=m?parseInt(m[1],10):NaN; return (n>=1&&n<=12)?String(n):""; }
+function nbLvShort(key){ if(key==="PreK") return "Pre-K"; if(key==="K") return "K"; const n=parseInt(key,10); return n+(n===1?"st":n===2?"nd":n===3?"rd":"th"); }
+function nbLvLabel(key){ return key==="PreK"?"Pre-K":key==="K"?"Kindergarten":nbLvShort(key)+" Grade"; }
+function nbLvBand(key){ if(key==="PreK") return "Pre-K"; if(key==="K") return "K"; const n=parseInt(key,10); return n<=2?"1st–2nd":n<=4?"3rd–4th":n<=6?"5th–6th":"7th–8th"; }
+function nbGradeOverride(kid){ const k=nbLvKey((((notebookSettings||{})[kid])||{}).gradeOverride); return NB_LEVEL_CHOICES.indexOf(k)>=0?k:""; }
+function nbFamilyGrade(kid){ return nbLvKey(nbRecOf(kid).grade); }
+// {key, from: "override" | "family" | "before", label, short, band} — null when nothing names a grade
+function nbLevelGrade(kid){
+  const ov=nbGradeOverride(kid), fam=nbFamilyGrade(kid);
+  let key=ov||fam, from=ov?"override":(fam?"family":"");
+  if(!key){ key=nbLvKey(nbGradeOf(kid)); from="before"; }   // today's behaviour: Pre-K for a Pre-K kid (or a record's notebook.gradeLabel)
+  if(!key) return null;
+  return {key:key, from:from, label:nbLvLabel(key), short:nbLvShort(key), band:nbLvBand(key)};
+}
+function nbLevelCtx(kid){ const lv=nbLevelGrade(kid); return {grade:(lv&&lv.from!=="before")?lv.label:undefined, gradeBand:lv?lv.band:undefined}; }
+function nbKidLabel(kid,label){ const lv=nbLevelGrade(kid); if(!lv||lv.from==="before"||typeof label!=="string") return label;
+  return label.replace(/\((Pre-K|K|\d{1,2}(?:st|nd|rd|th))(?= )/,"("+lv.short); }
+function nbSetGradeOverride(kid,v){ if(!momHere()) return;
+  const key=nbLvKey(v); if(key&&NB_LEVEL_CHOICES.indexOf(key)<0) return; if(!key&&String(v==null?"":v).trim()) return;
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  if(key) notebookSettings[kid].gradeOverride=key; else delete notebookSettings[kid].gradeOverride;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db&&!_dryRun()){ const r=db.ref("notebookSettings/"+kid+"/gradeOverride"); if(key) r.set(key); else r.remove(); } }catch(e){}
+  if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
+}
+// The one home for the control: this kid's section of the Notebook tab, Mom only.
+function nbLevelCardHtml(kid){
+  if(!momHere()) return "";
+  const ov=nbGradeOverride(kid), fam=nbFamilyGrade(kid);
+  const opts=[["","follows the Family grade ("+(fam?nbLvShort(fam):"none set")+")"]].concat(NB_LEVEL_CHOICES.map(k=>[k,nbLvShort(k)]))
+    .map(o=>'<option value="'+o[0]+'"'+(o[0]===ov?" selected":"")+'>'+o[1]+'</option>').join("");
+  return '<div id="nblevel-card" style="margin-top:14px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:12px 14px">'+
+    '<div style="font-size:12px;font-weight:800;color:#9a3412;margin-bottom:6px">📏 Notebook level <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fed7aa;color:#7c2d12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></div>'+
+    '<label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;font-weight:700;color:#1f2937">Notebook level:'+
+      '<select onchange="nbSetGradeOverride(\''+kid+'\',this.value)" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;background:#fff;font-family:\'DM Sans\',sans-serif">'+opts+'</select></label>'+
+    '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-top:6px">The grade printed in the notebook’s headers. It changes the next notebook you print — nothing already printed changes.'+
+      (!ov&&!fam?' No grade is set on Settings ▸ Family yet, so the pages print as they always have.':'')+'</div>'+
+  '</div>';
+}
+// NBLEVEL_END
 // NBNAME_START — the name in a Pre-K notebook, set on the Notebook tab (her ask 2026-11-10: "can we also have the option on
 // notebooks for caleb 3d and julian to edit the name, so 3d will be David in his notebook"). Mom only. Save writes ONE targeted
 // path, notebookSettings/<kid>/notebookName (removed by "Use the family name"); dry-run inert; the local notebookSettings is kept
@@ -57665,7 +57717,7 @@ function renderNotebook(el){
   const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
   const chips=NB_KIDS.map(x=>{
     const on=x.k===sel;
-    return '<button onclick="nbSelectKid(\''+x.k+'\')" style="padding:7px 13px;border-radius:20px;border:1.5px solid '+(on?'#ea580c':'var(--border)')+';background:'+(on?'#fff7ed':'#fff')+';color:'+(on?'#9a3412':'#1f2937')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+x.label+'</button>';
+    return '<button onclick="nbSelectKid(\''+x.k+'\')" style="padding:7px 13px;border-radius:20px;border:1.5px solid '+(on?'#ea580c':'var(--border)')+';background:'+(on?'#fff7ed':'#fff')+';color:'+(on?'#9a3412':'#1f2937')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+nbKidLabel(x.k,x.label)+'</button>';
   }).join("");
   let formHtml="";
   if(meta.aam){
@@ -57956,7 +58008,7 @@ function renderNotebook(el){
       ((typeof nbsTestsBtnHtml==="function")?nbsTestsBtnHtml():"")+   // 📝 NBSPELL: print the target week's spelling tests with the notebooks
       bindHtml+
       '<div style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:16px">'+
-        '<div style="font-size:15px;font-weight:800;color:#1f2937;margin-bottom:10px">'+meta.label+'</div>'+
+        '<div style="font-size:15px;font-weight:800;color:#1f2937;margin-bottom:10px">'+nbKidLabel(meta.k,meta.label)+'</div>'+
         '<div style="display:flex;gap:8px">'+
           // NBPRINT: 🖨 Print = the letter-size PDF for notebook + parent guide (prints right from Safari/iPad/AirPrint — her call 2026-10-03, every family); the page view is the small 👁 Look row
           '<button onclick="haNbPdf(\''+sel+'\',\'student\')" title="Makes a letter-size PDF — prints right from any browser, iPad or iPhone" style="flex:1;padding:10px;border-radius:10px;border:none;background:#ea580c;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🖨 Print notebook</button>'+
@@ -57973,6 +58025,7 @@ function renderNotebook(el){
         formHtml+
         lookHtml+
         xpHtml+
+        nbLevelCardHtml(sel)+   // 📏 NBLEVEL: Notebook level (Mom)
         reviewHtml+
         dgHtml+
         (momHere()&&NB_WB_KIDS[sel]?'<div style="margin-top:14px"><button onclick="nbChkOpen(\''+sel+'\')" style="padding:8px 14px;border-radius:9px;border:1.5px solid #86efac;background:#f0fdf4;color:#166534;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Check today’s notebook answers</button></div>':'')+
