@@ -50174,7 +50174,7 @@ function nbLadderLevelOf(kid,kind){
   const d=nbLadderDefault(kid,kind);
   return d?{lv:d,from:"grade"}:{lv:"",from:""};
 }
-function nbLadderState(kid,kind){ const s=nbLadderSaved(kid,kind), lv=nbLadderLevelOf(kid,kind); return {on:s.on===true, lv:lv.lv||null, lvFrom:lv.from||null, opt:s.opt===true, cur:(s.cur&&typeof s.cur==="object")?s.cur:null, days:(typeof s.days==="string"&&s.days)?s.days:null}; }   // 📖 NBLADREAD: days = the reading pages' day ticks
+function nbLadderState(kid,kind){ const s=nbLadderSaved(kid,kind), lv=nbLadderLevelOf(kid,kind); return {on:s.on===true, lv:lv.lv||null, lvFrom:lv.from||null, opt:s.opt===true, cur:(s.cur&&typeof s.cur==="object")?s.cur:null, days:(typeof s.days==="string"&&s.days)?s.days:null, wf:(s.wf==="one"||s.wf==="both")?s.wf:null}; }   // 📖 NBLADREAD: days = the reading pages' day ticks · ✍️ NBLADREAD3: wf = write-first days
 // For haNbContext: the kid's saved ladders + this week's items when on and loaded; null when nothing is saved. Only the 1st-grade
 // notebook reads it (reading — NBLADREAD).
 function nbLadderCtx(kid){
@@ -50192,7 +50192,7 @@ function nbLadderCtx(kid){
 }
 // The one writer: ONE targeted field of notebookSettings/<kid>/ladders/<kind>. false / "" / null = remove (nothing saved = off).
 function nbLadderWrite(kid,kind,field,val){
-  if(!momHere()||!NBLADDER_FILES[kind]||["on","lv","opt","cur","days"].indexOf(field)<0) return false;   // 📖 NBLADREAD: + days (the reading pages' day ticks)
+  if(!momHere()||!NBLADDER_FILES[kind]||["on","lv","opt","cur","days","wf"].indexOf(field)<0) return false;   // 📖 NBLADREAD: + days (the reading pages' day ticks) · ✍️ NBLADREAD3: + wf (write-first days)
   if(!notebookSettings[kid]) notebookSettings[kid]={};
   const ns=notebookSettings[kid]; if(!ns.ladders||typeof ns.ladders!=="object") ns.ladders={};
   if(!ns.ladders[kind]||typeof ns.ladders[kind]!=="object") ns.ladders[kind]={};
@@ -50247,6 +50247,7 @@ function nbLadderRowHtml(kid,kind){
       '<select onchange="nbLadderSetLevel(\''+kid+'\',\''+kind+'\',this.value)" style="padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:11.5px;background:#fff;'+F+'">'+first+opts+'</select></label>'+
     '<div style="font-size:11.5px;color:#374151;margin-top:5px">'+nbLadderWhereText(kid,kind,t,st)+'</div>'+optHtml+
     ((kind==="reading"&&typeof nbLadReadDaysHtml==="function")?nbLadReadDaysHtml(kid):"")+   // 📖 NBLADREAD: the day ticks (a notebook that prints reading)
+    ((kind==="reading"&&typeof nbLadReadWfHtml==="function")?nbLadReadWfHtml(kid):"")+   // ✍️ NBLADREAD3: write-first days (levels g3 and up)
     '<div style="margin-top:7px">'+place+'</div></div>';
 }
 // The one home: this kid's section of the Notebook tab, Mom only, after the Notebook level card. Closed, it reads only the saved
@@ -50361,6 +50362,37 @@ function nbLadReadPersist(kid,out){
   }catch(e){}
 }
 // NBLADREAD_END
+// NBLADREAD3_START — ✍️ write-first days for the reading passages, slice 3 of the notebook ladders (notebooks study, her words
+// 2026-11-23/24: from 3rd grade up "Write first some days"). notebooks.js NBLADREAD3 prints the Read and answer page in the 4th-
+// and 6th-grade notebooks too (the card's note follows HoweNotebooks.ladderPages, so it now says where it prints for them) and
+// prints write-first days in all three. This block is the card's one home for the choice:
+//   · "Write first: never · one day a week · both days" on the READING row, only for a notebook that prints reading and only
+//     while the child's place is at a 3rd-grade level or higher (a 1st/2nd-grade page always shows its choices).
+//   · Saved as ONE field — the reading ladder's "wf" = "one" | "both"; never = the field removed — through nbLadderWrite (Mom only,
+//     one targeted field, inert under ?dryrun=1). Nothing saved = never. "One day a week" = the week's 2nd reading day.
+const NBLADREAD3_WF=[["","Never"],["one","One day a week"],["both","Both days"]];
+function nbLadReadWfOf(kid){ const v=nbLadderSaved(kid,"reading").wf; return (v==="one"||v==="both")?v:""; }
+// The level the child's next page is at (the ladder moves up by itself), or "" when there is none.
+function nbLadReadWfLevel(kid){
+  const st=nbLadderState(kid,"reading"), t=nbLadderTrack("reading"), L=nbLadderLib();
+  if(!st.lv) return ""; const w=(t&&L)?L.where(t,st):null;
+  if(w&&(w.end||w.stop)) return ""; return String((w&&w.lv)||st.lv);
+}
+function nbLadReadWfShown(kid){ const lv=nbLadReadWfLevel(kid); return nbLadReadPrints(kid)&&!!lv&&!/^g[12]$/.test(lv); }
+function nbLadReadSetWf(kid,v){
+  if(!momHere()||["","one","both"].indexOf(v)<0||v===nbLadReadWfOf(kid)) return;
+  nbLadderWrite(kid,"reading","wf",v||null);
+  nbLadderRepaint();
+}
+function nbLadReadWfHtml(kid){
+  if(!nbLadReadWfShown(kid)) return "";
+  const cur=nbLadReadWfOf(kid), F='font-family:\'DM Sans\',sans-serif';
+  const btn=o=>{ const on=o[0]===cur;
+    return '<button onclick="nbLadReadSetWf(\''+kid+'\',\''+o[0]+'\')" style="padding:4px 10px;border-radius:20px;border:1.5px solid '+(on?'#4338ca':'var(--border)')+';background:'+(on?'#e0e7ff':'#fff')+';color:'+(on?'#3730a3':'#6b7280')+';font-size:11px;font-weight:800;cursor:pointer;'+F+'">'+o[1]+'</button>'; };
+  return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;font-weight:700;color:#1f2937">Write first:'+NBLADREAD3_WF.map(btn).join("")+'</div>'+
+    '<div style="font-size:10.5px;font-weight:600;color:var(--muted);margin-top:3px;line-height:1.4">On a write-first day, the questions marked for it print with lines: the child writes an answer first, and their choices are on the back of the sheet to check against. One day a week = the second reading day. Never on a 1st- or 2nd-grade page.</div>';
+}
+// NBLADREAD3_END
 // NBNAME_START — the name in a Pre-K notebook, set on the Notebook tab (her ask 2026-11-10: "can we also have the option on
 // notebooks for caleb 3d and julian to edit the name, so 3d will be David in his notebook"). Mom only. Save writes ONE targeted
 // path, notebookSettings/<kid>/notebookName (removed by "Use the family name"); dry-run inert; the local notebookSettings is kept
