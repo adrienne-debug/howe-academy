@@ -14,6 +14,10 @@
  *   E · Mom's and Dad's four numbers (Kids today pop-up, 👤 By person); none on a kid's device;
  *   F · nothing is written or saved: no database write, no localStorage key; the whole database and every write = the baseline's;
  *   G · every list HTML is byte-identical to the baseline when no streak shows, and differs only by the 🔥 span when one does;
+ *   I · further back, one earlier week at a time (a seeded week before the replay): a 20-day streak reads 20 on the Saturday and on the
+ *       Sunday after (no drop across the week change); a list broken this week or last week makes no extra read; an unbroken one exactly
+ *       one per earlier week, in order, stopping at the first miss, the cap or the reach; a week not there ends it and is not asked again;
+ *       plan weeks not back to back stop it; ?dryrun=1 makes none; loading order never shows less the same day; nothing is written;
  *   H · the cost of one draw (printed).
  * The baseline = this index.html with the LISTSTREAK_START … LISTSTREAK_END block cut out (its hooks are typeof-guarded, so they go
  * quiet): this tree minus the feature.   run: node test_list_streak.js
@@ -102,7 +106,7 @@ async function replay(index, side) {
     R.kidPops[n] = pop(B, "kid_a", "chores");
   }
   // D · last week not loaded (yet): this week only. A device whose read of last week has not landed, then a fresh device.
-  R.misc.unloaded = B.run("(function(){ if(typeof lsStreak!=='function') return null; const ps=prevSlState; prevSlState=null; _lsM={}; try{ return [lsStreak('chores','kid_a'),lsStreak('chores','kid_b'),lsStreak('chores','kid_d'),lsBadgeHTML('chores','kid_a')]; } finally{ prevSlState=ps; _lsM={}; } })()");
+  R.misc.unloaded = B.run("(function(){ if(typeof lsStreak!=='function') return null; const ps=prevSlState, o=_lsOld, h=_lsHi; prevSlState=null; _lsM={}; try{ const held=[lsStreak('chores','kid_a'),lsStreak('chores','kid_b'),lsStreak('chores','kid_d')]; _lsM={}; _lsOld={}; _lsHi={}; _lsBusy='x'; return held.concat([lsStreak('chores','kid_a'),lsStreak('chores','kid_b'),lsStreak('chores','kid_d'),lsBadgeHTML('chores','kid_a')]); } finally{ prevSlState=ps; _lsOld=o; _lsHi=h; _lsBusy=null; _lsM={}; } })()");
   const C = w.boot("C", "devC"); await w.flush(); R.misc.freshFirst = C.run("(function(){ const ps=prevSlState; return [ps===null, (typeof lsStreak==='function')?lsStreak('chores','kid_a'):null]; })()");
   await w.flush(); R.misc.freshLater = num(C, "chores", "kid_a");
   const M = w.boot("M", "devM", { mom: true }); await w.flush(); R.misc.momFirst = pop(M, "kid_a", "chores"); await w.flush(); R.misc.momLater = pop(M, "kid_a", "chores");   // Mom's fresh device
@@ -153,8 +157,9 @@ ok("a list with nothing due today still shows the streak at its title: kid_d Fri
 
 console.log("\n── D · across the week change; last week not loaded ──");
 ok("Tue 11/24 with last week loaded: kid_a 9, kid_b 4, kid_d 3 (each reaches into last week's ticks)", N.nums[8].kid_a[2] === 9 && N.nums[8].kid_b[2] === 4 && N.nums[8].kid_d[2] === 3);
-ok("last week not loaded: this week only — kid_a 3 (Sun, Mon, Tue), kid_b 3, kid_d 1 (no flame), the title \"🔥 3\"", J(N.misc.unloaded.slice(0, 3)) === J([3, 3, 1]) && /🔥 3</.test(N.misc.unloaded[3]), N.misc.unloaded);
-ok("Sun 11/22, the first look after the week changes: 0 (this week only) while last week's read is out; a moment later 6", N.misc.first6 === 0 && N.misc.preNum6.a === 6, [N.misc.first6, N.misc.preNum6]);
+ok("last week's copy gone mid-day (a reload of it): the device still shows 9 · 4 · 3 — never less than a moment ago that day", J(N.misc.unloaded.slice(0, 3)) === J([9, 4, 3]), N.misc.unloaded);
+ok("nothing of last week on the device at all: this week only — kid_a 3 (Sun, Mon, Tue), kid_b 3, kid_d 1 (no flame), the title \"🔥 3\"", J(N.misc.unloaded.slice(3, 6)) === J([3, 3, 1]) && /🔥 3</.test(N.misc.unloaded[6]), N.misc.unloaded);
+ok("Sun 11/22, the first look after the week changes on a device left open: 6 at once (its own copy of last week), 6 once last week's read lands", N.misc.first6 === 6 && N.misc.preNum6.a === 6, [N.misc.first6, N.misc.preNum6]);
 ok("a fresh device: before its read of last week lands it says 3; once it lands, 9", J(N.misc.freshFirst) === J([true, 3]) && N.misc.freshLater === 9, [N.misc.freshFirst, N.misc.freshLater]);
 
 console.log("\n── E · Mom's and Dad's four numbers ──");
@@ -194,6 +199,62 @@ console.log("\n── the rule's corners (one device) ──");
   const due = B.run("[_lsDue({cad:'asneeded'},'monday','2026-11-16'),_lsDue({cad:'once'},'monday','2026-11-16'),_lsDue({cad:'daily',house:'x'},'monday','2026-11-16'),_lsDue({cad:'daily',line:'l1'},'monday','2026-11-16'),_lsDue({cad:'daily',from:'2026-11-17'},'monday','2026-11-16'),_lsDue({cad:'wk:0'},'monday','2026-11-16'),_lsDue({cad:'wk:1'},'monday','2026-11-16')]");
   ok("not counted: ✋ as needed, ☑️ once, the plan's own rows, the laundry line's rows, a row before its start date; a Monday row on Monday is", J(due) === J([false, false, false, false, false, true, false]), due);
   ok("off the today tab nothing is drawn: Tuesday's tab viewed on Wednesday has no flame", B.run("(function(){ const d0=day; day='tuesday'; try{ return lsBadgeHTML('chores','kid_a'); } finally{ day=d0; } })()") === "");
+}
+
+console.log("\n── I · reaching further back: one earlier week at a time ──");
+{ const JI = () => ({
+    a_bed: K({ label: "Make the bed", emoji: "🛏", who: "kid_a", slot: "chores", cad: "daily", pts: 5, order: 0 }),
+    a_teeth: K({ label: "Brush teeth", emoji: "🪥", who: "kid_a", slot: "morning", cad: "daily", area: "health", order: 1 }),
+    b_sink: K({ label: "Wipe the sink", emoji: "🚰", who: "kid_b", slot: "chores", cad: "daily", pts: 5, order: 0 }),
+    c_toys: K({ label: "Toys in the bin", emoji: "🧩", who: "kid_c", slot: "chores", cad: "daily", pts: 5, order: 0 }) });
+  const w = await W.world({ household: { jobs: JI(), people: clone(W.PEOPLE), meta: { takeover: 1 } } });
+  const A = w.boot("A", "devA", { mom: true }), B = w.boot("B", "devB"); await w.flush();
+  await go(w, -1, 19);
+  // the week before the replay (Sun 11/08 … Sat 11/14) as the database keeps it: kid_a's bed ticked Mon 11/09 … Sat 11/14 on each day
+  const bi = idxOf(B, "chores", "kid_a", "Make the bed"), sl1 = {};
+  ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday"].forEach((dn, j) => { sl1["week1_" + dn + "_kid_a_cstep" + bi] = { done: true, ts: "07:00 PM Nov " + (9 + j), pts: 5, bid: null }; });
+  const had1 = J(w.db.tree.root.week1 || null); w.db.tree.root.week1 = Object.assign({}, w.db.tree.root.week1 || {}, { sl: sl1 });
+  const I = {};
+  for (let n = -1; n <= 13; n++) {
+    await go(w, n, 19); await w.flush();
+    if (n === 13) { I.sunFirst = num(B, "chores", "kid_a"); I.sunWk = B.run("activeWk()"); }
+    tick(B, "chores", "kid_a", "Make the bed"); if (n >= 0) tick(B, "chores", "kid_c", "Toys in the bin"); if (n !== 9) tick(B, "chores", "kid_b", "Wipe the sink");
+    await w.flush(); B.run("_lsM={}"); B.run("lsStreak('chores','kid_a')"); await w.flush();
+    if (n === 12) { I.sat = num(B, "chores", "kid_a"); I.satFire = fireOf(draw(B, "chores", "kid_a")); I.satWk = B.run("activeWk()"); }
+    if (n === 13) I.sunAfter = num(B, "chores", "kid_a");
+  }
+  ok("a 20-day streak (Mon 11/09 … Sat 11/28, 11/09–11/14 from the stored week before) reads 20 on Saturday (" + I.satWk + ")", I.sat === 20 && I.satFire === 20, [I.sat, I.satFire]);
+  ok("…and 20 on the Sunday after (" + I.sunWk + ") before its tick, on the same device: no drop across the week change; 21 once Sunday is ticked", I.sunFirst === 20 && I.sunAfter === 21 && I.sunWk !== I.satWk, [I.sunFirst, I.sunAfter, I.satWk, I.sunWk]);
+  // fresh devices on Sunday 11/29 (week4): every <week>/sl read they make, counted
+  const wrap = d => d.run("(function(){ const r0=db.ref; globalThis.__slReads=[]; db.ref=function(p){ const r=r0.apply(db,arguments); if(/\\/sl$/.test(String(p))&&r&&r.once){ const o=r.once; r.once=function(){ __slReads.push(String(p)); return o.apply(r,arguments); }; } return r; }; return 1; })()");
+  const reads = d => JSON.parse(d.run("JSON.stringify(__slReads)")), extra = d => reads(d).filter(p => p !== d.run("_prevWkKey()") + "/sl");
+  const settle = async (d, kid) => { let v = null; for (let r = 0; r < 6; r++) { v = num(d, "chores", kid); await w.flush(); } return v; };
+  { const F = w.boot("F", "devF"); wrap(F); await w.flush();
+    const mF = w.mark(), nb = await settle(F, "kid_b"), xb = extra(F), rb = reads(F);
+    const nc = await settle(F, "kid_c"), xc = extra(F);
+    const na = await settle(F, "kid_a"), xa = extra(F);
+    const nm = await settle(F, "kid_a"); await settle(F, "kid_c"); const xz = extra(F);
+    ok("kid_b (the sink missed Wed 11/25, last week): 4, and NO extra read — only last week's, the app's own", nb === 4 && xb.length === 0 && J(rb) === J(["week3/sl"]), [nb, rb]);
+    ok("kid_c (from Mon 11/16; Sun 11/15 not ticked, two weeks back): 14, exactly one extra read: week2", nc === 14 && J(xc) === J(["week2/sl"]), [nc, xc]);
+    ok("kid_a (unbroken into the week before): 21, one more read: week1 — in order, week2 not read twice", na === 21 && J(xa) === J(["week2/sl", "week1/sl"]), [na, xa]);
+    I.wr = writes(w, mF);
+    ok("asked again (both kids, the cache gone): no new read; week1 is the first week, so none earlier is asked for", nm === 21 && J(xz) === J(["week2/sl", "week1/sl"]), xz); }
+  { const G = w.boot("G", "devG", { mom: true }); wrap(G); await w.flush(); G.run("LS_CAP=10"); const n = await settle(G, "kid_a");
+    ok("the cap (set to 10 here; 60 in the app): kid_a 10, week1 never read (the cap was reached in week2); Mom's line \"Chores 10+\"", n === 10 && J(extra(G)) === J(["week2/sl"]) && /Chores <b>10\+<\/b>/.test(G.run("lsFourHTML('kid_a')")), [n, extra(G)]); }
+  { const H = w.boot("H", "devH", { mom: true }); wrap(H); await w.flush(); H.run("LS_REACH=2"); const n = await settle(H, "kid_a");
+    ok("the reach (set to 2 weeks back here; 12 in the app): kid_a 15 (Sun 11/15 … Sun 11/29), week1 never read; Mom's line \"15+\"", n === 15 && J(extra(H)) === J(["week2/sl"]) && /Chores <b>15\+<\/b>/.test(H.run("lsFourHTML('kid_a')")), [n, extra(H)]); }
+  { const D = w.boot("D", "devD"); wrap(D); await w.flush(); D.run("HA_LS.setItem('ha_dryrun','1')"); const n = await settle(D, "kid_a");
+    ok("?dryrun=1: no extra read at all (last week's is the app's own): kid_a 8 (this week and last: what the app itself reads)", n === 8 && extra(D).length === 0, [n, reads(D)]); }
+  { const keep = w.db.tree.root.week1; delete w.db.tree.root.week1;
+    const E = w.boot("E", "devE"); wrap(E); await w.flush(); const n = await settle(E, "kid_a"), x1 = extra(E); const n2 = await settle(E, "kid_a");
+    ok("an earlier week that is not there (week1 gone): the count ends there — 15 (Sun 11/15 … Sun 11/29) — with no error, and it is never asked for again", n === 15 && n2 === 15 && J(x1) === J(["week2/sl", "week1/sl"]) && J(extra(E)) === J(x1) && (E.logs || []).filter(l => /error/i.test(l[0] || "")).length === 0, [n, n2, x1, extra(E)]);
+    w.db.tree.root.week1 = keep; }
+  { const Q = w.boot("Q", "devQ", { mom: true }); wrap(Q); await w.flush(); Q.run("(function(){ const g0=gwWeekDateRange; gwWeekDateRange=function(n){ return n===2?{start:'2026-11-02',end:'2026-11-08'}:g0(n); }; })()"); const n = await settle(Q, "kid_a");
+    ok("plan weeks not back to back (week2 dated two weeks before week3 — a break between): the count stops at the break, 8, with no read of week2; \"8+\"", n === 8 && extra(Q).length === 0 && /Chores <b>8\+<\/b>/.test(Q.run("lsFourHTML('kid_a')")), [n, extra(Q)]); }
+  { const ps = B.run("JSON.stringify([lsStreak('chores','kid_a'),(function(){ const a=prevSlState, o=_lsOld; prevSlState=null; _lsOld={}; _lsM={}; try{ return lsStreak('chores','kid_a'); } finally{ prevSlState=a; _lsOld=o; _lsM={}; } })()])");
+    ok("loading order never shows less the same day: B at 21, its copies of the earlier weeks dropped mid-day, still 21", ps === "[21,21]", ps); }
+  ok("nothing written by any of it: a fresh device's draws and its three reads made 0 database writes (its boot's own records aside)", I.wr.length === 0, I.wr.slice(0, 5));
+  void A; void had1;
 }
 
 console.log("\n── H · the cost of one draw ──");
