@@ -31,7 +31,7 @@ function world(opts) {   // a fresh page: stubbed app globals + seasons.js
     remove() { o.writes.push({ op: "remove", path: P }); },
     on(ev, fn) { o.listens.push(P); o.fire[P] = v => fn({ val: () => v }); } }; } };
   let gn = 0;
-  const ctx = { console: { log: console.log, warn() {} }, Date, Math, JSON, document, db, _todayStr: () => "2026-11-20", _dryRun: () => o.dry, momHere: () => o.mom, _kioskD: () => o.kioskD,
+  const ctx = { console: { log: console.log, warn() {} }, Date, Math, JSON, document, db, skJobsN: () => 0, _todayStr: () => "2026-11-20", _dryRun: () => o.dry, momHere: () => o.mom, _kioskD: () => o.kioskD,
     gwShowToast: m => o.toasts.push(m), HA_LS: { getItem: k => (k in o.LS ? o.LS[k] : null), setItem: (k, v) => { o.LS[k] = String(v); } },
     tab: "moms-plan", mpSubView: "seasons", momSchedView: false, renderMomsPlan() { o.repaints++; }, mpGoto: v => { o.gotos.push(v); },
     grData: { items: {} }, momdayData: {},

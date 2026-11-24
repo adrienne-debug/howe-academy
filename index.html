@@ -1977,10 +1977,10 @@ function toggleMorningStep(kid,i){
   const wk=activeWk(), _slB=slBefore();   // SLTARGET
   const sk=wk+"_"+day+"_"+kid+"_mstep"+i, cur=slState[sk], now=!(cur&&cur.done);
   const _obPrev={}; _obPrev[sk]=cur||null; _obPrev[wk+"_"+day+"_"+kid+"_morning"]=slState[wk+"_"+day+"_"+kid+"_morning"]||null;   // 📮
-  { const _st=morningStepsFor(kid)[i], _b0=_st?(_st.pts||0):0;
+  { const _st=morningStepsFor(kid)[i], _b1=_st?(_st.pts||0):0, _b0=(now&&_b1>0&&typeof _todayDay==="string"&&day===_todayDay&&typeof rtDailyPay==="function")?rtDailyPay("morning",kid,i,_st):_b1;   // CHOREDAILY
     // ⭐ same wages rule as the other lists (2026-08-17): base + zone bonus banks on check, the
     // recorded amount reverses on un-check; 0-⭐ steps stay pure routine.
-    const _paid=now?(_b0+((typeof zoneBonusFor==="function")?zoneBonusFor(_st&&_st.zone,_b0):0)):((cur&&cur.pts!=null)?cur.pts:_b0);
+    const _paid=now?(_b0+((typeof zoneBonusFor==="function")?zoneBonusFor(_st&&_st.zone,_b0):0)):((cur&&cur.pts!=null)?cur.pts:_b1);
     let _bid=null;
     if(_paid>0){
       if(now){ _bid=bankDirect(kid,_paid,(_st&&_st.emoji?_st.emoji+" ":"")+(_st?_st.label:("Step "+(i+1))),(typeof choreVerifyOn==="function"&&choreVerifyOn(kid))); }
@@ -2023,7 +2023,7 @@ function mrIndividualHTML(kid){
   const isOpen=mrOpen[kid]!==false;
   let h='<div class="sl-check-row'+(allDone?" done":"")+'" onclick="toggleMrOpen(\''+kid+'\')" style="cursor:pointer">'+
     '<div class="sl-checkbox'+(allDone?" done":"")+'">'+(allDone?"✓":"")+'</div>'+
-    '<div style="flex:1"><div class="sl-slot-name">Morning <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+(_dueIdx.length+_am.length)+'</span></div>'+
+    '<div style="flex:1"><div class="sl-slot-name">Morning <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+(_dueIdx.length+_am.length)+'</span>'+((typeof lsBadgeHTML==="function")?lsBadgeHTML("morning",kid):"")+'</div>'+
     '<div class="sl-slot-sub">'+((allDone||morningComplete(kid,day))?(gateClockHeld(day)?'✓ Done — school starts at '+fromMin(gateStartMin(day)):'✓ Schedule unlocked'):'Finish all to unlock your schedule')+'</div></div>'+
     '<div style="font-size:14px;color:var(--muted)">'+(isOpen?"▾":"▸")+'</div></div>';
   if(isOpen){
@@ -2038,7 +2038,7 @@ function mrIndividualHTML(kid){
       h+='<div class="mr-step'+(sd?" done":"")+'"'+(_ed?' onclick="toggleMorningStep(\''+kid+'\','+i+')"':'')+'>'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
          '<div class="sl-slot-name">'+(st.emoji?st.emoji+" ":"")+st.label+
-           ((st.pts||0)>0?' <span class="cadtag" style="color:#b45309;border-color:#fde68a">+'+(st.pts||0)+' \u2b50</span>':'')+
+           ((st.pts||0)>0?' '+((typeof rtDailyPay==="function"&&day===_todayDay)?rtDailyPill(st.pts,rtDailyPay("morning",kid,i,st),'cadtag" style="color:#b45309;border-color:#fde68a'):'<span class="cadtag" style="color:#b45309;border-color:#fde68a">+'+(st.pts||0)+' \u2b50</span>'):'')+   // CHOREDAILY
            (_wl?' <span class="cadtag" style="color:#0e7490;border-color:#a5f3fc">\u{1F4C5} '+_wl+'</span>':'')+
            (st.time?' <span class="cadtag" style="color:#7c3aed;border-color:#ddd6fe">\u23f0 '+st.time+'</span>':'')+
          '</div></div>'; });
@@ -2665,10 +2665,11 @@ function toggleRtStep(slot,kid,i){
   { const _st0=rtStepsFor(slot,kid)[i], _b0=_st0?(_st0.pts||0):0;
     // CHOREFALL: a row in its wait pays what it is worth today (the base a bonus room doubles); on its own day it is never late
     const _bf=(now&&_b0>0&&typeof rtFallPay==="function"&&day===_todayDay&&!cadDueOn(_st0.cad||"daily",day)&&stepWindowOk(_st0,day))?rtFallPay(_st0,rtLateDays(slot,kid,i),kid):_b0;
+    const _bd=(now&&_b0>0&&typeof rtDailyPay==="function"&&day===_todayDay&&rtDailyRow(_st0))?rtDailyPay(slot,kid,i,_st0):_bf;   // CHOREDAILY: a daily missed 2+ days in a row
     // Pay base + any focus-zone bonus, and RECORD the total on the check-off. Unchecking reverses
     // that stored number rather than recomputing — the zone or bonus may have changed since, and
     // recomputing would reverse a different amount than was paid.
-    const _paid = now ? (_bf + zoneBonusFor(_st0&&_st0.zone,_bf)) : ((cur&&cur.pts!=null)?cur.pts:_b0);
+    const _paid = now ? (_bd + zoneBonusFor(_st0&&_st0.zone,_bd)) : ((cur&&cur.pts!=null)?cur.pts:_b0);
     var _p=_paid;
     const _st=_st0;
     // ⭐ WAGES, not winnings: routine stars bank the moment the step is checked — straight
@@ -2761,6 +2762,94 @@ function rtDoneOnWk(wk,slot,kid,d,i){
   const s=map[wk+"_"+d+"_"+kid+"_"+RT_ABBR[slot]+"step"+i];
   return !!(s&&s.done);
 }
+// LISTSTREAK_START — 🔥 one streak per list (missed-chores design §4.1, slice P2; her words 11/20: "every list but each by itself at its
+// title"; what it earns: "Nothing at first"). Morning, Afternoon, Chores and Evening each count the days in a row on which every row due
+// on that list was ticked ON ITS OWN DAY (the tick's stamp "02:15 PM Nov 23" names the day; a row done later in its wait breaks it).
+// Not breaking it: ✕ today / ➖ Excuse (waved), 😷 Kid Off, 🌅 sent to the next morning, a break that hid the list. A day with nothing
+// due (or all of it excused) is passed over. Today joins once its list is fully ticked; until then the count runs to yesterday.
+// Where the ticks come from: this week (slState), last week (prevSlState — the app's own read, _loadPrevSl), and only when a list is
+// still unbroken at the start of last week, ONE earlier week at a time (<week>/sl, read once per device per session, one read in flight,
+// none on ?dryrun=1, nothing written; the hub's ask 11/23: a kid at 🔥 14 on Saturday must not read 🔥 7 on Sunday). It stops at a miss,
+// at LS_CAP counted days, at LS_REACH weeks back, at a week that is not there (null), at week 1, or where the plan's weeks are not back
+// to back (a break: gwWeekDateRange's Monday is not 7 days before the next one). Week keys step back as _prevWkKey does: week<N-1>.
+// Earlier weeks' rows are read with today's list (as last week's always were). Until a read lands it shows the count so far, and never
+// less than it showed earlier the same day for that reason (_lsHi).
+// Not counted: the plan's own rows (st.house), the laundry line's rows (they follow today's laundry, not the day's), as-needed, ☑️ once.
+// Shown from 2 (at 0 or 1 nothing), on today's tab only. Writes nothing, saves nothing, pays nothing. The days before today are cached
+// per list and kid for 15 s or until the ticks / waves / carries / calendar / lists are replaced; today is worked out on each draw.
+let _lsM={}, _lsHi={}, _lsOld={}, _lsBusy=null, _lsV=0, LS_CAP=60, LS_REACH=12;   // LS_CAP counted days · LS_REACH weeks back (last week = 1)
+const _LS_MO=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function _lsOnDay(r,iso){ if(!r||!r.done) return false; const m=/([A-Z][a-z]{2})\s(\d{1,2})\s*$/.exec(String(r.ts||"")); return !m||(m[1]===_LS_MO[+iso.slice(5,7)-1]&&+m[2]===+iso.slice(8)); }
+function _lsDue(st,dn,iso,back){
+  if(!st||st.house||st.line||st.laundry||st.hdHidden||st.llHidden) return false;
+  const cad=st.cad||"daily"; if(cad==="asneeded"||cad==="none"||cad==="once") return false;
+  if((st.from&&iso<st.from)||(st.to&&iso>st.to)||(st.cycW&&!stepCycleOk(st,iso))) return false;
+  if(back&&(/^\d+d$/.test(cad)||cad==="2w")){ const n=cadDateNum(dn), g=(cad==="2w")?14:parseInt(cad,10); return n==null||((n-7*back)%g+g)%g===0; }   // an earlier week: 7 days a week before this week's date
+  return cadDueOn(cad,dn);
+}
+// "kid" = 😷 Kid Off that day (unticked rows excused) · "hid" = a holiday / vacation that took this list off the day · "" otherwise.
+function _lsOff(slot,kid,iso){
+  const C=(typeof calendarData!=="undefined"&&calendarData)||{}, o=((C.kidOverrides||{})[kid]||{})[iso]; let p="";
+  [C.holidays,C.vacations].forEach(function(c){ Object.values(c||{}).forEach(function(v){ const s=calNormDate(v.start||v.date), e=calNormDate(v.end||v.start||v.date); if(!p&&s&&iso>=s&&iso<=e) p=v.pause||"school"; }); });
+  if(p==="all"||(p==="chores"&&slot!=="morning"&&slot!=="evening")) return "hid";
+  return (o&&o.school===false)?"kid":"";
+}
+// One day of one list: 1 = every due row ticked on its day · 0 = passed over · -1 = a row missed (today: not finished yet).
+function _lsDay(slot,kid,wk,dn,iso,map,back){
+  const off=_lsOff(slot,kid,iso); if(off==="hid") return 0;
+  const steps=rtStepsFor(slot,kid,false,dn)||[], wv=((((typeof wavedData!=="undefined"&&wavedData)||{})[wk]||{})[dn]||{})[kid]||{}, am=((typeof amCarry!=="undefined"&&amCarry)||{})[kid]||{};
+  let ok=0;
+  for(let i=0;i<steps.length;i++){ if(!_lsDue(steps[i],dn,iso,back)) continue;
+    if(_lsOnDay(map&&map[wk+"_"+dn+"_"+kid+"_"+(slot==="morning"?"m":RT_ABBR[slot])+"step"+i],iso)){ ok++; continue; }
+    if(off||wv[slot+"step"+i]||(slot!=="morning"&&am[iso+"_"+RT_ABBR[slot]+"step"+i])) continue;
+    return -1; }
+  return ok?1:0;
+}
+// One earlier week's ticks, read once (the same kind of read _loadPrevSl makes); a week not there lands as null and is never asked again.
+function _lsAsk(wk){
+  if(_lsBusy||wk in _lsOld||typeof db==="undefined"||!db||(typeof _dryRun==="function"&&_dryRun())) return;
+  _lsBusy=wk; const done=function(v){ if(_lsBusy!==wk) return; _lsOld[wk]=v||null; _lsBusy=null; _lsV++; if(typeof renderAllSoon==="function") renderAllSoon(); };
+  try{ db.ref(wk+"/sl").once("value",function(x){ done(x.val()); },function(){ done(null); }); }catch(e){ done(null); }
+}
+// The days before today, newest first, until a miss or the end of the ticks: [n, why] — why "" a miss · "cap" · "end" (no older ticks:
+// week 1, a week not there, a break between weeks, LS_REACH) · "load" (a read still out, or this week's dates not in yet).
+function _lsPast(slot,kid,wk,ti){
+  let n=0; const N=+((/^week(\d+)$/.exec(wk)||[])[1]||0), mon=amIso("monday");
+  for(let p=_rtPos(ti)-1;p>=-1;p--){ const dn=DAYS_ALL[_rtIdx(p)], iso=amIso(dn); if(!iso) return [n,"load"]; const r=_lsDay(slot,kid,wk,dn,iso,slState,0); if(r<0) return [n,""]; n+=r; if(n>=LS_CAP) return [LS_CAP,"cap"]; }
+  if(!mon) return [n,"load"];
+  for(let k=1;k<=LS_REACH;k++){
+    if(N-k<1) return [n,"end"];
+    const kw="week"+(N-k), R=(typeof gwWeekDateRange==="function")?gwWeekDateRange(N-k):null;
+    if(R&&R.start&&R.start!==_amIsoAdd(mon,-7*k)) return [n,"end"];   // not the week before: a break sits between
+    let map=_lsOld[kw];
+    if(k===1){ if(typeof _loadPrevSl==="function") _loadPrevSl(); if(prevSlState&&_prevSlWk===kw){ map=prevSlState; _lsOld[kw]=map; } else if(map===undefined) return [n,"load"]; }   // last week: the app's own read (kept for when it is two weeks back)
+    if(map===undefined){ _lsAsk(kw); return [n,"load"]; }
+    if(map===null) return [n,"end"];
+    for(let p=5;p>=-1;p--){ const dn=DAYS_ALL[_rtIdx(p)], iso=_amIsoAdd(mon,p-7*k); const r=_lsDay(slot,kid,kw,dn,iso,map,k); if(r<0) return [n,""]; n+=r; if(n>=LS_CAP) return [LS_CAP,"cap"]; }
+  }
+  return [n,"end"];
+}
+function lsStreak(slot,kid){
+  const ti=DAYS_ALL.indexOf(_todayDay), wk=activeWk(), today=(ti>=0)?amIso(_todayDay):null; if(!today||!wk||SL_SLOTS.indexOf(slot)<0) return 0;
+  const k=slot+"|"+kid, m=_lsM[k], t=Date.now(), C=(typeof calendarData!=="undefined")?calendarData:null;
+  let past; _lsOld[wk]=slState;   // this week's ticks as this device has them: next week they are "last week" at once, with no read
+  if(m&&t-m.t<15000&&m.d===today&&m.wk===wk&&m.s===slState&&m.p===prevSlState&&m.w===wavedData&&m.a===amCarry&&m.c===C&&m.r===routineCfg2&&m.o===_lsV) past=m.v;
+  else { past=_lsPast(slot,kid,wk,ti); const h=_lsHi[k]; if(past[1]==="load"&&h&&h.d===today&&h.v[0]>past[0]) past=h.v;   // a read still out never shows less than before today
+    _lsHi[k]={d:today,v:past}; _lsM[k]={t:t,d:today,wk:wk,s:slState,p:prevSlState,w:wavedData,a:amCarry,c:C,r:routineCfg2,o:_lsV,v:past}; }
+  return Math.min(LS_CAP,past[0]+(_lsDay(slot,kid,wk,_todayDay,today,slState,0)===1?1:0));
+}
+function lsAtEdge(slot,kid){ const m=_lsM[slot+"|"+kid]; return !!(m&&m.v[1]); }   // at least this many: the cap, the oldest ticks there are, or a read still out
+// The kid's list title: " 🔥 6" after "Chores 2/4", from 2 days up, on today's tab. Anything else: "" (the title as before, byte for byte).
+function lsBadgeHTML(slot,kid){ if(typeof day==="undefined"||day!==_todayDay) return ""; let n=0; try{ n=lsStreak(slot,kid); }catch(e){ return ""; }
+  return n>=2?' <span class="ls-fire" style="color:#ea580c;font-weight:800;white-space:nowrap">\u{1F525} '+n+'</span>':''; }
+// Mom's and Dad's line (Kids today pop-up, 👤 By person): all four numbers, 0 and 1 too; "60+" = at least: it ran into the cap (or the
+// oldest ticks there are, or a read still out — a pop-up is not redrawn when a read lands). "" for a kid's own device.
+function lsFourHTML(kid,st){
+  if(!((typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD())||(typeof dadAwardOk==="function"&&dadAwardOk()))) return "";
+  let h=""; try{ h=SL_SLOTS.map(function(s){ const n=lsStreak(s,kid); return SL_SLBL[s]+' <b>'+n+(n&&lsAtEdge(s,kid)?'+':'')+'</b>'; }).join(' · '); }catch(e){ return ""; }   // "3+": at least 3
+  return '<div class="ls-four" style="font-size:11.5px;font-weight:600;color:#9a3412;'+(st||'')+'">\u{1F525} Days in a row: '+h+'</div>';
+}
+// LISTSTREAK_END
 // How many days overdue this step is. The lookback used to run on the weekday INDEX only
 // (0=Mon..6=Sun) and required a due day strictly before today, so it could never cross a
 // Monday: a Saturday chore (wk:5) missed on Saturday showed on Sunday and then silently
@@ -2900,6 +2989,73 @@ function rtFallPay(st,n){ return rtFallPts((st&&st.pts)||0,rtFallDays(st,n,argum
 // The star pill on a kid's row: "+10 \u2b50" as before; a falling row shows the original struck through, then what it pays: "10 \u2192 6 \u2b50".
 function rtFallPill(st,n){ const p=(st&&st.pts)||0, f=rtFallPay(st,n,arguments[2]); return f===p?'<span class="mr-pts">+'+p+' \u2b50</span>':'<span class="mr-pts"><s style="opacity:.6">'+p+'</s> \u2192 '+f+' \u2b50</span>'; }
 // CHOREFALL_END
+// CHOREDAILY_START \u2014 her rule 2026-11-19/20 (missed-chores design \u00a72.8, slice C5): "if missed 2 days in a row then 20% etc, 1 day missed
+// wouldnt cost them"; a paying daily: "It pays 20% less"; Evening lists: "yes but make it start on a blank slate". One missed day is free;
+// after two missed days in a row a daily that pays stars pays one rtFallPts step less (10 \u2192 8), one more for each further missed day
+// (6 4 2 0), then 0 until it is done once. Doing it pays the lower amount that day; the next day it is back at full. It only changes what a
+// tick pays: nothing is ever taken from a bank here (a 0 \u2b50 daily is C6). Today's tab only, as CHOREFALL.
+// Missed = the row was on the kid's own list that day (a daily, in its dates) and its stored tick (<wk>_<day>_<kid>_<m|a|c|e>step<i>, this
+// week's slState or last week's prevSlState) was not done. Not a miss, and the count starts over: \u2715 today / \u2796 Excuse (waved), \ud83d\ude37 Kid Off
+// (calendar/kidOverrides school:false), \ud83c\udf05 sent that day, a day before RT_DAILY_FROM or before the kid's "Stars fall when late" / \u23f8 Pause (the \ud83d\udcd2 Ledger \u2699, read as rtFallDays reads it).
+// Not the plan's own rows (st.house), the laundry line's rows, or a rotating job (st.rot: the job and its free days change hands each day).
+const RT_DAILY_FROM="2026-11-30";
+function rtDailyRow(st){ return !!st&&(st.cad||"daily")==="daily"&&(st.pts||0)>0&&!st.house&&!st.line&&!st.laundry&&!st.rot; }
+// Missed days in a row before today, 0\u20266 (6 = already 0 \u2b50).
+function rtDailyMissed(slot,kid,i,st){
+  if(!rtDailyRow(st)||typeof _todayDay!=="string") return 0;
+  const tp=_rtPos(DAYS_ALL.indexOf(_todayDay)), t=new Date(), wk=activeWk(), ab=slot==="morning"?"m":RT_ABBR[slot]; if(tp<-1||!ab) return 0;
+  const iso=function(k){ const d=new Date(t.getFullYear(),t.getMonth(),t.getDate()-k,12); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+  const mon=routineDateISO("monday"); if(mon&&mon!==iso(tp)) return 0;   // the week on screen is not today's week (a week change mid-flight): say nothing
+  const from=[RT_DAILY_FROM,starFallFrom(kid)].sort()[1], off=((typeof calendarData!=="undefined"&&calendarData&&calendarData.kidOverrides)||{})[kid]||{};
+  let n=0;
+  for(let k=1;k<=6;k++){ const ds=iso(k), p=tp-k, prev=p<-1; if(ds<from) break;
+    const w=prev?_prevWkKey():wk, dn=DAYS_ALL[_rtIdx(prev?p+7:p)]; if(prev&&typeof _loadPrevSl==="function") _loadPrevSl();
+    const m=prev?(_prevSlWk===w?prevSlState:null):slState; if(!w||!m) break;   // last week not on this device yet: say nothing
+    if((st.from&&ds<st.from)||(st.to&&ds>st.to)||!stepCycleOk(st,ds)) break;
+    const r=m[w+"_"+dn+"_"+kid+"_"+ab+"step"+i]; if(r&&r.done) break;
+    if(rtDailyLogOn(kid,w,dn,slot,st.label)) break;   // its place moved: the day's own log says this chore was ticked
+    if((((wavedData[w]||{})[dn]||{})[kid]||{})[slot+"step"+i]) break;
+    if((off[ds]||{}).school===false) break;
+    if(rtDailyCalOff(slot,ds)) break;   // a holiday / vacation that took this list off that day
+    if(slot!=="morning"&&typeof amCarry!=="undefined"&&((amCarry||{})[kid]||{})[ds+"_"+ab+"step"+i]) break;   // 🌅 sent that day (amKey)
+    n++; }
+  return n;
+}
+// A row's ticks are kept by its place in the list (i), and a list edit can move the places of the rows after it (nothing re-keys the
+// stored ticks), so the place alone can read another row's day (hub's review 2026-11-23). A day only counts as missed when the day's
+// own Click-off Log (routineLog/<kid>/<wk>/<day>, live for this week and last, written in the same tap as the tick) also has no
+// standing "on" line for this list and this chore's words. Last week's log not on this device yet: unsure, so the count stops.
+function rtDailyLogOn(kid,w,dn,slot,label){
+  const W=((typeof routineLog!=="undefined"&&routineLog)||{})[kid]||{};
+  if(!W[w]&&typeof _rlWin!=="undefined"&&typeof db!=="undefined"&&db&&String(_rlWin.key||"").split("|")[0].split(",").indexOf(w)<0) return true;
+  const L=(W[w]||{})[dn]||{}; let last=null;
+  Object.keys(L).forEach(function(k){ const x=L[k]; if(x&&x.slot===slot&&x.label===label&&(x.act==="on"||x.act==="off")&&(!last||(x.at||0)>=(last.at||0))) last=x; });
+  return !!(last&&last.act==="on");
+}
+// A family-calendar day off (hub's call 2026-11-23, the default until Mom says otherwise): a holiday or vacation whose pause took this
+// list off that day is not a miss and starts the count over, as 😷 Kid Off does. The lists' own rule (activeSlots): pause "all" = no
+// lists · "chores" = no Afternoon or Chores list (Morning and Evening run) · "school" (the default, and every older break) = every list
+// runs, so it counts as an ordinary day. Read from calendar/holidays and calendar/vacations {start|date, end, pause}; a holiday wins
+// over a vacation on the same day, as scheduleBreakToday has it.
+function rtDailyCalOff(slot,ds){ const C=(typeof calendarData!=="undefined"&&calendarData)||{}; let p=null;
+  [C.holidays,C.vacations].forEach(function(c){ Object.values(c||{}).forEach(function(v){ if(!v||p!==null) return; const s=calNormDate(v.start||v.date), e=calNormDate(v.end||v.start||v.date); if(s&&ds>=s&&ds<=e) p=v.pause||"school"; }); });
+  return p==="all"||(p==="chores"&&slot!=="morning"&&slot!=="evening"); }
+// What the row pays today (the one number every payer and display reads); not a daily row = its stars.
+function rtDailyPay(slot,kid,i,st){ const p=(st&&st.pts)||0; if(!rtDailyRow(st)) return p; const n=rtDailyMissed(slot,kid,i,st); return n>1?rtFallPts(p,n-1):p; }
+// "10 \u2192 8 \u2b50" when it pays less (the CHOREFALL look), else "+10 \u2b50"; cls: the Morning list's tag class
+function rtDailyPill(p,f,cls){ return '<span class="'+(cls||"mr-pts")+'">'+(f===p?'+'+p:'<s style="opacity:.6">'+p+'</s> \u2192 '+f)+' \u2b50</span>'; }
+// Mom's pop-up note: "missed 2 days \u00b7 pays 8 of 10 \u2b50"
+function rtDailyNote(slot,kid,i,st){ const p=(st&&st.pts)||0, f=rtDailyPay(slot,kid,i,st); return f<p?"missed "+rtDailyMissed(slot,kid,i,st)+" days \u00b7 pays "+f+" of "+p+" \u2b50":""; }
+// A daily row that JOINS a kid's list starts that day (hub's review 2026-11-23): a daily row has no start date of its own, so on the
+// day it is added, given to another kid, moved to another list, turned daily, or comes back on with a level / a keep, the walk would
+// read days it was not that kid's daily as misses. Each of those taps also writes from = today (the start date LATE_FROM gives a
+// weekday row), and the walk stops at st.from. rtDailyOn: on a kid's list as a daily now (hhKidJobIds' own test) · rtDailyJoin: today,
+// or "" · rtDailyOnIds / rtDailyStampNew: the rows a level or keep tap brings on, stamped by targeted writes (Mom's device only).
+function rtDailyOn(j){ return !!j&&typeof _hhIsKidJob==="function"&&_hhIsKidJob(j)&&SL_SLOTS.indexOf(j.slot)>=0&&(j.cad||"daily")==="daily"&&!j.rot&&j.status!=="retired"&&!j.hold&&hhLevelOut(j); }
+function rtDailyJoin(j){ return rtDailyOn(j)?_hhIsoLocal(Date.now()):""; }
+function rtDailyOnIds(){ const J=hhJobs(); return Object.keys(J).filter(function(id){ return rtDailyOn(J[id]); }); }
+function rtDailyStampNew(before){ if(!before) return; const J=hhJobs(); Object.keys(J).forEach(function(id){ const t=before.indexOf(id)<0?rtDailyJoin(J[id]):""; if(t&&J[id].from!==t){ J[id].from=t; if(_hhWrite()) db.ref("household/jobs/"+id+"/from").set(t); } }); }
+// CHOREDAILY_END
 // STARRULES_START — 📒 Ledger ⚙ star rules (chore ledger design §4, L4, her yes 11/23), written by house.js LEDGERRULES at household/meta/
 // starRules {fall:{kid:{on:false}|{from}},take:{kid:false},pause:{on:true}|{from}}; missing = as before. A flip never reaches back.
 function starRules(){ try{ return householdData.meta.starRules||{}; }catch(e){ return {}; } }
@@ -2992,7 +3148,7 @@ function rtSlotHTML(slot,kid){
       '<div><div class="sl-slot-name">'+label+'</div><div class="sl-slot-sub">'+(SL_STIM[slot]||"")+'</div>'+
       (s.done&&s.ts?'<div class="sl-slot-ts">Checked '+s.ts+'</div>':'')+'</div></div>';
   }
-  const avail=rtAvailable(slot,kid,day);
+  const avail=rtAvailable(slot,kid,day), _ls=(typeof lsBadgeHTML==="function")?lsBadgeHTML(slot,kid):"";   // LISTSTREAK: " 🔥 6" at the list's title
   // Due today OR carried over from a day it was missed — a skipped chore must not just vanish.
   // stepWindowOk is an AND, not an OR: a course that has ended must not come back as "late".
   const wavedIdx=steps.map((st,i)=>i).filter(i=>typeof rtWaved==="function"&&rtWaved(slot,kid,day,i));   // WAVE: shown greyed, never due
@@ -3012,17 +3168,17 @@ function rtSlotHTML(slot,kid){
     const msg=_lockMsg;
     return '<div class="sl-check-row" style="opacity:.6">'+
       '<div class="sl-checkbox" style="background:none;border-color:var(--border);color:var(--muted)">&#128274;</div>'+
-      '<div style="flex:1"><div class="sl-slot-name">'+label+' <span style="color:var(--muted);font-weight:700">0/'+total+'</span></div>'+
+      '<div style="flex:1"><div class="sl-slot-name">'+label+' <span style="color:var(--muted);font-weight:700">0/'+total+'</span>'+_ls+'</div>'+
       '<div class="sl-slot-sub">'+msg+'</div></div></div>';
   }
   if(total===0&&!optIdx.length){
-    return '<div class="sl-check-row done"><div class="sl-checkbox done">✓</div><div><div class="sl-slot-name">'+label+'</div><div class="sl-slot-sub">Nothing due today</div></div></div>'+((wavedIdx.length&&typeof rtWavedRowHTML==="function")?'<div class="mr-steps">'+wavedIdx.map(i=>rtWavedRowHTML(steps[i])).join('')+'</div>':'');   // WAVE
+    return '<div class="sl-check-row done"><div class="sl-checkbox done">✓</div><div><div class="sl-slot-name">'+label+_ls+'</div><div class="sl-slot-sub">Nothing due today</div></div></div>'+((wavedIdx.length&&typeof rtWavedRowHTML==="function")?'<div class="mr-steps">'+wavedIdx.map(i=>rtWavedRowHTML(steps[i])).join('')+'</div>':'');   // WAVE
   }
   const isOpen=rtIsOpen(slot,kid,allDone);
   const sub=allDone?('✓ '+label+' done'):(!avail?('\u{1F512} '+_lockMsg):(SL_STIM[slot]||''));
   let h='<div class="sl-check-row'+(allDone?" done":"")+'" onclick="toggleRtOpen(\''+slot+'\',\''+kid+'\','+(isOpen?'true':'false')+')" style="cursor:pointer">'+
     '<div class="sl-checkbox'+(allDone?" done":"")+'">'+(allDone?"✓":"")+'</div>'+
-    '<div style="flex:1"><div class="sl-slot-name">'+label+' <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+total+'</span></div>'+
+    '<div style="flex:1"><div class="sl-slot-name">'+label+' <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+total+'</span>'+_ls+'</div>'+
     '<div class="sl-slot-sub">'+sub+'</div></div>'+
     '<div style="font-size:14px;color:var(--muted)">'+(isOpen?"▾":"▸")+'</div></div>';
   if(isOpen){
@@ -3042,7 +3198,7 @@ function rtSlotHTML(slot,kid){
       h+='<div class="mr-step'+(sd?" done":"")+(_lateTag?" is-late":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+(_ok?'':' style="opacity:.5"')+'>'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
          '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+_lateTag+cadTag+winTag+timeTag+rotTag+amTag+'</div>'+
-         (pts>0?((typeof rtFallPill==="function")?rtFallPill(st,sd?0:_wait[i],kid):'<span class="mr-pts">+'+pts+' ⭐</span>'):'')+'</div>'; });   // CHOREFALL: "10 → 6 ⭐" on a falling row
+         (pts>0?((typeof rtDailyPay==="function"&&day===_todayDay&&rtDailyRow(st))?rtDailyPill(pts,rtDailyPay(slot,kid,i,st)):(typeof rtFallPill==="function")?rtFallPill(st,sd?0:_wait[i],kid):'<span class="mr-pts">+'+pts+' ⭐</span>'):'')+'</div>'; });   // CHOREFALL: "10 → 6 ⭐" on a falling row; CHOREDAILY: a daily after 2+ missed days
     optIdx.forEach(i=>{ const st=steps[i], sd=rtDoneOn(slot,kid,day,i), pts=st.pts||0;
       h+='<div class="mr-step'+(sd?" done":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+' style="opacity:'+(sd?'1':'.75')+'">'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
@@ -9595,7 +9751,7 @@ function boardStatPop(kid,slot,d){
     morningStepsFor(kid).forEach((st,i)=>{ const rec=((typeof hdSlRec==="function")?hdSlRec("morning",kid,day,i):slState[activeWk()+"_"+day+"_"+kid+"_mstep"+i])||{};   /* 🚪 HOUSEDAY */
       const _due=_mDue.indexOf(i)>=0, _dn=mStepDoneOn(kid,day,i), _wv=(typeof rtWaved==="function")&&rtWaved("morning",kid,day,i);   // KIDROWS2: a waved step stays on the list, greyed, with undo
       if(!_due&&!_wv&&!(st.cad==="asneeded"&&_dn)) return;
-      rows.push({lab:(st.emoji?st.emoji+" ":"")+(st.label||("Step "+(i+1)))+((_due||_wv)?"":" (as needed)"),done:_dn,ts:rec.ts||"",i:i,wv:_wv,hs:st}); });   // LISTS_TAP: i → the ○/✅ is a tap
+      rows.push({lab:(st.emoji?st.emoji+" ":"")+(st.label||("Step "+(i+1)))+((_due||_wv)?"":" (as needed)"),done:_dn,ts:rec.ts||"",i:i,wv:_wv,hs:st,dly:(_due&&typeof rtDailyNote==="function"&&day===_todayDay)?rtDailyNote("morning",kid,i,st):""}); });   // CHOREDAILY: Mom's note   // LISTS_TAP: i → the ○/✅ is a tap
   } else if(slot==="tasks"){ title="📅 School work";
     getActiveTasks().filter(t=>t.who===kid&&effectiveDay(t)===day&&!t.id.endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title))
       .forEach(t=>{ const cv=checked[t.id]; rows.push({lab:t.title||"",done:!!cv,ts:(cv&&cv.ts)||(typeof cv==="string"?cv:"")}); });
@@ -9610,8 +9766,8 @@ function boardStatPop(kid,slot,d){
     const steps=rtStepsFor(slot,kid,false,day);
     steps.forEach((st,i)=>{ const _ln=(typeof mdLateDays==="function")?mdLateDays(slot,kid,day,i,st):0;   // KIDSLATE: carried-over rows too, as Kids' Corner lists them
       if(!cadDueOn(st.cad||"daily",day)&&!(_ln>0)) return; const rec=((typeof hdSlRec==="function")?hdSlRec(slot,kid,day,i):slState[activeWk()+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i])||{};   /* 🚪 HOUSEDAY */
-      const _f=(typeof rtFallPay==="function")?rtFallPay(st,_ln,kid):(st.pts||0);   // CHOREFALL: a falling row shows both numbers, as on the kid's row
-      rows.push({lab:(st.emoji?st.emoji+" ":"")+st.label+(st.pts?(_f!==st.pts?" "+st.pts+" → "+_f+" ⭐":" +"+st.pts+" ⭐"):""),done:rtDoneOn(slot,kid,day,i),ts:rec.ts||"",i:i,wv:(typeof rtWaved==="function")&&rtWaved(slot,kid,day,i),late:_ln,hs:st,pay:_f}); });   // LISTS_TAP; KIDROWS2: wv
+      const _dl=typeof rtDailyRow==="function"&&day===_todayDay&&rtDailyRow(st), _f=_dl?rtDailyPay(slot,kid,i,st):(typeof rtFallPay==="function")?rtFallPay(st,_ln,kid):(st.pts||0);   // CHOREFALL: a falling row shows both numbers, as on the kid's row; CHOREDAILY: a daily too
+      rows.push({lab:(st.emoji?st.emoji+" ":"")+st.label+(st.pts?(_f!==st.pts?" "+st.pts+" → "+_f+" ⭐":" +"+st.pts+" ⭐"):""),done:rtDoneOn(slot,kid,day,i),ts:rec.ts||"",i:i,wv:(typeof rtWaved==="function")&&rtWaved(slot,kid,day,i),late:_ln,hs:st,pay:_f,dly:_dl?rtDailyNote(slot,kid,i,st):""}); });   // LISTS_TAP; KIDROWS2: wv
   }
   // LISTS_TAP (her ask 2026-10-21: "make on both mom and dads day all the lists clickable but do not change the look or size on any" —
   // "each individual list you can open for each kid like morning etc"): the ○/✅ on a morning / afternoon / chores / evening row is the
@@ -9630,7 +9786,7 @@ function boardStatPop(kid,slot,d){
   const _note=typeof rtWaitNote==="function"&&((typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD()));   // CHOREWAIT: the notes are for Mom (and Dad's own link), never a kid
   let inner=rows.length?rows.map(r=>'<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid #f3f4f6;font-size:13px'+(r.wv?';opacity:.55':'')+'">'+
       (isStars?'':'<span'+((_tapOk&&r.i!=null&&!r.wv)?' onclick="event.stopPropagation();mdKidTick(\''+slot+'\',\''+kid+'\',\''+_d+'\','+r.i+');boardStatPop(\''+kid+'\',\''+slot+'\',\''+_d+'\')" style="width:20px;text-align:center;cursor:pointer"':' style="width:20px;text-align:center"')+'>'+(r.done?"✅":r.wv?"–":"○")+'</span>')+   // LISTS_TAP; KIDROWS2: a waved row has no tick
-      '<span style="flex:1;min-width:0;'+(r.done?'':'color:var(--muted)')+(r.wv?';text-decoration:line-through':'')+'">'+esc(r.lab)+((r.late>0&&!r.done&&!r.wv)?((typeof rtWaitAsBefore==="function"&&rtWaitAsBefore(r.hs))?'<span class="rt-late">'+r.late+' day'+(r.late>1?'s':'')+' late</span>':(_note?'<span style="font-size:10.5px;font-weight:700;color:#6b7280;margin-left:6px;white-space:nowrap">'+rtWaitNote(r.late,r.hs)+((r.pay!==((r.hs&&r.hs.pts)||0))?' \u00b7 pays '+r.pay+' of '+r.hs.pts+' ⭐':'')+'</span>':'')):'')+'</span>'+   // CHOREWAIT: 3+ a week: the red tag, as before; other waiting rows: Mom's note ("from Tue · day 2 of 2"), a kid's screen nothing
+      '<span style="flex:1;min-width:0;'+(r.done?'':'color:var(--muted)')+(r.wv?';text-decoration:line-through':'')+'">'+esc(r.lab)+((r.late>0&&!r.done&&!r.wv)?((typeof rtWaitAsBefore==="function"&&rtWaitAsBefore(r.hs))?'<span class="rt-late">'+r.late+' day'+(r.late>1?'s':'')+' late</span>':(_note?'<span style="font-size:10.5px;font-weight:700;color:#6b7280;margin-left:6px;white-space:nowrap">'+rtWaitNote(r.late,r.hs)+((r.pay!==((r.hs&&r.hs.pts)||0))?' \u00b7 pays '+r.pay+' of '+r.hs.pts+' ⭐':'')+'</span>':'')):'')+((r.dly&&_note&&!r.done&&!r.wv)?'<span style="font-size:10.5px;font-weight:700;color:#6b7280;margin-left:6px;white-space:nowrap">'+r.dly+'</span>':'')+'</span>'+   // CHOREDAILY: "missed 2 days · pays 8 of 10 ⭐"; CHOREWAIT: 3+ a week: the red tag, as before; other waiting rows: Mom's note ("from Tue · day 2 of 2"), a kid's screen nothing
       (r.amt!=null?'<span style="font-weight:800;color:'+(r.amt<0?"#b91c1c":"#b45309")+';white-space:nowrap">'+(r.amt<0?"−"+(-r.amt):"+"+r.amt)+' ⭐</span>':'')+
       (r.ts?'<span style="font-size:10.5px;color:var(--muted);white-space:nowrap">'+esc(r.ts)+'</span>':'')+
       ((_waveOk&&r.i!=null&&!r.done)?kr2WaveBtnHTML(slot,kid,_d,r.i,!!r.wv):'')+((typeof amPopBtnsHTML==="function")?amPopBtnsHTML(r,slot,kid,_d,_tapOk):'')+(typeof hcGoBtn==="function"?hcGoBtn(r.hs):'')+'</div>').join('')   // KIDROWS2: ✕ today / undo
@@ -9638,7 +9794,7 @@ function boardStatPop(kid,slot,d){
   const html='<div id="board-stat-pop" onclick="boardStatPopClose()" style="position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:9000;display:flex;align-items:center;justify-content:center;padding:20px">'+
     '<div onclick="event.stopPropagation()" style="background:#fff;border-radius:16px;max-width:420px;width:100%;max-height:75vh;overflow:auto;padding:16px 18px;box-shadow:0 20px 50px rgba(0,0,0,0.3)">'+
     '<div style="display:flex;align-items:center;margin-bottom:8px"><div style="font-family:\'Fraunces\',serif;font-weight:700;font-size:16px;flex:1">'+cap(kid)+' — '+title+' <span style="color:var(--muted);font-size:13px">('+hdrCount+')</span></div>'+
-    '<button onclick="boardStatPopClose()" style="border:none;background:#f3f4f6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer">✕</button></div>'+inner+((_tapOk&&typeof amPopFootHTML==="function")?amPopFootHTML(kid,slot,_d):'')+'</div></div>';   // SENDAM: 🌅 Send all
+    '<button onclick="boardStatPopClose()" style="border:none;background:#f3f4f6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer">✕</button></div>'+((SL_SLOTS.indexOf(slot)>=0&&day===_todayDay&&typeof lsFourHTML==="function")?lsFourHTML(kid,"margin:-2px 0 6px"):"")+inner+((_tapOk&&typeof amPopFootHTML==="function")?amPopFootHTML(kid,slot,_d):'')+'</div></div>';   // SENDAM: 🌅 Send all
   document.body.insertAdjacentHTML("beforeend",html);
 }
 // ── T2: read-only peek at the week that's built but hasn't started ──────────
@@ -13588,7 +13744,9 @@ function hhSet(id,field,val){
   if(field==="minutes"){ val=parseInt(val,10); if(!(val>0&&val<=240)) return; }                       // 🧹 HOUSEHOLD_GRID plan fields
   if(field==="level"){ val=parseInt(val,10); if(!(val>=1&&val<=3)) return; }
   if(field==="planCad"&&!(val==="daily"||/^wk:[0-6]$/.test(val)||val==="")) return;
+  const _dw=(typeof rtDailyOnIds==="function")?rtDailyOnIds():null;   // CHOREDAILY: a level or keep that brings a daily on starts it today
   jobs[id][field]=val; if(field==="verdict") jobs[id].status=(val==="retire")?"retired":"active";
+  if(_dw) rtDailyStampNew(_dw);   // CHOREDAILY
   householdOnValue(householdData);
   if(_hhWrite()){ db.ref("household/jobs/"+id+"/"+field).set(val); if(field==="verdict") db.ref("household/jobs/"+id+"/status").set(jobs[id].status); }
   hhRender();
@@ -14047,10 +14205,12 @@ function hhRoomHTML(){
   return h;
 }
 // ── Levels ──
-function hhLevelSet(v){ if(typeof momHere==="function"&&!momHere()) return; v=parseInt(v,10); if(!(v>=1&&v<=3)) return; householdData.levels=householdData.levels||{}; householdData.levels.cleaning=Object.assign({},householdData.levels.cleaning,{current:v,at:Date.now()}); householdOnValue(householdData); if(_hhWrite()) db.ref("household/levels/cleaning/current").set(v); if(typeof renderAll==="function") renderAll(); else hhRender(); }   // HH_LEVEL_GATE: lists follow the level
+function hhLevelSet(v){ if(typeof momHere==="function"&&!momHere()) return; v=parseInt(v,10); if(!(v>=1&&v<=3)) return; const _dw=(typeof rtDailyOnIds==="function")?rtDailyOnIds():null; householdData.levels=householdData.levels||{}; householdData.levels.cleaning=Object.assign({},householdData.levels.cleaning,{current:v,at:Date.now()}); if(_dw) rtDailyStampNew(_dw); householdOnValue(householdData); if(_hhWrite()) db.ref("household/levels/cleaning/current").set(v); if(typeof renderAll==="function") renderAll(); else hhRender(); }   // HH_LEVEL_GATE: lists follow the level
 // HH_LEVEL_PERSON: v = 1..3 pins that person; v = 0 clears it (follow the family dial). One targeted write.
 function hhLevelSetFor(who,v){ if(typeof momHere==="function"&&!momHere()) return; if(HH_WHO.indexOf(who)<0||who==="grab") return; v=parseInt(v,10); if(!(v>=0&&v<=3)) return;
+  const _dw=(typeof rtDailyOnIds==="function")?rtDailyOnIds():null;   // CHOREDAILY: the dailies a level brings on start today
   householdData.levels=householdData.levels||{}; if(v===0){ delete householdData.levels[who]; } else { householdData.levels[who]={current:v,at:Date.now()}; }
+  if(_dw) rtDailyStampNew(_dw);   // CHOREDAILY
   householdOnValue(householdData); if(_hhWrite()){ if(v===0) db.ref("household/levels/"+who).remove(); else db.ref("household/levels/"+who+"/current").set(v); } if(typeof renderAll==="function") renderAll(); else hhRender(); }
 function hhLevelCycle(id){ const j=hhJobs()[id]; if(!j) return; hhSet(id,"level",(hhLevelOf(j)%3)+1); }
 // The last three full Mon–Sun weeks: due vs done over the house rows at or below the current level.
@@ -14122,13 +14282,16 @@ function hhSyncKids(){
         id="hh"+now.toString(36)+Math.random().toString(36).slice(2,6); const area=hhGuessArea(f.label,slot,f.rot);
         const job=Object.assign({},f,{slot:slot,who:kid,src:{kind:"new"},source:"Household tab",area:area,floor:(area==="cleaning"||area==="pickup")?hhGuessFloor(f.label,f.zone):"",status:"active",verdict:"",note:"",order:i,ts:now});
         if(!job.from&&/^wk:/.test(job.cad||"")) job.from=_hhIsoLocal(now);   // LATE_FROM: a new weekday step begins today
+        if(typeof rtDailyJoin==="function"&&rtDailyJoin(job)) job.from=rtDailyJoin(job);   // CHOREDAILY: a new daily starts today
         upd["household/jobs/"+id]=job; jobs[id]=job; Object.defineProperty(st,"_hh",{value:id,enumerable:false,writable:true});
       } else {
         const j=jobs[id];
+        const _dw=(typeof rtDailyOn==="function")?rtDailyOn(j)+"|"+j.who+"|"+j.slot:"";   // CHOREDAILY: was it this kid's daily on this list?
         HH_STEP_KEYS.forEach(function(k){ const nv=(f[k]===undefined)?null:f[k], ov=(j[k]===undefined||j[k]===""||j[k]===null)?null:j[k]; if(JSON.stringify(nv)!==JSON.stringify(ov)){ upd["household/jobs/"+id+"/"+k]=nv; if(nv===null) delete j[k]; else j[k]=nv; } });
         if(j.who!==kid){ upd["household/jobs/"+id+"/who"]=kid; j.who=kid; } if(j.slot!==slot){ upd["household/jobs/"+id+"/slot"]=slot; j.slot=slot; }
         if((j.order||0)!==i){ upd["household/jobs/"+id+"/order"]=i; j.order=i; }
         if(j.status!=="active"){ upd["household/jobs/"+id+"/status"]="active"; j.status="active"; }
+        if(_dw&&rtDailyJoin(j)&&_dw!=="true|"+j.who+"|"+j.slot&&j.from!==rtDailyJoin(j)){ upd["household/jobs/"+id+"/from"]=rtDailyJoin(j); j.from=rtDailyJoin(j); }   // CHOREDAILY: it joins this list today
       }
       seen[id]=1; }); }); });
   Object.keys(jobs).forEach(function(id){ const j=jobs[id]; if(_hhIsKidJob(j)&&j.status!=="retired"&&hhLevelOut(j)&&!j.hold&&!seen[id]){ upd["household/jobs/"+id+"/status"]="retired"; upd["household/jobs/"+id+"/verdict"]="retire"; j.status="retired"; j.verdict="retire"; } });   // HH_LEVEL_GATE: a gated-off row is not a deleted row. HH_SYNC_HELD 2026-11-16: nor is a one-time job waiting in the ☑️ Once pile — it is off the list on purpose (hhKidJobIds), so every Chores & Stars save retired it
@@ -14273,6 +14436,7 @@ function hhAddSave(){
   const now=Date.now(), id="hh"+now.toString(36)+Math.random().toString(36).slice(2,6), area=HH_AREAS[hhAdd.area]?hhAdd.area:hhGuessArea(label,slot,"");   // HH_ADD_FORM: her pick, else the guess
   const job={label:label,cad:cad,slot:slot,pts:pts,who:who,src:kid?{kind:"new"}:{kind:(who==="dad"?"dadChore":"momChore"),id:id},source:"Household tab",area:area,floor:(area==="cleaning"||area==="pickup")?(_hhRoomFloor(room)||hhGuessFloor(label,"")):"",room:room,level:level,status:"active",verdict:"",note:"",order:_hhNextOrder(who,slot),ts:now};
   if(emoji) job.emoji=emoji; if(/^wk:/.test(cad)||cad==="once") job.from=_hhIsoLocal(now);     // LATE_FROM: begins today (a once-job too)
+  if(typeof rtDailyJoin==="function"&&rtDailyJoin(job)) job.from=rtDailyJoin(job);              // CHOREDAILY: a new daily starts today
   if(kind==="project") job.layer="project";   // HH_PROJECTS
   if(kind==="once") job.hold=true;             // HH_ONCEPILE: in the pile until she sends it
   const others=Object.keys(hhAdd.can||{}).filter(function(w){ return hhAdd.can[w]&&w!==who&&HH_WHO.indexOf(w)>=0&&w!=="grab"; }); if(others.length) job.can=[who].concat(others);   // HH_SETTINGS_METER
@@ -14321,6 +14485,7 @@ function hhGiveTo(id,who){
   else { if(j.rot) set("rot",null); if(j.free) set("free",null); /* HH_ROTATE: Mom's and Dad's rows do not rotate */ set("src",{kind:(who==="dad"?"dadChore":"momChore"),id:id}); const m={morning:"morning",afternoon:"afternoon",evening:"night",chores:""}; if(m[j.slot]!==undefined) set("slot",m[j.slot]); else if(!HH_MC_SLOTS.some(function(c){ return c[0]===(j.slot||""); })) set("slot",""); if(j.srcTs!==undefined) set("srcTs",null); }
   set("order",_hhNextOrder(who,j.slot,id));
   if(/^wk:/.test(j.cad||"")) set("from",_hhIsoLocal(Date.now()));                              // LATE_FROM: a new owner starts today
+  if(typeof rtDailyJoin==="function"&&rtDailyJoin(j)) set("from",rtDailyJoin(j));               // CHOREDAILY: a daily's new owner starts today
   hhGive=""; householdOnValue(householdData);
   if(_hhWrite()) db.ref().update(upd);                                                          // one multi-path update (this row, plus a retired placeholder turn)
   if(typeof mwToast==="function") try{ mwToast("Gave "+(j.label||"it")+" to "+hhWhoName(who)); }catch(e){}
@@ -14383,6 +14548,7 @@ function hhCleanRows(who,iso,dn){
       if(!due&&!late) return;
       const row={id:id,job:j,label:st.label||j.label,emoji:st.emoji||j.emoji||"",pts:st.pts||0,mins:hhMinutesOf(j),done:(typeof rtDoneOn==="function")?rtDoneOn(slot,who,dn,idx):false,late:late&&!due,on:"toggleRtStep('"+slot+"','"+who+"',"+idx+")"};
       if(late&&!due&&!row.done&&typeof rtFallPay==="function"){ const f=rtFallPay(st,rtLateDays(slot,who,idx),who); if(f!==row.pts) row.fall=f; }   // CHOREFALL: what it pays today, when that is less
+      if(due&&dn===today&&typeof rtDailyPay==="function"){ const f=rtDailyPay(slot,who,idx,st); if(f!==row.pts) row.fall=f; }   // CHOREDAILY: a daily after 2+ missed days
       out.push(row);
     } else { const key=(j.src&&j.src.id)||id; const list=(who==="dad")?((typeof dcAll==="function")?dcAll():{}):((typeof mcAll==="function")?mcAll():{}); if(!list[key]) return;
       if(!cadDueOn(j.cad||"daily",dn)) return; const doneOn=(who==="dad")?(typeof dcDoneOn==="function"?dcDoneOn:null):(typeof mcDoneOn==="function"?mcDoneOn:null);
@@ -46413,7 +46579,7 @@ function kcPointsHTML(k){
       if(!due.length&&!_am.length) return;
       const isDone=function(i){ return isM?(typeof mStepDoneOn==="function"&&mStepDoneOn(k,dn,i)):rtDoneOn(slot,k,dn,i); };
       const done=due.filter(isDone);
-      let left=0; due.forEach(function(i){ if(!isDone(i)) left+=((!isM&&typeof rtFallPay==="function"&&!cadDueOn((steps[i]||{}).cad||"daily",dn))?rtFallPay(steps[i],rtLateDays(slot,k,i),k):((steps[i]||{}).pts||0)); });   // CHOREFALL: a falling row counts what it pays today
+      let left=0; due.forEach(function(i){ if(!isDone(i)) left+=((!isM&&typeof rtFallPay==="function"&&!cadDueOn((steps[i]||{}).cad||"daily",dn))?rtFallPay(steps[i],rtLateDays(slot,k,i),k):(typeof rtDailyPay==="function")?rtDailyPay(slot,k,i,steps[i]):((steps[i]||{}).pts||0)); });   // CHOREFALL: a falling row counts what it pays today; CHOREDAILY: a daily too
       _am.forEach(function(it){ if(!amDoneBy(it,_ai)) left+=(it.pts||0); });   // SENDAM
       const allDone=done.length===due.length&&_amD===_am.length;
       const bonus=(typeof rtBonusFor==="function")?rtBonusFor(slot,k):0;

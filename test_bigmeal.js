@@ -32,7 +32,7 @@ function world(opt) {
   const document = { body, head, getElementById(id) { return nodes[id] || null; }, createElement(t) { const e = el(""); e.tag = t; if (t === "script") o.scripts.push(e); return e; } };
   const db = { ref(p) { return { update(v) { o.writes.push({ path: p, val: JSON.parse(JSON.stringify(v)) }); }, set(v) { o.writes.push({ path: p, set: v }); }, remove() { o.writes.push({ path: p, remove: true }); },
     on(ev, cb) { o.on.push(p); o.cbs[p] = cb; }, once() {} }; } };
-  const ctx = { console: { log() {}, warn() {} }, Date, Math, JSON, document, db, location: { hostname: "localhost" },
+  const ctx = { console: { log() {}, warn() {} }, Date, Math, JSON, document, db, skJobsN: () => 0, location: { hostname: "localhost" },
     _todayStr: () => o.today, _dryRun: () => o.dry, momHere: () => o.mom, _kioskD: () => false, gwShowToast: m => o.toasts.push(m),
     HA_LS: { getItem: () => null, setItem() {} }, tab: "moms-plan", mpSubView: "seasons", momSchedView: false, renderMomsPlan() {}, mpGoto() {},
     momdayData: {}, setTimeout: () => 0, bankDirect: () => "b", bankDirectRemove() {}, cuUnpay: () => false, choreVerifyOn: () => false,
@@ -73,14 +73,15 @@ const IDEAS = (meal, food, more) => Object.assign({
 
 const o = world(), W = o.W, T = o.T, B = o.B;
 const stepsFor = (eat, list) => { const D = list.map((d, i) => B.dishOf({ id: "f" + i, r: d })); return B.steps(B.clockMin(eat), B.plan(B.clockMin(eat), D)); };
-const at = (S, name) => { const s = S.find(x => x.d && x.d.name === name); return s ? B.fmtClock(s.at) + (B.dayShift(s.at) ? "@" + B.dayShift(s.at) : "") : null; };
+const at = (S, name) => { const s = S.find(x => x.k === "i" && x.d.name === name);   // the "goes in" row (slice 2 adds heat / start / out rows)
+  return s ? B.fmtClock(s.at) + (B.dayShift(s.at) ? "@" + B.dayShift(s.at) : "") : null; };
 
 console.log("\n# the rule: in = eat − cook (slice 1 — nothing rests, nothing needs getting ready)");
 {
   const S = stepsFor("4:00 PM", THANKS);
   const want = { "Turkey": "12:00 PM", "Mac and cheese": "1:30 PM", "Mashed potatoes": "2:00 PM", "Stuffing": "3:15 PM", "Sweet potato casserole": "3:30 PM", "Green beans": "3:45 PM", "Gravy": "3:45 PM", "Rolls": "3:48 PM" };
   ok("Thanksgiving, eat 4:00 PM: every dish's start to the minute", Object.keys(want).every(n => at(S, n) === want[n]), Object.keys(want).map(n => n + "=" + at(S, n)));
-  ok("…in time order, the stove's two at 3:45 side by side (A–Z), and the last row = eat", S.map(s => s.d ? s.d.name : "EAT").join("|") === "Turkey|Mac and cheese|Mashed potatoes|Stuffing|Sweet potato casserole|Gravy|Green beans|Rolls|EAT");
+  ok("…in time order, the stove's two at 3:45 side by side (A–Z), and the last row = eat", S.filter(s => s.k === "i" || s.k === "eat").map(s => s.d ? s.d.name : "EAT").join("|") === "Turkey|Mac and cheese|Mashed potatoes|Stuffing|Sweet potato casserole|Gravy|Green beans|Rolls|EAT");
   ok("…the last row says what to put out (the no-cooking dishes) and is at 4:00 PM", S[S.length - 1].k === "eat" && B.fmtClock(S[S.length - 1].at) === "4:00 PM" && S[S.length - 1].put.join() === "Cranberry sauce,Pumpkin pie");
   const C = stepsFor("8:30 AM", BREAKFAST);
   ok("Christmas breakfast, eat 8:30 AM: the 9-hour slow cooker starts 11:30 PM the day before", at(C, "Hash-brown casserole") === "11:30 PM@-1");
@@ -111,7 +112,7 @@ console.log("\n# never a time it can't know");
   ok("a dish with no place, no cook time, 0, over 48 h, words, true or a bad place → no time", P.filter(d => d.name !== "Half").every(d => d.in === null), P.map(d => d.name + ":" + d.in));
   ok("…they are all “Not timed yet”", B.notTimed(P).filter(d => d.name !== "Half").length === 7);
   const S2 = B.steps(960, B.plan(960, odd.concat([{ name: "Pie", where: "none" }]).map((r, i) => B.dishOf({ id: "q" + i, r }))));
-  ok("…and never sneak into the last row's “Put out” (only the no-cooking dishes do)", S2[S2.length - 1].put.join() === "Pie" && S2.length === 2, S2.map(x => x.put || x.d.name));
+  ok("…and never sneak into the last row's “Put out” (only the no-cooking dishes do)", S2[S2.length - 1].put.join() === "Pie" && S2.filter(x => x.k !== "heat").length === 2, S2.map(x => x.put || x.d.name));
   ok("a number with a fraction is read as whole minutes, never rounded up into a guess", P.find(d => d.name === "Half").cook === 12);
   ok("no-cooking dishes need no time and are never “not timed”", B.notTimed(B.plan(960, [B.dishOf({ id: "n", r: { name: "Pie", where: "none", cook: 30 } })])).length === 0 && B.dishOf({ id: "n", r: { name: "Pie", where: "none", cook: 30, temp: "350" } }).cook === null);
   ok("the file holds no cook-time table to guess from (no minutes next to a food word)", !/turkey|ham|potato|casserole|stuffing/i.test(BM.replace(/^\s*\/\/.*$/gm, "").replace(/placeholder[^)]*\)/g, "").replace(/"Turkey"/, "")));
@@ -279,7 +280,7 @@ console.log("\n# the files");
 {
   const code = BM.replace(/^\s*\/\/.*$/gm, "");
   ok("bigmeal.js has no database call of its own (no db / ref / on / set)", !/\bdb\b|\.ref\(|firebase/.test(code));
-  ok("…no setInterval (and no timer at all in slice 1)", !/setInterval|setTimeout/.test(code));
+  ok("…no setInterval; at most one setTimeout (slice 4's minute tick in the cook view)", !/setInterval/.test(code) && (code.match(/setTimeout\(/g) || []).length <= 1);
   ok("…names no other node's path: kitchen/ calendar/ momday dadday seasonJobs gifts", !/kitchen\/|calendar\/|momday|dadday|seasonJobs|gifts/.test(code));
   ok("…no family's names", !/Lincoln|Ellis|Lucy|Julian|Howe|Burris|DeWalt|Dewalt|Melanie|Sara\b|Adrienne|Andrew/.test(BM));
   ok("…never reads the planner's test hook", !/_snTest/.test(code) && /window\._snApi/.test(code));

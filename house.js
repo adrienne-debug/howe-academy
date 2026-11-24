@@ -226,6 +226,7 @@ function hhEditCadMode(cad){ cad=cad||"daily"; if(/^wk:|^sat$|^sun$/.test(cad)) 
 function hhEditDays(cad){ if(cad==="sat") return [5]; if(cad==="sun") return [6]; if(!/^wk:/.test(cad||"")) return []; return cad.slice(3).split(",").filter(function(x){ return x!==""; }).map(Number).filter(function(n){ return n>=0&&n<=6; }); }
 function hhEditSet(id,field,val){
   if(typeof momHere==="function"&&!momHere()) return null; const jobs=hhJobs(), j=jobs[id]; if(!j) return null; const upd={}, P="household/jobs/"+id+"/", kid=hhIsKid(j.who);
+  const _dw=(typeof rtDailyOn==="function")?rtDailyOn(j)+"|"+j.slot:"";   // CHOREDAILY (C5): was it a daily on this list?
   if(["minutes","room","level","area","can","verdict"].indexOf(field)>=0){ hhSet(id,field,val); return val; }
   if(field==="label"){ val=String(val||"").trim().slice(0,80); if(!val) return null; }
   else if(field==="emoji"){ val=String(val||"").trim().slice(0,4); }
@@ -237,6 +238,7 @@ function hhEditSet(id,field,val){
   else if(field==="from"){ val=String(val||""); if(val&&!/^\d{4}-\d{2}-\d{2}$/.test(val)) return null; }
   else return null;
   if(val===""){ upd[P+field]=null; delete j[field]; } else { upd[P+field]=val; j[field]=val; }
+  if(_dw&&field!=="from"&&rtDailyJoin(j)&&_dw!=="true|"+j.slot){ upd[P+"from"]=rtDailyJoin(j); j.from=upd[P+"from"]; }   // CHOREDAILY (C5): turned daily or moved to another list: it starts today
   householdOnValue(householdData); if(_hhWrite()) db.ref().update(upd); hhRender(); return val;
 }
 function hhEditCadMode_set(id,mode){ const j=hhJobs()[id]; if(!j) return null; const cad=j.cad||"daily"; if(mode==="wk"){ const d=hhEditDays(cad); return hhEditSet(id,"cad","wk:"+(d.length?d:[(new Date().getDay()+6)%7]).join(",")); } if(mode==="nd"){ return hhEditSet(id,"cad",/^\d+d$/.test(cad)?cad:"3d"); } return hhEditSet(id,"cad",mode); }
@@ -674,6 +676,7 @@ function hpPersonHTML(){
   const run=on?hpRun():null, d0=run&&run[0];
   // Today
   h+='<div style="'+HP_CARD+'"><div style="padding:9px 12px;border-left:4px solid '+hhRmCol(who)+';font-size:14px;font-weight:800">📅 Today · '+esc(hhWhoName(who))+(d0?' <span style="font-size:11.5px;font-weight:700;color:var(--muted)">house '+d0.used[who]+' of '+d0.limit[who]+' min</span>':'')+'</div>';
+  if(hhIsKid(who)&&typeof lsFourHTML==='function') h+=lsFourHTML(who,'padding:2px 12px 4px');   // 🔥 LISTSTREAK (P2): the four streaks, as in the Kids today pop-up
   const R=hpRoutineNow(who); h+='<div style="'+HP_HEAD+'">🧼 Health and 🐾 animals — on their lists now</div>'+(R.length?R.map(function(r){ return hpRow(r.id,r.emoji,r.label,'',!!r.done); }).join(''):'<div style="padding:3px 12px 6px;font-size:12px;color:var(--muted)">Nothing due today.</div>');
   if(hhIsKid(who)&&typeof amList==="function"){ const C=amList(who).filter(function(c){ return !c.done&&c.dueIso<=today; });
     if(C.length) h+='<div style="'+HP_HEAD+'">🌅 Sent to the morning list</div>'+C.map(function(c){ return hpRow("",c.emoji,c.label,_hhChip('from '+hpDay(c.fromIso),'#fef3c7','#92400e')); }).join(''); }
@@ -1687,7 +1690,7 @@ function lgRow(slot,kid,D,i,st){
     if(lgHeld(kid,rec.bid)) return Object.assign(r,{ic:"⏸",note:"waiting for your ✓ · "+p+" ⭐",held:p});
     if(lgUnpaid(kid,rec.bid)) return Object.assign(r,{ic:"✅",note:"not paid (your ✗ on its stars)"});
     r.ic="✅"; r.pts=p;
-    if(due) return r;
+    if(due){ if(p<full&&typeof rtDailyRow==="function"&&rtDailyRow(st)){ r.sh=full-p; r.note="paid "+p+" of "+full+" ⭐"; } return r; }   // CHOREDAILY (C5): a daily after 2+ missed days
     if(!/^wk:/.test(cad)||!lgCarried(slot)){ if(cad==="asneeded") r.note="as needed"; return r; }
     const E=lgDueBefore(st,D), n=E?D.k-E.k:0; r.sh=Math.max(0,full-p);
     r.note=(p<full?"paid "+p+" of "+full+" ⭐":"done late")+(E?" · due "+lgWd(E.iso):"")+((E&&rtWaitAsBefore(st))?" · "+n+" day"+(n>1?"s":"")+" late":"");
@@ -1696,7 +1699,7 @@ function lgRow(slot,kid,D,i,st){
   if(due){
     if(typeof amGet==="function"&&amGet(kid,slot,i,D.iso)) return Object.assign(r,{ic:"🌅",note:"sent to "+(D.k===0?"tomorrow":"the next")+" morning"});
     r.c=0; r.want=full;
-    if(D.k===0) return Object.assign(r,{ic:"○",note:"not done yet"});
+    if(D.k===0){ const dl=(typeof rtDailyNote==="function")?rtDailyNote(slot,kid,i,st):""; return Object.assign(r,{ic:"○",note:"not done yet"+(dl?" · "+dl:"")}); }   // CHOREDAILY (C5)
     const f=lgFate(slot,kid,i,st,D);
     return Object.assign(r,{ic:"✖",note:"not done"+(!f?"":f.done?" · done "+lgWd(f.done.iso)+", late (see that day)":f.gone?" · gone from "+who+"'s list "+lgWd(f.gone.iso):" · still on "+who+"'s list today")}); }
   if(D.k===0&&lgCarried(slot)){ const n=(typeof mdLateDays==="function")?mdLateDays(slot,kid,D.dn,i,st):0;
