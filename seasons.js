@@ -400,7 +400,8 @@ function bookChip(it){const b=bookState(it);return !b?"":(b==="booked"?'<span cl
 function extraChips(it){   // on an idea's row: what it still needs
   const S=ideaLines(it,"sup").filter(L=>{const x=supState(L);return x==="need"||x==="was";}).length,T=ideaLines(it,"todo").filter(L=>!tdDone(L)),late=T.some(L=>{const x=tdState(L);return x==="late"||x==="due";});
   const F=ideaLines(it,"food").length;   // SEASONFOOD: only when it has food — an idea with none looks as before
-  return (S?'<span class="sn-chip">🧺 '+S+' to get</span>':"")+(F?'<span class="sn-chip">🍿 '+F+' food</span>':"")+(T.length?'<span class="sn-chip'+(late?" warn":"")+'">✅ '+T.length+' to do</span>':"")+bookChip(it);
+  const E=eatTxt(it);   // BIGMEAL: an idea with an eat time is a big meal — a chip; one with none looks as before
+  return (S?'<span class="sn-chip">🧺 '+S+' to get</span>':"")+(F?'<span class="sn-chip">🍿 '+F+' food</span>':"")+(E?'<span class="sn-chip">⏱ eat '+E+'</span>':"")+(T.length?'<span class="sn-chip'+(late?" warn":"")+'">✅ '+T.length+' to do</span>':"")+bookChip(it);
 }
 // One supply line: ☐ have it · its name (tap to change) · 🛒 To the list. The "already on the list / in the pantry" say-so comes first.
 function supRow(L){
@@ -576,7 +577,7 @@ function ideaSheet(){
       +'<label class="sn-check"><input type="checkbox"'+(f.booked?" checked":"")+' onchange="snSet(\'booked\',this.checked)"> Booked</label></div>';
     h+='<div class="sn-lab">🧺 Supplies</div>'+(hideOf(it)&&SU.length?'<div class="sn-sub">🤫 On the Shopping List these say only “'+esc(shopLabel(sid,it))+'”, never this idea’s name. The thing’s own name does show there.</div>':"")
       +SU.map(supRow).join("")+'<div class="sn-acts"><button class="sn-tool" onclick="snLine(\'sup\',\''+id+'\',\'\')">＋ Add supplies</button>'+sendAllBtn(sid,it.id,SU)+'</div>';
-    h+='<div class="sn-lab">🍿 Food</div>'+ideaLines(it,"food").sort(foodSort).map(L=>foodRow(L,false)).join("")+'<div class="sn-acts"><button class="sn-tool" onclick="snLine(\'food\',\''+id+'\',\'\')">＋ Add food</button></div>';   // SEASONFOOD
+    h+='<div class="sn-lab">🍿 Food</div>'+ideaLines(it,"food").sort(foodSort).map(L=>foodRow(L,false)).join("")+'<div class="sn-acts"><button class="sn-tool" onclick="snLine(\'food\',\''+id+'\',\'\')">＋ Add food</button><button class="sn-tool" onclick="snMeal(\''+id+'\')">⏱ Cooking timeline</button></div>';   // SEASONFOOD · BIGMEAL: the meal's own page (bigmeal.js)
     h+='<div class="sn-lab">✅ To-dos</div>'+TD.map(L=>todoRow(L,false)).join("")+'<div class="sn-acts"><button class="sn-tool" onclick="snLine(\'todo\',\''+id+'\',\'\')">＋ Add a to-do</button></div>';
   }
   h+='<div class="sn-acts sn-foot"><button class="sn-tool sn-save" onclick="snSave()">Save</button><button class="sn-tool" onclick="snCancel()">Cancel</button>'
@@ -1084,7 +1085,7 @@ function foodViewHTML(s){
   G.forEach(g=>{
     if(!g.day&&!none){none=true;h+='<div class="sn-gh2">Not scheduled yet</div>';}
     const more=menuDays(g.it).length-1;
-    h+='<div class="sn-grp"><div class="sn-gh"><button class="sn-gt" onclick="snOpenIdea(\''+esc(g.it.id)+'\')">'+(g.day?fmtDay(g.day)+(more>0?" +"+more+" more":"")+" — ":"")+esc(g.it.emoji||"")+' <b>'+esc(g.it.t||"")+'</b> '+hideChip(g.it)+'</button></div>'
+    h+='<div class="sn-grp"><div class="sn-gh"><button class="sn-gt" onclick="snOpenIdea(\''+esc(g.it.id)+'\')">'+(g.day?fmtDay(g.day)+(more>0?" +"+more+" more":"")+" — ":"")+esc(g.it.emoji||"")+' <b>'+esc(g.it.t||"")+'</b> '+hideChip(g.it)+(eatTxt(g.it)?'<span class="sn-chip">⏱ eat '+eatTxt(g.it)+'</span>':"")+'</button><button class="sn-tool" onclick="snMeal(\''+esc(g.it.id)+'\')">⏱ Timeline</button></div>'   // BIGMEAL: ⏱ the meal's page
       +g.L.sort(foodSort).map(L=>foodRow(L,false)).join("")+'</div>';
   });
   if(!G.length)h+='<div class="sn-empty">No food yet. Open an idea in 💡 Ideas and tap ＋ Add food.</div>';
@@ -1219,6 +1220,28 @@ function seasonNowLines(){
 }
 function snNowOpen(sid){if(sid&&season(sid)){snSid=sid;try{HA_LS.setItem("ha_sn_sid",sid);}catch(e){}}snView="todo";snEdit=null;snAsk=null;try{if(typeof mpGoto==="function")mpGoto("seasons");}catch(e){}}
 
+// ── 🍗 BIGMEAL slice 1: an idea's ⏱ Cooking timeline lives in its own lazy file, bigmeal.js (PLAN_holiday_menu_2026-11-24.md) ──
+// This file only opens it: the chips, the two ⏱ buttons, the loader, and window._snApi — the planner's own readers and its ONE write
+// door apply(), handed to bigmeal.js on purpose (it never reads _snTest). bigmeal.js has no database call of its own.
+// If bigmeal.js can't load, the planner works exactly as before; a toast says so and the next tap tries again.
+function eatTxt(it){const m=/^(\d{1,2}):(\d{2})$/.exec(String(((it||{}).meal||{}).eat||""));if(!m||+m[1]>23||+m[2]>59)return "";const h=+m[1];return (h%12||12)+":"+m[2]+" "+(h>=12?"PM":"AM");}
+function bmHook(){try{if(typeof window.bmRefresh==="function")window.bmRefresh();}catch(e){}}
+let bmLoading=false,bmThen=null;
+function bmLoad(then){
+  if(typeof window.bmOpen==="function"){then();return;}
+  bmThen=then;if(bmLoading)return;bmLoading=true;
+  const s=document.createElement("script");let gh=false;try{gh=/github\.io$/.test(location.hostname);}catch(e){}
+  s.src=gh?("bigmeal.js?v="+Date.now()):"bigmeal.js";
+  s.onload=()=>{bmLoading=false;const f=bmThen;bmThen=null;if(f&&typeof window.bmOpen==="function")f();};
+  s.onerror=()=>{bmLoading=false;bmThen=null;toast("Couldn’t load the cooking timeline. Check the internet and tap again.");};
+  document.head.appendChild(s);
+}
+function snMeal(iid){
+  const sid=curSid();if(!sid||!idea(sid,iid))return;
+  if(snEdit&&snEdit.type==="idea"&&snEdit.id===iid){if(!flush(iid))return;snEdit=null;snAsk=null;draw();}   // keep what she typed in the idea first
+  bmLoad(()=>{try{window.bmOpen(sid,iid);}catch(e){}});
+}
+
 // ── loading: only for Mom — when this page is opened, or when Home Base asks for its 🔴 NOW lines ──
 function onPage(){try{return typeof tab!=="undefined"&&tab==="moms-plan"&&typeof mpSubView!=="undefined"&&mpSubView==="seasons";}catch(e){return false;}}
 function snListen(){
@@ -1227,9 +1250,9 @@ function snListen(){
   const got=()=>{if(++snGot>=2&&!snLoaded){snLoaded=true;if(snNowWant)homeRepaint();}if(snLoaded&&onPage()&&!snEdit)draw();};   // Home Base asked for its lines → repaint it ONCE when the data is in
   let a=false,b=false;
   try{db.ref("dadday").once("value",()=>{snDdFresh=true;syncSoon();});}catch(e){}   // SEASONJOBS fix: wait for the server's answer for Dad's list (the app's own listener keeps daddayData current after)
-  db.ref("seasons").on("value",s=>{snData=s.val()||{};if(!a){a=true;got();}else if(onPage()&&!snEdit)draw();if(snLoaded)syncSoon();});
-  db.ref("seasonSecret").on("value",s=>{snSecret=s.val()||{};if(!b){b=true;got();}else if(onPage()&&!snEdit)draw();if(snLoaded)syncSoon();});
-  db.ref("seasonJobs").on("value",s=>{snJobs=s.val()||{};snJobsOk=true;if(snLoaded){if(onPage()&&!snEdit)draw();syncSoon();}});   // SEASONJOBS step B: the kids' ticks come back here
+  db.ref("seasons").on("value",s=>{snData=s.val()||{};if(!a){a=true;got();}else if(onPage()&&!snEdit)draw();if(snLoaded)syncSoon();bmHook();});
+  db.ref("seasonSecret").on("value",s=>{snSecret=s.val()||{};if(!b){b=true;got();}else if(onPage()&&!snEdit)draw();if(snLoaded)syncSoon();bmHook();});
+  db.ref("seasonJobs").on("value",s=>{snJobs=s.val()||{};snJobsOk=true;if(snLoaded){if(onPage()&&!snEdit)draw();syncSoon();}bmHook();});   // SEASONJOBS step B: the kids' ticks come back here
 }
 const SN_CSS=`
 .sn-wrap{padding:10px 12px 40px;max-width:760px;margin:0 auto;font-family:'DM Sans',sans-serif}
@@ -1352,9 +1375,11 @@ window.renderSeasons=function(el,ah){
   if(!document.getElementById("sn-style")){const s=document.createElement("style");s.id="sn-style";s.textContent=SN_CSS;document.head.appendChild(s);}
   snRoot=el;snAh=ah||"";snListen();draw();
 };
-Object.assign(window,{snNewSeason,snKind,snEditSeason,snDelSeason,snPick,snPastToggle,snFilterSet,snForToggle,snQuickAdd,snOpenIdea,snSet,snWant,snStar,snSize,snHide,snSave,snCancel,snDelIdea,
+Object.assign(window,{snMeal,snNewSeason,snKind,snEditSeason,snDelSeason,snPick,snPastToggle,snFilterSet,snForToggle,snQuickAdd,snOpenIdea,snSet,snWant,snStar,snSize,snHide,snSave,snCancel,snDelIdea,
   snSched,snDaysOpen,snDaysMore,snPickAny,snPickDay,snUnsched,snMode,snDow,snWeeks,snPickToggle,snPutWeeks,snPutPicked,snUnschedAll,snHold,snDid,snUndid,snSkip,snUnskip,
   snKids,snViewSet,snLine,snLineWho,snLineDel,snFoodMid,snFoodShop,snMenu,snMenuDay,snMenuSlot,snMenuGo,snMenuOff,snSupHave,snSupList,snSupSame,snAskNo,snSupAll,snTodoTick,snTodoMine,snBooked,snNowOpen,seasonNowLines});
+window._snApi={apply,today,dry,esc,rid,isIso,addDays,daysTo,fmtDay,fmtShort,toast,season,seasons,curSid,idea,ideasOf,ideaLines,line,lineBase,base,hideOf,whens,ideaDay,state,
+  recipes,recipeOf,people,who,stillOn,repaint,loaded:()=>snLoaded,foodShop:snFoodShop,lineOpen:snLine};   // BIGMEAL: what bigmeal.js may use
 window._snTest={data:()=>snData,secret:()=>snSecret,setData:(d,s)=>{snData=d||{};snSecret=s||{};snLoaded=true;},reset:()=>{snSid=null;snFilter="all";snEdit=null;snFor={};snPast=false;snView="ideas";snAsk=null;},
   lines,line,tdDue,tdState,tdDone,supState,bookState,shopLabel,nowItems,ideaDay,view:()=>snView,ask:()=>snAsk,
   setRoot:(el,ah)=>{snRoot=el;snAh=ah||"";},draw,edit:()=>snEdit,seasons,season,ideasOf,idea,whens,state,counts,picks,openDays,dayInfo,mins,starsUsed,starMax,apply,schedRange,kindDefaults,fmtDay,curSid,OK:SN_OK,
