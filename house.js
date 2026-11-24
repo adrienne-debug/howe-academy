@@ -1169,15 +1169,17 @@ function ltCardHTML(id){ if(!ltOk(id)) return ""; const T=ltTurns(id).slice(-LT_
 function ltGo(id){ if(!ltOk(id)||!ltTurns(id).length) return; const kid=hhJobs()[id].who; if(typeof hcClose==="function") hcClose(); lgKid=kid; lgOff=0; lgWeek=null; ltSel=id; lgDraw(); }
 // "Show everything ›": the ordinary ledger on that kid, today
 function ltAll(){ ltSel=""; lgOff=0; lgWeek=false; lgDraw(); }
+// The pop-up's top (the dimmed screen, 📒 Ledger, ⚙, ✕, the ⚙ panel / ⏸ banner) is the ledger's OWN, never a copy: lgHTML drawn once
+// as a day view on a day it cannot reach (cheap: "not on this device") and cut where the kid chips start.
+const LT_CHIPS='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">';
+function ltTop(){ const pw=lgWeek, po=lgOff; let o=""; lgWeek=false; lgOff=lgMin(); try{ o=lgHTML(); } finally{ lgWeek=pw; lgOff=po; } const c=o.indexOf(LT_CHIPS); return c>0?o.slice(0,c):""; }
 // The pop-up in the chore view (lgHTML's first line), or "" (the ordinary ledger)
 function ltHTML(){ if(lgWeek!==null||!ltSel) return ""; const j=hhJobs()[ltSel], kid=lgKid; if(!j||!ltOk(ltSel)||kid!==j.who) return "";
   const id=ltSel, a=lgDay(ltFirst()), last=!!(a&&lgMap(a)), from=last?a:lgDay(-(lgNow()+1)), days=[];
   for(let k=ltFirst();k<=0;k++){ const x=lgDayData(kid,k); if(!x.lists) continue; const rows=[];
     x.lists.forEach(function(L){ L.rows.forEach(function(r){ if(r.id===id) rows.push(r); }); });
     const g=x.gone.filter(function(r){ return r.id===id; }); if(rows.length||g.length) days.push({x:x,rows:rows,g:g}); }
-  let h='<div id="lg-pop" onclick="lgClose()" style="position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:9000;display:flex;align-items:center;justify-content:center;padding:12px">'
-    +'<div onclick="event.stopPropagation()" style="background:#fff;border-radius:16px;max-width:560px;width:100%;max-height:88vh;overflow:auto;padding:14px 14px 16px;box-shadow:0 20px 50px rgba(0,0,0,0.3)">'
-    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="font-family:\'Fraunces\',serif;font-weight:700;font-size:17px;flex:1">📒 Ledger</div>'+(typeof lgRulesBtn==="function"?lgRulesBtn():'')+'<button onclick="lgClose()" style="border:none;background:#f3f4f6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer">✕</button></div>'+(typeof lgRulesTop==="function"?lgRulesTop():'')
+  let h=ltTop()
     +'<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-bottom:2px"><b style="flex:1;font-size:14px">'+esc((j.emoji?j.emoji+' ':'')+(j.label||'Chore'))+' · <span style="color:'+(SL_KCOL[kid]||'#666')+'">'+esc(lgName(kid))+'</span></b>'
     +'<span onclick="ltAll()" style="cursor:pointer;font-size:12.5px;font-weight:800;color:#2B7A78;white-space:nowrap">Show everything ›</span></div>'
     +'<div style="font-size:12px;color:#6b7280;margin-bottom:2px">'+(last?'This week and last week, from '+esc(lgDate(from.iso))+'. Older days are not kept on this device.':'This week, from '+esc(from?lgDate(from.iso):'Sunday')+'. '+LG_NOTYET)+'</div>';

@@ -170,7 +170,8 @@ for (let n = 0; n <= 14; n++) {
     if (id === "a_trash" || id === "a_vac") S.dump[n + "_" + id] = { card: card(A, id), pop };
     // the redraw a row button makes (lgDraw) keeps the chore view; "Show everything ›" = the ordinary ledger on kid_a, today
     const again = POP(A, "lgDraw()"), all = POP(A, "ltAll()"), plain = POP(A, "lgKid='kid_a';lgShow()"), base = POP(E, "lgKid='kid_a';lgShow()");
-    S.b.push([tag, id + " redraw / Show everything", again === pop && all === plain && all === base && all.indexOf("Show everything") < 0, [again === pop, all === plain, all === base]]);
+    const CH = '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">', topA = all.slice(0, all.indexOf(CH));
+    S.b.push([tag, id + " redraw / Show everything", again === pop && all === plain && all === base && all.indexOf("Show everything") < 0 && topA.length > 200 && pop.indexOf(topA) === 0 && pop.indexOf(CH) < 0, [again === pop, all === plain, all === base, pop.indexOf(topA)]]);
     // the chore view left by a name tap (lgClose; hcGo), then the ordinary 📒 from Kids today: the ordinary ledger, as before
     POP(A, "ltGo(" + J(id) + ")"); A.run("lgClose();1"); const later = POP(A, "ledgerOpen()"), laterB = POP(E, "ledgerOpen()");
     S.b.push([tag, id + " ordinary 📒 after the chore view", later === laterB && later.indexOf("Show everything") < 0, later === laterB]); A.run("lgClose();1"); E.run("lgClose();1"); }
@@ -221,7 +222,7 @@ each("every day Mon 11/23 … Mon 11/30, kid_a's 13 chores: the marks on the car
 
 console.log("\n── B · the jump: the ledger on that chore ──");
 each("tapping the line closes the card and opens the 📒 Ledger on kid_a showing that chore's rows only — each byte for byte the ledger's own row that day, in day order, with the ledger's own buttons; \"Show everything ›\" is there", S.b.filter(x => !/ /.test(x[1])));
-each("a row button's redraw (lgDraw) keeps the chore view; \"Show everything ›\" = the ordinary ledger on kid_a today, byte for byte (this tree and the app before)", S.b.filter(x => / redraw/.test(x[1])));
+each("a row button's redraw (lgDraw) keeps the chore view; its top (📒 Ledger, ⚙, ✕, the panel / ⏸ banner) is the ledger's own top, byte for byte; \"Show everything ›\" = the ordinary ledger on kid_a today, byte for byte (this tree and the app before)", S.b.filter(x => / redraw/.test(x[1])));
 each("the chore view left by a name tap: the next 📒 from Kids today is the ordinary ledger = the app before's", S.b.filter(x => / ordinary/.test(x[1])));
 each("how far back, in one line: \"This week and last week, from <Sun>. Older days are not kept on this device.\" (or this week only, last week not on the device yet)", S.b.filter(x => x[1] === "reach"));
 
