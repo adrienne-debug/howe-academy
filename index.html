@@ -37427,7 +37427,7 @@ function haNbContext(kid){
   let nbRec={}; try{ nbRec=ROSTER_DEF.find(k=>k&&k.id===kid)||{}; }catch(e){}
   const nbNm=v=>(typeof v==="string"&&v.trim())||null;
   const nbLv=nbLevelCtx(kid);   // NBLEVEL: ctx.grade + ctx.gradeBand
-  return { nbKidName:cap(kid), kidName:nbNm((((notebookSettings||{})[kid])||{}).notebookName)||nbNm(nbRec.notebookName)||nbNm(nbRec.name), notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), nbGrade:nbGradeOf(kid), grade:nbLv.grade, gradeBand:nbLv.gradeBand, spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, loe:loe, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, wordCursor:luWordsCursorOf(kid), numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true }; // KIDNAME_ROSTER
+  return { nbKidName:cap(kid), kidName:nbNm((((notebookSettings||{})[kid])||{}).notebookName)||nbNm(nbRec.notebookName)||nbNm(nbRec.name), notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), nbGrade:nbGradeOf(kid), grade:nbLv.grade, gradeBand:nbLv.gradeBand, spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, loe:loe, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, wordCursor:luWordsCursorOf(kid), numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true, ladders:((typeof nbLadderCtx==="function")?nbLadderCtx(kid):null) }; // KIDNAME_ROSTER
 }
 // LU_WORDS_WIRE_START — 🔤 Lucy's Sight Word of the Day keeps its place week to week (notebooks.js LU_WORDS; her go-ahead
 // 2026-11-21 for slice 1 of PLAN_notebook_lucy_2026-11-10.md). The context reads notebookSettings/<kid>/wordCursor; the builder
@@ -49941,6 +49941,160 @@ function nbLevelCardHtml(kid){
   '</div>';
 }
 // NBLEVEL_END
+// NBLADDER_START — 📚 the two notebook ladders, slice 1: the Mom-only "Ladders" card and the placement printout (notebooks study,
+// her words 2026-11-23/24: "Build it"; placement for both — reading "Do a placement first", math "i think a placement on the math
+// as well"; the optional harder stage on 5th/7th/8th "add the stage", off unless she switches it on for a child). notebooks.js
+// NBLADDER holds the engine (HoweNotebooks.ladders); this block loads the content, keeps each kid's place and draws the card.
+//   · The content: ladders/number_thinking.json and ladders/read_and_answer.json, static files beside the app. Fetched ONCE a
+//     session, only when a kid has a ladder switched on, Mom opens the Ladders card, or she prints a placement — never at boot
+//     (the same pattern as envPicsLoad: fetch, cache-bust only on GitHub Pages, kept in memory, a failure tried again only when
+//     Mom taps "Try again"). sw.js keeps no offline copy (it caches the page and the lazy .js files only), so offline the card
+//     says the ladders couldn't load and everything else is exactly as before; nothing throws.
+//   · Saved per kid per ladder at notebookSettings/<kid>/ladders/<number|reading> = { on, lv, opt, cur }. Nothing saved = OFF.
+//     Only Mom's taps on the card write (momHere), one targeted field per write, behind db && !_dryRun(), mirrored to the same
+//     local copy as every notebook setting (ha_nb_settings). A new level drops cur, so the child starts at that level's first item.
+//     Nothing writes cur yet — the slices that print the pages save it after a print, the way wordCursor / numberCursor are saved.
+//   · The level: the one Mom picked (lv), else the kid's notebook grade (nbLevelGrade — Mom's override or the Family grade, not
+//     today's fallback) through HoweNotebooks.ladders.defaultLevel; neither → "Pick a level".
+//   · ctx.ladders (haNbContext): { reading|number: { on, lv, lvFrom, opt, cur, ready, next } } for the kid's saved ladders, or
+//     null. next = ladders.next(…) for the target week when the ladder is on and loaded. NO generator reads it yet.
+//   · Switching a ladder on prints nothing yet (NBLADDER_PAGES_NOTE says so on the card — change that line when the pages land).
+const NBLADDER_FILES={reading:"ladders/read_and_answer.json",number:"ladders/number_thinking.json"};
+const NBLADDER_KINDS=["reading","number"];
+const NBLADDER_NAMES={reading:"📖 Reading passages",number:"🔢 Number thinking"};
+const NBLADDER_UNIT={reading:"passage",number:"question"};
+const NBLADDER_PAGES_NOTE="Switching a ladder on doesn’t print anything in the notebook yet — those pages are still being built. For now it keeps the level and the child’s place ready.";
+const _nbLadData={}, _nbLadP={}, _nbLadFail={}, _nbLadOpen={};
+function nbLadderData(kind){ return _nbLadData[kind]||null; }
+function nbLadderLib(){ return (typeof window!=="undefined"&&window.HoweNotebooks&&window.HoweNotebooks.ladders)||null; }
+function nbLadderShapeOk(kind,j){ return !!(j&&typeof j==="object"&&!Array.isArray(j)&&j.levels&&typeof j.levels==="object"&&(kind==="number"||(j.passages&&typeof j.passages==="object"))); }
+function nbLadderRepaint(){ try{ if(typeof tab!=="undefined"&&tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); } }catch(e){} }
+// One ladder's file, fetched once (fetchFn: tests hand in their own). Resolves with the data; a failure marks the ladder failed.
+function nbLadderLoad(kind,fetchFn){
+  if(!NBLADDER_FILES[kind]) return Promise.reject(new Error("no ladder "+kind));
+  if(_nbLadData[kind]) return Promise.resolve(_nbLadData[kind]);
+  if(_nbLadP[kind]) return _nbLadP[kind];
+  const f=fetchFn||((typeof fetch==="function")?(u=>fetch(u)):null);
+  if(!f){ _nbLadFail[kind]=true; return Promise.reject(new Error("no fetch")); }
+  const u=NBLADDER_FILES[kind], url=(typeof location!=="undefined"&&/github\.io$/.test(location.hostname))?(u+"?v="+Date.now()):u;
+  _nbLadP[kind]=Promise.resolve().then(()=>f(url)).then(r=>{ if(!r||!r.ok) throw new Error(u+" "+(r&&r.status)); return r.json(); })
+    .then(j=>{ if(!nbLadderShapeOk(kind,j)) throw new Error(u+" shape"); _nbLadData[kind]=j; _nbLadFail[kind]=false; _nbLadP[kind]=null; nbLadderRepaint(); return j; })
+    .catch(e=>{ _nbLadP[kind]=null; _nbLadFail[kind]=true; nbLadderRepaint(); throw e; });
+  return _nbLadP[kind];
+}
+function nbLadderWant(kind){ if(!_nbLadData[kind]&&!_nbLadP[kind]&&!_nbLadFail[kind]) nbLadderLoad(kind).catch(()=>{}); }
+function nbLadderRetry(kind){ if(!momHere()) return; _nbLadFail[kind]=false; nbLadderLoad(kind).catch(()=>{}); nbLadderRepaint(); }
+function nbLadderTrack(kind){ const L=nbLadderLib(), d=nbLadderData(kind); return (L&&d)?L.track(kind,d):null; }
+function nbLadderSaved(kid,kind){ const l=((((notebookSettings||{})[kid])||{}).ladders)||{}, s=l[kind]; return (s&&typeof s==="object"&&!Array.isArray(s))?s:{}; }
+function nbLadderHasBank(kid){ try{ return typeof nbQbList==="function"&&nbQbList(kid).length>0; }catch(e){ return false; } }
+// {lv, from: "saved" | "grade" | ""} — Mom's pick, else the notebook grade's level, else none.
+function nbLadderLevelOf(kid,kind){
+  const s=nbLadderSaved(kid,kind); if(s.lv) return {lv:String(s.lv),from:"saved"};
+  const g=(typeof nbLevelGrade==="function")?nbLevelGrade(kid):null, L=nbLadderLib();
+  const d=(g&&g.from!=="before"&&L)?L.defaultLevel(kind,g.key):null;
+  return d?{lv:d,from:"grade"}:{lv:"",from:""};
+}
+function nbLadderState(kid,kind){ const s=nbLadderSaved(kid,kind), lv=nbLadderLevelOf(kid,kind); return {on:s.on===true, lv:lv.lv||null, lvFrom:lv.from||null, opt:s.opt===true, cur:(s.cur&&typeof s.cur==="object")?s.cur:null}; }
+// For haNbContext: the kid's saved ladders + this week's items when on and loaded; null when nothing is saved. No generator reads it yet.
+function nbLadderCtx(kid){
+  try{
+    const L=nbLadderLib(), out={}; let any=false;
+    NBLADDER_KINDS.forEach(kind=>{
+      if(!Object.keys(nbLadderSaved(kid,kind)).length) return;
+      any=true;
+      const st=nbLadderState(kid,kind); let next=null, ready=false;
+      if(st.on){ const t=nbLadderTrack(kind); if(t&&L){ ready=true; next=L.next(t,st,nbTargetWkNum(),L.perWeek[kind]); } else nbLadderWant(kind); }
+      out[kind]=Object.assign(st,{ready:ready,next:next});
+    });
+    return any?out:null;
+  }catch(e){ return null; }
+}
+// The one writer: ONE targeted field of notebookSettings/<kid>/ladders/<kind>. false / "" / null = remove (nothing saved = off).
+function nbLadderWrite(kid,kind,field,val){
+  if(!momHere()||!NBLADDER_FILES[kind]||["on","lv","opt","cur"].indexOf(field)<0) return false;
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  const ns=notebookSettings[kid]; if(!ns.ladders||typeof ns.ladders!=="object") ns.ladders={};
+  if(!ns.ladders[kind]||typeof ns.ladders[kind]!=="object") ns.ladders[kind]={};
+  const del=(val===null||val===undefined||val===false||val==="");
+  if(del) delete ns.ladders[kind][field]; else ns.ladders[kind][field]=val;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db&&!_dryRun()){ const r=db.ref("notebookSettings/"+kid+"/ladders/"+kind+"/"+field); if(del) r.remove(); else r.set(val); } }catch(e){}
+  return true;
+}
+function nbLadderSetOn(kid,kind,on){ if(!momHere()||!NBLADDER_FILES[kind]) return; if(nbLadderWrite(kid,kind,"on",on===true)&&on===true) nbLadderWant(kind); nbLadderRepaint(); }
+function nbLadderSetOpt(kid,on){ if(!momHere()) return; nbLadderWrite(kid,"number","opt",on===true); nbLadderRepaint(); }
+function nbLadderSetLevel(kid,kind,lv){
+  if(!momHere()||!NBLADDER_FILES[kind]) return;
+  const t=nbLadderTrack(kind); lv=String(lv==null?"":lv);
+  if(lv&&(!t||!t.levels[lv]||(t.levels[lv].bank&&!nbLadderHasBank(kid)))) return;   // only a level in the ladder; a bank rung only for a kid with that bank
+  const s=nbLadderSaved(kid,kind), was=nbLadderLevelOf(kid,kind).lv;
+  if(String(s.lv||"")===lv) return;
+  nbLadderWrite(kid,kind,"lv",lv||null);
+  if(s.cur&&nbLadderLevelOf(kid,kind).lv!==was) nbLadderWrite(kid,kind,"cur",null);   // a new level starts at its first item
+  nbLadderRepaint();
+}
+function nbLadderToggle(kid,open){ _nbLadOpen[kid]=!!open; if(open) NBLADDER_KINDS.forEach(nbLadderWant); }
+// "Up next: passage 4 of 30 in 1st grade." — plain words for where the child is.
+function nbLadderWhereText(kid,kind,t,st){
+  const L=nbLadderLib(), u=NBLADDER_UNIT[kind];
+  if(!st.lv) return "Pick a level to start.";
+  const w=(L&&t)?L.where(t,st):null; if(!w) return "Pick a level to start.";
+  if(w.stop) return "Next is the "+L.word(w.stop.lv).replace(" grade","-grade")+" question bank (its card is on this tab). When "+cap(kid)+" is done with it, pick the next level here.";
+  if(w.end) return "Finished the last level ("+w.label+").";
+  return (w.started?"Up next: ":"Starts at ")+u+" "+w.num+" of "+w.of+" in "+w.label+".";
+}
+function nbLadderRowHtml(kid,kind){
+  const F='font-family:\'DM Sans\',sans-serif', st=nbLadderState(kid,kind), t=nbLadderTrack(kind), L=nbLadderLib();
+  const head='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="flex:1;font-size:12.5px;font-weight:800;color:#1f2937">'+NBLADDER_NAMES[kind]+'</span>'+
+    '<button onclick="nbLadderSetOn(\''+kid+'\',\''+kind+'\','+(!st.on)+')" style="padding:5px 12px;border-radius:20px;border:1.5px solid '+(st.on?'#16a34a':'var(--border)')+';background:'+(st.on?'#dcfce7':'#fff')+';color:'+(st.on?'#166534':'#6b7280')+';font-size:11.5px;font-weight:800;cursor:pointer;'+F+'">'+(st.on?'On':'Off')+'</button></div>';
+  if(!t){
+    const msg=_nbLadFail[kind]?'This ladder couldn’t load — check the internet. <button onclick="nbLadderRetry(\''+kind+'\')" style="border:none;background:none;padding:0;color:#4338ca;font-size:11.5px;font-weight:800;cursor:pointer;text-decoration:underline;'+F+'">Try again</button>':'Getting the ladder…';
+    return '<div style="border-top:1px solid #e0e7ff;padding:9px 0">'+head+'<div style="font-size:11.5px;color:var(--muted);margin-top:4px">'+msg+'</div></div>';
+  }
+  const hasBank=nbLadderHasBank(kid), saved=nbLadderSaved(kid,kind).lv||"";
+  const def=(st.lvFrom==="grade")?st.lv:"";
+  const first='<option value=""'+(saved?'':' selected')+'>'+(def?'Follow the notebook level ('+L.word(def)+')':(nbLadderLevelOf(kid,kind).lv?'Follow the notebook level':'Pick a level'))+'</option>';
+  const opts=L.levels(t,st.opt).map(x=>'<option value="'+x.lv+'"'+(x.lv===saved?' selected':'')+(x.bank&&!hasBank?' disabled':'')+'>'+x.label+(x.bank?' (the question bank)':'')+'</option>').join("");
+  const w=st.lv?L.where(t,st):null, atLv=w&&!w.stop?w.lv:st.lv, optHere=kind==="number"&&atLv&&t.levels[atLv]&&t.levels[atLv].items.some(it=>it.opt);
+  const optHtml=optHere?'<label style="display:flex;align-items:center;gap:7px;margin-top:6px;font-size:11.5px;font-weight:700;color:#1f2937"><input type="checkbox"'+(st.opt?' checked':'')+' onchange="nbLadderSetOpt(\''+kid+'\',this.checked)"> Harder extra stage'+
+    '<span style="font-weight:600;color:var(--muted)">— '+t.levels[atLv].items.filter(it=>it.opt).length+' more questions at the end of '+t.levels[atLv].label+', for a child who is ready. Off unless you switch it on.</span></label>':'';
+  const place=st.lv?'<button onclick="nbLadderPlacement(\''+kid+'\',\''+kind+'\')" style="padding:6px 12px;border-radius:9px;border:1.5px solid #c7d2fe;background:#fff;color:#3730a3;font-size:11.5px;font-weight:800;cursor:pointer;'+F+'">🖨 Print placement</button>'+
+      '<span style="font-size:10.5px;color:var(--muted);margin-left:6px">A short check on paper, with a separate answer page for you. It changes nothing here.</span>'
+    :'<span style="font-size:10.5px;color:var(--muted)">Pick a level to print a placement check.</span>';
+  return '<div style="border-top:1px solid #e0e7ff;padding:9px 0">'+head+
+    '<label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;font-weight:700;color:#1f2937">Level:'+
+      '<select onchange="nbLadderSetLevel(\''+kid+'\',\''+kind+'\',this.value)" style="padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:11.5px;background:#fff;'+F+'">'+first+opts+'</select></label>'+
+    '<div style="font-size:11.5px;color:#374151;margin-top:5px">'+nbLadderWhereText(kid,kind,t,st)+'</div>'+optHtml+
+    '<div style="margin-top:7px">'+place+'</div></div>';
+}
+// The one home: this kid's section of the Notebook tab, Mom only, after the Notebook level card. Closed, it reads only the saved
+// switches (no file is fetched); opening it — or a ladder being on — fetches the content.
+function nbLadderCardHtml(kid){
+  if(!momHere()) return "";
+  const on=NBLADDER_KINDS.map(k=>nbLadderSaved(kid,k).on===true), open=!!_nbLadOpen[kid];
+  if(open||on[0]||on[1]) NBLADDER_KINDS.forEach((k,i)=>{ if(open||on[i]) nbLadderWant(k); });
+  const sum=NBLADDER_KINDS.map((k,i)=>(k==="reading"?"Reading":"Number")+": "+(on[i]?"on":"off")).join(" · ");
+  return '<details id="nbladder-card"'+(open?' open':'')+' ontoggle="nbLadderToggle(\''+kid+'\',this.open)" style="margin-top:14px;background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:12px;padding:12px 14px">'+
+    '<summary style="cursor:pointer;font-size:12px;font-weight:800;color:#3730a3">📚 Ladders <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#c7d2fe;color:#312e81;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span>'+
+      '<span style="font-weight:600;color:var(--muted);margin-left:6px">'+sum+'</span></summary>'+
+    '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin:6px 0 4px">Two step-by-step ladders for the notebook: a reading passage with questions, and number-thinking questions. Each starts at the level you pick and climbs from there.</div>'+
+    (nbLadderLib()?NBLADDER_KINDS.map(k=>nbLadderRowHtml(kid,k)).join(""):'<div style="font-size:11.5px;color:var(--muted);padding:6px 0">Getting the ladders…</div>')+
+    '<div style="font-size:11px;color:#4338ca;font-weight:700;line-height:1.45;margin-top:4px">'+NBLADDER_PAGES_NOTE+'</div>'+
+  '</details>';
+}
+// 🖨 Print placement: the window opens inside the tap (Safari blocks a pop-up opened after a wait — as ucPrintWin), then gets the
+// page once notebooks.js and the ladder's file are here. Writes nothing; the level stays as it is until Mom picks one.
+function nbLadderPlacement(kid,kind){
+  if(!momHere()||!NBLADDER_FILES[kind]) return;
+  const lv=nbLadderLevelOf(kid,kind).lv; if(!lv) return;
+  const w=window.open("","_blank"); if(!w){ alert("Allow pop-ups to print."); return; }
+  const put=doc=>{ w.document.open(); w.document.write(doc.replace("</body>",'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print()},250)}</scr'+'ipt></body>')); w.document.close(); };
+  const fail=()=>{ try{ w.close(); }catch(e){} alert("Couldn’t load the placement check — check the internet and try again."); };
+  try{ w.document.write('<!doctype html><html><head><meta charset="UTF-8"><title>Getting the page ready…</title></head><body style="font-family:sans-serif;padding:24px;color:#374151">Getting the page ready…</body></html>'); }catch(e){}
+  let p; try{ p=Promise.all([haLoadNotebooksLib(),nbLadderLoad(kind)]); }catch(e){ p=Promise.reject(e); }
+  p.then(r=>{ let doc=""; try{ doc=r[0].ladders.placementDoc(kind,r[1],{lv:lv,kidName:cap(kid)}); }catch(e){ doc=""; } if(doc) put(doc); else fail(); },fail);
+}
+// NBLADDER_END
 // NBNAME_START — the name in a Pre-K notebook, set on the Notebook tab (her ask 2026-11-10: "can we also have the option on
 // notebooks for caleb 3d and julian to edit the name, so 3d will be David in his notebook"). Mom only. Save writes ONE targeted
 // path, notebookSettings/<kid>/notebookName (removed by "Use the family name"); dry-run inert; the local notebookSettings is kept
@@ -58424,6 +58578,7 @@ function renderNotebook(el){
         lookHtml+
         xpHtml+
         nbLevelCardHtml(sel)+   // 📏 NBLEVEL: Notebook level (Mom)
+        ((typeof nbLadderCardHtml==="function")?nbLadderCardHtml(sel):"")+   // 📚 NBLADDER: the two ladders — switches, level, place, placement (Mom)
         reviewHtml+
         dgHtml+
         (momHere()&&NB_WB_KIDS[sel]?'<div style="margin-top:14px"><button onclick="nbChkOpen(\''+sel+'\')" style="padding:8px 14px;border-radius:9px;border:1.5px solid #86efac;background:#f0fdf4;color:#166534;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Check today’s notebook answers</button></div>':'')+

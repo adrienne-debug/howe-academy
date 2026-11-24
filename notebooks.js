@@ -2257,6 +2257,335 @@
     return { readsCap: false, decks: [] };
   }
   // NBNEEDS_END
+  // NBLADDER_START — 📚 the two notebook ladders, slice 1: the engine and the placement printout (notebooks study, her words
+  // 2026-11-23/24: "Build it"; placement for both — reading "Do a placement first", math "i think a placement on the math as
+  // well"; reading "twice a week sounds great"; the optional harder stage on 5th/7th/8th "add the stage", off unless she switches
+  // it on for a child). The content is two static files beside the app — ladders/number_thinking.json (one question = one item)
+  // and ladders/read_and_answer.json (one passage with all its questions = one item); index.html NBLADDER loads them lazily and
+  // keeps each kid's place at notebookSettings/<kid>/ladders/<number|reading> = { on, lv, opt, cur }.
+  // Nothing here touches the DOM or Firebase, and NO generator reads ctx.ladders yet: every notebook prints what it printed
+  // before. Slices 2–6 put the items on the pages (they call ladders.next with ctx.ladders' state).
+  //  • A ladder climbs: the items of the kid's level in order (`o`), then the next level in the ladder's own order. It never wraps
+  //    and never starts over; past the last level → `end`.
+  //  • The number ladder's 4th- and 6th-grade rungs are not in the file — they are the question banks Mom keeps on the Notebook
+  //    tab (data.haveElsewhere). Reaching one STOPS the ladder and says so ("next is the 4th-grade question bank"); it is never
+  //    skipped. Mom sets the next level when the child is done with the bank.
+  //  • An optional stage (level optStages + item opt:true, always at the END of its level) is left out unless the kid's opt is on.
+  //  • The place: cur = { week, lv, from, adv, opt } — the week it was built for, where that week started (level + 0-based index
+  //    in the level's list), how many items it took, and whether the optional stage was on then. The same week built again → the same items (the rule of juNumberStart /
+  //    juLetterStart, the letter and number cursors). A later week starts right after the saved week's items — no skipping
+  //    for weeks that were never printed (a break week can't eat questions), and no wrap (juLetterStart and lnBankStart wrap a
+  //    list; a ladder must not). An earlier week walks back `n` items per week inside the saved level (never below its first).
+  var LADDER_KINDS = ["reading", "number"];
+  var LADDER_PER_WEEK = { reading: 2, number: 5 };   // reading: "twice a week"; number: one a school day — slices 2–4 may pass their own n
+  // A kid's notebook grade (index.html nbLevelGrade(kid).key: "PreK", "K", "1"…"12") → the level that ladder starts on. Reading
+  // has no Pre-K / K level; 7th and 8th share one. Number 4th and 6th are the bank rungs. Not in the map (no grade, 9th+) → null.
+  var LADDER_GRADE_LEVEL = {
+    reading: { "1": "g1", "2": "g2", "3": "g3", "4": "g4", "5": "g5", "6": "g6", "7": "g78", "8": "g78" },
+    number: { PreK: "prek", K: "k", "1": "g1", "2": "g2", "3": "g3", "4": "g4", "5": "g5", "6": "g6", "7": "g7", "8": "g8" }
+  };
+  function ladderDefaultLevel(kind, gradeKey) {
+    var m = LADDER_GRADE_LEVEL[kind], k = gradeKey == null ? "" : String(gradeKey);
+    return (m && Object.prototype.hasOwnProperty.call(m, k)) ? m[k] : null;
+  }
+  // "g4" → "4th grade", "g78" → "7th–8th grade", "prek" → "Pre-K", "k" → "Kindergarten" (a rung the file has no label for).
+  function ladWord(lv) {
+    if (lv === "prek") return "Pre-K";
+    if (lv === "k") return "Kindergarten";
+    var m = /^g(\d)(\d)?$/.exec(String(lv || ""));
+    if (!m) return String(lv || "");
+    var o = function (n) { n = parseInt(n, 10); return n + (n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"); };
+    return (m[2] ? o(m[1]) + "–" + o(m[2]) : o(m[1])) + " grade";
+  }
+  function ladByO(a, b) { return (a.o || 0) - (b.o || 0); }
+  // The ladder's data → { kind, order:[lv], levels:{ lv:{ lv, label, bank, items:[item + id] } } }, or null for data of the wrong
+  // shape. Items with no text (number) or no questions (reading) are dropped.
+  function ladTrack(kind, data) {
+    if (LADDER_KINDS.indexOf(kind) < 0 || !data || typeof data !== "object" || !data.levels || typeof data.levels !== "object") return null;
+    var levels = data.levels, order = [], lv = {};
+    if (kind === "number") {
+      var banks = (data.haveElsewhere && typeof data.haveElsewhere === "object") ? data.haveElsewhere : {};
+      (Array.isArray(data.order) ? data.order : Object.keys(levels)).forEach(function (k) {
+        var L = levels[k];
+        if (L && typeof L === "object") {
+          var its = Object.keys(L.items || {}).map(function (id) { return Object.assign({ id: id }, L.items[id]); })
+            .filter(function (it) { return it && it.text; }).sort(ladByO);
+          lv[k] = { lv: k, label: L.label || ladWord(k), bank: false, items: its };
+          order.push(k);
+        } else if (banks[k]) {
+          lv[k] = { lv: k, label: ladWord(k), bank: true, items: [] };
+          order.push(k);
+        }
+      });
+    } else {
+      var ps = (data.passages && typeof data.passages === "object") ? data.passages : {};
+      if (!Object.keys(ps).length) return null;
+      Object.keys(levels).sort(function (a, b) { return ((levels[a] || {}).grade || 0) - ((levels[b] || {}).grade || 0); }).forEach(function (k) {
+        var its = Object.keys(ps).filter(function (id) { var p = ps[id]; return p && p.lv === k && p.text && Array.isArray(p.q) && p.q.length; })
+          .map(function (id) { return Object.assign({ id: id }, ps[id]); }).sort(ladByO);
+        lv[k] = { lv: k, label: (levels[k] || {}).label || ladWord(k), bank: false, items: its };
+        order.push(k);
+      });
+    }
+    return order.length ? { kind: kind, order: order, levels: lv } : null;
+  }
+  function ladList(track, lv, opt) {
+    var L = track.levels[lv];
+    if (!L || L.bank) return [];
+    return opt ? L.items : L.items.filter(function (it) { return !it.opt; });
+  }
+  // Every rung, for the level picker: { lv, label, bank, count (with the optional stage when opt), optional (how many optional) }.
+  function ladderLevels(track, opt) {
+    if (!track) return [];
+    return track.order.map(function (k) {
+      var L = track.levels[k], all = L.items.length, core = L.items.filter(function (it) { return !it.opt; }).length;
+      return { lv: k, label: L.label, bank: L.bank, count: opt ? all : core, optional: all - core };
+    });
+  }
+  // A place → where it really is: { lv, i } on an item; { stop: lv } on a bank rung; { end: true, lv, i } past the last level.
+  // An index past the end of a level carries into the next level. wasOpt = the optional-stage switch when the place was saved
+  // (default: as now): a saved place inside an optional stage that is now OFF moves to the next level's FIRST item (it never
+  // eats that level's items); a place at the very end of a level whose optional stage is now ON opens that stage.
+  function ladSettle(track, lv, i, opt, wasOpt) {
+    if (wasOpt === undefined) wasOpt = opt;
+    i = Math.max(0, i);
+    for (var guard = 0; guard < 64; guard++) {
+      var L = track.levels[lv];
+      if (!L) return { end: true, lv: lv, i: 0 };
+      if (L.bank) return { stop: lv };
+      var nOld = ladList(track, lv, wasOpt).length, nNow = ladList(track, lv, opt).length;
+      var nx = track.order[track.order.indexOf(lv) + 1];
+      if (i < nOld) {
+        if (i < nNow) return { lv: lv, i: i };
+        if (nx == null) return { end: true, lv: lv, i: nNow };
+        lv = nx; i = 0; continue;   // an optional item, switched off since: on to the next level's first
+      }
+      if (i === nOld && nNow > nOld) return { lv: lv, i: i };   // at the door of an optional stage switched on since
+      if (nx == null) return { end: true, lv: lv, i: nNow };
+      i -= nOld; lv = nx;
+    }
+    return { end: true, lv: lv, i: 0 };
+  }
+  function ladInt(v) { var n = parseInt(v, 10); return isNaN(n) ? null : n; }
+  // The saved cursor, checked: { week, lv, from, adv } with a known level, or null (→ the kid starts at state.lv's first item).
+  function ladCur(track, cur) {
+    if (!cur || typeof cur !== "object") return null;
+    var w = ladInt(cur.week), f = ladInt(cur.from), a = ladInt(cur.adv);
+    if (!(w > 0) || f == null || f < 0 || !track.levels[cur.lv]) return null;
+    var o = (typeof cur.opt === "boolean") ? cur.opt : f >= ladList(track, cur.lv, false).length;   // no opt saved: inside the optional stage = it was on
+    return { week: w, lv: cur.lv, from: f, adv: (a == null || a < 0) ? 0 : a, opt: o };
+  }
+  // The next unprinted place (for the card's "up next"): just after the saved week's items, or the start of the level.
+  function ladderWhere(track, state) {
+    state = state || {};
+    if (!track) return null;
+    var c = ladCur(track, state.cur), p;
+    if (c) p = ladSettle(track, c.lv, c.from + c.adv, !!state.opt, c.opt);
+    else if (state.lv && track.levels[state.lv]) p = ladSettle(track, state.lv, 0, !!state.opt);
+    else return null;
+    return ladPlace(track, p, !!state.opt, !!c);
+  }
+  function ladPlace(track, p, opt, started) {
+    if (p.stop) return { stop: { lv: p.stop, label: track.levels[p.stop].label, bank: true }, started: started };
+    var n = ladList(track, p.lv, opt).length;
+    if (p.end) return { end: true, lv: p.lv, label: track.levels[p.lv] ? track.levels[p.lv].label : "", num: n, of: n, started: started };
+    return { lv: p.lv, label: track.levels[p.lv].label, i: p.i, num: p.i + 1, of: n, started: started };
+  }
+  // This week's items. state = { lv, opt, cur } (lv = the level Mom picked, or the grade's default); wk = the notebook's week
+  // number; n = how many (default LADDER_PER_WEEK). → { kind, items:[{ lv, label, i, num, of, id, item }], stop, end, cursor }
+  // (cursor = { week, lv, from, adv, opt })
+  // — cursor = the place to save after the week prints (slices 2–6 save it; nothing does in slice 1), or null when there is no
+  // level to start from. A bank rung reached part-way → the items before it + stop:{ lv, label, bank:true }.
+  function ladderNext(track, state, wk, n) {
+    state = state || {};
+    var out = { kind: track ? track.kind : null, items: [], stop: null, end: false, cursor: null };
+    if (!track) return out;
+    wk = ladInt(String(wk == null ? "" : wk).replace(/\D/g, "")) || 1;
+    n = ladInt(n); if (!(n > 0)) n = LADDER_PER_WEEK[track.kind] || 1;
+    var opt = !!state.opt, c = ladCur(track, state.cur), p;
+    if (c) {
+      if (wk === c.week) p = ladSettle(track, c.lv, c.from, opt, c.opt);
+      else if (wk > c.week) p = ladSettle(track, c.lv, c.from + c.adv, opt, c.opt);
+      else p = ladSettle(track, c.lv, Math.max(0, c.from - n * (c.week - wk)), opt, c.opt);
+    } else if (state.lv && track.levels[state.lv]) p = ladSettle(track, state.lv, 0, opt);
+    else return out;
+    var start = p;
+    while (out.items.length < n && !p.stop && !p.end) {
+      var list = ladList(track, p.lv, opt), L = track.levels[p.lv];
+      out.items.push({ lv: p.lv, label: L.label, i: p.i, num: p.i + 1, of: list.length, id: list[p.i].id, item: list[p.i] });
+      p = ladSettle(track, p.lv, p.i + 1, opt);
+    }
+    if (out.items.length < n && p.stop) out.stop = { lv: p.stop, label: track.levels[p.stop].label, bank: true };
+    if (out.items.length < n && p.end) out.end = true;
+    out.cursor = start.stop ? { week: wk, lv: start.stop, from: 0, adv: 0, opt: opt }
+      : { week: wk, lv: start.lv, from: start.i, adv: out.items.length, opt: opt };
+    return out;
+  }
+  // ── Placement: a printed check, two levels, written on paper; it writes nothing and never moves the kid's level or place. ──
+  // The two levels: the suggested level and the one below it in the file (the first level has none below → it and the one above).
+  // A bank rung is not in the file: the nearest levels in the file stand in, and `skipped` names the rung(s) passed over.
+  function ladderPlacementPair(track, lv) {
+    if (!track || !track.levels[lv]) return null;
+    var ord = track.order, at = ord.indexOf(lv), real = function (k) { return k != null && !track.levels[k].bank && track.levels[k].items.length; };
+    var below = null, above = null, skipped = [];
+    for (var b = at - 1; b >= 0; b--) { if (real(ord[b])) { below = ord[b]; break; } }
+    for (var a = at + 1; a < ord.length; a++) { if (real(ord[a])) { above = ord[a]; break; } }
+    var lo, hi;
+    if (real(lv)) { if (below) { lo = below; hi = lv; } else { lo = lv; hi = above; } }
+    else { lo = below; hi = above; if (!lo) { lo = above; hi = null; for (var c2 = ord.indexOf(above) + 1; c2 < ord.length; c2++) { if (real(ord[c2])) { hi = ord[c2]; break; } } }
+      else if (!hi) { hi = below; lo = null; for (var c3 = ord.indexOf(below) - 1; c3 >= 0; c3--) { if (real(ord[c3])) { lo = ord[c3]; break; } } } }
+    if (!lo && !hi) return null;
+    if (!hi) { hi = lo; lo = null; }
+    if (lo) for (var s = ord.indexOf(lo) + 1; s < ord.indexOf(hi); s++) { if (track.levels[ord[s]].bank) skipped.push(ord[s]); }
+    if (!real(lv) && skipped.indexOf(lv) < 0) skipped.push(lv);
+    return { suggested: lv, lo: lo, hi: hi, skipped: skipped };
+  }
+  function ladEsc(v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  var LAD_LETTERS = "ABCDEFGH";
+  var LAD_GROWN = { prek: 1, k: 1 };   // picture-recipe levels: a grown-up reads the `say` line aloud (pictures themselves = slice 5)
+  var LADDER_CSS =
+    "@page { size: letter; margin: 0; }\n" +
+    "* { box-sizing: border-box; }\n" +
+    "body { margin: 0; background: #e5e7eb; font-family: 'DM Sans', system-ui, sans-serif; color: #1f2937; -webkit-print-color-adjust: exact; print-color-adjust: exact; }\n" +
+    ".page { width: 8.5in; height: 11in; overflow: hidden; background: #fff; margin: 0 auto 18px; padding: 0.45in 0.6in; position: relative; page-break-after: always; break-after: page; }\n" +
+    ".page:last-child { page-break-after: auto; break-after: auto; }\n" +
+    "@media print { body { background: #fff; } .page { margin: 0; box-shadow: none; } }\n" +
+    ".lp-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: 2.5px solid #1f2937; padding-bottom: 6px; margin-bottom: 10px; }\n" +
+    ".lp-title { font-family: 'Fraunces', Georgia, serif; font-size: 25px; font-weight: 700; }\n" +
+    ".lp-kid { font-size: 13px; font-weight: 700; color: #4b5563; white-space: nowrap; }\n" +
+    ".lp-line { display: flex; gap: 22px; font-size: 12.5px; font-weight: 700; margin-bottom: 10px; }\n" +
+    ".lp-line span { flex: 1; border-bottom: 1.5px solid #9ca3af; padding-bottom: 2px; }\n" +
+    ".lp-how { font-size: 13px; line-height: 1.45; background: #f3f4f6; border-radius: 8px; padding: 7px 11px; margin-bottom: 12px; }\n" +
+    ".lp-grown { display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; background: #fef3c7; color: #92400e; border: 1.5px solid #fcd34d; border-radius: 20px; padding: 2px 10px; margin-left: 8px; vertical-align: middle; }\n" +
+    ".lp-part { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #6b7280; margin: 12px 0 4px; }\n" +
+    ".lp-psg { border: 1.5px solid #d1d5db; border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; }\n" +
+    ".lp-ptitle { font-family: 'Fraunces', Georgia, serif; font-size: 18px; font-weight: 700; margin-bottom: 4px; }\n" +
+    ".lp-text p { margin: 0 0 5px; font-size: 13px; line-height: 1.45; }\n" +
+    ".lp-big .lp-text p { font-size: 17px; line-height: 1.55; }\n" +
+    ".lp-q { margin-top: 7px; break-inside: avoid; }\n" +
+    ".lp-stem { font-size: 13px; font-weight: 700; line-height: 1.33; }\n" +
+    ".lp-big .lp-stem { font-size: 16px; }\n" +
+    ".lp-say { font-size: 12px; font-style: italic; color: #92400e; margin-top: 2px; }\n" +
+    ".lp-nline { font-family: 'DM Mono', ui-monospace, monospace; font-size: 15px; font-weight: 500; white-space: pre-wrap; line-height: 1.4; }\n" +
+    ".lp-cs { display: flex; flex-wrap: wrap; gap: 3px 18px; margin-top: 4px; padding-left: 4px; }\n" +
+    ".lp-c { font-size: 12.5px; line-height: 1.33; }\n" +
+    ".lp-big .lp-c { font-size: 15.5px; }\n" +
+    ".lp-cs.lp-long { flex-direction: column; }\n" +
+    ".lp-l { display: inline-block; width: 19px; height: 19px; line-height: 16px; border: 1.5px solid #6b7280; border-radius: 50%; text-align: center; font-size: 11px; font-weight: 800; margin-right: 5px; }\n" +
+    ".lp-parent .lp-banner { font-size: 13px; font-weight: 800; color: #991b1b; background: #fef2f2; border: 2px solid #fca5a5; border-radius: 8px; padding: 7px 11px; margin-bottom: 12px; }\n" +
+    ".lp-rule { font-size: 13px; line-height: 1.5; margin: 0 0 4px; }\n" +
+    ".lp-key { font-size: 12.5px; line-height: 1.4; margin: 3px 0 0 4px; }\n" +
+    ".lp-key b { display: inline-block; min-width: 22px; }\n" +
+    ".lp-why { color: #4b5563; }\n";
+  // A Pre-K / K choice is a picture token ("green-star"): until the pictures come (slice 5) it prints as words. Nothing else changes.
+  function ladChoiceWord(c, tok) { c = String(c == null ? "" : c); return tok ? c.replace(/-/g, " ") : c; }
+  function ladChoices(cs, tok) {
+    cs = Array.isArray(cs) ? cs : [];
+    var long = cs.some(function (c) { return String(c).length > 26; });
+    return '<div class="lp-cs' + (long ? " lp-long" : "") + '">' + cs.map(function (c, i) {
+      return '<span class="lp-c"><span class="lp-l">' + LAD_LETTERS.charAt(i) + '</span>' + ladEsc(ladChoiceWord(c, tok)) + '</span>';
+    }).join("") + '</div>';
+  }
+  function ladParas(text) {
+    return String(text || "").split(/\n+/).filter(function (s) { return s.trim(); }).map(function (s) { return '<p>' + ladEsc(s) + '</p>'; }).join("");
+  }
+  function ladHead(title, kidName, grown) {
+    return '<div class="lp-head"><div class="lp-title">' + ladEsc(title) + (grown ? '<span class="lp-grown">with a grown-up</span>' : '') + '</div>' +
+      (kidName ? '<div class="lp-kid">' + ladEsc(kidName) + '</div>' : '') + '</div>';
+  }
+  function ladAnsText(c, ans, tok) { var i = LAD_LETTERS.indexOf(String(ans || "")); return (i >= 0 && Array.isArray(c) && c[i] != null) ? ladChoiceWord(c[i], tok) : ""; }
+  // How to choose, for the parent sheet: hi is the harder of the two; the rung just below hi may be a bank (not in this check).
+  function ladRuleLines(track, pr, partWord) {
+    var L = function (k) { return track.levels[k].label; };
+    var ord = track.order, belowHi = ord[ord.indexOf(pr.hi) - 1], lines = [];
+    var name = function (k) { return track.levels[k].bank ? "the " + ladWord(k).replace(" grade", "-grade") + " question bank" : L(k); };
+    if (!pr.lo) return ["Comfortable and mostly right → " + L(pr.hi) + ". A struggle → stay with easier work for now and try again in a few weeks."];
+    lines.push("Comfortable and mostly right on " + partWord + " 2 → " + L(pr.hi) + ".");
+    if (belowHi && belowHi !== pr.lo) {
+      lines.push("A struggle on " + partWord + " 2 → " + name(belowHi) + (track.levels[belowHi].bank ? " (it lives on the Notebook tab, so it isn’t in this check)" : "") + ".");
+      lines.push("A struggle on " + partWord + " 1 too → " + L(pr.lo) + ".");
+    } else lines.push("A struggle on " + partWord + " 2 → the lower one, " + L(pr.lo) + ".");
+    return lines;
+  }
+  function ladPairNote(track, pr) {
+    var out = [];
+    if (pr.skipped.length) out.push(pr.skipped.map(function (k) { return ladWord(k); }).join(" and ") + " " + (pr.skipped.length > 1 ? "are" : "is") +
+      " the question bank on the Notebook tab, not part of this ladder — so this check uses the nearest levels: " + track.levels[pr.lo || pr.hi].label + (pr.lo ? " and " + track.levels[pr.hi].label : "") + ".");
+    if (pr.lo && pr.suggested === pr.lo) out.push(track.levels[pr.lo].label + " is the first level, so this check pairs it with the one above.");
+    return out;
+  }
+  // The pages: { child:[page html], parent:[page html], pair } or null. opts = { lv (the suggested level), kidName }.
+  function ladderPlacementPages(kind, data, opts) {
+    opts = opts || {};
+    var track = ladTrack(kind, data), pr = track ? ladderPlacementPair(track, opts.lv) : null;
+    if (!pr) return null;
+    var lvs = [pr.lo, pr.hi].filter(Boolean), kidName = opts.kidName || "", child = [], parent = [];
+    var nameLine = '<div class="lp-line"><span>Name</span><span>Date</span></div>';
+    var parentTop = function (title) {
+      return '<div class="page lp-parent">' + ladHead(title + " — for the grown-up", kidName, false) +
+        '<div class="lp-banner">For the grown-up — not for the child. Answers are on this page only.</div>';
+    };
+    var tail = '<p class="lp-rule" style="margin-top:12px;color:#4b5563">This check doesn’t change anything in the app. Afterwards, pick the level on the Notebook tab, in the Ladders card.</p>';
+    if (kind === "reading") {
+      var ps = lvs.map(function (k) { return { lv: k, p: track.levels[k].items[0] }; });
+      var small = lvs.every(function (k) { return k === "g1" || k === "g2"; });
+      var psgHtml = function (x, idx) {
+        var big = x.lv === "g1" || x.lv === "g2", qn = 0;
+        return '<div class="' + (big ? "lp-big" : "") + '">' + (lvs.length > 1 ? '<div class="lp-part">Passage ' + (idx + 1) + '</div>' : '') +
+          '<div class="lp-psg"><div class="lp-ptitle">' + ladEsc(x.p.title || "") + '</div><div class="lp-text">' + ladParas(x.p.text) + '</div></div>' +
+          x.p.q.map(function (q) { qn++; return '<div class="lp-q"><div class="lp-stem">' + qn + '. ' + ladEsc(q.text) + '</div>' + ladChoices(q.c, false) + '</div>'; }).join("") + '</div>';
+      };
+      var how = '<div class="lp-how">Read each passage by yourself. Then read each question and circle the letter of the best answer.</div>';
+      if (small) child.push('<div class="page lp-child">' + ladHead("Reading check", kidName, false) + nameLine + how + ps.map(psgHtml).join("") + '</div>');
+      else ps.forEach(function (x, idx) { child.push('<div class="page lp-child">' + ladHead("Reading check" + (ps.length > 1 ? " — " + (idx + 1) + " of " + ps.length : ""), kidName, false) + (idx === 0 ? nameLine + how : "") + psgHtml(x, idx) + '</div>'); });
+      parent.push(parentTop("Reading check") +
+        ladPairNote(track, pr).map(function (s) { return '<p class="lp-rule">' + ladEsc(s) + '</p>'; }).join("") +
+        '<div class="lp-part">How to choose</div>' + ladRuleLines(track, pr, "Passage").map(function (s) { return '<p class="lp-rule">' + ladEsc(s) + '</p>'; }).join("") +
+        ps.map(function (x, idx) {
+          return '<div class="lp-part">Passage ' + (idx + 1) + ' — ' + ladEsc(track.levels[x.lv].label) + ' level: “' + ladEsc(x.p.title || "") + '”</div>' +
+            x.p.q.map(function (q, qi) { return '<div class="lp-key"><b>' + (qi + 1) + '. ' + ladEsc(q.ans) + '</b> ' + ladEsc(ladAnsText(q.c, q.ans)) + ' — <span class="lp-why">' + ladEsc(q.why || "") + '</span></div>'; }).join("");
+        }).join("") + tail + '</div>');
+    } else {
+      var grown = lvs.some(function (k) { return LAD_GROWN[k]; });
+      var parts = lvs.map(function (k) { return { lv: k, qs: ladList(track, k, false).slice(0, 3) }; });
+      var qn = 0;
+      var body = parts.map(function (x, idx) {
+        var big = LAD_GROWN[x.lv] || x.lv === "g1" || x.lv === "g2";
+        return '<div class="' + (big ? "lp-big" : "") + '">' + (parts.length > 1 ? '<div class="lp-part">Part ' + (idx + 1) + (LAD_GROWN[x.lv] ? ' — a grown-up reads each one aloud' : '') + '</div>' : '') +
+          x.qs.map(function (q) {
+            qn++;
+            var lines = String(q.text || "").split(" / ").map(function (s) { return '<div class="lp-nline">' + ladEsc(s) + '</div>'; }).join("");
+            return '<div class="lp-q"><div class="lp-stem">' + qn + '.</div>' + lines +
+              (LAD_GROWN[x.lv] && q.say ? '<div class="lp-say">Read aloud: “' + ladEsc(q.say) + '”</div>' : '') + ladChoices(q.c, !!LAD_GROWN[x.lv]) + '</div>';
+          }).join("") + '</div>';
+      }).join("");
+      child.push('<div class="page lp-child">' + ladHead("Number check", kidName, grown) + nameLine +
+        '<div class="lp-how">' + (grown ? "A grown-up reads each question aloud. Circle the letter of the answer." : "Find what comes next or what is missing. Circle the letter of the answer.") + '</div>' + body + '</div>');
+      qn = 0;
+      parent.push(parentTop("Number check") +
+        ladPairNote(track, pr).map(function (s) { return '<p class="lp-rule">' + ladEsc(s) + '</p>'; }).join("") +
+        '<div class="lp-part">How to choose</div>' + ladRuleLines(track, pr, "Part").map(function (s) { return '<p class="lp-rule">' + ladEsc(s) + '</p>'; }).join("") +
+        parts.map(function (x, idx) {
+          return '<div class="lp-part">Part ' + (idx + 1) + ' — ' + ladEsc(track.levels[x.lv].label) + '</div>' +
+            x.qs.map(function (q) { qn++; return '<div class="lp-key"><b>' + qn + '. ' + ladEsc(q.ans) + '</b> ' + ladEsc(ladAnsText(q.c, q.ans, !!LAD_GROWN[x.lv])) + ' — <span class="lp-why">' + ladEsc(q.rule || "") + '</span></div>'; }).join("");
+        }).join("") + tail + '</div>');
+    }
+    return { child: child, parent: parent, pair: pr };
+  }
+  // The printable document: the child's sheet(s), then the parent sheet on its own page.
+  function ladderPlacementDoc(kind, data, opts) {
+    var pg = ladderPlacementPages(kind, data, opts);
+    if (!pg) return "";
+    var title = (kind === "reading" ? "Reading check" : "Number check") + ((opts && opts.kidName) ? " — " + opts.kidName : "");
+    var doc = '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<title>' + ladEsc(title) + '</title>\n' +
+      '<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=DM+Sans:wght@400;500;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">\n' +
+      '<style>\n' + LADDER_CSS + '</style>\n</head>\n<body>\n' + pg.child.concat(pg.parent).join("\n") + '\n</body>\n</html>';
+    return emojiToImages(applySafariPrintFit(doc));
+  }
+  var NB_LADDERS = { kinds: LADDER_KINDS, perWeek: LADDER_PER_WEEK, defaultLevel: ladderDefaultLevel, word: ladWord, track: ladTrack,
+    levels: ladderLevels, where: ladderWhere, next: ladderNext, placementPair: ladderPlacementPair, placementPages: ladderPlacementPages,
+    placementDoc: ladderPlacementDoc };
+  // NBLADDER_END
 
   /* ============================================================================
    *  LINCOLN  (5th grade — snakes 🐍)
@@ -7185,6 +7514,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     hasPlan: pkHasPlan,
     planFor: pkPlanFor,
     reviewDecks: nbReviewDecks,         // 🔁 NBNEEDS: which drill decks this kid's notebook brings back to paper (Notebook tab card)
+    ladders: NB_LADDERS,                // 📚 NBLADDER: the two notebook ladders — engine + placement (slice 1; no page reads them yet)
     lincolnBuiltinQ3: function (wk, i) { return lnPick(LINCOLN_DATA.banks.conventions, wk, i); },   // the day's built-in conventions item (Mom's answer check)
     convBankPlan: lnConvBankPlan,       // Lincoln's conventions bank: same, for the Q3 slot
     quantBankPlan: lnQuantBankPlan,     // Lincoln's number-reasoning bank: same, for the Q2 math slot

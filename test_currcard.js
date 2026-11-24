@@ -480,6 +480,7 @@ console.log("\n(h) no new Firebase write path in the curriculum region");
   "\"notebookSettings/\"+kid+\"/dailyGrams/cursor\"",
   "\"notebookSettings/\"+kid+\"/extraPages/\"+key",
   "\"notebookSettings/\"+kid+\"/gradeOverride\"",   // NBLEVEL (study step 2, 2026-11-23): 📏 Notebook level override, Mom only, one targeted value
+  "\"notebookSettings/\"+kid+\"/ladders/\"+kind+\"/\"+field",   // NBLADDER (ladders slice 1, 2026-11-24): 📚 the Ladders card — on / lv / opt / cur, Mom only, one targeted field per write
   "\"notebookSettings/\"+kid+\"/letterCursor\"",
   "\"notebookSettings/\"+kid+\"/nbLevel/\"+key",
   "\"notebookSettings/\"+kid+\"/nbMode\"",
