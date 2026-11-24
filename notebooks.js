@@ -2257,6 +2257,335 @@
     return { readsCap: false, decks: [] };
   }
   // NBNEEDS_END
+  // NBLADDER_START — 📚 the two notebook ladders, slice 1: the engine and the placement printout (notebooks study, her words
+  // 2026-11-23/24: "Build it"; placement for both — reading "Do a placement first", math "i think a placement on the math as
+  // well"; reading "twice a week sounds great"; the optional harder stage on 5th/7th/8th "add the stage", off unless she switches
+  // it on for a child). The content is two static files beside the app — ladders/number_thinking.json (one question = one item)
+  // and ladders/read_and_answer.json (one passage with all its questions = one item); index.html NBLADDER loads them lazily and
+  // keeps each kid's place at notebookSettings/<kid>/ladders/<number|reading> = { on, lv, opt, cur }.
+  // Nothing here touches the DOM or Firebase, and NO generator reads ctx.ladders yet: every notebook prints what it printed
+  // before. Slices 2–6 put the items on the pages (they call ladders.next with ctx.ladders' state).
+  //  • A ladder climbs: the items of the kid's level in order (`o`), then the next level in the ladder's own order. It never wraps
+  //    and never starts over; past the last level → `end`.
+  //  • The number ladder's 4th- and 6th-grade rungs are not in the file — they are the question banks Mom keeps on the Notebook
+  //    tab (data.haveElsewhere). Reaching one STOPS the ladder and says so ("next is the 4th-grade question bank"); it is never
+  //    skipped. Mom sets the next level when the child is done with the bank.
+  //  • An optional stage (level optStages + item opt:true, always at the END of its level) is left out unless the kid's opt is on.
+  //  • The place: cur = { week, lv, from, adv, opt } — the week it was built for, where that week started (level + 0-based index
+  //    in the level's list), how many items it took, and whether the optional stage was on then. The same week built again → the same items (the rule of juNumberStart /
+  //    juLetterStart, the letter and number cursors). A later week starts right after the saved week's items — no skipping
+  //    for weeks that were never printed (a break week can't eat questions), and no wrap (juLetterStart and lnBankStart wrap a
+  //    list; a ladder must not). An earlier week walks back `n` items per week inside the saved level (never below its first).
+  var LADDER_KINDS = ["reading", "number"];
+  var LADDER_PER_WEEK = { reading: 2, number: 5 };   // reading: "twice a week"; number: one a school day — slices 2–4 may pass their own n
+  // A kid's notebook grade (index.html nbLevelGrade(kid).key: "PreK", "K", "1"…"12") → the level that ladder starts on. Reading
+  // has no Pre-K / K level; 7th and 8th share one. Number 4th and 6th are the bank rungs. Not in the map (no grade, 9th+) → null.
+  var LADDER_GRADE_LEVEL = {
+    reading: { "1": "g1", "2": "g2", "3": "g3", "4": "g4", "5": "g5", "6": "g6", "7": "g78", "8": "g78" },
+    number: { PreK: "prek", K: "k", "1": "g1", "2": "g2", "3": "g3", "4": "g4", "5": "g5", "6": "g6", "7": "g7", "8": "g8" }
+  };
+  function ladderDefaultLevel(kind, gradeKey) {
+    var m = LADDER_GRADE_LEVEL[kind], k = gradeKey == null ? "" : String(gradeKey);
+    return (m && Object.prototype.hasOwnProperty.call(m, k)) ? m[k] : null;
+  }
+  // "g4" → "4th grade", "g78" → "7th–8th grade", "prek" → "Pre-K", "k" → "Kindergarten" (a rung the file has no label for).
+  function ladWord(lv) {
+    if (lv === "prek") return "Pre-K";
+    if (lv === "k") return "Kindergarten";
+    var m = /^g(\d)(\d)?$/.exec(String(lv || ""));
+    if (!m) return String(lv || "");
+    var o = function (n) { n = parseInt(n, 10); return n + (n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"); };
+    return (m[2] ? o(m[1]) + "–" + o(m[2]) : o(m[1])) + " grade";
+  }
+  function ladByO(a, b) { return (a.o || 0) - (b.o || 0); }
+  // The ladder's data → { kind, order:[lv], levels:{ lv:{ lv, label, bank, items:[item + id] } } }, or null for data of the wrong
+  // shape. Items with no text (number) or no questions (reading) are dropped.
+  function ladTrack(kind, data) {
+    if (LADDER_KINDS.indexOf(kind) < 0 || !data || typeof data !== "object" || !data.levels || typeof data.levels !== "object") return null;
+    var levels = data.levels, order = [], lv = {};
+    if (kind === "number") {
+      var banks = (data.haveElsewhere && typeof data.haveElsewhere === "object") ? data.haveElsewhere : {};
+      (Array.isArray(data.order) ? data.order : Object.keys(levels)).forEach(function (k) {
+        var L = levels[k];
+        if (L && typeof L === "object") {
+          var its = Object.keys(L.items || {}).map(function (id) { return Object.assign({ id: id }, L.items[id]); })
+            .filter(function (it) { return it && it.text; }).sort(ladByO);
+          lv[k] = { lv: k, label: L.label || ladWord(k), bank: false, items: its };
+          order.push(k);
+        } else if (banks[k]) {
+          lv[k] = { lv: k, label: ladWord(k), bank: true, items: [] };
+          order.push(k);
+        }
+      });
+    } else {
+      var ps = (data.passages && typeof data.passages === "object") ? data.passages : {};
+      if (!Object.keys(ps).length) return null;
+      Object.keys(levels).sort(function (a, b) { return ((levels[a] || {}).grade || 0) - ((levels[b] || {}).grade || 0); }).forEach(function (k) {
+        var its = Object.keys(ps).filter(function (id) { var p = ps[id]; return p && p.lv === k && p.text && Array.isArray(p.q) && p.q.length; })
+          .map(function (id) { return Object.assign({ id: id }, ps[id]); }).sort(ladByO);
+        lv[k] = { lv: k, label: (levels[k] || {}).label || ladWord(k), bank: false, items: its };
+        order.push(k);
+      });
+    }
+    return order.length ? { kind: kind, order: order, levels: lv } : null;
+  }
+  function ladList(track, lv, opt) {
+    var L = track.levels[lv];
+    if (!L || L.bank) return [];
+    return opt ? L.items : L.items.filter(function (it) { return !it.opt; });
+  }
+  // Every rung, for the level picker: { lv, label, bank, count (with the optional stage when opt), optional (how many optional) }.
+  function ladderLevels(track, opt) {
+    if (!track) return [];
+    return track.order.map(function (k) {
+      var L = track.levels[k], all = L.items.length, core = L.items.filter(function (it) { return !it.opt; }).length;
+      return { lv: k, label: L.label, bank: L.bank, count: opt ? all : core, optional: all - core };
+    });
+  }
+  // A place → where it really is: { lv, i } on an item; { stop: lv } on a bank rung; { end: true, lv, i } past the last level.
+  // An index past the end of a level carries into the next level. wasOpt = the optional-stage switch when the place was saved
+  // (default: as now): a saved place inside an optional stage that is now OFF moves to the next level's FIRST item (it never
+  // eats that level's items); a place at the very end of a level whose optional stage is now ON opens that stage.
+  function ladSettle(track, lv, i, opt, wasOpt) {
+    if (wasOpt === undefined) wasOpt = opt;
+    i = Math.max(0, i);
+    for (var guard = 0; guard < 64; guard++) {
+      var L = track.levels[lv];
+      if (!L) return { end: true, lv: lv, i: 0 };
+      if (L.bank) return { stop: lv };
+      var nOld = ladList(track, lv, wasOpt).length, nNow = ladList(track, lv, opt).length;
+      var nx = track.order[track.order.indexOf(lv) + 1];
+      if (i < nOld) {
+        if (i < nNow) return { lv: lv, i: i };
+        if (nx == null) return { end: true, lv: lv, i: nNow };
+        lv = nx; i = 0; continue;   // an optional item, switched off since: on to the next level's first
+      }
+      if (i === nOld && nNow > nOld) return { lv: lv, i: i };   // at the door of an optional stage switched on since
+      if (nx == null) return { end: true, lv: lv, i: nNow };
+      i -= nOld; lv = nx;
+    }
+    return { end: true, lv: lv, i: 0 };
+  }
+  function ladInt(v) { var n = parseInt(v, 10); return isNaN(n) ? null : n; }
+  // The saved cursor, checked: { week, lv, from, adv } with a known level, or null (→ the kid starts at state.lv's first item).
+  function ladCur(track, cur) {
+    if (!cur || typeof cur !== "object") return null;
+    var w = ladInt(cur.week), f = ladInt(cur.from), a = ladInt(cur.adv);
+    if (!(w > 0) || f == null || f < 0 || !track.levels[cur.lv]) return null;
+    var o = (typeof cur.opt === "boolean") ? cur.opt : f >= ladList(track, cur.lv, false).length;   // no opt saved: inside the optional stage = it was on
+    return { week: w, lv: cur.lv, from: f, adv: (a == null || a < 0) ? 0 : a, opt: o };
+  }
+  // The next unprinted place (for the card's "up next"): just after the saved week's items, or the start of the level.
+  function ladderWhere(track, state) {
+    state = state || {};
+    if (!track) return null;
+    var c = ladCur(track, state.cur), p;
+    if (c) p = ladSettle(track, c.lv, c.from + c.adv, !!state.opt, c.opt);
+    else if (state.lv && track.levels[state.lv]) p = ladSettle(track, state.lv, 0, !!state.opt);
+    else return null;
+    return ladPlace(track, p, !!state.opt, !!c);
+  }
+  function ladPlace(track, p, opt, started) {
+    if (p.stop) return { stop: { lv: p.stop, label: track.levels[p.stop].label, bank: true }, started: started };
+    var n = ladList(track, p.lv, opt).length;
+    if (p.end) return { end: true, lv: p.lv, label: track.levels[p.lv] ? track.levels[p.lv].label : "", num: n, of: n, started: started };
+    return { lv: p.lv, label: track.levels[p.lv].label, i: p.i, num: p.i + 1, of: n, started: started };
+  }
+  // This week's items. state = { lv, opt, cur } (lv = the level Mom picked, or the grade's default); wk = the notebook's week
+  // number; n = how many (default LADDER_PER_WEEK). → { kind, items:[{ lv, label, i, num, of, id, item }], stop, end, cursor }
+  // (cursor = { week, lv, from, adv, opt })
+  // — cursor = the place to save after the week prints (slices 2–6 save it; nothing does in slice 1), or null when there is no
+  // level to start from. A bank rung reached part-way → the items before it + stop:{ lv, label, bank:true }.
+  function ladderNext(track, state, wk, n) {
+    state = state || {};
+    var out = { kind: track ? track.kind : null, items: [], stop: null, end: false, cursor: null };
+    if (!track) return out;
+    wk = ladInt(String(wk == null ? "" : wk).replace(/\D/g, "")) || 1;
+    n = ladInt(n); if (!(n > 0)) n = LADDER_PER_WEEK[track.kind] || 1;
+    var opt = !!state.opt, c = ladCur(track, state.cur), p;
+    if (c) {
+      if (wk === c.week) p = ladSettle(track, c.lv, c.from, opt, c.opt);
+      else if (wk > c.week) p = ladSettle(track, c.lv, c.from + c.adv, opt, c.opt);
+      else p = ladSettle(track, c.lv, Math.max(0, c.from - n * (c.week - wk)), opt, c.opt);
+    } else if (state.lv && track.levels[state.lv]) p = ladSettle(track, state.lv, 0, opt);
+    else return out;
+    var start = p;
+    while (out.items.length < n && !p.stop && !p.end) {
+      var list = ladList(track, p.lv, opt), L = track.levels[p.lv];
+      out.items.push({ lv: p.lv, label: L.label, i: p.i, num: p.i + 1, of: list.length, id: list[p.i].id, item: list[p.i] });
+      p = ladSettle(track, p.lv, p.i + 1, opt);
+    }
+    if (out.items.length < n && p.stop) out.stop = { lv: p.stop, label: track.levels[p.stop].label, bank: true };
+    if (out.items.length < n && p.end) out.end = true;
+    out.cursor = start.stop ? { week: wk, lv: start.stop, from: 0, adv: 0, opt: opt }
+      : { week: wk, lv: start.lv, from: start.i, adv: out.items.length, opt: opt };
+    return out;
+  }
+  // ── Placement: a printed check, two levels, written on paper; it writes nothing and never moves the kid's level or place. ──
+  // The two levels: the suggested level and the one below it in the file (the first level has none below → it and the one above).
+  // A bank rung is not in the file: the nearest levels in the file stand in, and `skipped` names the rung(s) passed over.
+  function ladderPlacementPair(track, lv) {
+    if (!track || !track.levels[lv]) return null;
+    var ord = track.order, at = ord.indexOf(lv), real = function (k) { return k != null && !track.levels[k].bank && track.levels[k].items.length; };
+    var below = null, above = null, skipped = [];
+    for (var b = at - 1; b >= 0; b--) { if (real(ord[b])) { below = ord[b]; break; } }
+    for (var a = at + 1; a < ord.length; a++) { if (real(ord[a])) { above = ord[a]; break; } }
+    var lo, hi;
+    if (real(lv)) { if (below) { lo = below; hi = lv; } else { lo = lv; hi = above; } }
+    else { lo = below; hi = above; if (!lo) { lo = above; hi = null; for (var c2 = ord.indexOf(above) + 1; c2 < ord.length; c2++) { if (real(ord[c2])) { hi = ord[c2]; break; } } }
+      else if (!hi) { hi = below; lo = null; for (var c3 = ord.indexOf(below) - 1; c3 >= 0; c3--) { if (real(ord[c3])) { lo = ord[c3]; break; } } } }
+    if (!lo && !hi) return null;
+    if (!hi) { hi = lo; lo = null; }
+    if (lo) for (var s = ord.indexOf(lo) + 1; s < ord.indexOf(hi); s++) { if (track.levels[ord[s]].bank) skipped.push(ord[s]); }
+    if (!real(lv) && skipped.indexOf(lv) < 0) skipped.push(lv);
+    return { suggested: lv, lo: lo, hi: hi, skipped: skipped };
+  }
+  function ladEsc(v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  var LAD_LETTERS = "ABCDEFGH";
+  var LAD_GROWN = { prek: 1, k: 1 };   // picture-recipe levels: a grown-up reads the `say` line aloud (pictures themselves = slice 5)
+  var LADDER_CSS =
+    "@page { size: letter; margin: 0; }\n" +
+    "* { box-sizing: border-box; }\n" +
+    "body { margin: 0; background: #e5e7eb; font-family: 'DM Sans', system-ui, sans-serif; color: #1f2937; -webkit-print-color-adjust: exact; print-color-adjust: exact; }\n" +
+    ".page { width: 8.5in; height: 11in; overflow: hidden; background: #fff; margin: 0 auto 18px; padding: 0.45in 0.6in; position: relative; page-break-after: always; break-after: page; }\n" +
+    ".page:last-child { page-break-after: auto; break-after: auto; }\n" +
+    "@media print { body { background: #fff; } .page { margin: 0; box-shadow: none; } }\n" +
+    ".lp-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: 2.5px solid #1f2937; padding-bottom: 6px; margin-bottom: 10px; }\n" +
+    ".lp-title { font-family: 'Fraunces', Georgia, serif; font-size: 25px; font-weight: 700; }\n" +
+    ".lp-kid { font-size: 13px; font-weight: 700; color: #4b5563; white-space: nowrap; }\n" +
+    ".lp-line { display: flex; gap: 22px; font-size: 12.5px; font-weight: 700; margin-bottom: 10px; }\n" +
+    ".lp-line span { flex: 1; border-bottom: 1.5px solid #9ca3af; padding-bottom: 2px; }\n" +
+    ".lp-how { font-size: 13px; line-height: 1.45; background: #f3f4f6; border-radius: 8px; padding: 7px 11px; margin-bottom: 12px; }\n" +
+    ".lp-grown { display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; background: #fef3c7; color: #92400e; border: 1.5px solid #fcd34d; border-radius: 20px; padding: 2px 10px; margin-left: 8px; vertical-align: middle; }\n" +
+    ".lp-part { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #6b7280; margin: 12px 0 4px; }\n" +
+    ".lp-psg { border: 1.5px solid #d1d5db; border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; }\n" +
+    ".lp-ptitle { font-family: 'Fraunces', Georgia, serif; font-size: 18px; font-weight: 700; margin-bottom: 4px; }\n" +
+    ".lp-text p { margin: 0 0 5px; font-size: 13px; line-height: 1.45; }\n" +
+    ".lp-big .lp-text p { font-size: 17px; line-height: 1.55; }\n" +
+    ".lp-q { margin-top: 7px; break-inside: avoid; }\n" +
+    ".lp-stem { font-size: 13px; font-weight: 700; line-height: 1.33; }\n" +
+    ".lp-big .lp-stem { font-size: 16px; }\n" +
+    ".lp-say { font-size: 12px; font-style: italic; color: #92400e; margin-top: 2px; }\n" +
+    ".lp-nline { font-family: 'DM Mono', ui-monospace, monospace; font-size: 15px; font-weight: 500; white-space: pre-wrap; line-height: 1.4; }\n" +
+    ".lp-cs { display: flex; flex-wrap: wrap; gap: 3px 18px; margin-top: 4px; padding-left: 4px; }\n" +
+    ".lp-c { font-size: 12.5px; line-height: 1.33; }\n" +
+    ".lp-big .lp-c { font-size: 15.5px; }\n" +
+    ".lp-cs.lp-long { flex-direction: column; }\n" +
+    ".lp-l { display: inline-block; width: 19px; height: 19px; line-height: 16px; border: 1.5px solid #6b7280; border-radius: 50%; text-align: center; font-size: 11px; font-weight: 800; margin-right: 5px; }\n" +
+    ".lp-parent .lp-banner { font-size: 13px; font-weight: 800; color: #991b1b; background: #fef2f2; border: 2px solid #fca5a5; border-radius: 8px; padding: 7px 11px; margin-bottom: 12px; }\n" +
+    ".lp-rule { font-size: 13px; line-height: 1.5; margin: 0 0 4px; }\n" +
+    ".lp-key { font-size: 12.5px; line-height: 1.4; margin: 3px 0 0 4px; }\n" +
+    ".lp-key b { display: inline-block; min-width: 22px; }\n" +
+    ".lp-why { color: #4b5563; }\n";
+  // A Pre-K / K choice is a picture token ("green-star"): until the pictures come (slice 5) it prints as words. Nothing else changes.
+  function ladChoiceWord(c, tok) { c = String(c == null ? "" : c); return tok ? c.replace(/-/g, " ") : c; }
+  function ladChoices(cs, tok) {
+    cs = Array.isArray(cs) ? cs : [];
+    var long = cs.some(function (c) { return String(c).length > 26; });
+    return '<div class="lp-cs' + (long ? " lp-long" : "") + '">' + cs.map(function (c, i) {
+      return '<span class="lp-c"><span class="lp-l">' + LAD_LETTERS.charAt(i) + '</span>' + ladEsc(ladChoiceWord(c, tok)) + '</span>';
+    }).join("") + '</div>';
+  }
+  function ladParas(text) {
+    return String(text || "").split(/\n+/).filter(function (s) { return s.trim(); }).map(function (s) { return '<p>' + ladEsc(s) + '</p>'; }).join("");
+  }
+  function ladHead(title, kidName, grown) {
+    return '<div class="lp-head"><div class="lp-title">' + ladEsc(title) + (grown ? '<span class="lp-grown">with a grown-up</span>' : '') + '</div>' +
+      (kidName ? '<div class="lp-kid">' + ladEsc(kidName) + '</div>' : '') + '</div>';
+  }
+  function ladAnsText(c, ans, tok) { var i = LAD_LETTERS.indexOf(String(ans || "")); return (i >= 0 && Array.isArray(c) && c[i] != null) ? ladChoiceWord(c[i], tok) : ""; }
+  // How to choose, for the parent sheet: hi is the harder of the two; the rung just below hi may be a bank (not in this check).
+  function ladRuleLines(track, pr, partWord) {
+    var L = function (k) { return track.levels[k].label; };
+    var ord = track.order, belowHi = ord[ord.indexOf(pr.hi) - 1], lines = [];
+    var name = function (k) { return track.levels[k].bank ? "the " + ladWord(k).replace(" grade", "-grade") + " question bank" : L(k); };
+    if (!pr.lo) return ["Comfortable and mostly right → " + L(pr.hi) + ". A struggle → stay with easier work for now and try again in a few weeks."];
+    lines.push("Comfortable and mostly right on " + partWord + " 2 → " + L(pr.hi) + ".");
+    if (belowHi && belowHi !== pr.lo) {
+      lines.push("A struggle on " + partWord + " 2 → " + name(belowHi) + (track.levels[belowHi].bank ? " (it lives on the Notebook tab, so it isn’t in this check)" : "") + ".");
+      lines.push("A struggle on " + partWord + " 1 too → " + L(pr.lo) + ".");
+    } else lines.push("A struggle on " + partWord + " 2 → the lower one, " + L(pr.lo) + ".");
+    return lines;
+  }
+  function ladPairNote(track, pr) {
+    var out = [];
+    if (pr.skipped.length) out.push(pr.skipped.map(function (k) { return ladWord(k); }).join(" and ") + " " + (pr.skipped.length > 1 ? "are" : "is") +
+      " the question bank on the Notebook tab, not part of this ladder — so this check uses the nearest levels: " + track.levels[pr.lo || pr.hi].label + (pr.lo ? " and " + track.levels[pr.hi].label : "") + ".");
+    if (pr.lo && pr.suggested === pr.lo) out.push(track.levels[pr.lo].label + " is the first level, so this check pairs it with the one above.");
+    return out;
+  }
+  // The pages: { child:[page html], parent:[page html], pair } or null. opts = { lv (the suggested level), kidName }.
+  function ladderPlacementPages(kind, data, opts) {
+    opts = opts || {};
+    var track = ladTrack(kind, data), pr = track ? ladderPlacementPair(track, opts.lv) : null;
+    if (!pr) return null;
+    var lvs = [pr.lo, pr.hi].filter(Boolean), kidName = opts.kidName || "", child = [], parent = [];
+    var nameLine = '<div class="lp-line"><span>Name</span><span>Date</span></div>';
+    var parentTop = function (title) {
+      return '<div class="page lp-parent">' + ladHead(title + " — for the grown-up", kidName, false) +
+        '<div class="lp-banner">For the grown-up — not for the child. Answers are on this page only.</div>';
+    };
+    var tail = '<p class="lp-rule" style="margin-top:12px;color:#4b5563">This check doesn’t change anything in the app. Afterwards, pick the level on the Notebook tab, in the Ladders card.</p>';
+    if (kind === "reading") {
+      var ps = lvs.map(function (k) { return { lv: k, p: track.levels[k].items[0] }; });
+      var small = lvs.every(function (k) { return k === "g1" || k === "g2"; });
+      var psgHtml = function (x, idx) {
+        var big = x.lv === "g1" || x.lv === "g2", qn = 0;
+        return '<div class="' + (big ? "lp-big" : "") + '">' + (lvs.length > 1 ? '<div class="lp-part">Passage ' + (idx + 1) + '</div>' : '') +
+          '<div class="lp-psg"><div class="lp-ptitle">' + ladEsc(x.p.title || "") + '</div><div class="lp-text">' + ladParas(x.p.text) + '</div></div>' +
+          x.p.q.map(function (q) { qn++; return '<div class="lp-q"><div class="lp-stem">' + qn + '. ' + ladEsc(q.text) + '</div>' + ladChoices(q.c, false) + '</div>'; }).join("") + '</div>';
+      };
+      var how = '<div class="lp-how">Read each passage by yourself. Then read each question and circle the letter of the best answer.</div>';
+      if (small) child.push('<div class="page lp-child">' + ladHead("Reading check", kidName, false) + nameLine + how + ps.map(psgHtml).join("") + '</div>');
+      else ps.forEach(function (x, idx) { child.push('<div class="page lp-child">' + ladHead("Reading check" + (ps.length > 1 ? " — " + (idx + 1) + " of " + ps.length : ""), kidName, false) + (idx === 0 ? nameLine + how : "") + psgHtml(x, idx) + '</div>'); });
+      parent.push(parentTop("Reading check") +
+        ladPairNote(track, pr).map(function (s) { return '<p class="lp-rule">' + ladEsc(s) + '</p>'; }).join("") +
+        '<div class="lp-part">How to choose</div>' + ladRuleLines(track, pr, "Passage").map(function (s) { return '<p class="lp-rule">' + ladEsc(s) + '</p>'; }).join("") +
+        ps.map(function (x, idx) {
+          return '<div class="lp-part">Passage ' + (idx + 1) + ' — ' + ladEsc(track.levels[x.lv].label) + ' level: “' + ladEsc(x.p.title || "") + '”</div>' +
+            x.p.q.map(function (q, qi) { return '<div class="lp-key"><b>' + (qi + 1) + '. ' + ladEsc(q.ans) + '</b> ' + ladEsc(ladAnsText(q.c, q.ans)) + ' — <span class="lp-why">' + ladEsc(q.why || "") + '</span></div>'; }).join("");
+        }).join("") + tail + '</div>');
+    } else {
+      var grown = lvs.some(function (k) { return LAD_GROWN[k]; });
+      var parts = lvs.map(function (k) { return { lv: k, qs: ladList(track, k, false).slice(0, 3) }; });
+      var qn = 0;
+      var body = parts.map(function (x, idx) {
+        var big = LAD_GROWN[x.lv] || x.lv === "g1" || x.lv === "g2";
+        return '<div class="' + (big ? "lp-big" : "") + '">' + (parts.length > 1 ? '<div class="lp-part">Part ' + (idx + 1) + (LAD_GROWN[x.lv] ? ' — a grown-up reads each one aloud' : '') + '</div>' : '') +
+          x.qs.map(function (q) {
+            qn++;
+            var lines = String(q.text || "").split(" / ").map(function (s) { return '<div class="lp-nline">' + ladEsc(s) + '</div>'; }).join("");
+            return '<div class="lp-q"><div class="lp-stem">' + qn + '.</div>' + lines +
+              (LAD_GROWN[x.lv] && q.say ? '<div class="lp-say">Read aloud: “' + ladEsc(q.say) + '”</div>' : '') + ladChoices(q.c, !!LAD_GROWN[x.lv]) + '</div>';
+          }).join("") + '</div>';
+      }).join("");
+      child.push('<div class="page lp-child">' + ladHead("Number check", kidName, grown) + nameLine +
+        '<div class="lp-how">' + (grown ? "A grown-up reads each question aloud. Circle the letter of the answer." : "Find what comes next or what is missing. Circle the letter of the answer.") + '</div>' + body + '</div>');
+      qn = 0;
+      parent.push(parentTop("Number check") +
+        ladPairNote(track, pr).map(function (s) { return '<p class="lp-rule">' + ladEsc(s) + '</p>'; }).join("") +
+        '<div class="lp-part">How to choose</div>' + ladRuleLines(track, pr, "Part").map(function (s) { return '<p class="lp-rule">' + ladEsc(s) + '</p>'; }).join("") +
+        parts.map(function (x, idx) {
+          return '<div class="lp-part">Part ' + (idx + 1) + ' — ' + ladEsc(track.levels[x.lv].label) + '</div>' +
+            x.qs.map(function (q) { qn++; return '<div class="lp-key"><b>' + qn + '. ' + ladEsc(q.ans) + '</b> ' + ladEsc(ladAnsText(q.c, q.ans, !!LAD_GROWN[x.lv])) + ' — <span class="lp-why">' + ladEsc(q.rule || "") + '</span></div>'; }).join("");
+        }).join("") + tail + '</div>');
+    }
+    return { child: child, parent: parent, pair: pr };
+  }
+  // The printable document: the child's sheet(s), then the parent sheet on its own page.
+  function ladderPlacementDoc(kind, data, opts) {
+    var pg = ladderPlacementPages(kind, data, opts);
+    if (!pg) return "";
+    var title = (kind === "reading" ? "Reading check" : "Number check") + ((opts && opts.kidName) ? " — " + opts.kidName : "");
+    var doc = '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<title>' + ladEsc(title) + '</title>\n' +
+      '<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=DM+Sans:wght@400;500;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">\n' +
+      '<style>\n' + LADDER_CSS + '</style>\n</head>\n<body>\n' + pg.child.concat(pg.parent).join("\n") + '\n</body>\n</html>';
+    return emojiToImages(applySafariPrintFit(doc));
+  }
+  var NB_LADDERS = { kinds: LADDER_KINDS, perWeek: LADDER_PER_WEEK, defaultLevel: ladderDefaultLevel, word: ladWord, track: ladTrack,
+    levels: ladderLevels, where: ladderWhere, next: ladderNext, placementPair: ladderPlacementPair, placementPages: ladderPlacementPages,
+    placementDoc: ladderPlacementDoc };
+  // NBLADDER_END
 
   /* ============================================================================
    *  LINCOLN  (5th grade — snakes 🐍)
@@ -3647,6 +3976,153 @@ ${extraStrip || ""}
     construction: { GD:"#27272a", GM:"#f59e0b", GL:"#fde68a", GP:"#fffbeb", GOLD:"#ea580c", GOLDD:"#b45309", CREAM:"#fff7ed", EXTRA:"#4d7c0f" },   // 🚜 PREKLEVEL
     generic: { GD:"#1e293b", GM:"#0f766e", GL:"#cbd5e1", GP:"#f8fafc", GOLD:"#0d9488", GOLDD:"#115e59", CREAM:"#f8fafc", EXTRA:"#475569" }   // 📓 starter notebook
   };
+  // NB_LOOKS2_START — three more Pre-K looks: 🚀 space, 🐮 farm, 🦊 forest (her words 2026-11-23: looks should be
+  // "adjustable", "maybe build up several different themes for the kids to even change", and a session on "developing
+  // different themes and how they can be interchangeable" between the Pre-K kids). Each is a theme object for
+  // generatePreK that fills every piece the first three looks fill — plus three pieces those leave to another look's words:
+  // its own sound-picture words (without them little letters + sounds print the construction ones: dig, hammer, truck), its
+  // own default animal friends (without them the cover lists T-Rex), and its own word for J (the base list's J names a child).
+  // A key in NB_THEMES is all the picker needs (notebookOptions lists Object.keys(NB_THEMES)). The block sits here, after
+  // UNIT_INSERT_THEMES, because each look adds its unit-page colours to that table too.
+  // A look changes words, pictures and colours ONLY: the same letters, numbers, shapes, animals, level switches and page
+  // count as any other look — so none of these has a counting picture of its own (that swaps the day's animal out of the
+  // ten-frame). Pictures are emoji and our own SVG; nothing here names a child. A kid on dino / construction / shark, or on
+  // their own notebook, prints byte for byte what printed before (test_nb_looks2.js builds that baseline with this block
+  // taken out). Page fit: the first look's sheet with colours over it — same class names and sizes — measured in Chromium.
+  var LK2_HINT = "✏️ your grown-up can write your name here too";
+  // Picture words for a letter's SOUND (little letters, once the Letter Sounds deck is on): short vowels, hard consonants,
+  // nothing from another look. A look's own letter words replace the matching ones (lk2Words).
+  var LK2_SOUND_WORDS = {
+    a: ["apple", "🍎"], b: ["bear", "🐻"], c: ["cat", "🐱"], d: ["dog", "🐶"], e: ["egg", "🥚"], f: ["fish", "🐟"], g: ["goat", "🐐"],
+    h: ["hat", "🎩"], i: ["insect", "🐛"], j: ["jet", "✈️"], k: ["kite", "🪁"], l: ["lion", "🦁"], m: ["mouse", "🐭"], n: ["nest", "🪺"],
+    o: ["octopus", "🐙"], p: ["pig", "🐷"], q: ["queen", "👑"], r: ["rabbit", "🐰"], s: ["sun", "☀️"], t: ["turtle", "🐢"],
+    u: ["umbrella", "☂️"], v: ["van", "🚐"], w: ["web", "🕸️"], x: ["fox", "🦊"], y: ["yo-yo", "🪀"], z: ["zebra", "🦓"]
+  };
+  // over = { C: ["Comet", "☄️"], … } (consonants only, so each word also works as the letter's sound word).
+  function lk2Words(over) {
+    var sound = Object.assign({}, LK2_SOUND_WORDS);
+    Object.keys(over).forEach(function (L) { sound[L.toLowerCase()] = [over[L][0].toLowerCase(), over[L][1]]; });
+    return { letter: Object.assign({}, JU_LETTER_WORDS, over), sound: sound };
+  }
+  // The warm-up strip: the same 200×42 box and markup as the first looks' (so the strip keeps its measured height), with the
+  // look's own words, traveller, dotted line and ground. A different line each day.
+  var LK2_PATHS = ["M4 21 H196", "M4 34 Q100 -8 196 34", "M4 8 L36 32 L68 8 L100 32 L132 8 L164 32 L196 8",
+    "M4 21 Q28 2 52 21 T100 21 T148 21 T196 21", "M4 28 C36 -6 60 38 92 18 S150 -2 196 26"];
+  function lk2Path(say, from, to, idx, stroke, groundFill) {
+    return '    <div style="font-size:10px;font-weight:800;color:var(--ju-deep);white-space:nowrap;">' + say + '</div>\n' +
+      '    <span class="path-end">' + from + '</span>\n' +
+      '    <svg class="path-svg" viewBox="0 0 200 42" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">' +
+      '<path d="M0 37 Q25 33 50 37 T100 37 T150 37 T200 37 V42 H0 Z" fill="' + groundFill + '"/>' +
+      '<path d="' + LK2_PATHS[idx % LK2_PATHS.length] + '" fill="none" stroke="' + stroke + '" stroke-width="4" stroke-linecap="round" stroke-dasharray="3 9"/></svg>\n' +
+      '    <span class="path-end">' + to + '</span>\n';
+  }
+  // Colours over the first look's sheet. p.v = the 16 colour variables, p.print = their print tints, then the accent bar,
+  // the header badge, the page label, the cover hint, and the borders of the number card (they sit on a re-tinted card).
+  function lk2Css(p) {
+    var v = p.v, pr = p.print;
+    return JU_CSS +
+      "  :root {\n" +
+      "    --ju-dark:  " + v.dark + "; --ju-deep:  " + v.deep + "; --ju-mid:   " + v.mid + "; --ju-light: " + v.light + ";\n" +
+      "    --ju-pale:  " + v.pale + "; --ju-green: " + v.green + "; --ju-gpale: " + v.gpale + "; --ju-gold:  " + v.gold + ";\n" +
+      "    --ju-gpale2:" + v.gpale2 + "; --ju-blue:  " + v.blue + "; --ju-bpale: " + v.bpale + ";\n" +
+      "    --ink:      " + v.ink + "; --muted: " + v.muted + "; --border: " + v.border + ";\n" +
+      "    --trace:    " + v.trace + "; --rule:     " + v.trace + "; --nt-trace: " + v.ntTrace + ";\n" +
+      "  }\n" +
+      "  @media print { :root { --ju-dark: " + pr.dark + "; --ju-light: " + pr.light + "; --ju-pale: " + pr.pale + "; --ju-gpale: " + pr.gpale + "; --ju-gpale2: " + pr.gpale2 + ";\n" +
+      "    --ju-bpale: " + pr.bpale + "; --trace: " + pr.trace + "; --nt-trace: " + pr.ntTrace + "; --muted: " + pr.muted + "; --border: " + pr.border + "; } }\n" +
+      "  .accent-bar { background:" + p.accent + "; }\n" +
+      "  .dino-badge { background:" + p.badge[0] + "; border-color:" + p.badge[1] + "; }\n" +
+      "  .page-label { color:" + p.label + "; }\n  .cover-draw-hint { color:" + p.hint + "; }\n" +
+      "  .card-green { border-color:" + p.numCard[0] + "; }\n  .jm-cell.thisweek { box-shadow:inset 0 0 0 2px " + p.numCard[0] + "; }\n" +
+      "  .tf-cell { border-color:" + p.numCard[1] + "; }\n  .hc-cell { border-color:" + p.numCard[2] + "; }\n";
+  }
+  var LK2_GROWN = "Pencil-control warm-up: help ", LK2_EACH_DAY = " changes every day — straight, a hill, a zigzag, a wave, a loop. No \"right\" way.";
+  var LK2 = {
+    space: {
+      label: "Space (Pre-K 🚀)", chip: "🚀 Space", planTitle: "🚀 This week’s flight plan", noName: "Little Astronaut", emoji: "🚀", nameIcon: "🪐", shapeStroke: "#4c4a6b",
+      coverSub: "trace · count · color · zoom", coverBadge: "🚀 Blast Off!", coverRow: "🚀 🌙 ⭐ 🪐 🛸", drawCap: "✏️ Draw YOU flying a rocket!",
+      badges: { monday: "🚀 Blast Off! New Week", tuesday: "🌙 Zoom Zoom!", wednesday: "🪐 Halfway, Astronaut!", thursday: "☄️ Almost There!", friday: "⭐ Space Star!" },
+      words: lk2Words({ C: ["Comet", "☄️"], G: ["Galaxy", "🌌"], J: ["Jet", "✈️"], M: ["Moon", "🌙"], P: ["Planet", "🪐"], R: ["Rocket", "🚀"], T: ["Telescope", "🔭"] }),
+      path: function (idx) { return lk2Path("Fly to the moon!", "🚀", "🌙", idx, "#818cf8", "#e0e7ff"); },
+      css: lk2Css({
+        v: { dark: "#1e1b4b", deep: "#4338ca", mid: "#6366f1", light: "#c7d2fe", pale: "#eef2ff", green: "#0f766e", gpale: "#f0fdfa", gold: "#d97706",
+          gpale2: "#fffbeb", blue: "#1d4ed8", bpale: "#eff6ff", ink: "#1b1a33", muted: "#62648a", border: "#d5d7ee", trace: "#b3b6dc", ntTrace: "#6d7099" },
+        print: { dark: "#1a1842", light: "#b3bffb", pale: "#e2e8fe", gpale: "#def7f1", gpale2: "#fdf3d3", bpale: "#e2ecfd", trace: "#a3a7d0", ntTrace: "#5d6088", muted: "#51537a", border: "#c0c3e2" },
+        accent: "#312e81 url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='6'%3E%3Ccircle cx='4' cy='3' r='1.3' fill='%23fcd34d'/%3E%3Ccircle cx='14' cy='1.6' r='.8' fill='%23ffffff'/%3E%3Ccircle cx='22' cy='4.2' r='1' fill='%23c7d2fe'/%3E%3C/svg%3E\") repeat-x",
+        badge: ["rgba(99,102,241,0.3)", "rgba(199,210,254,0.5)"], label: "#6b6fa8", hint: "#aeb3e2", numCard: ["#b9e6dc", "#b7dcd4", "#cfe6e0"]
+      }),
+      guide: { animalIcon: "🐾", nameIcon: "🪐", countWord: "animal", letterExample: "R — /r/ — Rocket", closeColors: ["#b9e6dc", "#134e48"],
+        pathRow: ["🚀", "Fly to the Moon", LK2_GROWN + "the rocket fly the dotted line to the moon. The flight" + LK2_EACH_DAY] },
+      xpColors: ["#4f46e5", "#eef2ff", "#3730a3"],
+      unit: { GD:"#1e1b4b", GM:"#6366f1", GL:"#c7d2fe", GP:"#eef2ff", GOLD:"#d97706", GOLDD:"#b45309", CREAM:"#fffbeb", EXTRA:"#0f766e" },
+      curOpt: { animals: [["Lion", "🦁"], ["Giraffe", "🦒"], ["Elephant", "🐘"], ["Monkey", "🐵"]], animalEmoji: {}, animalFallback: "🐾" }
+    },
+    farm: {
+      label: "Farm (Pre-K 🐮)", chip: "🐮 Farm", planTitle: "🐮 This week’s farm plan", noName: "Little Farmer", emoji: "🐮", nameIcon: "🌻", shapeStroke: "#6b4a44",
+      coverSub: "trace · count · color · grow", coverBadge: "🌾 Let's Grow!", coverRow: "🐮 🐷 🐔 🐴 🌾", drawCap: "✏️ Draw YOU on the farm!",
+      badges: { monday: "🐮 Moo! New Week", tuesday: "🐷 Oink Oink!", wednesday: "🐔 Halfway, Farmer!", thursday: "🌾 Almost There!", friday: "⭐ Farm Star!" },
+      words: lk2Words({ C: ["Cow", "🐮"], D: ["Duck", "🦆"], H: ["Horse", "🐴"], J: ["Jet", "✈️"], R: ["Rooster", "🐓"], T: ["Tractor", "🚜"] }),
+      path: function (idx, aemoji) { return lk2Path("Walk to the hay!", aemoji, "🌾", idx, "#ca8a04", "#dcfce7"); },
+      css: lk2Css({
+        v: { dark: "#7f1d1d", deep: "#b91c1c", mid: "#dc2626", light: "#fecaca", pale: "#fef2f2", green: "#15803d", gpale: "#f0fdf4", gold: "#ca8a04",
+          gpale2: "#fefce8", blue: "#0369a1", bpale: "#f0f9ff", ink: "#2a1614", muted: "#7d6763", border: "#ead6d2", trace: "#d9bdb7", ntTrace: "#8f6f69" },
+        print: { dark: "#6f1919", light: "#fbb4b4", pale: "#fde3e3", gpale: "#dff7e6", gpale2: "#fbf5cf", bpale: "#e3f1fb", trace: "#cbaaa3", ntTrace: "#7d5f59", muted: "#665350", border: "#d9bfba" },
+        accent: "repeating-linear-gradient(90deg, #b91c1c 0 12px, #fef2f2 12px 16px)",
+        badge: ["rgba(220,38,38,0.3)", "rgba(254,202,202,0.5)"], label: "#a66a62", hint: "#e3b9b3", numCard: ["#bbf7d0", "#b7dcc4", "#cfe6d6"]
+      }),
+      guide: { animalIcon: "🐮", nameIcon: "🌻", countWord: "farm friend", letterExample: "P — /p/ — Pig", closeColors: ["#bbf7d0", "#14532d"],
+        pathRow: ["🌾", "Walk to the Hay", LK2_GROWN + "today's animal walk the dotted line to the hay. The path" + LK2_EACH_DAY] },
+      xpColors: ["#b91c1c", "#fef2f2", "#7f1d1d"],
+      unit: { GD:"#7f1d1d", GM:"#dc2626", GL:"#fecaca", GP:"#fef2f2", GOLD:"#ca8a04", GOLDD:"#a16207", CREAM:"#fefce8", EXTRA:"#15803d" },
+      curOpt: { animals: [["Cow", "🐮"], ["Pig", "🐷"], ["Horse", "🐴"], ["Chicken", "🐔"]],
+        animalEmoji: { cow: "🐮", pig: "🐷", horse: "🐴", pony: "🐴", chicken: "🐔", hen: "🐔", rooster: "🐓", chick: "🐥", sheep: "🐑", lamb: "🐑", goat: "🐐",
+          duck: "🦆", turkey: "🦃", llama: "🦙", bee: "🐝", mouse: "🐭", dog: "🐶", cat: "🐱", rabbit: "🐰", bunny: "🐰" }, animalFallback: "🐾" }
+    },
+    forest: {
+      label: "Forest (Pre-K 🦊)", chip: "🦊 Forest", planTitle: "🦊 This week’s trail plan", noName: "Little Explorer", emoji: "🦊", nameIcon: "🍄", shapeStroke: "#4d5f52",
+      coverSub: "trace · count · color · hike", coverBadge: "🌲 Let's Explore!", coverRow: "🦊 🌲 🐻 🦉 🍄", drawCap: "✏️ Draw YOU in the forest!",
+      badges: { monday: "🦊 Hello, New Week!", tuesday: "🐿️ Hop Hop!", wednesday: "🦉 Halfway, Explorer!", thursday: "🌲 Almost There!", friday: "⭐ Forest Star!" },
+      words: lk2Words({ D: ["Deer", "🦌"], F: ["Forest", "🌲"], H: ["Hedgehog", "🦔"], J: ["Jet", "✈️"], L: ["Leaf", "🍃"], M: ["Mushroom", "🍄"], R: ["Raccoon", "🦝"],
+        S: ["Squirrel", "🐿️"], T: ["Tree", "🌳"], W: ["Wolf", "🐺"] }),
+      path: function (idx, aemoji) { return lk2Path("Follow the trail!", aemoji, "🌲", idx, "#a16207", "#bbf7d0"); },
+      css: lk2Css({
+        v: { dark: "#14532d", deep: "#166534", mid: "#16a34a", light: "#bbf7d0", pale: "#f0fdf4", green: "#7e22ce", gpale: "#faf5ff", gold: "#c2410c",
+          gpale2: "#fff7ed", blue: "#0369a1", bpale: "#f0f9ff", ink: "#14241a", muted: "#5f7265", border: "#d3e2d6", trace: "#b3c8b8", ntTrace: "#6c8271" },
+        print: { dark: "#114827", light: "#a3eebf", pale: "#e2f8e9", gpale: "#f1e6fd", gpale2: "#fdeedd", bpale: "#e3f1fb", trace: "#a2b9a8", ntTrace: "#5b7160", muted: "#4e6054", border: "#bfd3c4" },
+        accent: "#bbf7d0 url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='6'%3E%3Cpath d='M0 6 L6 0 L12 6Z' fill='%2315803d'/%3E%3C/svg%3E\") repeat-x",
+        badge: ["rgba(22,163,74,0.3)", "rgba(187,247,208,0.5)"], label: "#5c8a6b", hint: "#a9cdb5", numCard: ["#e9d5ff", "#dcc3f5", "#e6d6f8"]
+      }),
+      guide: { animalIcon: "🦊", nameIcon: "🍄", countWord: "forest friend", letterExample: "B — /b/ — Bear", closeColors: ["#e9d5ff", "#581c87"],
+        pathRow: ["🌲", "Follow the Trail", LK2_GROWN + "today's animal follow the dotted trail to the tree. The trail" + LK2_EACH_DAY] },
+      xpColors: ["#15803d", "#f0fdf4", "#14532d"],
+      unit: { GD:"#14532d", GM:"#16a34a", GL:"#bbf7d0", GP:"#f0fdf4", GOLD:"#c2410c", GOLDD:"#9a3412", CREAM:"#fff7ed", EXTRA:"#7e22ce" },
+      curOpt: { animals: [["Fox", "🦊"], ["Bear", "🐻"], ["Owl", "🦉"], ["Deer", "🦌"]],
+        animalEmoji: { fox: "🦊", bear: "🐻", owl: "🦉", deer: "🦌", squirrel: "🐿️", chipmunk: "🐿️", rabbit: "🐰", bunny: "🐰", hedgehog: "🦔", raccoon: "🦝",
+          wolf: "🐺", skunk: "🦨", beaver: "🦫", bat: "🦇", bird: "🐦", frog: "🐸", mouse: "🐭", snail: "🐌", turtle: "🐢" }, animalFallback: "🐾" }
+    }
+  };
+  // One look for one kid. The kid's name and grade word come from the data (pkKidName), as in every data-driven look.
+  function lk2Theme(key, ctx) {
+    var D = LK2[key], K = pkKidName(ctx, D.noName), nm = K.nm, gr = K.grade;
+    return {
+      key: key, name: nm,
+      eyebrow: gr, book: nm + "'s Notebook", guideTitle: nm + "'s Parent Guide", grade: gr,
+      coverSub: D.coverSub, coverBadge: D.coverBadge, hello: "Hi, " + nm + "! " + D.emoji,
+      coverRow: D.coverRow, drawCap: D.drawCap, drawHint: LK2_HINT,
+      footer: nm + " · " + gr, emoji: D.emoji, moodEmoji: D.emoji, nameIcon: D.nameIcon, bigIcon: "🔠", shapeStroke: D.shapeStroke,
+      dayTitle: nm + "'s Day", daySub: "a grown-up reads · " + nm + " traces, counts &amp; colors",
+      badges: D.badges, badgeDefault: D.emoji + " Great Job!", letterWords: D.words.letter, soundWords: D.words.sound,
+      traceName: K.up, traceSize: K.size, traceNameMixed: K.mixed, traceSizeMixed: K.size, pathHtml: D.path,
+      css: D.css, fonts: null, P: { eyebrow: gr, footer: nm + " · " + gr, emoji: D.emoji, abcTitle: D.emoji + " Sing your ABCs!", lowerFirst: false },
+      guide: D.guide, xpColors: D.xpColors, unitTheme: key, curOpt: D.curOpt
+    };
+  }
+  Object.keys(LK2).forEach(function (k) {   // into the picker (after the first three) and the unit-page colour table
+    UNIT_INSERT_THEMES[k] = LK2[k].unit;
+    // planTitle = the title of Mom's week-plan card for this look (index.html nbPlanTitle)
+    NB_THEMES[k] = { label: LK2[k].label, chip: LK2[k].chip, planTitle: LK2[k].planTitle, theme: function (ctx) { return lk2Theme(k, ctx); } };
+  });
+  // NB_LOOKS2_END
   // SPELLPAGE_START — 📝 the weekly Spelling page (her ask 2026-10-04: "the list of their words that they will be learning
   // that week starting on their learning day … and the spelling checkup section"). Built by the app (ctx.spelling, see
   // nbSpellCtx in index.html); every kid's notebook adds it right after the unit pages. One page: "This Week's Words"
@@ -5520,7 +5996,7 @@ ${luFooter("Howe Academy · Lucy Howe · Keep this private 🔒", weekDates)}
 </div>`;
   }
 
-  function luPageDaily(weekNum, day, dateStr, tasks, blend, subProblems, badge, year, extraStrip, word) {
+  function luPageDaily(weekNum, day, dateStr, tasks, blend, subProblems, badge, year, extraStrip, word, mathDay) {   // LU_MATH: mathDay
     var dayTasks = luTasksForDay(tasks, day);
     var luWordApps = word ? luWordAppsCard(dayTasks, word) : null;   // LU_WORDS: no word → the apps card exactly as before
     var pills = dayTasks.map(function (t) { return '<span class="pill ' + luPillType(t.title) + '">' + String(t.title || "").split(" — ")[0] + '</span>\n'; }).join("");
@@ -5612,11 +6088,11 @@ ${extraStrip || ""}
 
   <div class="divider" style="flex-shrink:0;"></div>
 
-  <div class="card card-purple" style="flex:1.05;min-height:0;display:flex;flex-direction:column;justify-content:space-between;">
+  ${mathDay ? luMathCard(mathDay) : `<div class="card card-purple" style="flex:1.05;min-height:0;display:flex;flex-direction:column;justify-content:space-between;">
     <div class="slabel">Subtraction practice — try your best!</div>
     <div class="sub-problems">${subHtml}</div>
     ${luNumberLine()}
-  </div>
+  </div>`}
 
   <div class="divider" style="flex-shrink:0;"></div>
 
@@ -5884,12 +6360,12 @@ ${rightCol}
 </div>`;
   }
 
-  function luPageEndOfWeek(weekNum, weekDates, blends, subtraction, days, tasks) {
+  function luPageEndOfWeek(weekNum, weekDates, blends, subtraction, days, tasks, math) {   // LU_MATH: math
     var allSubjects = [], seen = {};
     (days || []).forEach(function (day) {
       luTasksForDay(tasks, day).forEach(function (t) { var s = luSubjectName(t.title); if (!seen[s]) { seen[s] = 1; allSubjects.push(s); } });
     });
-    var forTable = allSubjects.concat(["Blending (" + blends.map(function (b) { return b.digraph; }).join(" · ") + ")", "Subtraction"]);
+    var forTable = allSubjects.concat(["Blending (" + blends.map(function (b) { return b.digraph; }).join(" · ") + ")", math ? math.desc.row : "Subtraction"]);   // LU_MATH: the deck names the row
     // The wrap-up rates the WHOLE week's subjects — 16 rows this week — in a single full-width
     // column that ran 130px past .body (overflow:hidden) and cut the "draw it!" box off the
     // bottom (2026-08-30). The table only ever uses a name + three bubbles, so past 8 subjects
@@ -5930,10 +6406,10 @@ ${luStdHeader("Howe Academy · " + lvG("1st Grade") + " · End of Week", "Lucy's
       <div class="write-prompt" style="font-size:12px;">My favorite blend word this week was:</div>
       <div class="write-line"></div>
     </div>
-    <div class="card card-purple">
+    ${math ? luMathEowCard(math) : `<div class="card card-purple">
       <div class="slabel">Subtraction answers — circle any that were tricky</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;margin:8px 0 6px;">${ansHtml}</div>
-    </div>
+    </div>`}
   </div>
 
   <div class="divider" style="flex-shrink:0;"></div>
@@ -5969,7 +6445,7 @@ ${luFooter("Howe Academy · Lucy Howe · End of Week", "Week " + weekNum + " · 
 </div>`;
   }
 
-  function luPageTeachingCompanion(weekNum, weekDates, days, tasks, blends, subtraction, teachNotes, words) {
+  function luPageTeachingCompanion(weekNum, weekDates, days, tasks, blends, subtraction, teachNotes, words, math) {   // LU_MATH: math
     var DAY_NAMES = { monday: "Monday", tuesday: "Tuesday", wednesday: "Wednesday", thursday: "Thursday", friday: "Friday" };
     var subKeyRows = "";
     (days || []).forEach(function (day, i) {
@@ -6021,7 +6497,7 @@ ${luFooter("Howe Academy · Lucy Howe · End of Week", "Week " + weekNum + " · 
 
   <div class="teach-banner" style="flex-shrink:0;">
     <strong style="font-size:9px;letter-spacing:0.06em;text-transform:uppercase;">How to use this page —</strong>
-    Check subtraction answers <em>with</em> Lucy right after she finishes — immediate feedback matters most at this age.
+    Check ${math ? "the math facts" : "subtraction answers"} <em>with</em> Lucy right after she finishes — immediate feedback matters most at this age.
     For blending, listen to her say the words aloud; correct gently by modeling the sound yourself, not by labeling it wrong.
     Keep every correction warm and short — 30 seconds max. Celebrate effort out loud every single day.
   </div>
@@ -6029,13 +6505,13 @@ ${luFooter("Howe Academy · Lucy Howe · End of Week", "Week " + weekNum + " · 
   <div class="col2" style="flex:1;min-height:0;gap:14px;align-items:start;">
 
     <div style="display:flex;flex-direction:column;gap:10px;">
-      <div class="key-section">
+      ${math ? luMathCompanion(math, days, DAY_NAMES) : `<div class="key-section">
         <div class="key-head">Subtraction Answers — All Five Days</div>
         <div class="key-body">
           ${subKeyRows}
           <div class="key-row"><div class="key-label">Watch for</div><div style="font-size:10.5px;color:var(--muted);line-height:1.55;">Common struggle: larger minus small (e.g. 10−3, 10−4). Have her use the number line on the page. Counting back on fingers is completely normal and expected. The goal is understanding "take away," not memorized facts.</div></div>
         </div>
-      </div>
+      </div>`}
       <div class="key-section">
         <div class="key-head">App Lessons This Week</div>
         <div class="key-body">${appRows}</div>
@@ -6294,6 +6770,227 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
   }
   // LU_WORDS_END
 
+  // LU_MATH_START — 🔢 the daily math block follows the child's own Math Facts cards and gives the PICTURE (study piece B,
+  // PLAN_notebooks_study_2026-11-23.md §19 / §24 B; slice 2 "LU_MATH" of PLAN_notebook_lucy_2026-11-10.md). Her rule 11/23:
+  // "I really want these notebooks to complement their drills and study sessions, not be redundant, and be very customizable
+  // per kid, and to help add extra practice where necessary." Before this, every daily page printed three typed-in
+  // subtraction facts within 10 (luSubWeek) over a bare 0–10 line, while the Math Facts deck — addition, 1+1 … 4+4 — was
+  // never read, and the week's answers printed on the End of Week page. Now, when the context carries Math Facts cards:
+  //  • Three facts a day from the deck. First the cards giving trouble — the notebook's one rule for that (recentMiss > 0, or
+  //    demoted and not back to a slow tier; worst first), via juCurriculumFromMastery like the Sight Words — marked 🔁, at
+  //    most reviewCap of them a week, each on two or three DIFFERENT days (three when only one), never twice on a page and
+  //    never more than two hard facts on one page. Then the cards being introduced (status "introduction"), up to two a
+  //    page, so a known fact still rides along. Then the rest in a rotation shuffled by the week. Same deck + same week →
+  //    the same page, so a re-print matches. "Parked" cards are not taught yet and never print (a warm-up practises what
+  //    has been taught, never something new — §19 research). + and − cards within 20 work; × or anything else is skipped.
+  //  • The picture, plain (no art), and never the answer: a ten-frame for the day's first fact with ONLY its first number
+  //    filled in (two frames when the deck goes past 10) — "draw 2 more · how many now?" / "cross out 3 · how many are left?"
+  //    — and under the facts a NUMBER PATH (squares 1…10 or 1…20, no zero) printed right above a NUMBER LINE (0…10 or
+  //    0…20), square k over the step k−1 → k: the path-to-line hand-over (§19 "The hand-overs"). No hops are drawn in.
+  //  • ctx.mathPic picks what sits under the facts, so a later build can let Mom choose per kid: "both" (default — the
+  //    path over the line), "path" (the path alone), "line" (the line alone), "frame" (the ten-frame only). There is no
+  //    control for it yet.
+  //  • The answers print only on the Teaching Companion. End of Week lists the same facts with no answers ("circle any that
+  //    were tricky"); its rating row, the companion and the Weekly Review focus card describe the deck ("Adding within 8 ·
+  //    3 new facts") instead of the typed-in subtraction text.
+  //  • No usable Math Facts cards → null, and every page prints exactly as before (luSubWeek, luNumberLine, the old text).
+  // Read-only: the notebook looks at the cards and writes nothing.
+  var LU_MATH_PICS = { both: 1, path: 1, line: 1, frame: 1 };
+  // "4+2", "4 + 2 =", "4 + 2 = ?", "7 - 3", "7 − 3" → {a, b, op}; anything else (×, ÷, a missing-number card, words) → null.
+  function luMathParse(prompt) {
+    var m = /^\s*(\d{1,2})\s*([+\-−–])\s*(\d{1,2})\s*(?:=\s*\??\s*)?$/.exec(String(prompt == null ? "" : prompt));
+    if (!m) return null;
+    var a = parseInt(m[1], 10), b = parseInt(m[3], 10), op = m[2] === "+" ? "+" : "−";
+    if (op === "−" && b > a) return null;
+    return { a: a, b: b, op: op, key: a + op + b };
+  }
+  function luMathAns(f) { return f.op === "+" ? f.a + f.b : f.a - f.b; }
+  function luMathTop(f) { return f.op === "+" ? f.a + f.b : f.a; }   // the biggest number the fact touches
+  // How the deck reads in words, from the facts that can print: "Adding within 8", "Subtracting within 10",
+  // "Adding and subtracting within 20".
+  function luMathDescribe(facts) {
+    var add = facts.some(function (f) { return f.op === "+"; }), sub = facts.some(function (f) { return f.op !== "+"; });
+    var top = facts.reduce(function (t, f) { return Math.max(t, luMathTop(f)); }, 0);
+    var verb = add && sub ? "Adding and subtracting" : (add ? "Adding" : "Subtracting");
+    return { add: add, sub: sub, top: top, detail: verb + " within " + top,
+      label: add && sub ? "Adding & subtracting" : (add ? "Adding" : "Subtracting"), row: add && sub ? "Math facts (+ and −)" : (add ? "Adding facts" : "Subtracting facts") };
+  }
+  // The week's math: {days:[{facts:[{a,b,op,key,review,isNew}], ...}], range 10|20, twoFrames, pic, desc, focus, newN, hardN}
+  // — or null when the context has no usable Math Facts cards (the page then prints exactly as before).
+  function luMathWeek(ctx, wn, dayCount) {
+    ctx = ctx || {};
+    if (!(dayCount > 0)) return null;
+    var m = luWordsFromMastery(ctx.masteryItems, "math facts");
+    if (!m) return null;
+    var facts = [], byKey = {};
+    m.list.forEach(function (p) {
+      var st = m.status[p];
+      if (st === "parked") return;                       // not taught yet
+      var f = luMathParse(p);
+      if (!f || luMathTop(f) > 20) return;               // past 20 doesn't fit two ten-frames or the 0–20 line
+      var old = byKey[f.key];
+      var score = m.flag[p] ? (m.flagScore[p] || 0) : -1;
+      if (old) { if (score > old.score) old.score = score; if (st === "introduction") old.isNew = true; return; }
+      f.isNew = st === "introduction"; f.score = score; f.review = false;
+      byKey[f.key] = f; facts.push(f);
+    });
+    if (!facts.length) return null;
+    var rcap = (ctx.reviewCap == null) ? JU_REVIEW_CAP : Math.max(0, Math.min(5, parseInt(ctx.reviewCap, 10) || 0));
+    var D = dayCount, PER = Math.min(3, facts.length), days = [];
+    for (var d = 0; d < D; d++) days.push([]);
+    var onPage = function (d, f) { return days[d].indexOf(f) >= 0; };
+    // 1. the hard ones: worst first, capped; each on r different days, spread across the week, ≤ 2 on a page
+    var hard = facts.filter(function (f) { return f.score >= 0; }).sort(function (x, y) { return y.score - x.score; });
+    hard = hard.slice(0, Math.min(rcap, 2 * D, PER >= 2 ? 2 * D : D));
+    var k = hard.length, r = Math.min(D, k === 1 ? 3 : 2);
+    while (r > 1 && k * r > 2 * D) r--;
+    hard.forEach(function (f, j) {
+      f.review = true;
+      for (var t = 0; t < r; t++) {
+        var want = (j + Math.round(t * D / r)) % D;
+        for (var s = 0; s < D; s++) {
+          var dd = (want + s) % D;
+          if (!onPage(dd, f) && days[dd].length < Math.min(2, PER)) { days[dd].push(f); break; }
+        }
+      }
+    });
+    // 2. the facts being introduced, up to two a page (a known fact still gets a seat when there is one)
+    var fresh = facts.filter(function (f) { return f.isNew && !f.review; });
+    var rest = facts.filter(function (f) { return !f.isNew && !f.review; });
+    lnRngShuffle(lnRng(((parseInt(wn, 10) || 1) * 104729 + 17) >>> 0), rest);   // 3. the rest, a fresh order each week
+    var np = 0, rp = 0;
+    var take = function (list, ptr, d) {                 // next fact in a list that is not already on this page
+      for (var q = 0; q < list.length; q++) { var f = list[(ptr + q) % list.length]; if (!onPage(d, f)) return { f: f, next: ptr + q + 1 }; }
+      return null;
+    };
+    for (d = 0; d < D; d++) {
+      var newRoom = Math.min(2, PER - days[d].length - (rest.length ? 1 : 0));
+      for (var n = 0; n < newRoom && fresh.length; n++) { var g = take(fresh, np, d); if (!g) break; days[d].push(g.f); np = g.next; }
+      while (days[d].length < PER) {
+        var h = rest.length ? take(rest, rp, d) : null;
+        if (h) { days[d].push(h.f); rp = h.next; continue; }
+        h = take(fresh, np, d) || take(facts, d, d);     // a deck smaller than the page: whatever is left, still no repeats
+        if (!h) break;
+        days[d].push(h.f);
+        if (fresh.indexOf(h.f) >= 0) np = h.next;
+      }
+    }
+    var desc = luMathDescribe(facts);
+    var pic = LU_MATH_PICS[ctx.mathPic] ? ctx.mathPic : "both";
+    var range = desc.top > 10 ? 20 : 10;
+    var newN = facts.filter(function (f) { return f.isNew; }).length;
+    var subLine = (newN ? newN + " new fact" + (newN === 1 ? "" : "s") : "Facts from the drill cards") + (k ? " · " + k + " to practice again" : "") + " — daily practice";
+    var clean = function (f) { return { a: f.a, b: f.b, op: f.op, key: f.key, review: !!f.review, isNew: !!f.isNew }; };
+    return {
+      days: days.map(function (list) { return { facts: list.map(clean), range: range, twoFrames: range === 20, pic: pic }; }),
+      range: range, twoFrames: range === 20, pic: pic, desc: desc, newN: newN, hardN: k,
+      focus: { emoji: "🔢", label: desc.label, detail: desc.detail, sub: subLine }
+    };
+  }
+  var LU_MATH_INK = "#2d1b69", LU_MATH_LINE = "#7c3aed";
+  // Ten-frame(s) with the first number filled in, left to right, top row first ("5 and some more"). Plain dots.
+  function luMathFrames(n, two) {
+    var c = two ? 15 : 18, frames = two ? 2 : 1, gap = 6, W = frames * 5 * c + (frames - 1) * gap + 2, H = 2 * c + 2, out = "";
+    for (var fr = 0; fr < frames; fr++) {
+      var x0 = 1 + fr * (5 * c + gap);
+      out += '<rect x="' + x0 + '" y="1" width="' + (5 * c) + '" height="' + (2 * c) + '" fill="#fff" stroke="' + LU_MATH_LINE + '" stroke-width="1.6"/>';
+      for (var i = 1; i < 5; i++) out += '<line x1="' + (x0 + i * c) + '" y1="1" x2="' + (x0 + i * c) + '" y2="' + (1 + 2 * c) + '" stroke="' + LU_MATH_LINE + '" stroke-width="1"/>';
+      out += '<line x1="' + x0 + '" y1="' + (1 + c) + '" x2="' + (x0 + 5 * c) + '" y2="' + (1 + c) + '" stroke="' + LU_MATH_LINE + '" stroke-width="1"/>';
+      for (var s = 0; s < 10; s++) {
+        if (fr * 10 + s >= n) break;
+        var cx = x0 + (s % 5) * c + c / 2, cy = 1 + Math.floor(s / 5) * c + c / 2;
+        out += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (c * 0.31).toFixed(1) + '" fill="' + LU_MATH_INK + '"/>';
+      }
+    }
+    return '<svg class="lm-frame" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg">' + out + '</svg>';
+  }
+  // The number path (squares 1…R, no zero) printed right above the number line (0…R), square k over the step k−1 → k.
+  // pic "path" = the path alone, "line" = the line alone. Nothing is hopped in — the child draws the hops.
+  function luMathStrip(R, pic) {
+    var W = 640, m = 12, u = (W - 2 * m) / R, showPath = pic !== "line", showLine = pic !== "path";
+    var ph = 19, fs = R > 10 ? 10.5 : 12, out = "", y = 1;
+    var X = function (k) { return (m + k * u).toFixed(1); };
+    if (showPath) {
+      for (var k = 1; k <= R; k++) {
+        out += '<rect x="' + X(k - 1) + '" y="' + y + '" width="' + u.toFixed(1) + '" height="' + ph + '" fill="#fff" stroke="' + LU_MATH_LINE + '" stroke-width="1.3"/>' +
+          '<text x="' + (m + (k - 0.5) * u).toFixed(1) + '" y="' + (y + ph / 2 + fs * 0.36).toFixed(1) + '" text-anchor="middle" font-size="' + fs + '" font-weight="700" fill="' + LU_MATH_INK + '">' + k + '</text>';
+      }
+      y += ph + (showLine ? 4 : 1);
+    }
+    if (showLine) {
+      var ly = y + 1;
+      out += '<line x1="' + (m - 6) + '" y1="' + ly + '" x2="' + (W - m + 6) + '" y2="' + ly + '" stroke="' + LU_MATH_INK + '" stroke-width="1.8"/>' +
+        '<path d="M' + (W - m + 9) + ' ' + ly + ' l-6 -4 v8 z" fill="' + LU_MATH_INK + '"/>';
+      for (var t = 0; t <= R; t++) {
+        var big = t % 5 === 0;
+        out += '<line x1="' + X(t) + '" y1="' + (ly - (big ? 6 : 4)) + '" x2="' + X(t) + '" y2="' + (ly + (big ? 6 : 4)) + '" stroke="' + LU_MATH_INK + '" stroke-width="' + (big ? 2 : 1.3) + '"/>' +
+          '<text x="' + X(t) + '" y="' + (ly + 5 + fs) + '" text-anchor="middle" font-size="' + fs + '" font-weight="' + (big ? 800 : 600) + '" fill="' + LU_MATH_INK + '">' + t + '</text>';
+      }
+      y = ly + 7 + fs;
+    }
+    var H = Math.ceil(y + 1);
+    return '<svg class="lm-strip-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMinYMid meet" style="width:100%;height:' + H + 'px;" xmlns="http://www.w3.org/2000/svg" font-family="Nunito, sans-serif">' + out + '</svg>';
+  }
+  // The daily card: three facts with empty answer lines, the ten-frame for the first, and the path over the line.
+  function luMathCard(md) {
+    var facts = md.facts || [];
+    var factHtml = facts.map(function (f) {
+      return '<div class="sub-problem lm-fact"><span class="sub-num">' + f.a + '</span><span class="sub-op">' + (f.op === "+" ? "+" : "−") + '</span><span class="sub-num">' + f.b +
+        '</span><span class="sub-eq">=</span><span class="sub-blank"></span>' + (f.review ? '<span class="lm-rev" title="practice again">🔁</span>' : '') + '</div>';
+    }).join("\n      ");
+    var f0 = facts[0], frame = "";
+    if (f0) {
+      var says = f0.op === "+" ? 'Draw <b>' + f0.b + '</b> more.<br>How many now?' : 'Cross out <b>' + f0.b + '</b>.<br>How many are left?';
+      frame = '<div class="lm-framebox"><div class="lm-cap"><span class="lm-cap-f">' + f0.a + ' ' + (f0.op === "+" ? "+" : "−") + ' ' + f0.b + '</span> · ' + says + '</div>' + luMathFrames(f0.a, md.twoFrames) + '</div>';
+    }
+    var add = facts.some(function (f) { return f.op === "+"; }), sub = facts.some(function (f) { return f.op !== "+"; });
+    var lab = add && sub ? '+ hop forward<br>− hop back' : (sub ? 'Hop back<br>to take away' : 'Hop forward<br>to add');
+    var strip = md.pic === "frame" ? "" : '\n    <div class="lm-strip"><div class="lm-strip-lab">' + lab + '</div>' + luMathStrip(md.range, md.pic) + '</div>';
+    return '<div class="card card-purple lm-card' + (md.twoFrames ? ' lm-20' : '') + '" style="flex:1.05;min-height:0;display:flex;flex-direction:column;justify-content:space-between;padding:5px 12px;">\n' +
+      '    <div class="slabel">Math practice — try your best!</div>\n' +
+      '    <div class="lm-top">\n      <div class="lm-facts">' + factHtml + '</div>\n      ' + frame + '\n    </div>' + strip + '\n  </div>';
+  }
+  // End of Week: the week's facts once each, no answers — she circles the tricky ones; the answers are on the Companion.
+  function luMathEowCard(math) {
+    var seen = {}, list = [];
+    math.days.forEach(function (d) { d.facts.forEach(function (f) { if (!seen[f.key]) { seen[f.key] = 1; list.push(f); } }); });
+    var cells = list.map(function (f) {
+      return '<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700;color:var(--ink);">' + f.a + ' ' + (f.op === "+" ? "+" : "−") + ' ' + f.b + '</div>';
+    }).join("\n");
+    return '<div class="card card-purple">\n      <div class="slabel">Math facts I practiced — circle any that were tricky</div>\n' +
+      '      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 20px;margin:8px 0 6px;">' + cells + '</div>\n    </div>';
+  }
+  // The Companion's answer key: each day's facts with answers (🔁 = a card giving trouble in drills), where they came from,
+  // and what to watch for.
+  function luMathCompanion(math, days, dayNames) {
+    var rows = (days || []).map(function (day, i) {
+      var md = math.days[i]; if (!md) return "";
+      var ans = md.facts.map(function (f) { return f.a + (f.op === "+" ? "+" : "−") + f.b + "=" + luMathAns(f) + (f.review ? " 🔁" : ""); }).join(" &nbsp;&nbsp; ");
+      return '<div class="key-row"><div class="key-label">' + (dayNames[day] || cap(day)) + '</div><div><span class="key-ans">' + ans + '</span></div></div>\n';
+    }).join("");
+    var d = math.desc;
+    var watch = 'From the Math Facts cards: ' + d.detail + (math.newN ? ' · ' + math.newN + ' new' : '') + '. 🔁 = missed in drills lately. ' +
+      (d.add ? 'Count on from the first number; a full frame row is 5 (7 is 5 and 2). ' : '') + (d.sub ? 'Take away: cross out or hop back. ' : '') +
+      'Square 3 sits over the hop from 2 to 3.';
+    return '<div class="key-section">\n        <div class="key-head">Math Facts — Answers, All Days</div>\n        <div class="key-body">\n          ' + rows +
+      '          <div class="key-row"><div class="key-label">Watch for</div><div style="font-size:10.5px;color:var(--muted);line-height:1.5;">' + watch + '</div></div>\n        </div>\n      </div>';
+  }
+  var LU_MATH_CSS = "\n  /* LU_MATH */\n" +
+    "  .lm-card .slabel { margin-bottom:2px; }\n" +
+    "  .lm-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }\n" +
+    "  .lm-facts { flex:1; display:flex; justify-content:space-around; align-items:center; gap:10px; min-width:0; }\n" +
+    "  .lm-fact { padding:4px 9px; } .lm-fact .sub-num { font-size:26px; } .lm-fact .sub-op, .lm-fact .sub-eq { font-size:22px; } .lm-fact .sub-blank { min-width:40px; height:28px; }\n" +
+    "  .lm-20 .lm-facts { gap:6px; } .lm-20 .lm-fact { gap:4px; padding:4px 6px; } .lm-20 .lm-fact .sub-num { font-size:22px; } .lm-20 .lm-fact .sub-op, .lm-20 .lm-fact .sub-eq { font-size:18px; } .lm-20 .lm-fact .sub-blank { min-width:30px; }\n" +
+    "  .lm-rev { font-size:11px; align-self:flex-start; margin-left:-3px; }\n" +
+    "  .lm-framebox { flex:0 0 auto; display:flex; align-items:center; gap:7px; }\n" +
+    "  .lm-cap { font-size:9.5px; font-weight:700; color:var(--lu-dark); line-height:1.3; text-align:right; }\n" +
+    "  .lm-cap-f { font-family:'Fredoka One',cursive; font-size:12px; color:var(--lu-mid); }\n" +
+    "  .lm-frame { display:block; flex:0 0 auto; }\n" +
+    "  .lm-strip { display:flex; align-items:center; gap:8px; background:white; border:1.5px solid var(--lu-light); border-radius:8px; padding:1px 8px; }\n" +
+    "  .lm-strip-lab { flex:0 0 64px; font-size:8.5px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; line-height:1.3; }\n" +
+    "  .lm-strip-svg { display:block; flex:1; min-width:0; }\n";
+  // LU_MATH_END
+
   function generateLucy(ctx) {
     ctx = ctx || {};
     _nbLvCtx = ctx;   // NBLEVEL: the grade word the page builders print (lvG)
@@ -6310,6 +7007,8 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     var blends = phono || LUCY_DATA.blends, focus = LUCY_DATA.focus, pace = (ctx.pace && ctx.pace.length) ? ctx.pace : LUCY_DATA.pace;
     var subtraction = luSubWeek(wn, days.length);
     var words = luWordsWeek(ctx, days.length);   // LU_WORDS: the week's sight words, or null → nothing new prints
+    var math = luMathWeek(ctx, wn, days.length);   // LU_MATH: the week's facts from the Math Facts cards, or null → the old subtraction block
+    if (math) focus = [focus[0], math.focus];   // LU_MATH: the focus card describes the deck
     var prevStats = ctx.prevStats || {};   // dashes until the shared history wiring
     var category = LUCY_DATA.category_order[((wn - 1) % LUCY_DATA.category_order.length + LUCY_DATA.category_order.length) % LUCY_DATA.category_order.length];
     var curMonth = days.length ? monthFromDate(dates[days[0]] || "") : "";
@@ -6328,14 +7027,14 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       var subPrbs = subtraction[i] || [];
       var badge = LUCY_DATA.day_badges[day] || "🦄 Great Work!";
       parts.push(nbTag(ctx, luPageDaily(wn, day, dateStr, tasks, blend, subPrbs, badge, year,
-        xpStrip(pagesForDay(ctx, "lucy", day), "#f472b6", "#fdf2f8", "#be185d"), words ? words.days[i] : null), day, "Daily page"));
+        xpStrip(pagesForDay(ctx, "lucy", day), "#f472b6", "#fdf2f8", "#be185d"), words ? words.days[i] : null, math ? math.days[i] : null), day, "Daily page"));   // LU_MATH
       if (day === "monday") parts.push(nbTag(ctx, luPageBb1(wn, ctx.dotdot || null), day, "Brain break"));
       else if (day === "tuesday") parts.push(nbTag(ctx, luPageBb2Coloring(wn, ctx.coloring || null, category), day, "Brain break"));
       else if (day === "wednesday") parts.push(nbTag(ctx, luPageBb3(wn, ctx.symmetry || null, ctx.pattern || null), day, "Brain break"));
       else if (day === "thursday") parts.push(nbTag(ctx, luPageBb4(wn, ctx.maze || null), day, "Brain break"));
       else if (day === "friday") parts.push(nbTag(ctx, luPageCreative(wn), day, "Creative page"));
     });
-    parts.push(nbTag(ctx, luPageEndOfWeek(wn, weekDates, blends, subtraction, days, tasks), "last", "End of week"));
+    parts.push(nbTag(ctx, luPageEndOfWeek(wn, weekDates, blends, subtraction, days, tasks, math), "last", "End of week"));   // LU_MATH
     luMyWordsPages(ctx, words, wn).forEach(function (p) { parts.push(nbTagXp(ctx, p, "myWords", "My Words")); });   // LU_WORDS: after End of Week, so the day/back pairs don't move
 
     // Paper dolls — doll figure (always) + this week's outfit, each on its OWN sheet with a blank
@@ -6347,9 +7046,9 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       if (dolls.outfit) { parts.push(nbTag(ctx, luPageDoll(dolls.outfit, "Outfit — cut me out!"), "week", "Paper doll outfit")); parts.push(nbTag(ctx, luBlankPage(), "week", "Blank page")); }
     }
 
-    var luCss = (phono ? LU_PHONO_CSS : "") + (words ? LU_WORDS_CSS : "");   // LU_WORDS
+    var luCss = (phono ? LU_PHONO_CSS : "") + (words ? LU_WORDS_CSS : "") + (math ? LU_MATH_CSS : "");   // LU_WORDS · LU_MATH
     var student = luShell(parts.join("\n"), "Lucy's Notebook — Week " + wn, luCss);
-    var companion = luPageTeachingCompanion(wn, weekDates, days, tasks, blends, subtraction, ctx.teachNotes || "", words);
+    var companion = luPageTeachingCompanion(wn, weekDates, days, tasks, blends, subtraction, ctx.teachNotes || "", words, math);   // LU_MATH
     var parent = luShell(companion, "Lucy's Parent Companion — Week " + wn, luCss);
     var out = { student: student, parent: parent };
     if (words) out.wordCursor = words.cursor;   // LU_WORDS: the app saves it (notebookSettings/<kid>/wordCursor) so next week continues
@@ -6815,6 +7514,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     hasPlan: pkHasPlan,
     planFor: pkPlanFor,
     reviewDecks: nbReviewDecks,         // 🔁 NBNEEDS: which drill decks this kid's notebook brings back to paper (Notebook tab card)
+    ladders: NB_LADDERS,                // 📚 NBLADDER: the two notebook ladders — engine + placement (slice 1; no page reads them yet)
     lincolnBuiltinQ3: function (wk, i) { return lnPick(LINCOLN_DATA.banks.conventions, wk, i); },   // the day's built-in conventions item (Mom's answer check)
     convBankPlan: lnConvBankPlan,       // Lincoln's conventions bank: same, for the Q3 slot
     quantBankPlan: lnQuantBankPlan,     // Lincoln's number-reasoning bank: same, for the Q2 math slot

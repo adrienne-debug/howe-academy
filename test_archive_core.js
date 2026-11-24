@@ -72,13 +72,15 @@ function fbNorm(v) {
 
 // ── 1. WHO READS `archive` (static) ───────────────────────────────────────────────────────────────────────────────────────
 const GROUPS = {
-  A: ["initFb", "boot", "getCarryOverPool", "addManualAttWeek", "setAttDate", "loadJson", "ceWalkGather", "ceWalkApply", "lidImportPlan", "gwCommit", "digestFreezeIfNeeded",
+  A: ["archBootListen", "archLoadFull", "boot", "getCarryOverPool", "addManualAttWeek", "setAttDate", "loadJson", "ceWalkGather", "ceWalkApply", "lidImportPlan", "gwCommit", "digestFreezeIfNeeded",
       "archCoreBackfill"],   // ARCHCORE slice 3 (11/22): "Make the copy" writes archiveCore from every full week
+  // ARCHBOOT slice 4 (11/23): the listener moved out of initFb — archBootListen fills `archive` from the copy, archLoadFull from the full record
 
   B: ["digestArchiveView", "digestGatherData", "renderHistoryReport", "renderHistoryTrends", "renderHistory", "buildKidAttendance", "printWeekReport", "mpSchWkLoad",
       "archCoreStatus"],   // ARCHCORE slice 3 (11/22): Settings ▸ 📚 Past weeks compares every full week with its copy
 
-  C: ["scpPrevWeek", "scpGather", "haPrevWeekSummary", "_sucPrevArchive", "dmWeeks"],
+  C: ["scpPrevWeek", "scpGather", "haPrevWeekSummary", "_sucPrevArchive", "dmWeeks",
+      "archCoreHasLastWeek"],   // ARCHBOOT slice 4 (11/23): does the copy have last week? (a key check, never waits)
   // paceStreak moved B → D in slice 2 (11/22): the Kids' Corner trophy shelf shows it (paceWins), a main screen that never waits
   D: ["tsWeekDays", "tsCardsDay", "completedLessonKeys", "famRecordAt", "famMadeUpSet", "famRecSig", "paceDoneTitles", "paceAutoCount", "ktPaceSig", "paceStreak"]
 };

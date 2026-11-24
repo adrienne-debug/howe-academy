@@ -48,7 +48,9 @@ function stripCoop(s) {
 module.exports = { stripCoop };
 if (require.main !== module) return;
 
-const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const { stripPause } = require("./test_drill_pause.js");   // DRILLPAUSE (slice 5): this test pins its own slice on the tree with the pause taken out (both sides); test_drill_pause.js pins the pause
+const { stripSwitch } = require("./test_drill_switch.js");   // DRILLSWITCH (slice 7): its door / strip / paper-drill lines and its block are taken out on both sides (test_drill_switch.js pins them)
+const src = stripPause(stripSwitch(fs.readFileSync(path.join(__dirname, "index.html"), "utf8")));   // DRILLPAUSE   // DRILLSWITCH
 let pass = 0, fail = 0;
 function ok(n, c, x) { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + JSON.stringify(x).slice(0, 600) + ")" : "")); } }
 function fnIn(S, name) { const i = S.indexOf("function " + name + "("); if (i < 0) throw new Error("not found " + name); let d = 0; for (let k = S.indexOf("{", i); k < S.length; k++) { if (S[k] === "{") d++; else if (S[k] === "}") { d--; if (!d) return S.slice(i, k + 1); } } throw new Error("unbalanced " + name); }
@@ -66,7 +68,7 @@ const fromMin = mn => { let h = Math.floor(mn / 60), m = mn % 60, ap = h >= 12 ?
 function rng(seed) { let a = seed >>> 0; return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
 const SRC0 = stripCoop(src);
-let MAIN = ""; try { MAIN = cp.execSync("git show origin/main:index.html", { cwd: __dirname, encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { MAIN = ""; }
+let MAIN = ""; try { MAIN = cp.execSync("git show origin/main:index.html", { cwd: __dirname, encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { MAIN = ""; } MAIN = stripPause(stripSwitch(MAIN));   // DRILLPAUSE: the same on origin/main's side
 
 // ───────────────────────────────────────────────────────────────────────────────────────────────
 console.log("0. the slice, and stripCoop undoing it exactly");

@@ -37,7 +37,7 @@ function momWorld() {
   const db = { ref(p) { const P = p === undefined ? "" : p; return {
     update(v) { o.writes.push({ op: "update", path: P, val: JSON.parse(JSON.stringify(v)) }); }, set(v) { o.writes.push({ op: "set", path: P, val: v }); }, remove() { o.writes.push({ op: "remove", path: P }); },
     on(ev, fn) { o.listens.push(P); }, once() {} }; } };
-  const ctx = Object.assign({ console: { log: console.log, warn() {} }, Date, Math, JSON, document, db, _todayStr: () => TODAY, _dryRun: () => o.dry, momHere: () => o.mom, _kioskD: () => false,
+  const ctx = Object.assign({ console: { log: console.log, warn() {} }, Date, Math, JSON, document, db, skJobsN: () => 0, _todayStr: () => TODAY, _dryRun: () => o.dry, momHere: () => o.mom, _kioskD: () => false,
     gwShowToast() {}, HA_LS: { getItem: k => (k in o.LS ? o.LS[k] : null), setItem: (k, v) => { o.LS[k] = String(v); } },
     tab: "moms-plan", mpSubView: "seasons", momSchedView: false, renderMomsPlan() {}, mpGoto() {},
     grData: { items: {} }, momdayData: {}, setTimeout: fn => { o.timers.push(fn); return o.timers.length; } }, bankStub(o));

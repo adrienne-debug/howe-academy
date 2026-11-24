@@ -28,7 +28,8 @@ ok("the curriculum editor walk-back still removes its archive records", /archWri
 { const m = /db\.ref\("archive"\)\.on\("value",(s=>\{[\s\S]*?\n\s*\})\);/.exec(html);
   ok("start-up listener found", !!m);
   const calls = []; let renders = 0;
-  const ctx = { fbArchiveLoaded: false, archive: {}, tab: "schedule", cdMark() {}, HA_LS: { setItem(k) { calls.push(k); }, getItem() { return null; } },
+  const ctx = { fbArchiveLoaded: false, archCoreOnly: true, archive: {}, tab: "schedule", cdMark() {}, _archMs() {},   // ARCHBOOT (slice 4, 11/23): the listener now lives in archLoadFull
+    HA_LS: { setItem(k) { calls.push(k); }, getItem() { return null; } },
     JSON: { stringify() { throw new Error("must not stringify the archive"); }, parse: JSON.parse }, renderHistory() { renders++; }, renderPace() { renders++; }, document: { getElementById() { return {}; } } };
   const vm = require("vm"); vm.createContext(ctx);
   let err = null; try { vm.runInContext("(" + m[1] + ")({val:()=>({week31:{weekLabel:'week31'}})})", ctx); } catch (e) { err = e.message; }

@@ -1977,10 +1977,10 @@ function toggleMorningStep(kid,i){
   const wk=activeWk(), _slB=slBefore();   // SLTARGET
   const sk=wk+"_"+day+"_"+kid+"_mstep"+i, cur=slState[sk], now=!(cur&&cur.done);
   const _obPrev={}; _obPrev[sk]=cur||null; _obPrev[wk+"_"+day+"_"+kid+"_morning"]=slState[wk+"_"+day+"_"+kid+"_morning"]||null;   // 📮
-  { const _st=morningStepsFor(kid)[i], _b0=_st?(_st.pts||0):0;
+  { const _st=morningStepsFor(kid)[i], _b1=_st?(_st.pts||0):0, _b0=(now&&_b1>0&&typeof _todayDay==="string"&&day===_todayDay&&typeof rtDailyPay==="function")?rtDailyPay("morning",kid,i,_st):_b1;   // CHOREDAILY
     // ⭐ same wages rule as the other lists (2026-08-17): base + zone bonus banks on check, the
     // recorded amount reverses on un-check; 0-⭐ steps stay pure routine.
-    const _paid=now?(_b0+((typeof zoneBonusFor==="function")?zoneBonusFor(_st&&_st.zone,_b0):0)):((cur&&cur.pts!=null)?cur.pts:_b0);
+    const _paid=now?(_b0+((typeof zoneBonusFor==="function")?zoneBonusFor(_st&&_st.zone,_b0):0)):((cur&&cur.pts!=null)?cur.pts:_b1);
     let _bid=null;
     if(_paid>0){
       if(now){ _bid=bankDirect(kid,_paid,(_st&&_st.emoji?_st.emoji+" ":"")+(_st?_st.label:("Step "+(i+1))),(typeof choreVerifyOn==="function"&&choreVerifyOn(kid))); }
@@ -2038,7 +2038,7 @@ function mrIndividualHTML(kid){
       h+='<div class="mr-step'+(sd?" done":"")+'"'+(_ed?' onclick="toggleMorningStep(\''+kid+'\','+i+')"':'')+'>'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
          '<div class="sl-slot-name">'+(st.emoji?st.emoji+" ":"")+st.label+
-           ((st.pts||0)>0?' <span class="cadtag" style="color:#b45309;border-color:#fde68a">+'+(st.pts||0)+' \u2b50</span>':'')+
+           ((st.pts||0)>0?' '+((typeof rtDailyPay==="function"&&day===_todayDay)?rtDailyPill(st.pts,rtDailyPay("morning",kid,i,st),'cadtag" style="color:#b45309;border-color:#fde68a'):'<span class="cadtag" style="color:#b45309;border-color:#fde68a">+'+(st.pts||0)+' \u2b50</span>'):'')+   // CHOREDAILY
            (_wl?' <span class="cadtag" style="color:#0e7490;border-color:#a5f3fc">\u{1F4C5} '+_wl+'</span>':'')+
            (st.time?' <span class="cadtag" style="color:#7c3aed;border-color:#ddd6fe">\u23f0 '+st.time+'</span>':'')+
          '</div></div>'; });
@@ -2665,10 +2665,11 @@ function toggleRtStep(slot,kid,i){
   { const _st0=rtStepsFor(slot,kid)[i], _b0=_st0?(_st0.pts||0):0;
     // CHOREFALL: a row in its wait pays what it is worth today (the base a bonus room doubles); on its own day it is never late
     const _bf=(now&&_b0>0&&typeof rtFallPay==="function"&&day===_todayDay&&!cadDueOn(_st0.cad||"daily",day)&&stepWindowOk(_st0,day))?rtFallPay(_st0,rtLateDays(slot,kid,i),kid):_b0;
+    const _bd=(now&&_b0>0&&typeof rtDailyPay==="function"&&day===_todayDay&&rtDailyRow(_st0))?rtDailyPay(slot,kid,i,_st0):_bf;   // CHOREDAILY: a daily missed 2+ days in a row
     // Pay base + any focus-zone bonus, and RECORD the total on the check-off. Unchecking reverses
     // that stored number rather than recomputing — the zone or bonus may have changed since, and
     // recomputing would reverse a different amount than was paid.
-    const _paid = now ? (_bf + zoneBonusFor(_st0&&_st0.zone,_bf)) : ((cur&&cur.pts!=null)?cur.pts:_b0);
+    const _paid = now ? (_bd + zoneBonusFor(_st0&&_st0.zone,_bd)) : ((cur&&cur.pts!=null)?cur.pts:_b0);
     var _p=_paid;
     const _st=_st0;
     // ⭐ WAGES, not winnings: routine stars bank the moment the step is checked — straight
@@ -2850,6 +2851,7 @@ function _rtOffCycle(st,dayName,prevWeek){
 // can read a per-chore setting here.
 function rtWaitDays(st){
   if(rtWaitAsBefore(st)) return 6;   // until its next day (rtWaitCut ends it there; no chore on its days is ever more than 6 days from it)
+  const _own=(typeof rtWaitOwn==="function")?rtWaitOwn(st):null; if(_own!==null) return _own;   // CARDWAIT: the chore's own Waits (slice D)
   const cad=(st&&st.cad)||"daily"; let gap=1;
   if(cad.indexOf("wk:")===0) gap=7/Math.max(1,cad.slice(3).split(",").filter(function(x){ return x!==""; }).length);
   else if(cad==="sat"||cad==="sun") gap=7; else if(cad==="2w") gap=14; else if(/^\d+d$/.test(cad)) gap=parseInt(cad,10);
@@ -2872,6 +2874,12 @@ function rtWaitNote(n,st){
   return "from "+dn.charAt(0).toUpperCase()+dn.slice(1,3)+" \u00b7 day "+n+" of "+w;
 }
 // CHOREWAIT_END
+// CARDWAIT_START — missed-chores design slice D (§1.2; §7: "Waits on the card acts at once on fixed-day chores"): the chore card's
+// Waits (house.js CARDRULES) on the chore's own row, household/jobs/<id>/wait = 0 none · 1–6 days · "next" until its next day.
+// Read through the list row's table id (_hh: Take over on). No setting, or a row not from the table: Auto, exactly as before.
+// "next" = 6: a chore on its days is never more than 6 days from its next one, and rtWaitCut ends it there.
+function rtWaitOwn(st){ const id=st&&st._hh, j=(id&&typeof hhJobs==="function")?hhJobs()[id]:null, w=j?j.wait:undefined; if(w==="next") return 6; return (typeof w==="number"&&w>=0&&w<=6&&w%1===0)?w:null; }
+// CARDWAIT_END
 // CHOREFALL_START \u2014 her rule 2026-11-19 (missed-chores design \u00a72.1, slice C2): "if skipped it stays with them and they lose 20% of the
 // original points value a day"; the kid's row: "i think let them know the original. versus the now so they are motivated in the future
 // to do it the first day"; 3+ a week (11/20): "Yes, same rules". A chore on a kid's own list in its wait today (rtLateDays > 0) pays
@@ -2894,6 +2902,73 @@ function rtFallPay(st,n){ return rtFallPts((st&&st.pts)||0,rtFallDays(st,n,argum
 // The star pill on a kid's row: "+10 \u2b50" as before; a falling row shows the original struck through, then what it pays: "10 \u2192 6 \u2b50".
 function rtFallPill(st,n){ const p=(st&&st.pts)||0, f=rtFallPay(st,n,arguments[2]); return f===p?'<span class="mr-pts">+'+p+' \u2b50</span>':'<span class="mr-pts"><s style="opacity:.6">'+p+'</s> \u2192 '+f+' \u2b50</span>'; }
 // CHOREFALL_END
+// CHOREDAILY_START \u2014 her rule 2026-11-19/20 (missed-chores design \u00a72.8, slice C5): "if missed 2 days in a row then 20% etc, 1 day missed
+// wouldnt cost them"; a paying daily: "It pays 20% less"; Evening lists: "yes but make it start on a blank slate". One missed day is free;
+// after two missed days in a row a daily that pays stars pays one rtFallPts step less (10 \u2192 8), one more for each further missed day
+// (6 4 2 0), then 0 until it is done once. Doing it pays the lower amount that day; the next day it is back at full. It only changes what a
+// tick pays: nothing is ever taken from a bank here (a 0 \u2b50 daily is C6). Today's tab only, as CHOREFALL.
+// Missed = the row was on the kid's own list that day (a daily, in its dates) and its stored tick (<wk>_<day>_<kid>_<m|a|c|e>step<i>, this
+// week's slState or last week's prevSlState) was not done. Not a miss, and the count starts over: \u2715 today / \u2796 Excuse (waved), \ud83d\ude37 Kid Off
+// (calendar/kidOverrides school:false), \ud83c\udf05 sent that day, a day before RT_DAILY_FROM or before the kid's "Stars fall when late" / \u23f8 Pause (the \ud83d\udcd2 Ledger \u2699, read as rtFallDays reads it).
+// Not the plan's own rows (st.house), the laundry line's rows, or a rotating job (st.rot: the job and its free days change hands each day).
+const RT_DAILY_FROM="2026-11-30";
+function rtDailyRow(st){ return !!st&&(st.cad||"daily")==="daily"&&(st.pts||0)>0&&!st.house&&!st.line&&!st.laundry&&!st.rot; }
+// Missed days in a row before today, 0\u20266 (6 = already 0 \u2b50).
+function rtDailyMissed(slot,kid,i,st){
+  if(!rtDailyRow(st)||typeof _todayDay!=="string") return 0;
+  const tp=_rtPos(DAYS_ALL.indexOf(_todayDay)), t=new Date(), wk=activeWk(), ab=slot==="morning"?"m":RT_ABBR[slot]; if(tp<-1||!ab) return 0;
+  const iso=function(k){ const d=new Date(t.getFullYear(),t.getMonth(),t.getDate()-k,12); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+  const mon=routineDateISO("monday"); if(mon&&mon!==iso(tp)) return 0;   // the week on screen is not today's week (a week change mid-flight): say nothing
+  const from=[RT_DAILY_FROM,starFallFrom(kid)].sort()[1], off=((typeof calendarData!=="undefined"&&calendarData&&calendarData.kidOverrides)||{})[kid]||{};
+  let n=0;
+  for(let k=1;k<=6;k++){ const ds=iso(k), p=tp-k, prev=p<-1; if(ds<from) break;
+    const w=prev?_prevWkKey():wk, dn=DAYS_ALL[_rtIdx(prev?p+7:p)]; if(prev&&typeof _loadPrevSl==="function") _loadPrevSl();
+    const m=prev?(_prevSlWk===w?prevSlState:null):slState; if(!w||!m) break;   // last week not on this device yet: say nothing
+    if((st.from&&ds<st.from)||(st.to&&ds>st.to)||!stepCycleOk(st,ds)) break;
+    const r=m[w+"_"+dn+"_"+kid+"_"+ab+"step"+i]; if(r&&r.done) break;
+    if(rtDailyLogOn(kid,w,dn,slot,st.label)) break;   // its place moved: the day's own log says this chore was ticked
+    if((((wavedData[w]||{})[dn]||{})[kid]||{})[slot+"step"+i]) break;
+    if((off[ds]||{}).school===false) break;
+    if(rtDailyCalOff(slot,ds)) break;   // a holiday / vacation that took this list off that day
+    if(slot!=="morning"&&typeof amCarry!=="undefined"&&((amCarry||{})[kid]||{})[ds+"_"+ab+"step"+i]) break;   // 🌅 sent that day (amKey)
+    n++; }
+  return n;
+}
+// A row's ticks are kept by its place in the list (i), and a list edit can move the places of the rows after it (nothing re-keys the
+// stored ticks), so the place alone can read another row's day (hub's review 2026-11-23). A day only counts as missed when the day's
+// own Click-off Log (routineLog/<kid>/<wk>/<day>, live for this week and last, written in the same tap as the tick) also has no
+// standing "on" line for this list and this chore's words. Last week's log not on this device yet: unsure, so the count stops.
+function rtDailyLogOn(kid,w,dn,slot,label){
+  const W=((typeof routineLog!=="undefined"&&routineLog)||{})[kid]||{};
+  if(!W[w]&&typeof _rlWin!=="undefined"&&typeof db!=="undefined"&&db&&String(_rlWin.key||"").split("|")[0].split(",").indexOf(w)<0) return true;
+  const L=(W[w]||{})[dn]||{}; let last=null;
+  Object.keys(L).forEach(function(k){ const x=L[k]; if(x&&x.slot===slot&&x.label===label&&(x.act==="on"||x.act==="off")&&(!last||(x.at||0)>=(last.at||0))) last=x; });
+  return !!(last&&last.act==="on");
+}
+// A family-calendar day off (hub's call 2026-11-23, the default until Mom says otherwise): a holiday or vacation whose pause took this
+// list off that day is not a miss and starts the count over, as 😷 Kid Off does. The lists' own rule (activeSlots): pause "all" = no
+// lists · "chores" = no Afternoon or Chores list (Morning and Evening run) · "school" (the default, and every older break) = every list
+// runs, so it counts as an ordinary day. Read from calendar/holidays and calendar/vacations {start|date, end, pause}; a holiday wins
+// over a vacation on the same day, as scheduleBreakToday has it.
+function rtDailyCalOff(slot,ds){ const C=(typeof calendarData!=="undefined"&&calendarData)||{}; let p=null;
+  [C.holidays,C.vacations].forEach(function(c){ Object.values(c||{}).forEach(function(v){ if(!v||p!==null) return; const s=calNormDate(v.start||v.date), e=calNormDate(v.end||v.start||v.date); if(s&&ds>=s&&ds<=e) p=v.pause||"school"; }); });
+  return p==="all"||(p==="chores"&&slot!=="morning"&&slot!=="evening"); }
+// What the row pays today (the one number every payer and display reads); not a daily row = its stars.
+function rtDailyPay(slot,kid,i,st){ const p=(st&&st.pts)||0; if(!rtDailyRow(st)) return p; const n=rtDailyMissed(slot,kid,i,st); return n>1?rtFallPts(p,n-1):p; }
+// "10 \u2192 8 \u2b50" when it pays less (the CHOREFALL look), else "+10 \u2b50"; cls: the Morning list's tag class
+function rtDailyPill(p,f,cls){ return '<span class="'+(cls||"mr-pts")+'">'+(f===p?'+'+p:'<s style="opacity:.6">'+p+'</s> \u2192 '+f)+' \u2b50</span>'; }
+// Mom's pop-up note: "missed 2 days \u00b7 pays 8 of 10 \u2b50"
+function rtDailyNote(slot,kid,i,st){ const p=(st&&st.pts)||0, f=rtDailyPay(slot,kid,i,st); return f<p?"missed "+rtDailyMissed(slot,kid,i,st)+" days \u00b7 pays "+f+" of "+p+" \u2b50":""; }
+// A daily row that JOINS a kid's list starts that day (hub's review 2026-11-23): a daily row has no start date of its own, so on the
+// day it is added, given to another kid, moved to another list, turned daily, or comes back on with a level / a keep, the walk would
+// read days it was not that kid's daily as misses. Each of those taps also writes from = today (the start date LATE_FROM gives a
+// weekday row), and the walk stops at st.from. rtDailyOn: on a kid's list as a daily now (hhKidJobIds' own test) · rtDailyJoin: today,
+// or "" · rtDailyOnIds / rtDailyStampNew: the rows a level or keep tap brings on, stamped by targeted writes (Mom's device only).
+function rtDailyOn(j){ return !!j&&typeof _hhIsKidJob==="function"&&_hhIsKidJob(j)&&SL_SLOTS.indexOf(j.slot)>=0&&(j.cad||"daily")==="daily"&&!j.rot&&j.status!=="retired"&&!j.hold&&hhLevelOut(j); }
+function rtDailyJoin(j){ return rtDailyOn(j)?_hhIsoLocal(Date.now()):""; }
+function rtDailyOnIds(){ const J=hhJobs(); return Object.keys(J).filter(function(id){ return rtDailyOn(J[id]); }); }
+function rtDailyStampNew(before){ if(!before) return; const J=hhJobs(); Object.keys(J).forEach(function(id){ const t=before.indexOf(id)<0?rtDailyJoin(J[id]):""; if(t&&J[id].from!==t){ J[id].from=t; if(_hhWrite()) db.ref("household/jobs/"+id+"/from").set(t); } }); }
+// CHOREDAILY_END
 // STARRULES_START — 📒 Ledger ⚙ star rules (chore ledger design §4, L4, her yes 11/23), written by house.js LEDGERRULES at household/meta/
 // starRules {fall:{kid:{on:false}|{from}},take:{kid:false},pause:{on:true}|{from}}; missing = as before. A flip never reaches back.
 function starRules(){ try{ return householdData.meta.starRules||{}; }catch(e){ return {}; } }
@@ -3089,7 +3164,7 @@ function rtSlotHTML(slot,kid){
       h+='<div class="mr-step'+(sd?" done":"")+(_lateTag?" is-late":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+(_ok?'':' style="opacity:.5"')+'>'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
          '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+_lateTag+cadTag+winTag+timeTag+rotTag+amTag+'</div>'+
-         (pts>0?((typeof rtFallPill==="function")?rtFallPill(st,sd?0:_wait[i],kid):'<span class="mr-pts">+'+pts+' ⭐</span>'):'')+'</div>'; });   // CHOREFALL: "10 → 6 ⭐" on a falling row
+         (pts>0?((typeof rtDailyPay==="function"&&day===_todayDay&&rtDailyRow(st))?rtDailyPill(pts,rtDailyPay(slot,kid,i,st)):(typeof rtFallPill==="function")?rtFallPill(st,sd?0:_wait[i],kid):'<span class="mr-pts">+'+pts+' ⭐</span>'):'')+'</div>'; });   // CHOREFALL: "10 → 6 ⭐" on a falling row; CHOREDAILY: a daily after 2+ missed days
     optIdx.forEach(i=>{ const st=steps[i], sd=rtDoneOn(slot,kid,day,i), pts=st.pts||0;
       h+='<div class="mr-step'+(sd?" done":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+' style="opacity:'+(sd?'1':'.75')+'">'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
@@ -3432,6 +3507,7 @@ let _archWaitFns=[], _archWaitShown=false;
 function archiveEnsureAll(){
   if(fbArchiveLoaded||typeof db==="undefined"||!db) return true;
   _archWaitShown=true;
+  try{ if(typeof archLoadFull==="function") archLoadFull("needed"); }catch(e){}   // ARCHBOOT: a device started on the smaller copy fetches every detail now
   return false;
 }
 function archiveWhenAll(fn){
@@ -3573,6 +3649,58 @@ function archCoreBackfill(){
   }).catch(function(e){ _acBusy=false; _acMsg="✗ Not saved ("+((e&&e.message)||e)+"). Nothing changed."; archCoreRefresh(); });
 }
 // ARCHCORE_END
+// ARCHBOOT_START — devices start on the smaller copy of the past weeks (her "Start slice 4" 2026-11-23,
+// PLAN_archive_window_2026-11-21.md §7 slice 4). Start-up listens to archiveCore (≈1.8 MB) instead of archive (≈3 MB): the main
+// screens read only the kept fields (test_archive_core.js proves every answer the same on live data). `archive` in memory holds
+// the copy (archCoreOnly) until something needs every detail — a build, a re-lay, History, Attendance, the editor, a print:
+// archiveEnsureAll() calls archLoadFull(), which listens to the full archive and stops listening to the copy. fbArchiveLoaded
+// keeps its meaning: the FULL archive is here. The copy isn't trusted (→ the full archive at once) when it is empty (a family
+// that hasn't tapped Settings ▸ 📚 Past weeks ▸ Make the copy) or doesn't have last week (a week closed where the copy wasn't kept).
+let archCoreOnly=false, _archFullOn=false, _archCoreCb=null, _archCoreTimer=null;
+function archBootListen(){
+  if(typeof db==="undefined"||!db) return;
+  _archCoreCb=db.ref("archiveCore").on("value",function(s){
+    if(_archFullOn) return;   // the full archive has taken over
+    const v=s.val()||{};
+    if(!Object.keys(v).length){ archLoadFull("no copy"); return; }
+    archive=v; archCoreOnly=true;
+    _archMs();
+    if(!archCoreHasLastWeek()){ archLoadFull("copy behind"); return; }
+    if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
+  });
+}
+// the copy has the week before the active one (a skipped week number just loads the full archive — never wrong, only bigger)
+function archCoreHasLastWeek(){
+  if(!archCoreOnly) return true;
+  const m=/^week(\d+)$/.exec(String((typeof WK!=="undefined"&&WK)||"")); if(!m) return true;
+  const n=parseInt(m[1],10); if(n<=1) return true;
+  return !!(archive&&archive["week"+(n-1)]);
+}
+// the active week changed (Sunday's close): look again once the close's own copy write has had time to arrive
+function archCoreCheckSoon(){
+  if(!archCoreOnly||_archFullOn) return;
+  try{ clearTimeout(_archCoreTimer); }catch(e){}
+  _archCoreTimer=setTimeout(function(){ if(archCoreOnly&&!_archFullOn&&!archCoreHasLastWeek()) archLoadFull("copy behind"); },5000);
+}
+// ⏱ CDBOOTS: archMs = when this start's past weeks arrived (the copy, or the full archive when the copy isn't used); first time only
+function _archMs(){ try{ if(typeof cdMark==="function") cdMark("archMs"); }catch(eM){} }
+function archLoadFull(why){
+  if(_archFullOn||typeof db==="undefined"||!db) return;
+  _archFullOn=true;
+  if(why==="copy behind"){ try{ if(typeof dbg==="function") dbg("past weeks: the smaller copy is missing last week — loading every detail"); }catch(e){} }   // the unusual case only: no log line on every start
+  try{ if(_archCoreCb) db.ref("archiveCore").off("value",_archCoreCb); }catch(e){}
+  db.ref("archive").on("value",s=>{
+    fbArchiveLoaded=true; archCoreOnly=false;
+    _archMs();
+    archive=s.val()||{};
+    // ARCHNOSTR (her yes 2026-11-21, PLAN_archive_window slice 0): no HA_LS.setItem("ha_archive",JSON.stringify(archive)) here or at the
+    // 5 archive writes — HA_LS drops "ha_archive" (NO_MIRROR, LS_ARCHIVE 10/22), so it only turned 2.85 MB into text to be thrown away.
+    if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
+    if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
+    try{ if(typeof _archAllArrived==="function") _archAllArrived(); }catch(eA){}   // ARCHENSURE: the full archive is here — run what waited, redraw a Loading page
+  });
+}
+// ARCHBOOT_END
 let cascadeDebounce = null;
 let fbTasksHighWater = 0; // max task count ever seen from Firebase — guards against accidental wipes
 // Dry-run mode (?dryrun=1 or localStorage ha_dryrun=1): reads work, writes are no-ops.
@@ -4729,6 +4857,7 @@ function initFb() {
     db.ref("ha_active_wk").on("value",s=>{
       const fbWk=s.val();
       _abActiveWkNull=!fbWk;   // 🆕 ABFIRST
+      try{ if(typeof archCoreCheckSoon==="function") archCoreCheckSoon(); }catch(eAC){}   // ARCHBOOT: a new week → the copy must have the one just closed
       if(fbWk && fbWk!==WK){
         dbg("ha_active_wk changed FB="+fbWk+" local="+WK);
         WK=fbWk; HA_LS.setItem("ha_active_wk",WK); weekData.week=WK;
@@ -4772,16 +4901,7 @@ function initFb() {
       committedShapeSigs=s.val()||{};
       try{HA_LS.setItem("ha_shape_sigs",JSON.stringify(committedShapeSigs));}catch(e){}
     });
-    db.ref("archive").on("value",s=>{
-      fbArchiveLoaded=true;
-      try{ if(typeof cdMark==="function") cdMark("archMs"); }catch(eM){}   // ⏱ CDBOOTS (live from the server — no device copy since LS_ARCHIVE)
-      archive=s.val()||{};
-      // ARCHNOSTR (her yes 2026-11-21, PLAN_archive_window slice 0): no HA_LS.setItem("ha_archive",JSON.stringify(archive)) here or at the
-      // 5 archive writes — HA_LS drops "ha_archive" (NO_MIRROR, LS_ARCHIVE 10/22), so it only turned 2.85 MB into text to be thrown away.
-      if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
-      if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
-      try{ if(typeof _archAllArrived==="function") _archAllArrived(); }catch(eA){}   // ARCHENSURE: the full archive is here — run what waited, redraw a Loading page
-    });
+    archBootListen();   // ARCHBOOT (slice 4, 2026-11-23): the smaller copy at start; the full past weeks when something needs every detail
     db.ref("notebookStories").on("value",s=>{
       notebookStories=s.val()||{};
       try{HA_LS.setItem("ha_nb_stories",JSON.stringify(notebookStories));}catch(e){}
@@ -9597,7 +9717,7 @@ function boardStatPop(kid,slot,d){
     morningStepsFor(kid).forEach((st,i)=>{ const rec=((typeof hdSlRec==="function")?hdSlRec("morning",kid,day,i):slState[activeWk()+"_"+day+"_"+kid+"_mstep"+i])||{};   /* 🚪 HOUSEDAY */
       const _due=_mDue.indexOf(i)>=0, _dn=mStepDoneOn(kid,day,i), _wv=(typeof rtWaved==="function")&&rtWaved("morning",kid,day,i);   // KIDROWS2: a waved step stays on the list, greyed, with undo
       if(!_due&&!_wv&&!(st.cad==="asneeded"&&_dn)) return;
-      rows.push({lab:(st.emoji?st.emoji+" ":"")+(st.label||("Step "+(i+1)))+((_due||_wv)?"":" (as needed)"),done:_dn,ts:rec.ts||"",i:i,wv:_wv,hs:st}); });   // LISTS_TAP: i → the ○/✅ is a tap
+      rows.push({lab:(st.emoji?st.emoji+" ":"")+(st.label||("Step "+(i+1)))+((_due||_wv)?"":" (as needed)"),done:_dn,ts:rec.ts||"",i:i,wv:_wv,hs:st,dly:(_due&&typeof rtDailyNote==="function"&&day===_todayDay)?rtDailyNote("morning",kid,i,st):""}); });   // CHOREDAILY: Mom's note   // LISTS_TAP: i → the ○/✅ is a tap
   } else if(slot==="tasks"){ title="📅 School work";
     getActiveTasks().filter(t=>t.who===kid&&effectiveDay(t)===day&&!t.id.endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title))
       .forEach(t=>{ const cv=checked[t.id]; rows.push({lab:t.title||"",done:!!cv,ts:(cv&&cv.ts)||(typeof cv==="string"?cv:"")}); });
@@ -9612,8 +9732,8 @@ function boardStatPop(kid,slot,d){
     const steps=rtStepsFor(slot,kid,false,day);
     steps.forEach((st,i)=>{ const _ln=(typeof mdLateDays==="function")?mdLateDays(slot,kid,day,i,st):0;   // KIDSLATE: carried-over rows too, as Kids' Corner lists them
       if(!cadDueOn(st.cad||"daily",day)&&!(_ln>0)) return; const rec=((typeof hdSlRec==="function")?hdSlRec(slot,kid,day,i):slState[activeWk()+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i])||{};   /* 🚪 HOUSEDAY */
-      const _f=(typeof rtFallPay==="function")?rtFallPay(st,_ln,kid):(st.pts||0);   // CHOREFALL: a falling row shows both numbers, as on the kid's row
-      rows.push({lab:(st.emoji?st.emoji+" ":"")+st.label+(st.pts?(_f!==st.pts?" "+st.pts+" → "+_f+" ⭐":" +"+st.pts+" ⭐"):""),done:rtDoneOn(slot,kid,day,i),ts:rec.ts||"",i:i,wv:(typeof rtWaved==="function")&&rtWaved(slot,kid,day,i),late:_ln,hs:st,pay:_f}); });   // LISTS_TAP; KIDROWS2: wv
+      const _dl=typeof rtDailyRow==="function"&&day===_todayDay&&rtDailyRow(st), _f=_dl?rtDailyPay(slot,kid,i,st):(typeof rtFallPay==="function")?rtFallPay(st,_ln,kid):(st.pts||0);   // CHOREFALL: a falling row shows both numbers, as on the kid's row; CHOREDAILY: a daily too
+      rows.push({lab:(st.emoji?st.emoji+" ":"")+st.label+(st.pts?(_f!==st.pts?" "+st.pts+" → "+_f+" ⭐":" +"+st.pts+" ⭐"):""),done:rtDoneOn(slot,kid,day,i),ts:rec.ts||"",i:i,wv:(typeof rtWaved==="function")&&rtWaved(slot,kid,day,i),late:_ln,hs:st,pay:_f,dly:_dl?rtDailyNote(slot,kid,i,st):""}); });   // LISTS_TAP; KIDROWS2: wv
   }
   // LISTS_TAP (her ask 2026-10-21: "make on both mom and dads day all the lists clickable but do not change the look or size on any" —
   // "each individual list you can open for each kid like morning etc"): the ○/✅ on a morning / afternoon / chores / evening row is the
@@ -9632,7 +9752,7 @@ function boardStatPop(kid,slot,d){
   const _note=typeof rtWaitNote==="function"&&((typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD()));   // CHOREWAIT: the notes are for Mom (and Dad's own link), never a kid
   let inner=rows.length?rows.map(r=>'<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid #f3f4f6;font-size:13px'+(r.wv?';opacity:.55':'')+'">'+
       (isStars?'':'<span'+((_tapOk&&r.i!=null&&!r.wv)?' onclick="event.stopPropagation();mdKidTick(\''+slot+'\',\''+kid+'\',\''+_d+'\','+r.i+');boardStatPop(\''+kid+'\',\''+slot+'\',\''+_d+'\')" style="width:20px;text-align:center;cursor:pointer"':' style="width:20px;text-align:center"')+'>'+(r.done?"✅":r.wv?"–":"○")+'</span>')+   // LISTS_TAP; KIDROWS2: a waved row has no tick
-      '<span style="flex:1;min-width:0;'+(r.done?'':'color:var(--muted)')+(r.wv?';text-decoration:line-through':'')+'">'+esc(r.lab)+((r.late>0&&!r.done&&!r.wv)?((typeof rtWaitAsBefore==="function"&&rtWaitAsBefore(r.hs))?'<span class="rt-late">'+r.late+' day'+(r.late>1?'s':'')+' late</span>':(_note?'<span style="font-size:10.5px;font-weight:700;color:#6b7280;margin-left:6px;white-space:nowrap">'+rtWaitNote(r.late,r.hs)+((r.pay!==((r.hs&&r.hs.pts)||0))?' \u00b7 pays '+r.pay+' of '+r.hs.pts+' ⭐':'')+'</span>':'')):'')+'</span>'+   // CHOREWAIT: 3+ a week: the red tag, as before; other waiting rows: Mom's note ("from Tue · day 2 of 2"), a kid's screen nothing
+      '<span style="flex:1;min-width:0;'+(r.done?'':'color:var(--muted)')+(r.wv?';text-decoration:line-through':'')+'">'+esc(r.lab)+((r.late>0&&!r.done&&!r.wv)?((typeof rtWaitAsBefore==="function"&&rtWaitAsBefore(r.hs))?'<span class="rt-late">'+r.late+' day'+(r.late>1?'s':'')+' late</span>':(_note?'<span style="font-size:10.5px;font-weight:700;color:#6b7280;margin-left:6px;white-space:nowrap">'+rtWaitNote(r.late,r.hs)+((r.pay!==((r.hs&&r.hs.pts)||0))?' \u00b7 pays '+r.pay+' of '+r.hs.pts+' ⭐':'')+'</span>':'')):'')+((r.dly&&_note&&!r.done&&!r.wv)?'<span style="font-size:10.5px;font-weight:700;color:#6b7280;margin-left:6px;white-space:nowrap">'+r.dly+'</span>':'')+'</span>'+   // CHOREDAILY: "missed 2 days · pays 8 of 10 ⭐"; CHOREWAIT: 3+ a week: the red tag, as before; other waiting rows: Mom's note ("from Tue · day 2 of 2"), a kid's screen nothing
       (r.amt!=null?'<span style="font-weight:800;color:'+(r.amt<0?"#b91c1c":"#b45309")+';white-space:nowrap">'+(r.amt<0?"−"+(-r.amt):"+"+r.amt)+' ⭐</span>':'')+
       (r.ts?'<span style="font-size:10.5px;color:var(--muted);white-space:nowrap">'+esc(r.ts)+'</span>':'')+
       ((_waveOk&&r.i!=null&&!r.done)?kr2WaveBtnHTML(slot,kid,_d,r.i,!!r.wv):'')+((typeof amPopBtnsHTML==="function")?amPopBtnsHTML(r,slot,kid,_d,_tapOk):'')+(typeof hcGoBtn==="function"?hcGoBtn(r.hs):'')+'</div>').join('')   // KIDROWS2: ✕ today / undo
@@ -13590,7 +13710,9 @@ function hhSet(id,field,val){
   if(field==="minutes"){ val=parseInt(val,10); if(!(val>0&&val<=240)) return; }                       // 🧹 HOUSEHOLD_GRID plan fields
   if(field==="level"){ val=parseInt(val,10); if(!(val>=1&&val<=3)) return; }
   if(field==="planCad"&&!(val==="daily"||/^wk:[0-6]$/.test(val)||val==="")) return;
+  const _dw=(typeof rtDailyOnIds==="function")?rtDailyOnIds():null;   // CHOREDAILY: a level or keep that brings a daily on starts it today
   jobs[id][field]=val; if(field==="verdict") jobs[id].status=(val==="retire")?"retired":"active";
+  if(_dw) rtDailyStampNew(_dw);   // CHOREDAILY
   householdOnValue(householdData);
   if(_hhWrite()){ db.ref("household/jobs/"+id+"/"+field).set(val); if(field==="verdict") db.ref("household/jobs/"+id+"/status").set(jobs[id].status); }
   hhRender();
@@ -14049,10 +14171,12 @@ function hhRoomHTML(){
   return h;
 }
 // ── Levels ──
-function hhLevelSet(v){ if(typeof momHere==="function"&&!momHere()) return; v=parseInt(v,10); if(!(v>=1&&v<=3)) return; householdData.levels=householdData.levels||{}; householdData.levels.cleaning=Object.assign({},householdData.levels.cleaning,{current:v,at:Date.now()}); householdOnValue(householdData); if(_hhWrite()) db.ref("household/levels/cleaning/current").set(v); if(typeof renderAll==="function") renderAll(); else hhRender(); }   // HH_LEVEL_GATE: lists follow the level
+function hhLevelSet(v){ if(typeof momHere==="function"&&!momHere()) return; v=parseInt(v,10); if(!(v>=1&&v<=3)) return; const _dw=(typeof rtDailyOnIds==="function")?rtDailyOnIds():null; householdData.levels=householdData.levels||{}; householdData.levels.cleaning=Object.assign({},householdData.levels.cleaning,{current:v,at:Date.now()}); if(_dw) rtDailyStampNew(_dw); householdOnValue(householdData); if(_hhWrite()) db.ref("household/levels/cleaning/current").set(v); if(typeof renderAll==="function") renderAll(); else hhRender(); }   // HH_LEVEL_GATE: lists follow the level
 // HH_LEVEL_PERSON: v = 1..3 pins that person; v = 0 clears it (follow the family dial). One targeted write.
 function hhLevelSetFor(who,v){ if(typeof momHere==="function"&&!momHere()) return; if(HH_WHO.indexOf(who)<0||who==="grab") return; v=parseInt(v,10); if(!(v>=0&&v<=3)) return;
+  const _dw=(typeof rtDailyOnIds==="function")?rtDailyOnIds():null;   // CHOREDAILY: the dailies a level brings on start today
   householdData.levels=householdData.levels||{}; if(v===0){ delete householdData.levels[who]; } else { householdData.levels[who]={current:v,at:Date.now()}; }
+  if(_dw) rtDailyStampNew(_dw);   // CHOREDAILY
   householdOnValue(householdData); if(_hhWrite()){ if(v===0) db.ref("household/levels/"+who).remove(); else db.ref("household/levels/"+who+"/current").set(v); } if(typeof renderAll==="function") renderAll(); else hhRender(); }
 function hhLevelCycle(id){ const j=hhJobs()[id]; if(!j) return; hhSet(id,"level",(hhLevelOf(j)%3)+1); }
 // The last three full Mon–Sun weeks: due vs done over the house rows at or below the current level.
@@ -14124,13 +14248,16 @@ function hhSyncKids(){
         id="hh"+now.toString(36)+Math.random().toString(36).slice(2,6); const area=hhGuessArea(f.label,slot,f.rot);
         const job=Object.assign({},f,{slot:slot,who:kid,src:{kind:"new"},source:"Household tab",area:area,floor:(area==="cleaning"||area==="pickup")?hhGuessFloor(f.label,f.zone):"",status:"active",verdict:"",note:"",order:i,ts:now});
         if(!job.from&&/^wk:/.test(job.cad||"")) job.from=_hhIsoLocal(now);   // LATE_FROM: a new weekday step begins today
+        if(typeof rtDailyJoin==="function"&&rtDailyJoin(job)) job.from=rtDailyJoin(job);   // CHOREDAILY: a new daily starts today
         upd["household/jobs/"+id]=job; jobs[id]=job; Object.defineProperty(st,"_hh",{value:id,enumerable:false,writable:true});
       } else {
         const j=jobs[id];
+        const _dw=(typeof rtDailyOn==="function")?rtDailyOn(j)+"|"+j.who+"|"+j.slot:"";   // CHOREDAILY: was it this kid's daily on this list?
         HH_STEP_KEYS.forEach(function(k){ const nv=(f[k]===undefined)?null:f[k], ov=(j[k]===undefined||j[k]===""||j[k]===null)?null:j[k]; if(JSON.stringify(nv)!==JSON.stringify(ov)){ upd["household/jobs/"+id+"/"+k]=nv; if(nv===null) delete j[k]; else j[k]=nv; } });
         if(j.who!==kid){ upd["household/jobs/"+id+"/who"]=kid; j.who=kid; } if(j.slot!==slot){ upd["household/jobs/"+id+"/slot"]=slot; j.slot=slot; }
         if((j.order||0)!==i){ upd["household/jobs/"+id+"/order"]=i; j.order=i; }
         if(j.status!=="active"){ upd["household/jobs/"+id+"/status"]="active"; j.status="active"; }
+        if(_dw&&rtDailyJoin(j)&&_dw!=="true|"+j.who+"|"+j.slot&&j.from!==rtDailyJoin(j)){ upd["household/jobs/"+id+"/from"]=rtDailyJoin(j); j.from=rtDailyJoin(j); }   // CHOREDAILY: it joins this list today
       }
       seen[id]=1; }); }); });
   Object.keys(jobs).forEach(function(id){ const j=jobs[id]; if(_hhIsKidJob(j)&&j.status!=="retired"&&hhLevelOut(j)&&!j.hold&&!seen[id]){ upd["household/jobs/"+id+"/status"]="retired"; upd["household/jobs/"+id+"/verdict"]="retire"; j.status="retired"; j.verdict="retire"; } });   // HH_LEVEL_GATE: a gated-off row is not a deleted row. HH_SYNC_HELD 2026-11-16: nor is a one-time job waiting in the ☑️ Once pile — it is off the list on purpose (hhKidJobIds), so every Chores & Stars save retired it
@@ -14275,6 +14402,7 @@ function hhAddSave(){
   const now=Date.now(), id="hh"+now.toString(36)+Math.random().toString(36).slice(2,6), area=HH_AREAS[hhAdd.area]?hhAdd.area:hhGuessArea(label,slot,"");   // HH_ADD_FORM: her pick, else the guess
   const job={label:label,cad:cad,slot:slot,pts:pts,who:who,src:kid?{kind:"new"}:{kind:(who==="dad"?"dadChore":"momChore"),id:id},source:"Household tab",area:area,floor:(area==="cleaning"||area==="pickup")?(_hhRoomFloor(room)||hhGuessFloor(label,"")):"",room:room,level:level,status:"active",verdict:"",note:"",order:_hhNextOrder(who,slot),ts:now};
   if(emoji) job.emoji=emoji; if(/^wk:/.test(cad)||cad==="once") job.from=_hhIsoLocal(now);     // LATE_FROM: begins today (a once-job too)
+  if(typeof rtDailyJoin==="function"&&rtDailyJoin(job)) job.from=rtDailyJoin(job);              // CHOREDAILY: a new daily starts today
   if(kind==="project") job.layer="project";   // HH_PROJECTS
   if(kind==="once") job.hold=true;             // HH_ONCEPILE: in the pile until she sends it
   const others=Object.keys(hhAdd.can||{}).filter(function(w){ return hhAdd.can[w]&&w!==who&&HH_WHO.indexOf(w)>=0&&w!=="grab"; }); if(others.length) job.can=[who].concat(others);   // HH_SETTINGS_METER
@@ -14323,6 +14451,7 @@ function hhGiveTo(id,who){
   else { if(j.rot) set("rot",null); if(j.free) set("free",null); /* HH_ROTATE: Mom's and Dad's rows do not rotate */ set("src",{kind:(who==="dad"?"dadChore":"momChore"),id:id}); const m={morning:"morning",afternoon:"afternoon",evening:"night",chores:""}; if(m[j.slot]!==undefined) set("slot",m[j.slot]); else if(!HH_MC_SLOTS.some(function(c){ return c[0]===(j.slot||""); })) set("slot",""); if(j.srcTs!==undefined) set("srcTs",null); }
   set("order",_hhNextOrder(who,j.slot,id));
   if(/^wk:/.test(j.cad||"")) set("from",_hhIsoLocal(Date.now()));                              // LATE_FROM: a new owner starts today
+  if(typeof rtDailyJoin==="function"&&rtDailyJoin(j)) set("from",rtDailyJoin(j));               // CHOREDAILY: a daily's new owner starts today
   hhGive=""; householdOnValue(householdData);
   if(_hhWrite()) db.ref().update(upd);                                                          // one multi-path update (this row, plus a retired placeholder turn)
   if(typeof mwToast==="function") try{ mwToast("Gave "+(j.label||"it")+" to "+hhWhoName(who)); }catch(e){}
@@ -14385,6 +14514,7 @@ function hhCleanRows(who,iso,dn){
       if(!due&&!late) return;
       const row={id:id,job:j,label:st.label||j.label,emoji:st.emoji||j.emoji||"",pts:st.pts||0,mins:hhMinutesOf(j),done:(typeof rtDoneOn==="function")?rtDoneOn(slot,who,dn,idx):false,late:late&&!due,on:"toggleRtStep('"+slot+"','"+who+"',"+idx+")"};
       if(late&&!due&&!row.done&&typeof rtFallPay==="function"){ const f=rtFallPay(st,rtLateDays(slot,who,idx),who); if(f!==row.pts) row.fall=f; }   // CHOREFALL: what it pays today, when that is less
+      if(due&&dn===today&&typeof rtDailyPay==="function"){ const f=rtDailyPay(slot,who,idx,st); if(f!==row.pts) row.fall=f; }   // CHOREDAILY: a daily after 2+ missed days
       out.push(row);
     } else { const key=(j.src&&j.src.id)||id; const list=(who==="dad")?((typeof dcAll==="function")?dcAll():{}):((typeof mcAll==="function")?mcAll():{}); if(!list[key]) return;
       if(!cadDueOn(j.cad||"daily",dn)) return; const doneOn=(who==="dad")?(typeof dcDoneOn==="function"?dcDoneOn:null):(typeof mcDoneOn==="function"?mcDoneOn:null);
@@ -25699,7 +25829,7 @@ async function kitCapAsk(content,tools,opt){
   const tm=ctl?setTimeout(()=>ctl.abort(),opt.timeoutMs):null;
   try{
   for(let turn=0;turn<3;turn++){   // a server tool (web fetch) can pause a long turn — continue it, at most twice
-    const body={model:"claude-sonnet-5",max_tokens:(opt&&opt.maxTokens)||3000,messages:msgs}; if(tools) body.tools=tools;
+    const body={model:(opt&&opt.model)||"claude-sonnet-5",max_tokens:(opt&&opt.maxTokens)||3000,messages:msgs}; if(tools) body.tools=tools;   // DRAFTMEAN: a caller may name the model (Q4: claude-sonnet-5-5); no other caller names one
     const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
       headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
       body:JSON.stringify(body),signal:ctl?ctl.signal:undefined});   // KITLINKHOLD
@@ -37429,7 +37559,7 @@ function haNbContext(kid){
   let nbRec={}; try{ nbRec=ROSTER_DEF.find(k=>k&&k.id===kid)||{}; }catch(e){}
   const nbNm=v=>(typeof v==="string"&&v.trim())||null;
   const nbLv=nbLevelCtx(kid);   // NBLEVEL: ctx.grade + ctx.gradeBand
-  return { nbKidName:cap(kid), kidName:nbNm((((notebookSettings||{})[kid])||{}).notebookName)||nbNm(nbRec.notebookName)||nbNm(nbRec.name), notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), nbGrade:nbGradeOf(kid), grade:nbLv.grade, gradeBand:nbLv.gradeBand, spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, loe:loe, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, wordCursor:luWordsCursorOf(kid), numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true }; // KIDNAME_ROSTER
+  return { nbKidName:cap(kid), kidName:nbNm((((notebookSettings||{})[kid])||{}).notebookName)||nbNm(nbRec.notebookName)||nbNm(nbRec.name), notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), nbGrade:nbGradeOf(kid), grade:nbLv.grade, gradeBand:nbLv.gradeBand, spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, loe:loe, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, wordCursor:luWordsCursorOf(kid), numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true, ladders:((typeof nbLadderCtx==="function")?nbLadderCtx(kid):null) }; // KIDNAME_ROSTER
 }
 // LU_WORDS_WIRE_START — 🔤 Lucy's Sight Word of the Day keeps its place week to week (notebooks.js LU_WORDS; her go-ahead
 // 2026-11-21 for slice 1 of PLAN_notebook_lucy_2026-11-10.md). The context reads notebookSettings/<kid>/wordCursor; the builder
@@ -46408,7 +46538,7 @@ function kcPointsHTML(k){
       if(!due.length&&!_am.length) return;
       const isDone=function(i){ return isM?(typeof mStepDoneOn==="function"&&mStepDoneOn(k,dn,i)):rtDoneOn(slot,k,dn,i); };
       const done=due.filter(isDone);
-      let left=0; due.forEach(function(i){ if(!isDone(i)) left+=((!isM&&typeof rtFallPay==="function"&&!cadDueOn((steps[i]||{}).cad||"daily",dn))?rtFallPay(steps[i],rtLateDays(slot,k,i),k):((steps[i]||{}).pts||0)); });   // CHOREFALL: a falling row counts what it pays today
+      let left=0; due.forEach(function(i){ if(!isDone(i)) left+=((!isM&&typeof rtFallPay==="function"&&!cadDueOn((steps[i]||{}).cad||"daily",dn))?rtFallPay(steps[i],rtLateDays(slot,k,i),k):(typeof rtDailyPay==="function")?rtDailyPay(slot,k,i,steps[i]):((steps[i]||{}).pts||0)); });   // CHOREFALL: a falling row counts what it pays today; CHOREDAILY: a daily too
       _am.forEach(function(it){ if(!amDoneBy(it,_ai)) left+=(it.pts||0); });   // SENDAM
       const allDone=done.length===due.length&&_amD===_am.length;
       const bonus=(typeof rtBonusFor==="function")?rtBonusFor(slot,k):0;
@@ -47342,12 +47472,15 @@ function relayWeek(why,info){
   (info.subjects||[]).forEach(function(s){ if(s&&s.kid&&s.sk&&!_rlwPend.subjects.some(x=>x.kid===s.kid&&x.sk===s.sk)) _rlwPend.subjects.push({kid:s.kid,sk:s.sk}); });   // 🔁 RELAY3: pass B — the subjects re-laid after the sweep, one after another
   if(info.mvt){ if(!_rlwPend.mvt) _rlwPend.mvt=[]; _rlwPend.mvt.push(info.mvt); }   // 📅 MVTRELAY: the moved card and the slot it left
   (info.retr||[]).forEach(function(k){ if(!k) return; if(!_rlwPend.retr) _rlwPend.retr=[]; if(_rlwPend.retr.indexOf(k)<0) _rlwPend.retr.push(k); });   // 🃏 RETRLIVE: pass R — the kids whose practice days changed
+  if(info.from) _rlwPend.from=(info.from==="tomorrow"||_rlwPend.from==="tomorrow")?"tomorrow":"clock";   // 🃏 DRILLSWITCH: one clock rule for pass B and pass R (_rlwFromMode); no other caller sets it
   (info.fams||[]).forEach(function(f){ if(!f||!f.id||!f.key) return; if(!_rlwPend.fams) _rlwPend.fams=[]; if(!_rlwPend.fams.some(x=>x.id===f.id&&x.key===f.key)) _rlwPend.fams.push({id:f.id,key:f.key}); });   // UNITFT: pass F — family items laid into the board week
   try{ clearTimeout(_rlwTimer); }catch(e){}
   _rlwTimer=setTimeout(function(){ _rlwFire(0); },RLW_WAIT_MS);
 }
+function _rlwArchRefire(){ _rlwFire(0); }
 function _rlwFire(att){
   const pend=_rlwPend; if(!pend) return;
+  if(typeof archiveWhenAll==="function"&&!archiveWhenAll(_rlwArchRefire)) return;   // ARCHBOOT: on the smaller copy the re-lay waits for every past week (then the checks below run as before)
   const ready=(typeof fbCheckedLoaded==="undefined"||fbCheckedLoaded)&&(typeof fbTasksLoaded==="undefined"||fbTasksLoaded)&&(typeof fbHistoryLoaded==="undefined"||fbHistoryLoaded)&&(typeof fbCurrLoaded==="undefined"||fbCurrLoaded)&&(typeof archiveEnsureAll!=="function"||archiveEnsureAll());   // ARCHENSURE: a re-lay builds from every past week — wait for them like the rest
   if(!ready||(typeof lockHeldByOther==="function"&&lockHeldByOther())){
     if(att<20){ _rlwTimer=setTimeout(function(){ _rlwFire(att+1); },500); return; }   // ~10 s for a passing sweep / the data
@@ -47423,10 +47556,11 @@ function _rlwWords(e){
   const nm=(e.moves||[]).length, nr=(e.removed||[]).length;
   const nSat=(String(e.why||"").split(",").indexOf("saturday")>=0)?(e.removed||[]).filter(function(c){ return c&&c.day==="saturday"&&!c.lid; }).length:0;   // 📅 TWSSAT: a Saturday daily taken off is not "to next week"
   const nRetr=(String(e.why||"").split(",").indexOf("retrieval")>=0)?(e.removed||[]).filter(function(c){ return c&&c.subjectKey==="retrieval"; }).length:0;   // 🃏 RETRLIVE: a practice card taken off is not "to next week"
+  const nSw=(String(e.why||"").split(",").indexOf("drillswitch")>=0)?(e.removed||[]).filter(function(c){ return c&&/^drills(_|$)/.test(String(c.subjectKey||"")); }).length:0;   // 🃏 DRILLSWITCH: nor is an old drills card the switch took off
   let s=(e.label||"Re-laid")+" → "+nm+" card"+(nm===1?"":"s")+" moved"+(kids?" ("+kids+")":"");
-  if(nr-nSat-nRetr) s+=" · "+(nr-nSat-nRetr)+" to next week";
+  if(nr-nSat-nRetr-nSw) s+=" · "+(nr-nSat-nRetr-nSw)+" to next week";
   if(nSat) s+=" · "+nSat+" off Saturday";
-  if(nRetr) s+=" · "+nRetr+" taken off";
+  if(nRetr+nSw) s+=" · "+(nRetr+nSw)+" taken off";
   const na=(e.added||[]).length; if(na) s+=" · "+na+" added";   // RELAY3D
   const nb=(e.boxed||[]).length; if(nb) s+=" · "+nb+" didn't fit (in the day's box)";   // 🃏🎯 DMSLOT
   if(e.locked&&e.locked.length) s+=" · ⚠ "+e.locked.length+" held card"+(e.locked.length===1?"":"s")+" changed";
@@ -47516,6 +47650,7 @@ function _rlwApplyLocal(p,v){
   const parts=String(p).split("/");
   if((parts[0]==="weekConfig"||parts[1]==="babysitter"||parts[1]==="meta")&&typeof _twsApplyLocal==="function"){ _twsApplyLocal(p,v); return; }   // 📅 THISWEEK (TWSSAT: the board's Saturday tab)
   if(parts[0]==="calendar"&&typeof calendarData!=="undefined"&&calendarData){ let o=calendarData; for(let i=1;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=="object") o[parts[i]]={}; o=o[parts[i]]; } if(v===null) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=v; return; }
+  if(parts[0]==="mastery"&&parts.length>1&&typeof masteryData!=="undefined"&&masteryData){ let o=masteryData; for(let i=1;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=="object") o[parts[i]]={}; o=o[parts[i]]; } if(v===null) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=JSON.parse(JSON.stringify(v)); return; }   // 🃏 DRILLSWITCH: a plan leaf (no other caller lists a mastery path)
   if(typeof stApplyLocal==="function") stApplyLocal(p,v);
 }
 function relayUndo(at){
@@ -47566,7 +47701,7 @@ function _rlwModeNoAsk(){
 }
 function _rlwChain(list,pend,fin){
   const _mvt=(typeof _rlwMvtOnly==="function"&&_rlwMvtOnly(pend));   // 📅 MVTRELAY: today stays as the move left it, from tomorrow on
-  const q=(list||[]).slice(); const mode=_mvt?"tomorrow":(pend&&pend.today&&typeof RLW_CURR_TODAY!=="undefined"&&RLW_CURR_TODAY&&typeof _rlwModeToday==="function")?_rlwModeToday():_rlwModeNoAsk(); const why=(pend&&pend.whys&&pend.whys[0])||"relay";   // 🔁 RELAY4: a curriculum run may take today too
+  const q=(list||[]).slice(); const mode=_mvt?"tomorrow":((typeof _rlwFromMode==="function"&&_rlwFromMode(pend))||((pend&&pend.today&&typeof RLW_CURR_TODAY!=="undefined"&&RLW_CURR_TODAY&&typeof _rlwModeToday==="function")?_rlwModeToday():_rlwModeNoAsk())); const why=(pend&&pend.whys&&pend.whys[0])||"relay";   // 🔁 RELAY4: a curriculum run may take today too
   const next=function(){
     const s=q.shift(); if(!s){ fin(); return; }
     let pb=false, dl=false; try{ pb=(typeof planBacked==="function")&&planBacked(s.kid,s.sk); dl=!pb&&_rlwDailyOk(s.kid,s.sk); }catch(e){ pb=false; dl=false; }
@@ -49941,6 +50076,161 @@ function nbLevelCardHtml(kid){
   '</div>';
 }
 // NBLEVEL_END
+// NBLADDER_START — 📚 the two notebook ladders, slice 1: the Mom-only "Ladders" card and the placement printout (notebooks study,
+// her words 2026-11-23/24: "Build it"; placement for both — reading "Do a placement first", math "i think a placement on the math
+// as well"; the optional harder stage on 5th/7th/8th "add the stage", off unless she switches it on for a child). notebooks.js
+// NBLADDER holds the engine (HoweNotebooks.ladders); this block loads the content, keeps each kid's place and draws the card.
+//   · The content: ladders/number_thinking.json and ladders/read_and_answer.json, static files beside the app. Fetched ONCE a
+//     session, only when a kid has a ladder switched on, Mom opens the Ladders card, or she prints a placement — never at boot
+//     (the same pattern as envPicsLoad: fetch, cache-bust only on GitHub Pages, kept in memory, a failure tried again only when
+//     Mom taps "Try again"). sw.js keeps no offline copy (it caches the page and the lazy .js files only), so offline the card
+//     says the ladders couldn't load and everything else is exactly as before; nothing throws.
+//   · Saved per kid per ladder at notebookSettings/<kid>/ladders/<number|reading> = { on, lv, opt, cur }. Nothing saved = OFF.
+//     Only Mom's taps on the card write (momHere), one targeted field per write, behind db && !_dryRun(), mirrored to the same
+//     local copy as every notebook setting (ha_nb_settings). A new level drops cur, so the child starts at that level's first item.
+//     Nothing writes cur yet — the slices that print the pages save it after a print, like the notebook's other saved places.
+//   · The level: the one Mom picked (lv), else the kid's notebook grade (nbLevelGrade — Mom's override or the Family grade, not
+//     today's fallback) through HoweNotebooks.ladders.defaultLevel; neither → "Pick a level".
+//   · ctx.ladders (haNbContext): { reading|number: { on, lv, lvFrom, opt, cur, ready, next } } for the kid's saved ladders, or
+//     null. next = ladders.next(…) for the target week when the ladder is on and loaded. NO generator reads it yet.
+//   · Switching a ladder on prints nothing yet (NBLADDER_PAGES_NOTE says so on the card — change that line when the pages land).
+const NBLADDER_FILES={reading:"ladders/read_and_answer.json",number:"ladders/number_thinking.json"};
+const NBLADDER_KINDS=["reading","number"];
+const NBLADDER_NAMES={reading:"📖 Reading passages",number:"🔢 Number thinking"};
+const NBLADDER_UNIT={reading:"passage",number:"question"};
+const NBLADDER_PAGES_NOTE="Switching a ladder on doesn’t print anything in the notebook yet — those pages are still being built. For now it keeps the level and the child’s place ready.";
+const _nbLadData={}, _nbLadP={}, _nbLadFail={}, _nbLadOpen={};
+function nbLadderData(kind){ return _nbLadData[kind]||null; }
+function nbLadderLib(){ return (typeof window!=="undefined"&&window.HoweNotebooks&&window.HoweNotebooks.ladders)||null; }
+function nbLadderShapeOk(kind,j){ return !!(j&&typeof j==="object"&&!Array.isArray(j)&&j.levels&&typeof j.levels==="object"&&(kind==="number"||(j.passages&&typeof j.passages==="object"))); }
+function nbLadderRepaint(){ try{ if(typeof tab!=="undefined"&&tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); } }catch(e){} }
+// One ladder's file, fetched once (fetchFn: tests hand in their own). Resolves with the data; a failure marks the ladder failed.
+function nbLadderLoad(kind,fetchFn){
+  if(!NBLADDER_FILES[kind]) return Promise.reject(new Error("no ladder "+kind));
+  if(_nbLadData[kind]) return Promise.resolve(_nbLadData[kind]);
+  if(_nbLadP[kind]) return _nbLadP[kind];
+  const f=fetchFn||((typeof fetch==="function")?(u=>fetch(u)):null);
+  if(!f){ _nbLadFail[kind]=true; return Promise.reject(new Error("no fetch")); }
+  const u=NBLADDER_FILES[kind], url=(typeof location!=="undefined"&&/github\.io$/.test(location.hostname))?(u+"?v="+Date.now()):u;
+  _nbLadP[kind]=Promise.resolve().then(()=>f(url)).then(r=>{ if(!r||!r.ok) throw new Error(u+" "+(r&&r.status)); return r.json(); })
+    .then(j=>{ if(!nbLadderShapeOk(kind,j)) throw new Error(u+" shape"); _nbLadData[kind]=j; _nbLadFail[kind]=false; _nbLadP[kind]=null; nbLadderRepaint(); return j; })
+    .catch(e=>{ _nbLadP[kind]=null; _nbLadFail[kind]=true; nbLadderRepaint(); throw e; });
+  return _nbLadP[kind];
+}
+function nbLadderWant(kind){ if(!_nbLadData[kind]&&!_nbLadP[kind]&&!_nbLadFail[kind]) nbLadderLoad(kind).catch(()=>{}); }
+function nbLadderRetry(kind){ if(!momHere()) return; _nbLadFail[kind]=false; nbLadderLoad(kind).catch(()=>{}); nbLadderRepaint(); }
+function nbLadderTrack(kind){ const L=nbLadderLib(), d=nbLadderData(kind); return (L&&d)?L.track(kind,d):null; }
+function nbLadderSaved(kid,kind){ const l=((((notebookSettings||{})[kid])||{}).ladders)||{}, s=l[kind]; return (s&&typeof s==="object"&&!Array.isArray(s))?s:{}; }
+function nbLadderHasBank(kid){ try{ return typeof nbQbList==="function"&&nbQbList(kid).length>0; }catch(e){ return false; } }
+// The notebook grade's level (Mom's override or the Family grade — not today's fallback), or "".
+function nbLadderDefault(kid,kind){ const g=(typeof nbLevelGrade==="function")?nbLevelGrade(kid):null, L=nbLadderLib(); return ((g&&g.from!=="before"&&L)?L.defaultLevel(kind,g.key):null)||""; }
+// {lv, from: "saved" | "grade" | ""} — Mom's pick, else the notebook grade's level, else none.
+function nbLadderLevelOf(kid,kind){
+  const s=nbLadderSaved(kid,kind); if(s.lv) return {lv:String(s.lv),from:"saved"};
+  const d=nbLadderDefault(kid,kind);
+  return d?{lv:d,from:"grade"}:{lv:"",from:""};
+}
+function nbLadderState(kid,kind){ const s=nbLadderSaved(kid,kind), lv=nbLadderLevelOf(kid,kind); return {on:s.on===true, lv:lv.lv||null, lvFrom:lv.from||null, opt:s.opt===true, cur:(s.cur&&typeof s.cur==="object")?s.cur:null}; }
+// For haNbContext: the kid's saved ladders + this week's items when on and loaded; null when nothing is saved. No generator reads it yet.
+function nbLadderCtx(kid){
+  try{
+    const L=nbLadderLib(), out={}; let any=false;
+    NBLADDER_KINDS.forEach(kind=>{
+      if(!Object.keys(nbLadderSaved(kid,kind)).length) return;
+      any=true;
+      const st=nbLadderState(kid,kind); let next=null, ready=false;
+      if(st.on){ const t=nbLadderTrack(kind); if(t&&L){ ready=true; next=L.next(t,st,nbTargetWkNum(),L.perWeek[kind]); } else nbLadderWant(kind); }
+      out[kind]=Object.assign(st,{ready:ready,next:next});
+    });
+    return any?out:null;
+  }catch(e){ return null; }
+}
+// The one writer: ONE targeted field of notebookSettings/<kid>/ladders/<kind>. false / "" / null = remove (nothing saved = off).
+function nbLadderWrite(kid,kind,field,val){
+  if(!momHere()||!NBLADDER_FILES[kind]||["on","lv","opt","cur"].indexOf(field)<0) return false;
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  const ns=notebookSettings[kid]; if(!ns.ladders||typeof ns.ladders!=="object") ns.ladders={};
+  if(!ns.ladders[kind]||typeof ns.ladders[kind]!=="object") ns.ladders[kind]={};
+  const del=(val===null||val===undefined||val===false||val==="");
+  if(del) delete ns.ladders[kind][field]; else ns.ladders[kind][field]=val;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db&&!_dryRun()){ const r=db.ref("notebookSettings/"+kid+"/ladders/"+kind+"/"+field); if(del) r.remove(); else r.set(val); } }catch(e){}
+  return true;
+}
+function nbLadderSetOn(kid,kind,on){ if(!momHere()||!NBLADDER_FILES[kind]) return; if(nbLadderWrite(kid,kind,"on",on===true)&&on===true) nbLadderWant(kind); nbLadderRepaint(); }
+function nbLadderSetOpt(kid,on){ if(!momHere()) return; nbLadderWrite(kid,"number","opt",on===true); nbLadderRepaint(); }
+function nbLadderSetLevel(kid,kind,lv){
+  if(!momHere()||!NBLADDER_FILES[kind]) return;
+  const t=nbLadderTrack(kind); lv=String(lv==null?"":lv);
+  if(lv&&(!t||!t.levels[lv]||(t.levels[lv].bank&&!nbLadderHasBank(kid)))) return;   // only a level in the ladder; a bank rung only for a kid with that bank
+  const s=nbLadderSaved(kid,kind), was=nbLadderLevelOf(kid,kind).lv;
+  if(String(s.lv||"")===lv) return;
+  nbLadderWrite(kid,kind,"lv",lv||null);
+  if(s.cur&&nbLadderLevelOf(kid,kind).lv!==was) nbLadderWrite(kid,kind,"cur",null);   // a new level starts at its first item
+  nbLadderRepaint();
+}
+function nbLadderToggle(kid,open){ _nbLadOpen[kid]=!!open; if(open) NBLADDER_KINDS.forEach(nbLadderWant); }
+// "Up next: passage 4 of 30 in 1st grade." — plain words for where the child is.
+function nbLadderWhereText(kid,kind,t,st){
+  const L=nbLadderLib(), u=NBLADDER_UNIT[kind];
+  if(!st.lv) return "Pick a level to start.";
+  const w=(L&&t)?L.where(t,st):null; if(!w) return "Pick a level to start.";
+  if(w.stop) return "Next is the "+L.word(w.stop.lv).replace(" grade","-grade")+" question bank (its card is on this tab). When "+cap(kid)+" is done with it, pick the next level here.";
+  if(w.end) return "Finished the last level ("+w.label+").";
+  return (w.started?"Up next: ":"Starts at ")+u+" "+w.num+" of "+w.of+" in "+w.label+".";
+}
+function nbLadderRowHtml(kid,kind){
+  const F='font-family:\'DM Sans\',sans-serif', st=nbLadderState(kid,kind), t=nbLadderTrack(kind), L=nbLadderLib();
+  const head='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="flex:1;font-size:12.5px;font-weight:800;color:#1f2937">'+NBLADDER_NAMES[kind]+'</span>'+
+    '<button onclick="nbLadderSetOn(\''+kid+'\',\''+kind+'\','+(!st.on)+')" style="padding:5px 12px;border-radius:20px;border:1.5px solid '+(st.on?'#16a34a':'var(--border)')+';background:'+(st.on?'#dcfce7':'#fff')+';color:'+(st.on?'#166534':'#6b7280')+';font-size:11.5px;font-weight:800;cursor:pointer;'+F+'">'+(st.on?'On':'Off')+'</button></div>';
+  if(!t){
+    const msg=_nbLadFail[kind]?'This ladder couldn’t load — check the internet. <button onclick="nbLadderRetry(\''+kind+'\')" style="border:none;background:none;padding:0;color:#4338ca;font-size:11.5px;font-weight:800;cursor:pointer;text-decoration:underline;'+F+'">Try again</button>':'Getting the ladder…';
+    return '<div style="border-top:1px solid #e0e7ff;padding:9px 0">'+head+'<div style="font-size:11.5px;color:var(--muted);margin-top:4px">'+msg+'</div></div>';
+  }
+  const hasBank=nbLadderHasBank(kid), saved=nbLadderSaved(kid,kind).lv||"";
+  const def=nbLadderDefault(kid,kind);
+  const first='<option value=""'+(saved?'':' selected')+'>'+(def?'Follow the notebook level ('+L.word(def)+')':'Pick a level')+'</option>';
+  const opts=L.levels(t,st.opt).map(x=>'<option value="'+x.lv+'"'+(x.lv===saved?' selected':'')+(x.bank&&!hasBank?' disabled':'')+'>'+x.label+(x.bank?' (the question bank)':'')+'</option>').join("");
+  const w=st.lv?L.where(t,st):null, atLv=w&&!w.stop?w.lv:st.lv, optHere=kind==="number"&&atLv&&t.levels[atLv]&&t.levels[atLv].items.some(it=>it.opt);
+  const optHtml=optHere?'<label style="display:flex;align-items:center;gap:7px;margin-top:6px;font-size:11.5px;font-weight:700;color:#1f2937"><input type="checkbox"'+(st.opt?' checked':'')+' onchange="nbLadderSetOpt(\''+kid+'\',this.checked)"> Harder extra stage'+
+    '<span style="font-weight:600;color:var(--muted)">— '+t.levels[atLv].items.filter(it=>it.opt).length+' more questions at the end of '+t.levels[atLv].label+', for a child who is ready. Off unless you switch it on.</span></label>':'';
+  const place=st.lv?'<button onclick="nbLadderPlacement(\''+kid+'\',\''+kind+'\')" style="padding:6px 12px;border-radius:9px;border:1.5px solid #c7d2fe;background:#fff;color:#3730a3;font-size:11.5px;font-weight:800;cursor:pointer;'+F+'">🖨 Print placement</button>'+
+      '<span style="font-size:10.5px;color:var(--muted);margin-left:6px">A short check on paper, with a separate answer page for you. It changes nothing here.</span>'
+    :'<span style="font-size:10.5px;color:var(--muted)">Pick a level to print a placement check.</span>';
+  return '<div style="border-top:1px solid #e0e7ff;padding:9px 0">'+head+
+    '<label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;font-weight:700;color:#1f2937">Level:'+
+      '<select onchange="nbLadderSetLevel(\''+kid+'\',\''+kind+'\',this.value)" style="padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:11.5px;background:#fff;'+F+'">'+first+opts+'</select></label>'+
+    '<div style="font-size:11.5px;color:#374151;margin-top:5px">'+nbLadderWhereText(kid,kind,t,st)+'</div>'+optHtml+
+    '<div style="margin-top:7px">'+place+'</div></div>';
+}
+// The one home: this kid's section of the Notebook tab, Mom only, after the Notebook level card. Closed, it reads only the saved
+// switches (no file is fetched); opening it — or a ladder being on — fetches the content.
+function nbLadderCardHtml(kid){
+  if(!momHere()) return "";
+  const on=NBLADDER_KINDS.map(k=>nbLadderSaved(kid,k).on===true), open=!!_nbLadOpen[kid];
+  if(open||on[0]||on[1]) NBLADDER_KINDS.forEach((k,i)=>{ if(open||on[i]) nbLadderWant(k); });
+  const sum=NBLADDER_KINDS.map((k,i)=>(k==="reading"?"Reading":"Number")+": "+(on[i]?"on":"off")).join(" · ");
+  return '<details id="nbladder-card"'+(open?' open':'')+' ontoggle="nbLadderToggle(\''+kid+'\',this.open)" style="margin-top:14px;background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:12px;padding:12px 14px">'+
+    '<summary style="cursor:pointer;font-size:12px;font-weight:800;color:#3730a3">📚 Ladders <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#c7d2fe;color:#312e81;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span>'+
+      '<span style="font-weight:600;color:var(--muted);margin-left:6px">'+sum+'</span></summary>'+
+    '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin:6px 0 4px">Two step-by-step ladders for the notebook: a reading passage with questions, and number-thinking questions. Each starts at the level you pick and climbs from there.</div>'+
+    (nbLadderLib()?NBLADDER_KINDS.map(k=>nbLadderRowHtml(kid,k)).join(""):'<div style="font-size:11.5px;color:var(--muted);padding:6px 0">Getting the ladders…</div>')+
+    '<div style="font-size:11px;color:#4338ca;font-weight:700;line-height:1.45;margin-top:4px">'+NBLADDER_PAGES_NOTE+'</div>'+
+  '</details>';
+}
+// 🖨 Print placement: the window opens inside the tap (Safari blocks a pop-up opened after a wait — as ucPrintWin), then gets the
+// page once notebooks.js and the ladder's file are here. Writes nothing; the level stays as it is until Mom picks one.
+function nbLadderPlacement(kid,kind){
+  if(!momHere()||!NBLADDER_FILES[kind]) return;
+  const lv=nbLadderLevelOf(kid,kind).lv; if(!lv) return;
+  const w=window.open("","_blank"); if(!w){ alert("Allow pop-ups to print."); return; }
+  const put=doc=>{ w.document.open(); w.document.write(doc.replace("</body>",'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print()},250)}</scr'+'ipt></body>')); w.document.close(); };
+  const fail=()=>{ try{ w.close(); }catch(e){} alert("Couldn’t load the placement check — check the internet and try again."); };
+  try{ w.document.write('<!doctype html><html><head><meta charset="UTF-8"><title>Getting the page ready…</title></head><body style="font-family:sans-serif;padding:24px;color:#374151">Getting the page ready…</body></html>'); }catch(e){}
+  let p; try{ p=Promise.all([haLoadNotebooksLib(),nbLadderLoad(kind)]); }catch(e){ p=Promise.reject(e); }
+  p.then(r=>{ let doc=""; try{ doc=r[0].ladders.placementDoc(kind,r[1],{lv:lv,kidName:cap(kid)}); }catch(e){ doc=""; } if(doc) put(doc); else fail(); },fail);
+}
+// NBLADDER_END
 // NBNAME_START — the name in a Pre-K notebook, set on the Notebook tab (her ask 2026-11-10: "can we also have the option on
 // notebooks for caleb 3d and julian to edit the name, so 3d will be David in his notebook"). Mom only. Save writes ONE targeted
 // path, notebookSettings/<kid>/notebookName (removed by "Use the family name"); dry-run inert; the local notebookSettings is kept
@@ -50765,6 +51055,11 @@ const NB_CB_SUBS=[{k:"letters",lbl:"Little letters",ico:"\u{1F524}"},{k:"numbers
                   {k:"shapes",lbl:"Shapes",ico:"\u{1F53A}"},{k:"colors",lbl:"Colors",ico:"\u{1F3A8}"},{k:"animals",lbl:"Animals",ico:"\u{1F43E}"}];
 // PREKLEVEL: the card's title follows the look (a plan with no look = the construction card, as first built)
 const NB_PLAN_TITLE={construction:"\u{1F69C} This week\u2019s build plan",dino:"\u{1F995} This week\u2019s plan",shark:"\u{1F988} This week\u2019s swim plan"};
+// NB_LOOKS2_START — a look added in notebooks.js brings its own title for this card (her words 2026-11-23: "build up several
+// different themes for the kids to even change"), so a new look never shows the construction look's words here and no look has
+// to be named in this file again. The first three keep the titles above; no look, or one without a title = as before.
+function nbPlanTitle(look){ let t=null; try{ t=((window.HoweNotebooks||{}).themes||{})[look]; }catch(e){} return NB_PLAN_TITLE[look]||(t&&t.planTitle)||NB_PLAN_TITLE.construction; }
+// NB_LOOKS2_END
 // PREKLEVEL: any Pre-K notebook has one (a themed starter kid too), so the kid's look + levels go along.
 function nbPlanKid(kid){ try{ return !!(kid&&window.HoweNotebooks&&typeof window.HoweNotebooks.hasPlan==="function"&&window.HoweNotebooks.hasPlan(kid,{notebookTheme:(typeof nbThemeOf==="function"?nbThemeOf(kid):null),nbLevel:(typeof nbLevelOf==="function"?nbLevelOf(kid):null)})); }catch(e){ return false; } }
 function nbPlanCardHtml(kid){
@@ -50814,7 +51109,7 @@ function nbPlanCardHtml(kid){
   }).join("");
   return '<div class="nb-cbplan" style="margin-top:14px;background:#fff;border:1.5px solid #fed7aa;border-radius:12px;padding:12px 14px">'+
     '<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px">'+
-      '<span style="font-size:12px;font-weight:800;color:#c2410c">'+(NB_PLAN_TITLE[plan.look]||NB_PLAN_TITLE.construction)+' <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fed7aa;color:#7c2d12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></span>'+
+      '<span style="font-size:12px;font-weight:800;color:#c2410c">'+nbPlanTitle(plan.look)+' <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fed7aa;color:#7c2d12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></span>'+
       (nOv?'<button onclick="nbJuResetWeek('+kq+')" style="margin-left:auto;padding:3px 9px;border-radius:7px;border:1.5px solid var(--border);background:#fff;color:#6b7280;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u21BA All auto</button>':'')+
     '</div>'+
     '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:2px">What goes on each day\u2019s page. <b>\u{1F501}</b> = back for another look because it was missed in drills. Tap any day to swap it \u2014 <b>\u{1F4CC}</b> marks your pick. '+
@@ -52923,11 +53218,21 @@ function _cmDecks(){
     { key:"Construction Machines", mode:"flip", introCap:2, groupBy:"job", cards:machines },
     { key:"Machine Parts", mode:"flip", introCap:2, cards:parts }];
 }
+// STARTERKINDS — the starter units' activities carry their kind (slice 9 of PLAN_unit_activity_types_2026-11-19 §4 row 9, §1.6, §2(e);
+//   her go 2026-11-22/23: "build the unit plans out … go with the plans' recommended answers"). Data only: each line marked
+//   STARTERKINDS below adds type:"hands" (UACTKIND), and from the activity's own words its supplies in LESSONRES's shape
+//   [{name, kids, qty?}] ("| mom" items: kids:false) and mom:true where it says "with Mom" (UACTHANDS) — the same fields the
+//   day editor's 🧪 + Add writes. The steps stay as they were (plain strings), so the notebook page prints byte-identical. A drawing,
+//   writing or report page stays a 📓 Notebook activity: no field at all. No web address, no new step, no new activity.
+//   · §5 Q6 (the plan's recommended answer): a family's EXISTING copy is left alone — starterUnitAdd writes the record once and
+//     STARTERUP never touches activities (and starterVer is unchanged, so no catch-up shows). A family that adds the unit after
+//     this gets the kinds and supplies; the supplies reach the 🧺 Sunday list once Mom gives the unit days (utResOf → uahSupplies).
 function _cmActs(){ return [
   { key:"draw_machine", title:"Draw a machine at work", emoji:"🖍️", kind:"sheet", lines:2, points:5,
     desc:"Pick one machine you learned this week. Draw it doing its job. Tell Mom its name and what it does." },
   { key:"build_it", title:"Build a machine", emoji:"🧱", kind:"sheet", points:5,
     desc:"Build a machine out of blocks, LEGO or boxes. Then draw what you built.",
+    type:"hands", supplies:[{name:"blocks, LEGO or boxes",kids:true}],   // STARTERKINDS
     steps:["Pick a machine.","Build it.","Show how it moves: dig, lift, push or dump.","Draw it in the box."] },
   { key:"count_wheels", title:"Count the wheels", emoji:"🔢", kind:"sheet", lines:3, points:5,
     desc:"Find machines in a book or outside. Count the wheels (or tracks) on each one and write the number." }]; }
@@ -53072,23 +53377,30 @@ function _rgDecks(){
 function _rgActs(){ return [
   { key:"rock_hunt", title:"Rock hunt", emoji:"🔎", kind:"sheet", points:5,
     desc:"Go on a rock hunt outside with Mom. Pick up five rocks you like. Draw your favorite one in the box.",
+    type:"hands", mom:true,   // STARTERKINDS
     steps:["Find 5 rocks.","Look close. What colors do you see?","Draw your favorite."] },
   { key:"sort_rocks", title:"Sort your rocks", emoji:"🗂️", kind:"sheet", points:5,
     desc:"Make piles: by color, then shiny or not shiny, then smooth or bumpy. Count each pile and tell Mom.",
+    type:"hands", supplies:[{name:"rocks",kids:true}],   // STARTERKINDS
     steps:["Sort by color.","Sort shiny and not shiny.","Sort smooth and bumpy.","Draw your piles."] },
   { key:"scratch_test", title:"Scratch test", emoji:"🪙", kind:"sheet", points:5,
     desc:"Hard or soft? Try to scratch each rock with your fingernail, then with a penny. A soft rock gets a scratch mark.",
+    type:"hands", supplies:[{name:"rocks",kids:true},{name:"penny",kids:true,qty:"1"}],   // STARTERKINDS
     steps:["Try your fingernail.","Try a penny.","Put the soft ones in one pile.","Draw a soft rock and a hard rock."] },
   { key:"magnet_test", title:"Does a magnet stick?", emoji:"🧲", kind:"sheet", points:5,
     desc:"Hold a magnet next to each rock. Does it stick? Make a stick pile and a no-stick pile.",
+    type:"hands", supplies:[{name:"magnet",kids:true,qty:"1"},{name:"rocks",kids:true}],   // STARTERKINDS
     steps:["Test each rock.","Make two piles.","Draw a rock from each pile."] },
   { key:"grow_crystals", title:"Grow salt crystals", emoji:"🧂", kind:"sheet", points:5,
     desc:"With Mom: stir salt into warm water until no more will melt. Pour a little into a dish and set it in a sunny window. Look every day.",
+    type:"hands", mom:true, supplies:[{name:"salt",kids:false},{name:"warm water",kids:false},{name:"dish",kids:false,qty:"1"}],   // STARTERKINDS
     steps:["Mom gets warm water.","Stir in the salt.","Pour it in a dish.","Draw the crystals you see."] },
   { key:"pet_rock", title:"Make a pet rock", emoji:"🪨", kind:"sheet", points:5,
-    desc:"Find a smooth rock. Paint or draw a face on it and give it a name. Draw your pet rock in the box." },
+    desc:"Find a smooth rock. Paint or draw a face on it and give it a name. Draw your pet rock in the box.",
+    type:"hands", supplies:[{name:"smooth rock",kids:true,qty:"1"},{name:"paint",kids:true}] },   // STARTERKINDS
   { key:"gem_dig", title:"Gem dig", emoji:"💎", kind:"sheet", points:5,
     desc:"Like the Oat and gem treasure bin: Mom hides gems in oats or sand. Dig them out with a spoon or a brush, then sort them by color.",
+    type:"hands", supplies:[{name:"gems",kids:false},{name:"oats or sand",kids:false},{name:"spoon or brush",kids:true}],   // STARTERKINDS
     steps:["Dig for gems.","Sort them by color.","Count each color.","Draw your treasure."] }]; }
 
 // 💎 Photos ship WITH the unit (her rule for this unit 2026-11-16: a gem needs a real photo to be learnable; Wikimedia Commons
@@ -56482,7 +56794,7 @@ let cardSheet=null;   // {unitId, deckKey, text, opts, res, rows:[{id,name,back,
 let _csSeq=0;
 function csEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function cardSheetDeckNames(S){ const u=S&&(typeof unitStudies!=="undefined")&&unitStudies[S.unitId]; const d=u&&(u.decks||[]).find(x=>x&&x.key===S.deckKey); return ((d&&d.cards)||[]).map(c=>c&&c.name).filter(Boolean); }
-function cardSheetSplit(S){ S=S||cardSheet; if(!S) return null; S.res=cardSplit(S.text||"",Object.assign({have:cardSheetDeckNames(S)},S.opts||{})); S.rows=S.res.rows.map(r=>Object.assign({id:"r"+(++_csSeq)},r)).concat((S.ai||[]).filter(r=>!r.drop)); return S; }   // PHOTOCARDS: rows Claude read ride along
+function cardSheetSplit(S){ S=S||cardSheet; if(!S) return null; S.res=cardSplit(S.text||"",Object.assign({have:cardSheetDeckNames(S)},S.opts||{})); S.rows=S.res.rows.map(r=>Object.assign({id:"r"+(++_csSeq)},r)).concat((S.ai||[]).filter(r=>!r.drop)); if(typeof draftMeanAfterSplit==="function") draftMeanAfterSplit(S); return S; }   // PHOTOCARDS: rows Claude read ride along · DRAFTMEAN: drafted meanings stay on their names
 // the rows Add will write: a name and a meaning, not dropped, not already in the deck
 function cardSheetReady(S){ S=S||cardSheet; return ((S&&S.rows)||[]).filter(r=>!r.drop&&!r.dup&&String(r.name||"").trim()&&String(r.back||"").trim()&&!(r.drafted&&!r.seen)); }   // PHOTOCARDS: a drafted row waits for her ✓
 function cardSheetCounts(S){ const R=((S&&S.rows)||[]).filter(r=>!r.drop); return {ready:cardSheetReady(S).length,amber:R.filter(r=>!r.dup&&String(r.name||"").trim()&&!String(r.back||"").trim()).length,dup:R.filter(r=>r.dup).length}; }
@@ -56508,10 +56820,11 @@ function cardSheetPreviewHTML(S){ S=S||cardSheet; if(!S||!S.res||(!S.res.lines&&
   h+=checkFixToolbarHTML(S);   // CHECKFIX: Split at · heading / card
   h+=cardSheetNotesHTML(S);
   if(typeof photoCardsNoteHTML==="function") h+=photoCardsNoteHTML(S);   // PHOTOCARDS: rows Claude read wait for her look
+  if(typeof draftMeanBarHTML==="function") h+=draftMeanBarHTML(S);   // DRAFTMEAN: ✨ Draft meanings · ✨ Make cards from this text
   shown.forEach(r=>{ h+=checkFixRowHTML(S,r); });   // CHECKFIX: ↔ ⤓ ✂ ✕ on each row; doubles greyed
   h+=checkFixDestHTML(S);   // CHECKFIX: this deck or a new one · database or active learning
   return h; }
-function cardSheetDraw(){ const S=cardSheet; if(!S||typeof document==="undefined") return; const p=document.getElementById("card-sheet-prev"); if(p) p.innerHTML=cardSheetPreviewHTML(S); const g=document.getElementById("card-sheet-go"); if(g) g.textContent=cardSheetGoLabel(S); }
+function cardSheetDraw(){ const S=cardSheet; if(!S||typeof document==="undefined") return; const p=document.getElementById("card-sheet-prev"); if(p) p.innerHTML=cardSheetPreviewHTML(S); const g=document.getElementById("card-sheet-go"); if(g) g.textContent=cardSheetGoLabel(S); if(typeof picFolderDraw==="function") picFolderDraw(); }   // PICFOLDER: the pairing list
 function cardSheetInput(v){ if(!cardSheet) return; cardSheet.text=String(v==null?"":v); cardSheetSplit(cardSheet); cardSheetDraw(); }
 // typing in a row changes that row only (no redraw — the box she is typing in keeps its place)
 function cardSheetEdit(id,field,v){ const S=cardSheet; const r=S&&S.rows.find(x=>x.id===id); if(!r||(field!=="name"&&field!=="back")) return; r[field]=String(v==null?"":v).trim();
@@ -56606,6 +56919,7 @@ function checkFixRowHTML(S,r){
     (S.start?'<label style="display:flex;align-items:center;min-height:36px;padding:0 2px"><input type="checkbox" data-cf-tick="'+id+'" '+(r.start!==false?"checked":"")+' onchange="checkFixDo(\'tick\',\''+id+'\',this.checked)" style="width:20px;height:20px" aria-label="Start this card now"></label>':'')+
     '<input value="'+csEsc(r.name)+'" aria-label="Card name" oninput="cardSheetEdit(\''+id+'\',\'name\',this.value)" onkeyup="checkFixCaret(\''+id+'\',this.selectionStart)" onclick="checkFixCaret(\''+id+'\',this.selectionStart)" onselect="checkFixCaret(\''+id+'\',this.selectionStart)" style="'+inp+';flex:1 1 110px;font-weight:700">'+
     '<textarea rows="1" aria-label="Meaning" placeholder="type the meaning" oninput="cardSheetEdit(\''+id+'\',\'back\',this.value)" style="'+inp+';flex:2 1 170px;resize:vertical">'+csEsc(r.back)+'</textarea>'+
+    (typeof picFolderRowHTML==="function"?picFolderRowHTML(S,r):"")+   // PICFOLDER: the picture paired with this card
     '<div style="display:flex;gap:4px;flex-wrap:wrap">'+b("swap","↔","Swap name and meaning")+b("join","⤓","Join with the next row")+b("split","✂","Split the name where you tapped")+b("drop","✕","Drop this row")+(r.drafted&&typeof photoCardsRowHTML==="function"?photoCardsRowHTML(r):"")+'</div></div>'; }
 function checkFixDestHTML(S){ const u=cfUnit(S); if(!u) return ""; const d=cfDest(S), kids=cfKids(u), rad="display:flex;align-items:flex-start;gap:8px;padding:8px 6px;font-size:12.5px;color:#1f2937;cursor:pointer;min-height:36px";
   let h='<div style="margin-top:12px;padding:10px;border:1.5px solid var(--border);border-radius:11px;background:#fafaf9"><div style="font-size:12px;font-weight:800;color:#1a3a2a">Where do they go?</div>'+
@@ -56745,7 +57059,8 @@ function pdfCardsSheetBarHTML(S){
     '<label style="'+PDFC_BTN+'"><input type="file" id="card-sheet-pdf" accept="application/pdf,.pdf" onchange="pdfCardsSheetPick(this)" style="display:none">\u{1F4C4} PDF</label>'+
     (typeof sheetCardsBtnHTML==="function"?sheetCardsBtnHTML():"")+   // SHEETCARDS: 📄 File — Excel / CSV read on this device
     (typeof photoCardsBtnHTML==="function"?photoCardsBtnHTML():"")+   // PHOTOCARDS: 📸 Photo (Claude, only with a key)
-    '</div><div id="card-sheet-file">'+pdfCardsSheetNoteHTML(S)+'</div>'+(typeof sheetCardsPanelHTML==="function"?sheetCardsPanelHTML(S):""); }   // SHEETCARDS: tabs + columns
+    (typeof picFolderBtnHTML==="function"?picFolderBtnHTML():"")+   // PICFOLDER: 📷 Pictures for these cards
+    '</div><div id="card-sheet-file">'+pdfCardsSheetNoteHTML(S)+'</div>'+(typeof sheetCardsPanelHTML==="function"?sheetCardsPanelHTML(S):"")+(typeof picFolderPanelHTML==="function"?picFolderPanelHTML(S):""); }   // SHEETCARDS: tabs + columns · PICFOLDER: which picture goes with which card
 function pdfCardsSheetNoteHTML(S){ const F=S&&S.file; if(!F) return "";
   const line=(t,c,b)=>'<div style="font-size:12px;line-height:1.5;color:'+c+';background:'+b+';border-radius:9px;padding:7px 10px;margin-top:6px">'+t+'</div>';
   if(F.busy) return line(pdfcEsc(F.busyText||"⏳ Reading the PDF on this device…"),"#15803d","#f0fdf4");
@@ -57135,6 +57450,293 @@ async function docxReadText(bytes){
   const lines=docxXmlLines(xml); if(!lines.length) throw new Error(DXC_MSG.none);
   return lines.join("\n"); }
 // DOCXCARDS_END
+// PICFOLDER_START — 📷 Pictures for these cards: a folder of photos named after the cards, paired by file name (her ask
+//   2026-11-19: "And then maybe there's pictures that are included in that … those pictures, those facts, those names all
+//   become their little cards by themselves"; her go 2026-11-22/23: "build as many in as many sessions you need … go with her
+//   answers and build"; PLAN_unit_easy_import_2026-11-19.md §4 Pictures, §6, slice E; Q6: a picture that fails to upload in a
+//   bulk add is skipped and listed — never saved as text inside the database).
+//   · "📷 Pictures for these cards" on a saved unit's ＋ Add cards sheet takes many picture files at once (on an iPad: pick them
+//     in Photos). picMatch() pairs each file with a card by name — §4's rules and only those: the file's extension comes off,
+//     then case, spaces, underscores and dashes (- – —) are ignored on both sides ("neon_tetra.JPG" = "Neon Tetra"). The first
+//     file with a card's name gets that card; a second file with the same name finds no card left and is listed.
+//   · A matched picture shows as a thumbnail on its row. Files that matched no card are listed, each with a dropdown to pick its
+//     card (§4); the same dropdown takes a hand pick back ("— no card —"). Cards still without a picture are listed.
+//   · Nothing uploads until Add (§4 gives no time; Add is when the cards are written). Add then uploads the pictures of the
+//     cards being added ONE AT A TIME — shrunk on the device to 420 px JPEG 0.82 (mastCompressImg), then picStore, exactly as a
+//     tapped card's photo — with "Uploading 3 of 12…" on the sheet and ⏳ / ✓ / ✕ on each row. Then the cards go in through
+//     CHECKFIX's own writes, unchanged, and then ONE targeted update of unitStudies/<id>: visuals/<deck>_<card name> =
+//     {imageUrl:<the https link>} for each uploaded picture (unitPicsPlan — the shape a tapped card's photo saves), so the drill
+//     card, the Units page and the notebook show it.
+//   · A picture that fails (offline, Storage said no, the 20 s timeout, a photo this browser can't open) is NEVER saved as text
+//     inside the database (Q6): its row says so, Add stops once to list them, and the next tap on Add adds those cards without
+//     a picture (tap the card later to give it one). Closing the sheet or picking again mid-upload drops the rest and writes
+//     nothing (a picture already uploaded stays in Storage, unused).
+//   · Caps: 100 pictures (a unit's worth — the biggest unit here has ~110 cards; more thumbnails at once is slow on an iPad),
+//     10 MB a file (the app's picture limit, mastBankUploadImg), 300 MB in all (each one is read whole on the device to shrink
+//     it). Each says so on screen when hit. A file that isn't a picture is listed and left out; a photo this browser can't open
+//     (often an iPhone HEIC photo on a computer) gets one plain line.
+//   · Mom-only; a dry run uploads nothing and writes nothing; thumbnails are her own files (object URLs), let go when the sheet
+//     closes; phone width, finger-sized controls; no kid's name.
+const PF_MAX_FILES=100, PF_MAX_BYTES=10*1024*1024, PF_MAX_TOTAL=300*1024*1024;
+const PF_SEL="flex:1 1 150px;min-width:0;max-width:100%;min-height:44px;box-sizing:border-box;padding:6px 8px;border:1.5px solid var(--border);border-radius:9px;background:#fff;font-size:16px;font-family:'DM Sans',sans-serif";   // 16px: an iPad doesn't zoom
+const PF_PIC_EXT=/\.(?:jpe?g|png|gif|webp|heic|heif|bmp|avif|tiff?)$/i;
+// a name made plain for pairing (§4): a file name loses its extension; then no case, spaces, underscores or dashes
+function pfKey(s,file){ s=String(s==null?"":s); if(typeof s.normalize==="function") s=s.normalize("NFC"); if(file) s=s.replace(/\.[A-Za-z0-9]{1,5}$/,""); return s.toLowerCase().replace(/[\s_\-–—]+/g,""); }
+// pair files with cards (pure). files: [{key, hand}] — hand: the card key she picked by hand, "-" = no card, null = by name.
+// names: the cards. → {row: the file index for each card (-1 none), file: the card index for each file (-1 none), same: files whose card was taken}
+function picMatch(files,names){
+  const rk=(names||[]).map(n=>pfKey(n,false)), F=files||[], row=rk.map(()=>-1), file=F.map(()=>-1), same=[];
+  F.forEach((f,i)=>{ if(!f||!f.hand||f.hand==="-") return; const j=rk.findIndex((k,x)=>k===f.hand&&row[x]<0); if(j>=0){ row[j]=i; file[i]=j; } });   // her picks first
+  F.forEach((f,i)=>{ if(!f||f.hand||!f.key) return; const j=rk.findIndex((k,x)=>k===f.key&&row[x]<0); if(j>=0){ row[j]=i; file[i]=j; } else if(rk.indexOf(f.key)>=0) same.push(i); });
+  return {row:row,file:file,same:same}; }
+// ── its own state: never parked on the ＋ Add cards sheet's object ──
+let picFolder=null, _pfSeq=0, _pfId=0;   // {S (the sheet it belongs to), seq, files:[{id,name,size,lm,file,url,key,hand,bad,up}], busy, prog, msg, failAck, inner, left}
+function pfSheet(){ return (typeof cardSheet!=="undefined")?cardSheet:null; }
+function pfMine(S){ return !!(S&&picFolder&&picFolder.S===S&&pfSheet()===S); }
+function pfRevoke(P){ ((P&&P.files)||[]).forEach(f=>{ try{ if(f.url&&typeof URL!=="undefined"&&URL.revokeObjectURL) URL.revokeObjectURL(f.url); }catch(e){} f.url=""; }); }
+function picFolderClose(){ if(picFolder) pfRevoke(picFolder); picFolder=null; _pfSeq++; }   // the sheet closed: thumbnails let go, an upload still running is set aside
+// the cards that can take a picture: on the check screen, not dropped, not already in the deck
+function pfRows(S){ return (typeof cfRows==="function"?cfRows(S):[]).filter(r=>!r.dup&&String(r.name||"").trim()); }
+function pfPairs(S){ const P=picFolder, R=pfRows(S); if(!pfMine(S)) return {R:R,by:{},m:{row:[],file:[],same:[]}};
+  const sig=R.map(r=>r.id+"\u0001"+r.name).join("\u0002")+"|"+P.files.map(f=>f.id+":"+(f.hand||"")).join(",");
+  if(P.memo&&P.memo.sig===sig) return P.memo.v;
+  const m=picMatch(P.files,R.map(r=>r.name)), by={}; m.row.forEach((fi,j)=>{ if(fi>=0) by[R[j].id]=P.files[fi]; });
+  const v={R:R,by:by,m:m}; P.memo={sig:sig,v:v}; return v; }
+// ── she picks the pictures (the same files picked twice are not doubled; the input is cleared so the same pick fires again) ──
+function picFolderPick(input){
+  const S=pfSheet(), list=[...((input&&input.files)||[])]; if(input) input.value=""; if(!S||!list.length||!pdfcMom()) return null;
+  if(picFolder&&picFolder.S!==S) picFolderClose();
+  if(!picFolder) picFolder={S:S,seq:++_pfSeq,files:[],busy:false,msg:"",failAck:false,inner:false};
+  const P=picFolder; if(P.busy){ P.seq=++_pfSeq; P.busy=false; P.prog=""; P.files.forEach(f=>{ f.going=false; }); }   // a new pick while uploading: the run stops; Add goes on from there
+  P.left={type:[],big:[],count:0,total:0,dup:0}; P.msg=""; P.failAck=false;
+  let total=P.files.reduce((a,f)=>a+(f.size||0),0);
+  list.forEach(f=>{ const name=String((f&&f.name)||"picture"), size=+(f&&f.size)||0, lm=+(f&&f.lastModified)||0;
+    if(P.files.some(x=>x.name===name&&x.size===size&&x.lm===lm)){ P.left.dup++; return; }
+    if(!(/^image\//i.test(String((f&&f.type)||""))||PF_PIC_EXT.test(name))){ P.left.type.push(name); return; }
+    if(size>PF_MAX_BYTES){ P.left.big.push(name); return; }
+    if(P.files.length>=PF_MAX_FILES){ P.left.count++; return; }
+    if(total+size>PF_MAX_TOTAL){ P.left.total++; return; }
+    total+=size; let url=""; try{ url=(typeof URL!=="undefined"&&URL.createObjectURL)?String(URL.createObjectURL(f)||""):""; }catch(e){ url=""; }
+    P.files.push({id:"pf"+(++_pfId),name:name,size:size,lm:lm,file:f,url:url,key:pfKey(name,true),hand:null,bad:false,up:null}); });
+  P.memo=null; cfRedraw(); return P; }
+// she pairs a file by hand (§4's dropdown): a card's key, or "-" for no card
+function picFolderHand(id,v){ const S=pfSheet(); if(!pfMine(S)||!pdfcMom()) return; const f=picFolder.files.find(x=>x.id===id); if(!f) return; f.hand=String(v||"-"); picFolder.memo=null; cfRedraw(); }
+// a thumbnail this browser can't draw (often HEIC): said once in the list; the row shows it plainly (no redraw loop)
+function picFolderBad(id){ const S=pfSheet(); if(!pfMine(S)) return; const f=picFolder.files.find(x=>x.id===id); if(!f||f.bad) return; f.bad=true; pfSt(f); picFolderDraw(); }
+// ── Add: the pictures of the cards being added go up one at a time, then the cards (CHECKFIX), then their pictures ──
+// what Add will do, read the way unitBatchSave reads it: the deck the cards go to, the cards it adds (orders as its transaction
+// will give them), and the picture paired with each
+function picFolderPlan(S){ const u=cfUnit(S); if(!u) return null; const nk=cfNewKey(S), at=nk?cfMatchDeck(u,nk):-1;
+  const deck=at>=0?u.decks[at]:(nk?null:(u.decks||[]).find(d=>d&&d.key===S.deckKey)); if(!nk&&!deck) return null;
+  cfMarkDups(S); const seen=new Set(((deck&&deck.cards)||[]).map(c=>c&&c.name)), fresh=[];
+  cardSheetReady(S).forEach(r=>{ const name=String(r.name).trim(); if(seen.has(name)) return; seen.add(name); fresh.push({name:name,def:String(r.back).trim(),row:r}); });
+  const ord=deck?checkFixOrders(deck,fresh):fresh.map((c,i)=>({order:i+1})), by=pfPairs(S).by, jobs=[];
+  fresh.forEach((c,i)=>{ const f=by[c.row.id]; if(f) jobs.push({name:c.name,order:ord[i].order,file:f}); });
+  return {unitId:S.unitId,destKey:deck?deck.key:nk,jobs:jobs,fresh:fresh.length}; }
+// unitBatchSave asks first: true = the pictures are handling this tap (an upload runs, or Add waits for one)
+function picFolderGate(){ const S=pfSheet(), P=picFolder; if(!pfMine(S)||P.inner) return false;
+  if(P.busy) return true;
+  const el=(typeof document!=="undefined")?document.getElementById("unit-batch-txt"):null; if(el&&typeof el.value==="string"&&el.value!==S.text) cardSheetInput(el.value);   // as unitBatchSave reads it
+  if(cfDest(S).kind==="new"&&!cfNewKey(S)) return false;   // unitBatchSave says "Give the new deck a name."
+  const plan=picFolderPlan(S); if(!plan||!plan.jobs.length) return false;   // no picture on a card being added: Add as before
+  picFolderAdd(S); return true; }
+function pfStText(f){ if(f.up) return f.up.url?"✓ uploaded":"✕ didn’t upload — goes in without a picture"; if(f.bad) return "can’t open this picture"; return f.going?"⏳ uploading…":""; }
+function pfSt(f){ if(typeof document==="undefined") return; const el=document.getElementById("pf-st-"+f.id); if(el) el.textContent=pfStText(f); }
+function pfGo(P){ if(typeof document==="undefined") return; const g=document.getElementById("card-sheet-go"); if(!g) return; g.disabled=!!P.busy; if(P.busy) g.textContent=P.prog||"Uploading pictures…"; }
+async function picFolderAdd(S){
+  const P=picFolder; if(!pfMine(S)||P.busy) return 0;
+  if(!cfLive()){ const n=(picFolderPlan(S)||{jobs:[]}).jobs.length; P.msg="Dry run — no pictures uploaded ("+pdfcPl(n,"picture")+" would be)."; picFolderDraw(); return pfCommit(S,null,[]); }
+  const seq=P.seq, mine=()=>pfMine(S)&&picFolder.seq===seq;
+  P.busy=true; P.msg=""; let k=0, of=0;
+  try{
+    for(let pass=0;pass<3;pass++){ const plan=picFolderPlan(S), todo=plan?plan.jobs.filter(j=>!j.file.up):[]; if(!todo.length) break; of+=todo.length;   // a card paired while it ran gets its turn
+      for(const j of todo){ if(!mine()) return 0; const f=j.file; k++;
+        P.prog="Uploading "+k+" of "+of+"…"; f.going=true; picFolderDraw(); pfSt(f);
+        let url="";
+        if(!f.bad){ try{ const d=await mastCompressImg(f.file,420,0.82); if(!mine()) return 0; url=await picStore(d,["units",plan.unitId,plan.destKey,j.order]); }catch(e){ f.bad=true; } }
+        if(!mine()) return 0;
+        f.going=false; f.up=/^https:\/\//.test(String(url||""))?{url:String(url)}:{err:f.bad?"open":"upload"};   // anything but a link is a failure — never a data: picture
+        pfSt(f); } }
+  } finally { if(picFolder===P&&P.seq===seq){ P.busy=false; P.prog=""; } }
+  if(!mine()) return 0;
+  const plan=picFolderPlan(S); if(!plan) return 0;
+  const failed=plan.jobs.filter(j=>j.file.up&&!j.file.up.url);
+  if(failed.length&&!P.failAck){ P.failAck=true; P.msg=pfFailMsg(failed.map(j=>j.file)); cfRedraw(); return 0; }
+  return pfCommit(S,plan,plan.jobs.filter(j=>j.file.up&&j.file.up.url)); }
+function pfFailMsg(F){ const bad=F.filter(f=>f.bad), up=F.filter(f=>!f.bad), nm=a=>a.slice(0,6).map(f=>"“"+f.name+"”").join(", ")+(a.length>6?" and "+(a.length-6)+" more":"");
+  const m=[]; if(up.length) m.push(pdfcPl(up.length,"picture")+" didn’t upload (offline, or the upload was refused): "+nm(up)+".");
+  if(bad.length) m.push(pdfcPl(bad.length,"picture")+" couldn’t be opened here: "+nm(bad)+".");
+  return m.join(" ")+" Nothing of "+(F.length===1?"it":"them")+" was saved. Tap Add again to add the cards — "+(F.length===1?"that one":"those "+F.length)+" without a picture; tap a card later to give it one."; }
+// the cards: unitBatchSave's own writes, unchanged; then — only if it wrote them (the sheet closed) — each uploaded picture
+function pfCommit(S,plan,ups){ const P=picFolder; P.inner=true; try{ if(typeof unitBatchSave==="function") unitBatchSave(); }finally{ P.inner=false; }
+  if(pfSheet()===S||!plan) return 0;   // not added (a dry run, or the sheet says why) — no picture is written
+  return picFolderWrite(plan.unitId,plan.destKey,ups); }
+// THE WRITE: ONE update of unitStudies/<id> — visuals/<deck>_<card name> = {imageUrl:<https link>} per picture (unitPicsPlan)
+function picFolderWrite(unitId,destKey,ups){ const u=(typeof unitStudies!=="undefined")&&unitStudies[unitId]; if(!u||!cfLive()) return 0;
+  const up={}; let n=0;
+  (ups||[]).forEach(j=>{ const url=String((j.file&&j.file.up&&j.file.up.url)||""); if(!/^https:\/\//.test(url)) return;
+    const key=destKey+"_"+j.name, pw=unitPicsPlan(key,(u.visuals||{})[key],url); if(!pw) return;
+    Object.keys(pw.up).forEach(p=>{ up[p]=pw.up[p]; }); if(!u.visuals) u.visuals={}; u.visuals[key]=pw.vis; n++; });
+  if(n) db.ref("unitStudies/"+unitId).update(up);
+  if(n&&typeof gwShowToast==="function"){ try{ gwShowToast("📷 "+pdfcPl(n,"picture")+" saved on "+(n===1?"its card":"their cards")); }catch(e){} }
+  return n; }
+// ── what it draws ──
+function picFolderBtnHTML(){ return '<label data-pf-door="1" style="'+PDFC_BTN+'"><input type="file" id="card-sheet-pics" accept="image/*" multiple onchange="picFolderPick(this)" style="display:none">\u{1F4F7} Pictures for these cards</label>'; }
+function picFolderPanelHTML(S){ return '<div id="pic-folder-panel">'+picFolderPanelInner(S)+'</div>'; }
+function picFolderDraw(){ if(typeof document==="undefined") return; const S=pfSheet(), el=document.getElementById("pic-folder-panel"); if(el) el.innerHTML=picFolderPanelInner(S); if(pfMine(S)) pfGo(picFolder); }
+// on a row: its picture's thumbnail and how its upload went
+function picFolderRowHTML(S,r){ if(!pfMine(S)||!r) return ""; const f=pfPairs(S).by[r.id]; if(!f) return "";
+  const t=(f.url&&!f.bad)?'<img src="'+csEsc(f.url)+'" alt="'+csEsc(f.name)+'" title="'+csEsc(f.name)+'" loading="lazy" decoding="async" onerror="picFolderBad(\''+f.id+'\')" style="width:44px;height:44px;object-fit:cover;border-radius:8px;border:1.5px solid #b7e4c7;background:#f3f4f6;display:block">'
+    :'<span title="'+csEsc(f.name)+'" style="width:44px;height:44px;border-radius:8px;border:1.5px dashed #d1d5db;background:#f9fafb;display:flex;align-items:center;justify-content:center;font-size:20px">\u{1F4F7}</span>';
+  return '<span data-pf-thumb="'+f.id+'" style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;max-width:100%">'+t+'<span id="pf-st-'+f.id+'" style="font-size:11px;font-weight:700;color:'+(f.up&&!f.up.url||f.bad?"#b91c1c":"#15803d")+'">'+pfStText(f)+'</span></span>'; }
+function picFolderPanelInner(S){ const P=picFolder; if(!pfMine(S)) return ""; if(!P.files.length&&!P.left) return "";
+  const {R,by,m}=pfPairs(S), nMatch=Object.keys(by).length, L=P.left||{type:[],big:[],count:0,total:0,dup:0};
+  const box=(t,c,b)=>'<div style="font-size:12px;line-height:1.5;color:'+c+';background:'+b+';border-radius:9px;padding:7px 10px;margin-top:6px">'+t+'</div>';
+  const note=t=>'<div style="font-size:11px;color:#92400e;margin-top:5px;line-height:1.45">'+t+'</div>';
+  const nm=a=>a.slice(0,8).map(x=>"“"+csEsc(x)+"”").join(", ")+(a.length>8?" and "+(a.length-8)+" more":"");
+  let h='<div data-pf-panel="1" style="margin-top:8px;padding:10px;border:1.5px solid var(--border);border-radius:11px;background:#fafaf9">';
+  h+='<div style="font-size:12.5px;font-weight:800;color:#1a3a2a">\u{1F4F7} '+pdfcPl(P.files.length,"picture")+' picked'+(R.length?' · '+nMatch+' matched a card':'')+'</div>';
+  if(P.busy) h+=box('<span id="pf-prog">'+csEsc(P.prog||"Uploading pictures…")+'</span> Keep this open — one at a time.',"#15803d","#f0fdf4");
+  else if(P.msg) h+=box(csEsc(P.msg),/^Dry run/.test(P.msg)?"#15803d":"#b45309",/^Dry run/.test(P.msg)?"#f0fdf4":"#fffbeb");
+  if(!R.length) h+=note("Paste or pick the list too — each picture finds its card by name (case, spaces, _ and - don’t matter).");
+  else if(!P.busy&&!P.msg&&nMatch) h+='<div style="font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.45">Each matched picture is on its card below. They upload one at a time when you tap Add — only for the cards that are added.</div>';
+  // the files that found no card by name (and the ones she paired by hand): each with the card dropdown (§4)
+  const loose=P.files.map((f,i)=>({f:f,i:i})).filter(x=>x.f.hand||m.file[x.i]<0);
+  if(loose.length&&R.length){ const free=R.filter(r=>!by[r.id]);
+    const nLoose=loose.filter(x=>m.file[x.i]<0).length;
+    h+='<div style="font-size:12px;font-weight:700;color:#92400e;margin-top:8px">'+(nLoose?pdfcPl(nLoose,"picture")+' matched no card by name':'Paired by hand')+' — pick its card:</div>';
+    loose.forEach(x=>{ const f=x.f, cur=m.file[x.i]>=0?R[m.file[x.i]]:null, opts=(cur?[cur]:[]).concat(free);
+      h+='<label style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;font-size:12px;color:#1f2937"><span style="flex:1 1 120px;min-width:0;overflow-wrap:anywhere">'+csEsc(f.name)+(m.same.indexOf(x.i)>=0?' <span style="color:var(--muted)">(its card has another picture)</span>':'')+'</span>'+
+        '<select data-pf-hand="'+f.id+'" aria-label="The card for '+csEsc(f.name)+'" onchange="picFolderHand(\''+f.id+'\',this.value)" style="'+PF_SEL+'"><option value="-"'+(cur?'':' selected')+'>— no card —</option>'+
+        opts.map(r=>'<option value="'+csEsc(pfKey(r.name,false))+'"'+(cur===r?' selected':'')+'>'+csEsc(r.name)+'</option>').join("")+'</select></label>'; }); }
+  const none=R.filter(r=>!by[r.id]).map(r=>r.name);
+  if(R.length&&none.length) h+=note("No picture: "+nm(none)+" — tap a card later to add one, or 🖼 Find pictures on the unit page.");
+  const bad=P.files.filter(f=>f.bad).map(f=>f.name);
+  if(bad.length) h+=note(pdfcPl(bad.length,"picture")+" can’t be opened in this browser — often an iPhone HEIC photo: "+nm(bad)+". Pick them from Photos on the iPad (it hands over a JPEG), or save them as JPEG.");
+  if(L.type.length) h+=note("Not a picture, left out: "+nm(L.type)+".");
+  if(L.big.length) h+=note("Over 10 MB, left out: "+nm(L.big)+" — the most one picture can be.");
+  if(L.count) h+=note(pdfcPl(L.count,"more picture")+" left out — "+PF_MAX_FILES+" at a time is the most (a unit’s worth). Add these cards, then the rest.");
+  if(L.total) h+=note(pdfcPl(L.total,"more picture")+" left out — 300 MB of pictures at once is the most; pick fewer or smaller ones.");
+  if(L.dup) h+=note(pdfcPl(L.dup,"picture")+" picked again — already here.");
+  return h+'</div>'; }
+// PICFOLDER_END
+// DRAFTMEAN_START — ✨ Draft meanings for names that have none, and ✨ Make cards from running text — Claude, only when she taps,
+//   only with a key (her words 2026-11-19: "we really need to make it easier where the AI can help with the vocabulary of the
+//   units"; her go 2026-11-22/23: "build as many in as many sessions you need … go with her answers and build";
+//   PLAN_unit_easy_import_2026-11-19.md §2.3, §5, slice G; Q3: a button she presses; Q4: claude-sonnet-5-5).
+//   · "✨ Draft meanings" shows on the check screen when rows have a name and no meaning AND the family has a key (ubCanAsk — yes /
+//     no only; the key is never read here). ONE request for all of them (the first 80): the names, the unit's title and the deck
+//     name (with any kid's or the family's name taken out), and an age band she taps (the unit's own Ages when it is an age band,
+//     else 7–9). Nothing else goes: no kid's name, no roster, no scores, nothing from the database. The prompt: one short sentence
+//     of plain words for that age; a name it is not sure of comes back empty, never guessed. Each meaning lands on its row amber +
+//     "drafted" and waits for her ✓ — PHOTOCARDS' row state and ✓, so Add leaves it out until then. A name Claude left empty stays
+//     empty. A drafted meaning stays on its name (with her ✓ or edit) when the paste is re-read.
+//   · "✨ Make cards from this text" shows when the rules found nothing to split — running prose, which rules can't tell from a
+//     list (§2.3, §5.2) — and a key exists. The text goes with the Builder's own card prompt ("Use ONLY what is there — never
+//     invent"), as its messy paste does; the cards come back amber + drafted (as a photo's do), and the sentences themselves stop
+//     showing as cards while that same text is in the box.
+//   · No key → one plain line in place of each button. A refusal, a cut-off answer, a failed call or an answer that isn't the list
+//     → one plain line, and no row changes. Closing the sheet, or a new sheet, sets an answer still on its way aside.
+//   · Through kitCapAsk (the browser → api.anthropic.com with the family's own key), model claude-sonnet-5-5 (Q4). This block
+//     writes nothing; Add stays CHECKFIX's. Mom-only; phone width; finger-sized buttons.
+const DM_MODEL="claude-sonnet-5-5", DM_MAX_NAMES=80, DM_AGES=["4–6","7–9","10–12","13+"];
+const DM_MSG={
+  noKeyMean:"✨ Draft meanings needs a Claude key — Admin ▸ Settings ▸ ✨ AI key. Typing the meanings always works.",
+  noKeyProse:"✨ Making cards from running text needs a Claude key — Admin ▸ Settings ▸ ✨ AI key. One card per line (“word - meaning”) always works.",
+  refused:"Claude declined that one — nothing was changed. Type them in instead.",
+  cut:"Claude’s answer was cut off — nothing was changed. Try again with fewer, or type them in.",
+  failed:"Claude couldn’t do it just now — nothing was changed. Try again, or type them in.",
+  bad:"Claude’s answer wasn’t a list the app could read — nothing was changed. Try again, or type them in.",
+  noneMean:"Claude wasn’t sure of any of those names — nothing was changed. Type the meanings in.",
+  noneProse:"Claude found no cards in that text — nothing was changed. Try one card per line (“word - meaning”)."};
+let draftMean=null;   // {S (the sheet it belongs to), seq, busy, what, age, msg, ok, by:{<name>:{back, seen, row}}, prose:<the text she turned into cards>}
+function dmSheet(){ return (typeof cardSheet!=="undefined")?cardSheet:null; }
+function dmState(S){ if(!S) return null; if(!draftMean||draftMean.S!==S) draftMean={S:S,seq:0,busy:false,what:"",age:"",msg:"",ok:false,by:{},prose:null}; return draftMean; }
+// rows with a name and no meaning (not sentences the rules couldn't split, not already in the deck)
+function dmNameRows(S){ return cfRows(S).filter(r=>!r.dup&&r.how!=="none"&&String(r.name||"").trim()&&!String(r.back||"").trim()); }
+function dmProse(S){ const D=draftMean; return !!(S&&S.res&&S.res.lines&&!S.res.found&&String(S.text||"").trim())&&!(D&&D.S===S&&D.prose===csNorm(S.text)); }
+// the age band: only digits and a dash or + ever leave ("Ages 5-12" → "5–12"); anything else in the unit's Ages box is not used
+function dmAgeOf(u){ const m=/^\s*(?:ages?\s*)?(\d{1,2})\s*(?:(?:[–—-]|to)\s*(\d{1,2})|(\+))?\s*$/i.exec(String((u&&u.ages)||"")); return m?(m[2]?m[1]+"–"+m[2]:m[3]?m[1]+"+":m[1]):""; }
+function dmAge(S){ const D=dmState(S); return (D&&D.age)||dmAgeOf(cfUnit(S))||"7–9"; }
+function dmAgeChoices(S){ const own=dmAgeOf(cfUnit(S)); return (own&&DM_AGES.indexOf(own)<0?[own]:[]).concat(DM_AGES); }
+// the words that must never leave: every kid on the roster, the kids enrolled here, the family's name
+function dmPrivate(S){ const out=new Set(); try{ ((typeof ROSTER!=="undefined"&&ROSTER)||[]).forEach(k=>out.add(String(k))); }catch(e){}
+  cfKids(cfUnit(S)).forEach(k=>out.add(String(k)));
+  try{ const f=(typeof window!=="undefined"&&window.HA_FAMILY)||{}; String(f.familyName||"").split(/\s+/).forEach(w=>{ if(w&&!/^(?:the|academy|family|homeschool|school|of)$/i.test(w)) out.add(w); }); if(f.familyId) out.add(String(f.familyId)); }catch(e){}
+  return [...out].filter(s=>s&&s.length>=2); }
+function dmScrub(t,words){ let s=String(t==null?"":t); (words||[]).forEach(n=>{ const e=String(n).replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); s=s.replace(new RegExp("(^|[^A-Za-z0-9])"+e+"(?:['’]s)?(?![A-Za-z0-9])","gi"),"$1 "); });
+  return s.replace(/\s+/g," ").replace(/^[\s\-–—:,.'’]+|[\s\-–—:,'’]+$/g,"").trim(); }
+// the one prompt (pure): the names, the unit's title / deck, the age band — nothing else
+function dmPrompt(names,title,topic,age){
+  return 'A homeschool mom is making drill cards'+(title?' for a unit called "'+title+'"':'')+(topic&&topic!==title?' (deck: "'+topic+'")':'')+', for children aged '+age+'. '+
+    'For each name below, write the back of its card: what it is or what it means, in ONE short sentence of plain words a child that age can read. '+
+    'Use only well-known facts that fit the unit. If you are not sure what a name means here, leave its back empty ("") — never guess or invent. '+
+    'Give every name back exactly as written. Return ONLY strict JSON: {"items":[{"front":"","back":""}]}.\n\nNames:\n'+names.map((n,i)=>(i+1)+". "+n).join("\n"); }
+function dmBlank(b){ b=String(b==null?"":b).trim(); return !b||/^(?:not sure|unsure|unknown|n\/?a|none|\?+|-+|—)\.?$/i.test(b); }
+function dmAsk(content){ return kitCapAsk(content,null,{raw:true,withStop:true,maxTokens:8000,model:DM_MODEL}); }
+// after every re-read of the paste (cardSheetSplit): her drafted meanings stay on their names; the sentences she turned into
+// cards are not cards themselves
+function draftMeanAfterSplit(S){ const D=draftMean; if(!D||D.S!==S||!S||!S.rows) return;
+  if(D.prose!=null&&csNorm(S.text)===D.prose) S.rows=S.rows.filter(r=>r.how!=="none");
+  const used=new Set();
+  S.rows.forEach(r=>{ const k=csNorm(r.name), d=D.by[k]; if(!d||used.has(k)||r.drop) return; used.add(k);
+    if(d.row===r) return;
+    if(d.row){ if(csNorm(d.row.name)!==k||!d.row.drafted){ delete D.by[k]; return; } d.back=String(d.row.back||"").trim(); d.seen=!!d.row.seen; }   // what she did on the row it was on; her own typed meaning replaced the draft for good
+    d.row=r; if(String(r.back||"").trim()||!d.back) return;   // a meaning she typed in the paste wins
+    r.back=d.back; r.drafted=true; r.seen=!!d.seen; }); }
+function dmRun(S,what){ const D=dmState(S); const seq=++D.seq; D.busy=true; D.what=what; D.msg=""; cfRedraw();
+  const mine=()=>dmSheet()===S&&draftMean===D&&D.seq===seq;
+  const say=(m,ok)=>{ if(mine()){ D.busy=false; D.msg=m; D.ok=!!ok; cfRedraw(); } return 0; };
+  return {D:D,mine:mine,say:say}; }
+async function dmCall(run,content){ let res;
+  try{ res=await dmAsk(content); }catch(e){ if(!run.mine()) return null; const m=String(e&&e.message||e), code=/^Claude (\d{3})\b/.exec(m); run.say(/declined/i.test(m)?DM_MSG.refused:DM_MSG.failed+(code?" (Claude "+code[1]+")":"")); return null; }
+  if(!run.mine()) return null;   // she closed the sheet while Claude worked
+  const stop=res&&typeof res==="object"?res.stop:null, txt=res&&typeof res==="object"?res.text:res;
+  if(stop==="refusal"){ run.say(DM_MSG.refused); return null; }
+  if(stop==="max_tokens"){ run.say(DM_MSG.cut); return null; }
+  try{ return ubParseAI("cards",txt); }catch(e){ run.say(DM_MSG.bad); return null; } }
+// ✨ Draft meanings: one request for the name-only rows (the first 80)
+async function draftMeanGo(){ const S=dmSheet(); if(!S||!pdfcMom()) return 0; const D=dmState(S); if(D.busy) return 0;
+  if(!pdfcCanAsk()){ D.msg=DM_MSG.noKeyMean; D.ok=false; cfRedraw(); return 0; }
+  const rows=dmNameRows(S).slice(0,DM_MAX_NAMES); if(!rows.length) return 0;
+  const u=cfUnit(S), priv=dmPrivate(S), names=rows.map(r=>String(r.name).trim());
+  const run=dmRun(S,"mean"), items=await dmCall(run,[{type:"text",text:dmPrompt(names,dmScrub(u&&u.title,priv),dmScrub(S.deckKey,priv),dmAge(S))}]);
+  if(!items) return 0;
+  const asked=new Set(names.map(csNorm)), got=new Set(); let n=0;
+  items.forEach(x=>{ const k=csNorm(x.front); if(!asked.has(k)||got.has(k)||dmBlank(x.back)) return; got.add(k); D.by[k]={back:String(x.back).trim(),seen:false,row:null}; n++; });   // only names it was asked; an empty or "not sure" answer stays empty
+  if(!n) return run.say(DM_MSG.noneMean);
+  draftMeanAfterSplit(S); cfMarkDups(S);
+  const unsure=names.length-n, rest=Math.max(0,dmNameRows(S).length-unsure);
+  return run.say("✓ Claude drafted "+pdfcPl(n,"meaning")+" — each is amber until you’ve looked at it and tapped ✓."+
+    (unsure?" Claude wasn’t sure of "+unsure+" — "+(unsure===1?"it stays":"they stay")+" empty; type "+(unsure===1?"it":"them")+" in.":"")+(rest?" Tap ✨ again for the next "+rest+".":""),true); }
+// ✨ Make cards from this text: running prose → cards, with the Builder's own card prompt
+async function draftMeanProse(){ const S=dmSheet(); if(!S||!pdfcMom()) return 0; const D=dmState(S); if(D.busy) return 0;
+  if(!pdfcCanAsk()){ D.msg=DM_MSG.noKeyProse; D.ok=false; cfRedraw(); return 0; }
+  if(!dmProse(S)) return 0; const text=String(S.text||"").slice(0,60000), norm=csNorm(S.text);
+  const run=dmRun(S,"prose"), items=await dmCall(run,[{type:"text",text:"Pasted text:\n"+text},{type:"text",text:UB_PROMPTS.cards}]);
+  if(!items) return 0;
+  if(!items.length) return run.say(DM_MSG.noneProse);
+  S.ai=(S.ai||[]).concat(items.map(x=>({id:"a"+(++_csSeq),name:x.front,back:x.back||"",how:"ai",drafted:true})));   // PHOTOCARDS' drafted rows: they ride every re-read
+  D.prose=norm; cardSheetSplit(S); cfMarkDups(S);
+  return run.say("✓ Claude made "+pdfcPl(items.length,"card")+" from your text — each is amber until you’ve looked at it and tapped ✓. The sentences themselves aren’t cards.",true); }
+function draftMeanAge(a){ const S=dmSheet(); if(!S||!pdfcMom()) return; const D=dmState(S); if(dmAgeChoices(S).indexOf(String(a))<0) return; D.age=String(a); cfRedraw(); }
+// ── what it draws, on the check screen above the rows ──
+function draftMeanBarHTML(S){ if(!S) return ""; const D=dmState(S), key=pdfcCanAsk(), names=dmNameRows(S), prose=dmProse(S), h=[];
+  const line=(t,ok)=>'<div data-dm-msg="1" style="font-size:12px;line-height:1.5;color:'+(ok?"#15803d":"#92400e")+';background:'+(ok?"#f0fdf4":"#fffbeb")+';border-radius:9px;padding:7px 10px;margin-top:6px">'+t+'</div>';
+  const btn=(op,label)=>'<button type="button" data-dm="'+op+'" onclick="'+(op==="mean"?"draftMeanGo()":"draftMeanProse()")+'" style="'+PDFC_BTN+';border-color:#fcd34d;background:#fffbeb;color:#92400e">'+label+'</button>';
+  if(D.busy) h.push(line(D.what==="prose"?"⏳ Claude is making cards from your text…":"⏳ Claude is drafting meanings…",true));
+  else {
+    if(names.length){ if(!key) h.push(line(csEsc(DM_MSG.noKeyMean),false));
+      else { const age=dmAge(S);
+        h.push('<div data-dm-mean="1" style="margin-top:8px;padding:9px 10px;border:1.5px solid #fde68a;border-radius:11px;background:#fffdf5">'+
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+btn("mean","✨ Draft meanings ("+Math.min(names.length,DM_MAX_NAMES)+")")+
+          '<span style="font-size:11.5px;font-weight:700;color:var(--muted)">for ages</span>'+dmAgeChoices(S).map(a=>'<button type="button" data-dm-age="'+csEsc(a)+'" onclick="draftMeanAge(\''+csEsc(a)+'\')" style="'+CF_CHIP(a===age)+'">'+csEsc(a)+'</button>').join("")+'</div>'+
+          '<div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.45">Claude writes a one-line meaning for each name — only the names, the unit’s title and the age go out. Each waits for your ✓; a name Claude isn’t sure of stays empty.'+(names.length>DM_MAX_NAMES?" The first "+DM_MAX_NAMES+" go now; tap again for the rest.":"")+'</div></div>'); } }
+    if(prose){ if(!key) h.push(line(csEsc(DM_MSG.noKeyProse),false));
+      else h.push('<div data-dm-prose="1" style="margin-top:8px">'+btn("prose","✨ Make cards from this text")+'<div style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.45">This reads like sentences, not a list. Claude can pick out the cards — only your text goes out; each card waits for your ✓.</div></div>'); }
+    if(D.msg) h.push(line(csEsc(D.msg),D.ok)); }
+  return h.length?'<div data-dm-bar="1">'+h.join("")+'</div>':""; }
+// DRAFTMEAN_END
 // ── Unit card editor: edit shared photo + bio (applies to every enrolled kid) ──
 // ── Batch add: paste many cards into a unit deck at once ("front | back" per line) ────
 // New cards append to the registry deck AND flow immediately to every enrolled kid:
@@ -57153,10 +57755,11 @@ function unitBatchAdd(unitId,deckKey){
   ov.innerHTML=cardSheetHTML(cardSheet);
   document.body.appendChild(ov);
 }
-function unitBatchClose(){ unitBatch=null; cardSheet=null; const ov=document.getElementById("unit-batch-dlg"); if(ov) ov.remove(); }
+function unitBatchClose(){ if(typeof picFolderClose==="function") picFolderClose(); unitBatch=null; cardSheet=null; const ov=document.getElementById("unit-batch-dlg"); if(ov) ov.remove(); }
 function unitBatchSave(){
   if(!unitBatch) return;
   if(!momHere()) return;   // CHECKFIX: Mom-only
+  if(typeof picFolderGate==="function"&&picFolderGate()) return;   // PICFOLDER: the cards' pictures upload one at a time first, then it comes back here
   const u=unitStudies[unitBatch.unitId]; if(!u) return;
   let di=(u.decks||[]).findIndex(d=>d&&d.key===unitBatch.deckKey); if(di<0) return;
   let deck=u.decks[di];
@@ -58111,6 +58714,7 @@ function renderNotebook(el){
         lookHtml+
         xpHtml+
         nbLevelCardHtml(sel)+   // 📏 NBLEVEL: Notebook level (Mom)
+        ((typeof nbLadderCardHtml==="function")?nbLadderCardHtml(sel):"")+   // 📚 NBLADDER: the two ladders — switches, level, place, placement (Mom)
         reviewHtml+
         dgHtml+
         (momHere()&&NB_WB_KIDS[sel]?'<div style="margin-top:14px"><button onclick="nbChkOpen(\''+sel+'\')" style="padding:8px 14px;border-radius:9px;border:1.5px solid #86efac;background:#f0fdf4;color:#166534;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Check today’s notebook answers</button></div>':'')+
@@ -63469,6 +64073,7 @@ function reprojectSubjectWeek(kid,sk,why,opts){
   const wn=currWeekNum(); if(!wn){ _then(null); return null; }
   // Only the ACTIVE plan week has cards to keep in step; a parked or past week is left alone.
   try{ const r=gwWeekDateRange(wn); const eff=_schoolWeekDateFor(_todayStr()); if(!r||eff<r.start||eff>r.end){ _then(null); return null; } }catch(e){ _then(null); return null; }
+  if(typeof archiveWhenAll==="function"&&!archiveWhenAll(function(){ reprojectSubjectWeek(kid,sk,why,opts); })) return null;   // ARCHBOOT: the build needs every past week — this re-lay runs again when they arrive (it used to skip)
   const _rpMode=(opts&&opts.relayFrom)||_rpRelayMode();   // ⏭ asked once, before the lock
   let out=null;
   haClaimSchedLock("reproject",function(release){
@@ -64384,7 +64989,8 @@ function drRows(kid){
     const t=(typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[r.kind])||r.kind;
     return {kind:r.kind,ok:r.ok,title:t,days:r.days,dayText:r.days.map(function(d){ return DR_DAY_SHORT[d]||d; }).join(" "),
       min:(typeof retrSlotMinutes==="function")?retrSlotMinutes(kid,r.kind):null,
-      mom:((typeof retrSlotMom==="function")?retrSlotMom(r.kind):"required")==="none"?"on their own":"with Mom"};
+      mom:((typeof retrSlotMom==="function")?retrSlotMom(r.kind):"required")==="none"?"on their own":"with Mom",
+      pause:(typeof drPauseState==="function")?drPauseWords(drPauseState(kid,r.kind)):"", paused:(typeof drPauseState==="function")&&!!(drPauseState(kid,r.kind)||{}).now};   // DRILLPAUSE
   });
 }
 // An old-style every-day "Drills" subject (the key test taskDeepLinkView already uses) — the child has practice already.
@@ -64394,7 +65000,7 @@ function drHasOldDrills(kid){
 }
 function drLineText(r,name){
   if(!r.ok) return r.title+" · "+r.dayText+" — can’t run for "+name+" yet →";
-  return r.title+" · "+r.dayText+(r.min!=null?" · "+r.min+" min":"")+" · "+r.mom+" →";
+  return r.title+" · "+r.dayText+(r.min!=null?" · "+r.min+" min":"")+" · "+r.mom+(r.pause?" · "+r.pause:"")+" →";   // DRILLPAUSE: + "⏸ paused until Jan 3"
 }
 // The chips that go after the every-day subject chips in the purple strip ("" when there is nothing to show).
 function drStripChips(kid){
@@ -64402,9 +65008,9 @@ function drStripChips(kid){
   const name=(typeof cap==="function")?cap(kid):kid, nm=esc(name), arg=String(kid).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
   const go='drGo(\''+esc(arg)+'\')';
   const base='margin:2px 4px 2px 0;padding:3px 10px;border-radius:12px;background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;max-width:100%;text-align:left;white-space:normal;';
-  let h='';
+  let h=(typeof drSwOfferHtml==="function")?drSwOfferHtml(kid):'';   // DRILLSWITCH: the one-tap offer for an old-style drills subject ("" for every other child)
   rows.forEach(function(r){
-    h+='<button class="dr-row" onclick="'+(r.ok?'drDaysOpen(\''+esc(arg)+'\',\''+r.kind+'\')':go)+'" title="'+(r.ok?'Card practice — tap to see or change the days':'This kind makes no card for '+nm+' — tap to change the plan')+'" style="'+base+'border:1px solid #c4b5fd;color:'+(r.ok?'#6d28d9':'#9ca3af')+'">'+esc(drLineText(r,name))+'</button>';
+    h+='<button class="dr-row" onclick="'+(r.ok?'drDaysOpen(\''+esc(arg)+'\',\''+r.kind+'\')':go)+'" title="'+(r.ok?'Card practice — tap to see or change the days':'This kind makes no card for '+nm+' — tap to change the plan')+'" style="'+base+'border:1px solid #c4b5fd;color:'+((r.ok&&!r.paused)?'#6d28d9':'#9ca3af')+'">'+esc(drLineText(r,name))+'</button>';   // DRILLPAUSE: greyed while paused
   });
   if(!rows.some(function(r){ return r.ok; })&&!drHasOldDrills(kid))
     h+='<button class="dr-empty" onclick="daOpen(\''+esc(arg)+'\')" style="'+base+'border:1.5px dashed #a78bfa;color:#6d28d9">＋ \u{1F0CF} Flash-card practice isn’t on '+nm+'’s week yet — set it up</button>';   // DRILLADD (slice 4): the empty chip opens ＋ Add subject ▸ 🃏 Card practice
@@ -64526,6 +65132,7 @@ function drDaysHtml(kid,kind){
     h+='</div></div>';
   }
   h+='<div style="margin-top:12px;font-size:12px;font-weight:700;color:#6d28d9">'+(min!=null?min+' min · ':'')+mom+'</div>';
+  if(typeof drPauseSheetHtml==="function"&&typeof drPauseState==="function") h+=drPauseSheetHtml(kid,kind);   // DRILLPAUSE: ⏸ Pause · Pause from / Resume on · ▶ Resume
   h+='<div class="dr-saved" style="margin-top:6px;font-size:12px;color:var(--muted)">'+(drDaysSaved===kid+"|"+kind
     ?'<b style="color:#15803d">Saved ✓</b>'+((typeof retrLivePending==="function"&&retrLivePending(kid))?' · this week’s cards update in a moment':'')
     :'Tap a day on or off — it saves by itself.')+'</div>';
@@ -64547,12 +65154,12 @@ function drDaysOpen(kid,kind){
   if(!_drCanRun(kid,kind)){ drGo(kid); return false; }   // a kind that makes no card for this child stays a pointer
   if(_drDaysTimer){ clearTimeout(_drDaysTimer); _drDaysTimer=null; }
   if(drDaysKid!==kid||drDaysKind!==kind) drDaysSaved=null;
-  drDaysKid=kid; drDaysKind=kind; drDaysFull=null;
+  drDaysKid=kid; drDaysKind=kind; drDaysFull=null; drPauseMsg="";   // DRILLPAUSE
   drDaysRender();
   return true;
 }
 function drDaysClose(quiet){
-  drDaysKid=null; drDaysKind=null; drDaysFull=null; drDaysSaved=null;
+  drDaysKid=null; drDaysKind=null; drDaysFull=null; drDaysSaved=null; drPauseMsg="";   // DRILLPAUSE
   if(typeof document!=="undefined"&&document.body){
     document.body.style.overflow="";
     const w=document.getElementById("dr-days-wrap");
@@ -64562,6 +65169,55 @@ function drDaysClose(quiet){
   if(!quiet&&typeof renderAll==="function") renderAll();   // the line behind shows the new days
 }
 function drDaysMastery(){ const kid=drDaysKid; drDaysClose(true); if(kid) drGo(kid); }
+// DRILLPAUSESHEET_START — ⏸ the pause rows on a card-practice line's day sheet (DRILLPAUSE, above in RETRWEEK, holds the rule and
+// the words). Family Time's own pause row (FTPAUSE) is mirrored: "Pause from" / "Resume on" date boxes, "✕ Don't pause" for a
+// pause that hasn't begun, ▶ Resume. Plus a plain ⏸ Pause (until ▶ Resume — her "and a plain pause"). Each tap = ONE write of
+// the kind's one leaf through drPlanWrite with {rhythm:true}, so the live pass (retrLiveQueue → relayWeek "retrieval") takes
+// this week's open cards off from today (or puts them back) the way a day tap does. Mom only (momHere); a refused date is
+// not saved and says why in a plain line — no dialogs. Test: test_drill_pause.js.
+let drPauseMsg="";
+function drPauseWrite(kid,kind,val){
+  if(!kid||!_drMom()||DR_KINDS.indexOf(kind)<0) return false;
+  const pl={}; pl["pausedKinds/"+kind]=val;
+  if(!drPlanWrite(kid,pl,{rhythm:true})) return false;
+  drDaysSaved=kid+"|"+kind; drPauseMsg="";
+  return true;
+}
+function drPauseNow(){ const ok=drPauseWrite(drDaysKid,drDaysKind,true); drDaysRender(); return ok; }   // ⏸ until ▶ Resume
+function drResumeNow(){ const ok=drPauseWrite(drDaysKid,drDaysKind,null); drDaysRender(); return ok; }   // ▶ Resume / ✕ Don't pause: the leaf goes
+// Pause from `from` (a past or empty date = today) · Resume on `back` (needed; the first day back, after `from`, after today)
+function drPauseDates(from,back){
+  const kid=drDaysKid, kind=drDaysKind; if(!kid||!kind||!_drMom()) return false;
+  const today=drToday(); from=(drIsoOk(from)&&from>today)?from:today;
+  const say=function(m){ drPauseMsg=m; drDaysRender(); return false; };
+  if(!drIsoOk(back)) return say("Pick the day it comes back (Resume on) — or tap ⏸ Pause to pause until you tap ▶ Resume.");
+  if(back<=today) return say("Resume on "+drMD(back)+" has already come — nothing saved. Pick a later day.");
+  if(back<=from) return say("Resume on has to be after Pause from — nothing saved.");
+  const ok=drPauseWrite(kid,kind,{pauseFrom:from,resumeOn:back}); drDaysRender(); return ok;
+}
+function drPauseSheetHtml(kid,kind){
+  const today=drToday(), st=drPauseState(kid,kind,today);
+  const name=(typeof cap==="function")?cap(kid):kid;
+  const bt=function(cls,lbl,fn,on){ return '<button class="'+cls+'" onclick="'+fn+'" style="min-height:44px;padding:8px 14px;border-radius:10px;border:1.5px solid #c4b5fd;background:'+(on?'#5b21b6':'#fff')+';color:'+(on?'#fff':'#5b21b6')+';font-size:12.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  const inp='min-height:44px;box-sizing:border-box;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif;background:#fff;max-width:100%';
+  const L=function(t){ return '<span style="font-size:12px;font-weight:800;color:#5b21b6">'+t+'</span>'; };
+  let h='<div class="ce-sheet-lbl">Pause</div><div class="dr-pause" style="font-size:12px">';
+  if(!st){
+    h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+bt('dr-pause-now','⏸ Pause',"drPauseNow()",false)+'<span style="color:var(--muted)">until you tap ▶ Resume</span></div>';
+    h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px">'+L('Or pause from')+'<input data-drp="f" type="date" min="'+today+'" value="'+today+'" style="'+inp+'">'
+      +L('Resume on')+'<input data-drp="r" type="date" min="'+drIsoAdd(today,1)+'" value="" style="'+inp+'">'
+      +bt('dr-pause-dates','⏸ Pause these days',"var p=this.parentNode;drPauseDates(p.querySelector('[data-drp=f]').value,p.querySelector('[data-drp=r]').value)",false)+'</div>';
+  } else {
+    h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="dr-pause-words" style="font-weight:800;color:#b45309">'+esc(drPauseWords(st))+'</span>'
+      +(st.now?bt('dr-resume','▶ Resume',"drResumeNow()",true):bt('dr-resume','✕ Don’t pause',"drResumeNow()",true))+'</div>';
+    h+='<div style="margin-top:6px;color:#92400e;line-height:1.4">'+esc(st.now
+      ?'No '+((typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[kind])||kind)+' card goes on '+name+'’s days while it’s paused. '+(st.back?'It comes back by itself on '+drMD(st.back)+', on the same days.':'▶ Resume brings it back on the same days.')
+      :'It runs as usual until '+drMD(st.from)+'. '+(st.back?'Then it’s off until it comes back by itself on '+drMD(st.back)+'.':'Then it’s off until you tap ▶ Resume.'))+'</div>';
+  }
+  if(drPauseMsg) h+='<div class="dr-pause-msg" style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#fef3c7;border:1px solid #fcd34d;color:#92400e">'+esc(drPauseMsg)+'</div>';
+  return h+'</div>';
+}
+// DRILLPAUSESHEET_END
 // DRILLDAYS_END
 // DRILLADD_START — 🃏 "＋ Add subject ▸ Card practice" on a child's Curriculum page (slice 4 of
 // DESIGN_drill_rows_curriculum_2026-11-19.md, §3.4 / §3.5 / §3.7 / §4). Her picks 2026-11-22: a brand-new kind must be
@@ -64745,6 +65401,219 @@ function daSheetHTML(kid,col){
   return h+'</div></div>';
 }
 // DRILLADD_END
+// DRILLSWITCH_START — 🃏 the one-tap switch for an old-style "Drills" daily subject (slice 7 of
+// DESIGN_drill_rows_curriculum_2026-11-19.md, §5; her answers 2026-11-22: question 4 "Yes, offer it", question 5 "Use the usual
+// time"). Spotting (§5.1, data only — the same test DRILLADD's daOldDrills uses): a subject of the child whose key is `drills`
+// or starts with `drills_`, with no study-session link, every-day tracking, not paused. The offer is one line in the purple
+// strip right after the subject chips: Switch · What changes?. "What changes?" opens the plain list under the line; Switch
+// opens an in-page confirm (no dialog) with the same list for THIS child, and nothing is written until ✓ Switch there.
+// The tap writes (Mom only — the gate of the day buttons beside it — and only when db && !_dryRun()):
+//   1. the plan days: 🃏 Daily Drill on the subject's Mon–Fri days (fewer times a week than days → the days the week builder
+//      itself would pick, its own spread), each placed by drDaysMap (daPlan) in the first free slot, week → week2 → week3; a
+//      day that already holds three other kinds is skipped and named — through drPlanWrite as ONE update (week, week2, and
+//      week3 only when used — drThreeIn), never settings. The card takes the usual Daily Drill length (retrSlotMinutes: the
+//      default, then the child's measured time), so settings/slot_min_drill is NOT written (question 5);
+//   2. the subject's paused:true + pausedSince through ceSaveField, the writer the card's ⏸ uses — paused, never deleted (its
+//      record, history and Workflow Order entry stay);
+//   3. ONE run through the re-lay door, relayWeek("drillswitch"): pass B takes the paused daily's open cards off (RELAY3D,
+//      _rlwDailyDiff) and pass R lays the Daily Drill cards (RETRLIVE, retrLiveDiff) — past days and checked / claimed /
+//      started cards never change, and a card today with Mom's part done keeps today whole (the clock rule below). ↩ Undo on the day banner
+//      (the door's own) puts the plan leaves, the two subject leaves and this week's cards back.
+// Never two drill cards on one day (§5.6). Before school (the door's own _rlwModeNoAsk = "fresh") the switch takes today too:
+// the open old card leaves and the Daily Drill card comes. Mid-day and after school it takes effect from TOMORROW on both
+// sides: mid-day the two passes cannot meet the rule — _rlwDailyDiff keeps a started (time passed), checked or claimed old
+// card while retrLiveDiff would still lay today's Daily Drill from now — so today keeps its old card and gets no Daily Drill.
+// A before-school tap whose card today is already checked, claimed, Mom's-part-done or started starts tomorrow as well. The
+// door is told once (info.from: "clock" | "tomorrow") and _rlwFromMode works the mode out ONCE, when the run fires, for both
+// passes — a tap a second before school starts can never split them. Daily Drill already on some of those days stays as it
+// is; a Daily Drill ⏸ pause (DRILLPAUSE) is never lifted — the confirm says so. Two running old-style subjects: no switch,
+// one line says why (switching one would leave the other beside a Daily Drill). Test: test_drill_switch.js.
+const DR_SW_AB={mon:"Mon",tue:"Tue",wed:"Wed",thu:"Thu",fri:"Fri"};
+let drSwWhatKey=null, drSwKid=null, drSwSk=null, drSwMsg="", _drSwTimer=null;
+// the child's running old-style subjects (§5.1), in key order
+function drSwSubs(kid){
+  const subs=((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid]||{};
+  return Object.keys(subs).sort().filter(function(k){ const s=subs[k]; return !!s&&typeof s==="object"&&/^drills(_|$)/.test(k)&&!s.study&&s.tracking==="daily"&&!s.paused; });
+}
+// Pure. The weekdays an old subject runs: its allowedDays (none = every day), Mon–Fri; timesPerWeek under that → the week
+// builder's own spread (resolveWeekSlots: matchDates[round(i·(n−1)/(tpw−1))]) over a Mon–Fri week with no day off.
+function drSwDays(s){
+  const all=["mon","tue","wed","thu","fri"], al=(Array.isArray(s&&s.allowedDays)?s.allowedDays:[]).map(String);
+  const base=al.length?all.filter(function(d){ return al.indexOf(DR_SW_AB[d])>=0; }):all.slice();
+  const n=parseInt(s&&s.timesPerWeek,10)||0; let days=base;
+  if(n>0&&n<base.length){ days=[]; for(let i=0;i<n;i++){ const d=base[(n===1)?0:Math.round(i*(base.length-1)/(n-1))]; if(days.indexOf(d)<0) days.push(d); } }
+  const nc=(typeof noCoopDaysOf==="function")?noCoopDaysOf(s):null;
+  return {base:base,days:days,tpw:(n>0&&n<base.length)?n:0,sat:al.indexOf("Sat")>=0,noCoop:nc?all.filter(function(d){ return nc.indexOf(DR_SW_AB[d])>=0; }):null};
+}
+// Today or tomorrow, by the door's own clock rule (see above) → {today, held, mode, left:[the week's days that will change]}
+function drSwFrom(kid,sk){
+  let mode="tomorrow"; try{ if(typeof _rlwModeNoAsk==="function") mode=_rlwModeNoAsk(); }catch(e){}
+  const td=(typeof _todayDay==="string")?_todayDay:"";
+  const tasks=(typeof weekData!=="undefined"&&weekData&&Array.isArray(weekData.tasks))?weekData.tasks:[];
+  const ck=(typeof checked!=="undefined"&&checked)||{}, cl=(typeof claimed!=="undefined"&&claimed)||{};
+  const n=new Date(), nowMin=n.getHours()*60+n.getMinutes();
+  const held=tasks.some(function(t){ if(!t||t.who!==kid||t.subjectKey!==sk||t.day!==td||String(t.id||"").endsWith("_c")) return false;
+    let st=false; try{ st=t.time!=null&&toMin(t.time)!=null&&toMin(t.time)<=nowMin; }catch(e){}
+    return !!ck[t.id]||!!cl[t.id]||!!t.momPartDone||st; });
+  const today=(mode==="fresh")&&!held;
+  let left=[]; try{ const c=retrLiveCtx(kid); left=RETR_LIVE_DAYS.filter(function(dn){ const iso=c.dayISO(dn); return !!iso&&(iso>c.todayISO||(today&&iso===c.todayISO)); }); }catch(e){ left=[]; }
+  return {today:today,held:held,mode:mode,left:left};
+}
+// how the Daily Drill minutes are set: "set" (typed in Mastery), "measured" (the child's timed sittings), "usual" (the default)
+function drSwMinHow(kid){
+  const rp=((typeof masteryData!=="undefined"&&masteryData&&masteryData.retrievalPlan)||{});
+  if(((rp._defaults||{}).slot_min_drill!==undefined)||(((rp[kid]||{}).settings||{}).slot_min_drill!==undefined)) return "set";
+  return ((typeof mastMeasuredDrillMin==="function")&&mastMeasuredDrillMin(kid))?"measured":"usual";
+}
+// Everything the confirm shows and the tap writes, worked out once (null = no such subject)
+function drSwPlan(kid,sk){
+  const s=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{})[sk]; if(!s||typeof s!=="object") return null;
+  const sd=drSwDays(s), w1=retrWeek(kid), w2=retrWeek2(kid), w3=retrWeek3(kid);
+  const before={}; RETR_DAYS.forEach(function(d){ before[d]=retrDayKinds(kid,d); });
+  const pl=daPlan(w1,w2,"drill",sd.days,w3);
+  return {disp:String(s.display||sk),sd:sd,week:pl.week,week2:pl.week2,week3:pl.week3,on:pl.on,
+    full:pl.full.map(function(d){ return {day:d,kinds:(drDaysMap(w1,w2,d,"drill",true,w3).full||[]).slice()}; }),
+    already:sd.days.filter(function(d){ return (before[d]||[]).indexOf("drill")>=0; }),
+    oldMin:parseInt(s.minutes,10)||20, newMin:retrSlotMinutes(kid,"drill"), minHow:drSwMinHow(kid),
+    oldReq:s.mom==="required", oldSkip:(typeof coopDayRule==="function")&&coopDayRule(s)==="skip", newReq:retrSlotMom("drill")==="required",
+    pause:(typeof drPauseState==="function")?drPauseState(kid,"drill"):null, from:drSwFrom(kid,sk),
+    others:drSwSubs(kid).filter(function(k){ return k!==sk; })};
+}
+function drSwCan(p){ return !!p&&!p.others.length&&p.on.length>0; }
+// The plain list, for THIS child (what "What changes?" and the confirm both show)
+function drSwLines(kid,p){
+  const name=(typeof cap==="function")?cap(kid):kid, old="“"+p.disp+"”", DD="\u{1F0CF} Daily Drill";
+  const dl=function(ds){ return ds.map(function(d){ return DR_DAY_SHORT[d]||d; }).join(" "); };
+  const L=[];
+  if(!p.sd.days.length) L.push(old+" runs on no weekday, so there are no days to carry over.");
+  else if(!p.on.length) L.push("Every one of "+old+"’s days already has three kinds of card practice, so "+DD+" would go on no day.");
+  else if(p.sd.tpw) L.push("Days: "+old+" runs "+p.sd.tpw+" times a week on "+dl(p.sd.base)+", and the week builder spreads that to "+dl(p.sd.days)+" — so "+DD+" goes on "+dl(p.on)+".");
+  else L.push("Days: "+DD+" goes on "+dl(p.on)+(p.full.length?".":" — the days "+old+" runs now."));
+  p.full.forEach(function(f){ const dn=DR_DAY_LONG[f.day]||f.day;
+    L.push(dn+" is skipped — it already has three: "+drAnd(f.kinds.map(function(k){ return (typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[k])||k; }))+". Turn one off on its line, then turn "+DD+" on for "+dn+"."); });
+  if(p.already.length) L.push(DD+" is already on "+dl(p.already)+" — "+(p.already.length===1?"that day stays":"those days stay")+" as "+(p.already.length===1?"it is":"they are")+".");
+  if(p.sd.sat) L.push("Saturday isn’t carried over — card practice runs Mon–Fri.");
+  if(p.sd.noCoop&&dl(p.sd.noCoop)!==dl(p.sd.base)) L.push("In weeks without co-op "+old+" uses "+dl(p.sd.noCoop)+"; card practice keeps the same days every week.");
+  L.push("Length: "+p.newMin+" min, the usual "+DD+" time"+(p.minHow==="measured"?" ("+name+"’s own measured drill time)":p.minHow==="set"?" (the minutes set in Mastery)":"")
+    +" — "+old+" is "+p.oldMin+" min now."+(p.minHow==="usual"?" After "+name+"’s timed drill sittings it follows "+name+"’s own measured time.":""));
+  L.push("Time of day: it moves to the end of "+name+"’s school day, just before the Closing Notebook (or an earlier free gap if the end is full). "+old+" sits in the day’s order now.");
+  if(p.oldSkip) L.push("Co-op days: "+old+" skips co-op days now; "+DD+" stays off a co-op day only when “No Mom-required lessons” is ticked.");
+  else if(p.oldReq===p.newReq) L.push("Co-op days: no change — like "+old+" now, it stays off a co-op day when “No Mom-required lessons” is ticked.");
+  else L.push("Co-op days: "+old+" isn’t Mom-required, so it runs on co-op days now; "+DD+" is done with Mom, so it stays off a co-op day when “No Mom-required lessons” is ticked.");
+  if(p.pause) L.push("⏸ "+DD+" is "+(p.pause.now?"paused for "+name+(p.pause.back?" until "+drMD(drIsoAdd(p.pause.back,-1)):""):"set to pause ("+drPauseWords(p.pause)+")")
+    +". Switching doesn’t lift that: no drill card goes on "+name+"’s paused days — "+(p.pause.back?"it comes back by itself on "+drMD(p.pause.back):"▶ Resume on its line brings it back")+".");
+  const f=p.from, first=f.left.length?(DR_DAY_LONG[DR_SW_D3[f.left[0]]]||f.left[0]):"";
+  const isSchool=(typeof _todayDay==="string")&&RETR_LIVE_DAYS.indexOf(_todayDay)>=0;
+  if(f.today) L.push("Starts today: today’s "+old+" card comes off and "+DD+" takes its place (school hasn’t started yet).");
+  else if(!f.left.length) L.push("Nothing changes on this week’s cards — it starts with next week’s.");
+  else L.push("Starts "+first+(isSchool?": today keeps its "+old+" card ("+(f.held&&f.mode==="fresh"?"it’s already started or done":"school has started")+"), so "+name+" never gets two drill cards in one day.":"."));
+  L.push(old+" is paused, not deleted — its card, its history and its place in the Workflow Order stay; it rests in the strip as ⏸ "+p.disp+".");
+  L.push((f.left.length?"Changed your mind? ↩ Undo on the day banner puts it all back for 15 minutes. Later: ":"To go back: ")+"▶ Resume "+old+" on its card, and turn "+DD+" off (or ⏸ pause it) on its line.");
+  return L;
+}
+const DR_SW_D3={monday:"mon",tuesday:"tue",wednesday:"wed",thursday:"thu",friday:"fri"};
+function _drSwArg(x){ return esc(String(x).replace(/\\/g,"\\\\").replace(/'/g,"\\'")); }
+function _drSwBtn(cls,lbl,fn,on){ return '<button class="'+cls+'" onclick="'+fn+'" style="min-height:44px;padding:8px 14px;border-radius:10px;border:1.5px solid #c4b5fd;background:'+(on?'#5b21b6':'#fff')+';color:'+(on?'#fff':'#5b21b6')+';font-size:12.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; }
+function _drSwList(kid,p){ return '<ul style="margin:0;padding-left:18px">'+drSwLines(kid,p).map(function(l){ return '<li style="margin:3px 0">'+esc(l)+'</li>'; }).join('')+'</ul>'; }
+// The offer line (and, opened, the list) at the head of the strip's card-practice chips — "" for a child with no running
+// old-style subject, or when Mom isn't here
+function drSwOfferHtml(kid){
+  if(!_drMom()) return "";
+  const subs=drSwSubs(kid); if(!subs.length) return "";
+  const all=((currData&&currData.subjects)||{})[kid]||{}, q=function(k){ return "“"+String((all[k]||{}).display||k)+"”"; };
+  const box='margin:4px 0 6px;padding:6px 10px;border-radius:10px;background:#fff;border:1.5px dashed #a78bfa;font-size:12px;color:#5b21b6;line-height:1.4;';
+  if(subs.length>1) return '<div class="dr-sw" style="'+box+'">'+esc(drAnd(subs.map(q))+" are set up the older way. The switch to \u{1F0CF} Daily Drill moves one at a time, when it is the only one running — ⏸ pause the others first (tap a chip, then ⏸ on its card).")+'</div>';
+  const sk=subs[0], p=drSwPlan(kid,sk); if(!p) return "";
+  const open=drSwWhatKey===kid+"|"+sk, same=!p.full.length&&!p.sd.tpw&&p.on.length>0;
+  let h='<div class="dr-sw" style="'+box+'display:flex;flex-wrap:wrap;align-items:center;gap:6px"><span style="flex:1 1 200px;min-width:0">'
+    +esc(q(sk)+" is set up the older way. Switch it to \u{1F0CF} Daily Drill"+(same?" — same days.":"."))+'</span>'
+    +_drSwBtn('dr-sw-go','Switch',"drSwOpen('"+_drSwArg(kid)+"','"+_drSwArg(sk)+"')",true)
+    +_drSwBtn('dr-sw-what',open?'Hide':'What changes?',"drSwWhat('"+_drSwArg(kid)+"','"+_drSwArg(sk)+"')",false)+'</div>';
+  if(open) h+='<div class="dr-sw-list" style="'+box+'border-style:solid;border-color:#ddd6fe">'+_drSwList(kid,p)+'</div>';
+  return h;
+}
+function drSwWhat(kid,sk){
+  if(!kid||!sk||!_drMom()) return false;
+  drSwWhatKey=(drSwWhatKey===kid+"|"+sk)?null:kid+"|"+sk;
+  if(typeof renderAll==="function") renderAll();
+  return true;
+}
+function _drSwLive(){ return typeof db!=="undefined"&&!!db&&!(typeof _dryRun==="function"&&_dryRun()); }
+// The confirm — a bottom sheet like the day sheet's; the only control that writes is ✓ Switch
+function drSwSheetHtml(kid,sk){
+  const name=(typeof cap==="function")?cap(kid):kid, p=drSwPlan(kid,sk); if(!p) return "";
+  const col=((typeof KID_COLOR!=="undefined"&&KID_COLOR)||{})[kid]||"#6d28d9", can=drSwCan(p), live=_drSwLive();
+  let h='<div class="ce-sheet dr-sw-sheet" onclick="if(event.target===this)drSwClose()"><div class="ce-sheet-box">';
+  h+='<div class="ce-sheet-title" style="margin-bottom:4px">'+esc("Switch “"+p.disp+"” to \u{1F0CF} Daily Drill?")+' <span style="font-family:\'DM Sans\',sans-serif;font-size:13px;font-weight:700;color:'+col+'">· '+esc(name)+'</span></div>';
+  h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">'+esc(can?"Here is exactly what happens for "+name+". Nothing changes until you tap ✓ Switch.":"Nothing can be switched yet:")+'</div>';
+  h+='<div style="font-size:12.5px;color:var(--text);line-height:1.45">'+_drSwList(kid,p)+'</div>';
+  if(p.others.length) h+='<div class="dr-sw-msg" style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#fef3c7;border:1px solid #fcd34d;font-size:12px;color:#92400e">'+esc("Another old-style subject is running too — ⏸ pause it first, so there are never two drill cards on a day.")+'</div>';
+  if(can&&!live) h+='<div class="dr-sw-msg" style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#fef3c7;border:1px solid #fcd34d;font-size:12px;color:#92400e">Preview mode — nothing can be saved here.</div>';
+  if(drSwMsg) h+='<div class="dr-sw-msg" style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#fef3c7;border:1px solid #fcd34d;font-size:12px;color:#92400e">'+esc(drSwMsg)+'</div>';
+  h+='<div class="ce-sheet-actions"><button class="ce-btn-cancel" onclick="drSwClose()" style="min-height:44px">Not now</button>'
+    +((can&&live)?'<button class="ce-btn-save dr-sw-do" onclick="drSwDo()" style="min-height:44px">✓ Switch</button>':'')+'</div>';
+  return h+'</div></div>';
+}
+function drSwRender(){
+  if(!drSwKid||typeof document==="undefined"||!document.body) return;
+  let w=document.getElementById("dr-sw-wrap");
+  if(!w){ w=document.createElement("div"); w.id="dr-sw-wrap"; document.body.appendChild(w); }
+  const h=drSwSheetHtml(drSwKid,drSwSk), was=!!w.querySelector(".ce-sheet.open");
+  w.innerHTML=was?h.replace('class="ce-sheet ','class="ce-sheet open '):h;
+  w.style.display="block"; document.body.style.overflow="hidden";
+  if(!was) requestAnimationFrame(function(){ const s=w.querySelector(".ce-sheet"); if(s) s.classList.add("open"); });
+}
+function drSwOpen(kid,sk){
+  if(!kid||!sk||!_drMom()||drSwSubs(kid).indexOf(sk)<0) return false;
+  if(_drSwTimer){ clearTimeout(_drSwTimer); _drSwTimer=null; }
+  drSwKid=kid; drSwSk=sk; drSwMsg="";
+  drSwRender();
+  return true;
+}
+function drSwClose(quiet){
+  drSwKid=null; drSwSk=null; drSwMsg="";
+  if(typeof document!=="undefined"&&document.body){
+    document.body.style.overflow="";
+    const w=document.getElementById("dr-sw-wrap");
+    if(w){ const s=w.querySelector(".ce-sheet"); if(s) s.classList.remove("open");
+      _drSwTimer=setTimeout(function(){ w.style.display="none"; w.innerHTML=""; _drSwTimer=null; },250); }
+  }
+  if(!quiet&&typeof renderAll==="function") renderAll();
+}
+// ✓ Switch: the plan days (one drPlanWrite, no live pass of its own — the run below carries pass R), the two subject leaves
+// (ceSaveField, as the card's ⏸ writes them), then ONE relayWeek with every leaf's old value for ↩ Undo
+function drSwDo(){
+  const kid=drSwKid, sk=drSwSk; if(!kid||!sk||!_drMom()) return false;
+  const say=function(m){ drSwMsg=m; drSwRender(); return false; };
+  if(!_drSwLive()) return say("Preview mode — nothing was saved.");
+  if(drSwSubs(kid).indexOf(sk)<0) return say("This subject isn’t running the older way any more — nothing was saved.");
+  const p=drSwPlan(kid,sk); if(!drSwCan(p)) return say("Nothing was saved.");
+  const rp=((masteryData&&masteryData.retrievalPlan)||{})[kid]||{}, base="mastery/retrievalPlan/"+kid+"/";
+  const pl={week:p.week,week2:p.week2}; if(drThreeIn(kid,p.week3)) pl.week3=p.week3;
+  const undo=Object.keys(pl).map(function(k){ return (rp[k]&&typeof rp[k]==="object")?{p:base+k,was:JSON.parse(JSON.stringify(rp[k]))}:{p:base+k,gone:true}; });
+  const P="curriculum/subjects/"+kid+"/"+sk+"/";
+  undo.push(_rlwWas(P+"paused"),_rlwWas(P+"pausedSince"));
+  if(!drPlanWrite(kid,pl)) return say("Nothing was saved.");
+  try{ if(retrAdminLocal&&retrAdminLocal.kid===kid) retrAdminLocal=null; }catch(e){}   // the Mastery panel's copy never writes old days back (§4)
+  const k0=ceEditKid, s0=ceEditKey; ceEditKid=kid; ceEditKey=sk;
+  try{ ceSaveField("paused",true); ceSaveField("pausedSince",new Date().toISOString()); }finally{ ceEditKid=k0; ceEditKey=s0; }
+  const name=(typeof cap==="function")?cap(kid):kid;
+  relayWeek("drillswitch",{label:"\u{1F0CF} "+name+"’s “"+p.disp+"” is now Daily Drill",subjects:[{kid:kid,sk:sk}],retr:[kid],undo:undo,from:p.from.today?"clock":"tomorrow"});
+  drSwWhatKey=null; drSwClose(true);
+  if(typeof gwShowToast==="function") gwShowToast("✓ “"+p.disp+"” is now \u{1F0CF} Daily Drill for "+name+" — "+p.on.map(function(d){ return DR_DAY_SHORT[d]; }).join(" ")+". "+(p.from.left.length?"This week’s cards change in a moment.":"It starts with next week’s cards."));
+  if(typeof renderAll==="function") renderAll();
+  return true;
+}
+// The re-lay door's one clock for a switch run (relayWeek info.from): worked out once per run, at the run, and used by pass R
+// (retrLiveRelay → _rlwFromCtx) and pass B (_rlwChain). "tomorrow" stays tomorrow; "clock" = the door's _rlwModeNoAsk
+// ("fresh" before school, else "tomorrow"). A run nobody marked (every other caller) → null: nothing changes.
+function _rlwFromMode(pend){
+  if(!pend||!pend.from) return null;
+  if(!pend._fm){ let m="tomorrow"; if(pend.from!=="tomorrow"){ try{ if(typeof _rlwModeNoAsk==="function") m=_rlwModeNoAsk(); }catch(e){} } pend._fm=m; }
+  return pend._fm;
+}
+function _rlwFromCtx(pend,c){ const m=_rlwFromMode(pend); if(m&&c) c.todayOpen=(m!=="tomorrow"); return c; }
+// DRILLSWITCH_END
 function renderCurrGrid(el){
   if(!currData||!currData.subjects){
     el.innerHTML+='<div style="padding:40px 20px;text-align:center;color:var(--muted)"><div style="font-size:36px;margin-bottom:8px">\u{1F4CA}</div><div style="font-weight:600;margin-bottom:4px">No curriculum yet</div><div style="font-size:12px">Upload an Excel file or build subjects first.</div></div>';
@@ -84173,7 +85042,7 @@ function _pdDayIso(day){
 function _pdLogged(kid,key){ const h=masteryData&&masteryData.history&&masteryData.history[kid]; return !!(h&&h[key]); }
 function pdOnDrillChecked(t){
   try{
-    const sk=(t&&t.subjectKey)||""; if(!t||!t.who||!(sk==="drills"||/^drills(_|$)/.test(sk))) return;
+    const sk=(t&&t.subjectKey)||""; if(!t||!t.who||!(sk==="drills"||/^drills(_|$)/.test(sk)||(sk==="retrieval"&&t.retrieval==="drill"))) return;   // 🃏 DRILLSWITCH: + a 🃏 Daily Drill practice card (never Sprint / Re-checks / Match)
     const today=(typeof calToday==="function")?calToday():_pdIso(new Date());
     const eff=(typeof effectiveDay==="function")?effectiveDay(t):t.day;
     const cands=[_pdDayIso(eff),_pdDayIso(t.day),today].filter((x,i,a)=>x&&x<=today&&a.indexOf(x)===i);
@@ -88354,7 +89223,7 @@ function retrCoopOff(kid,ds,kind){
   try{ return retrSlotMom(kind)==="required"&&!!coopNoMomBaseFor(kid,ds); }catch(e){ return false; }
 }
 // the kinds laid for this child on weekday dk (mon…fri) of date ds (YYYY-MM-DD); no date = the plan's kinds, as before
-function retrDayKindsOn(kid,dk,ds){ return retrDayKinds(kid,dk).filter(function(k){ return !retrCoopOff(kid,ds,k); }); }
+function retrDayKindsOn(kid,dk,ds){ return retrDayKinds(kid,dk).filter(function(k){ return !retrCoopOff(kid,ds,k)&&!(typeof retrPausedOn==="function"&&retrPausedOn(kid,ds,k)); }); }   // DRILLPAUSE: + a kind paused on that date
 // the co-op children whose practice cards the one-date flip re-lays: plan on, and ds is today or later in the active week
 function retrCoopFlipKids(ds,kids){
   const out=[];
@@ -88368,6 +89237,57 @@ function retrCoopFlipKids(ds,kids){
   return out;
 }
 // DRILLCOOP_END
+// DRILLPAUSE_START — ⏸ pause one kind of card practice, plain or with dates (her picks 2026-11-22 on the design's question 7,
+// DESIGN_drill_rows_curriculum_2026-11-19.md §3.6 / slice 5: "Pause with dates" and then "and a plain pause"). Stored as one leaf
+// in the plan node, written only through drPlanWrite (DRILLSAVE) as ONE targeted path:
+//   · mastery/retrievalPlan/<kid>/pausedKinds/<kind> = true — paused on every date until ▶ Resume (the design's shape)
+//   · … = {pauseFrom:"YYYY-MM-DD", resumeOn:"YYYY-MM-DD"} — Family Time's two leaves with Family Time's meaning (FTPAUSE,
+//     uftPausedOn): pauseFrom is the first paused day, resumeOn the first day back, so "Dec 1 – Jan 3" is stored Dec 1 / Jan 4
+//     and it comes back by itself on Jan 4. A pause whose resumeOn has come is over and simply stops applying (no clean-up write).
+// ▶ Resume removes the leaf. The saved days (week / week2 / week3) are never touched, so Resume brings back the same days.
+// One laying rule, one place: retrDayKindsOn (DRILLCOOP) leaves a paused kind out on that date, so the week builder
+// (gwInjectRetrieval), the live-week pass (RETRLIVE), the Grid's Min column and the brain-work strip follow. The plan's own
+// readers do not change (retrDayKinds, retrOn, drPlanFor): a paused kind is still on the plan — its Curriculum line stays
+// (greyed, with ⏸ and until when), its day buttons stay lit, it keeps its slot in the three-a-day limit and ＋ Add subject ▸
+// Card practice never offers it again as missing. Test: test_drill_pause.js.
+const DR_MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function drIsoOk(s){ return typeof s==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(s); }
+function drIsoAdd(s,n){ const p=s.split("-"), d=new Date(+p[0],+p[1]-1,+p[2]+n); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function drMD(s){ const p=s.split("-"); return DR_MON[+p[1]-1]+" "+(+p[2]); }
+function drToday(){ if(typeof calToday==="function") return calToday(); const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+// the stored pause of one kind → null | {plain:true} | {plain:false, from, back} (an object with no good date = a plain pause)
+function retrPauseOf(kid,kind){
+  const rp=((typeof masteryData!=="undefined"&&masteryData&&masteryData.retrievalPlan)||{})[kid]||{};
+  const pk=rp.pausedKinds; if(!pk||typeof pk!=="object") return null;
+  const v=pk[kind];
+  if(v===true) return {plain:true,from:null,back:null};
+  if(!v||typeof v!=="object") return null;
+  const f=drIsoOk(v.pauseFrom)?v.pauseFrom:null, b=drIsoOk(v.resumeOn)?v.resumeOn:null;
+  return (f||b)?{plain:false,from:f,back:b}:{plain:true,from:null,back:null};
+}
+// is `kind` paused for this child on date ds? plain → every date; dated → pauseFrom ≤ ds < resumeOn (Family Time's rule)
+function retrPausedOn(kid,ds,kind){
+  const p=retrPauseOf(kid,kind); if(!p) return false;
+  if(p.plain) return true;
+  if(!drIsoOk(ds)) return false;
+  return (!p.from||ds>=p.from)&&(!p.back||ds<p.back);
+}
+// for the line and the sheet, on `today`: null (no pause, or one that is over) | {now:true|false, plain, from, back}
+function drPauseState(kid,kind,today){
+  const p=retrPauseOf(kid,kind); if(!p) return null;
+  today=drIsoOk(today)?today:drToday();
+  if(p.plain) return {now:true,plain:true,from:null,back:null};
+  if(p.back&&p.back<=today) return null;
+  return {now:!(p.from&&p.from>today),plain:false,from:p.from,back:p.back};
+}
+// "⏸ paused" · "⏸ paused until Jan 3" (the last paused day) · ahead: "⏸ pauses Dec 1 – Jan 3" / "⏸ pauses from Dec 1"
+function drPauseWords(st){
+  if(!st) return "";
+  const last=st.back?drMD(drIsoAdd(st.back,-1)):"";
+  if(st.now) return "⏸ paused"+(last?" until "+last:"");
+  return "⏸ pauses "+(st.from?(last?drMD(st.from)+" – "+last:"from "+drMD(st.from)):"");
+}
+// DRILLPAUSE_END
 // RETRWEEK_END
 // P3 Match heat-map: per-deck accuracy over the last heatmap_window calendar days of
 // drill history; suggest the WORST deck among those Match can actually play (≥4 pairs).
@@ -88501,11 +89421,23 @@ function drPlanWrite(kid,payload,o){
   if(!kid||typeof kid!=="string"||/[.#$\[\]\/]/.test(kid)) return false;
   if(!payload||typeof payload!=="object"||Array.isArray(payload)||!Object.keys(payload).length) return false;
   if(!masteryData.retrievalPlan) masteryData.retrievalPlan={};
-  masteryData.retrievalPlan[kid]=Object.assign({},masteryData.retrievalPlan[kid]||{},JSON.parse(JSON.stringify(payload)));   // update() keeps the kid's other keys — the mirror does too
+  const _dpLeaf=Object.keys(payload).filter(function(k){ return k.indexOf("/")>=0; });   // DRILLPAUSE: "pausedKinds/<kind>" = that one leaf (update() writes that path only)
+  if(_dpLeaf.some(function(k){ return !/^[^.#$\[\]\/]+(\/[^.#$\[\]\/]+)+$/.test(k); })) return false;   // DRILLPAUSE: no empty or bad path part
+  const _dpFlat={}; Object.keys(payload).forEach(function(k){ if(k.indexOf("/")<0) _dpFlat[k]=payload[k]; });   // DRILLPAUSE
+  masteryData.retrievalPlan[kid]=Object.assign({},masteryData.retrievalPlan[kid]||{},JSON.parse(JSON.stringify(_dpFlat)));   // update() keeps the kid's other keys — the mirror does too
+  _dpLeaf.forEach(function(k){ drPlanMirrorLeaf(masteryData.retrievalPlan[kid],k,payload[k]); });   // DRILLPAUSE
   if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/retrievalPlan/"+kid).update(payload);
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   if(o.rhythm&&typeof retrLiveQueue==="function") retrLiveQueue(kid);
   return true;
+}
+// DRILLPAUSE: the mirror of one "a/b" leaf — copies on the way down (never edits a shared object), null removes it and any
+// parent it leaves empty (as the database does)
+function drPlanMirrorLeaf(obj,p,v){
+  const ks=p.split("/"), path=[obj]; let o=obj;
+  for(let i=0;i<ks.length-1;i++){ o[ks[i]]=(o[ks[i]]&&typeof o[ks[i]]==="object")?Object.assign({},o[ks[i]]):{}; o=o[ks[i]]; path.push(o); }
+  if(v===null||v===undefined) delete o[ks[ks.length-1]]; else o[ks[ks.length-1]]=JSON.parse(JSON.stringify(v));
+  for(let i=ks.length-2;i>=0;i--){ if(Object.keys(path[i+1]).length) break; delete path[i][ks[i]]; }
 }
 // DRILLSAVE_END
 // RETRSAVE_END
@@ -88648,12 +89580,13 @@ function retrSchedStripHtml(kid,day){
     let ml=(masteryData.matchLog||{})[kid]||[]; if(!Array.isArray(ml)) ml=Object.values(ml);
     const matchDone=ml.some(e=>e&&e.date===today);
     const kinds=retrTodayKinds(kid).filter(k=>!(typeof retrCoopOff==="function"&&retrCoopOff(kid,(typeof calToday==="function")?calToday():today,k)));   // DRILLCOOP: no Mom-run chip on a ticked co-op day
+    const _dpKinds=kinds.filter(k=>!(typeof retrPausedOn==="function"&&retrPausedOn(kid,(typeof calToday==="function")?calToday():today,k)));   // DRILLPAUSE: no chip for a kind paused today
     const chip=(icon,label,done,view)=>'<button onclick="retrSchedGo(\''+kid+'\',\''+view+'\')" '
       +'style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;border:1.5px solid '+(done?'#86efac':'#e2ddd6')
       +';background:'+(done?'#f0fdf4':'#fff')+';color:'+(done?'#15803d':'#57534e')
       +';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+icon+' '+esc(label)+(done?' ✓':'')+'</button>';
     let chips=chip("\u{1F0CF}","Daily Drill",drillDone,"drill");
-    kinds.forEach(kind=>{
+    _dpKinds.forEach(kind=>{   // DRILLPAUSE
       if(kind==="sprint"||kind==="recheck"){
         let lbl=kind==="recheck"?"Re-checks":"Sprint";
         try{
@@ -93215,8 +94148,9 @@ function autoGenerateWeekIfNeeded(){
   // empty; generating then would undercount cursors and re-schedule finished lessons.
   // Retry until the listeners have answered.
   // NO_MIRROR: the retrieval (drill/sprint) slots come from Mastery's retrievalPlan — wait for it too.
-  if(!fbCheckedLoaded||!(fbTasksLoaded||_abFirstWeek())||!fbArchiveLoaded||!_haMastReady){ setTimeout(autoGenerateWeekIfNeeded,5000); return; }   // 🆕 ABFIRST: a brand-new family's empty week counts as loaded here
+  if(!fbCheckedLoaded||!(fbTasksLoaded||_abFirstWeek())||!_haMastReady){ setTimeout(autoGenerateWeekIfNeeded,5000); return; }   // 🆕 ABFIRST: a brand-new family's empty week counts as loaded here
   if(!_abDue(_abDueCtx())){ setTimeout(autoGenerateWeekIfNeeded,60000); return; }   // her question 2, "start": a Sunday waits for its school start
+  if(typeof archiveEnsureAll==="function"?!archiveEnsureAll():!fbArchiveLoaded){ setTimeout(autoGenerateWeekIfNeeded,5000); return; }   // ARCHBOOT (slice 4): every past week, asked for LAST — only once this week's own data says a build is really due (at start the week can look empty for a moment)
   _autoGenTried=true;
   db.ref("week"+wn+"/tasks").once("value",s=>{
     const _existing=s.val();
@@ -94753,7 +95687,7 @@ function retrLiveRelay(pend){
     if(typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return null;
     const all={upd:{},added:[],removed:[],retimed:[]};
     kids.forEach(function(kid){
-      const d=retrLiveDiff(kid,weekData.tasks,retrLiveCtx(kid));
+      const d=retrLiveDiff(kid,weekData.tasks,(typeof _rlwFromCtx==="function")?_rlwFromCtx(pend,retrLiveCtx(kid)):retrLiveCtx(kid));   // 🃏 DRILLSWITCH: a switch run's today follows pass B's (_rlwFromMode); any other run: unchanged
       d.removed.forEach(function(id){ const k=weekData.tasks.findIndex(t=>t&&t.id===id); if(k>=0) weekData.tasks.splice(k,1); });
       d.retimed.forEach(function(r){ const t=weekData.tasks.find(x=>x&&x.id===r.id); if(t) t.time=r.to; });
       d.added.forEach(function(c){ weekData.tasks.push(Object.assign({},c)); });

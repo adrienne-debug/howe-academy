@@ -62,7 +62,9 @@ function stripThree(s) {
 module.exports = { stripThree };
 if (require.main !== module) return;
 
-const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const { stripPause } = require("./test_drill_pause.js");   // DRILLPAUSE (slice 5): this test pins its own slice on the tree with the pause taken out (both sides); test_drill_pause.js pins the pause
+const { stripSwitch } = require("./test_drill_switch.js");   // DRILLSWITCH (slice 7): its door / strip / paper-drill lines and its block are taken out on both sides (test_drill_switch.js pins them)
+const src = stripPause(stripSwitch(fs.readFileSync(path.join(__dirname, "index.html"), "utf8")));   // DRILLPAUSE   // DRILLSWITCH
 let pass = 0, fail = 0;
 function ok(n, c, x) { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + JSON.stringify(x).slice(0, 600) + ")" : "")); } }
 function fnIn(S, name) { const i = S.indexOf("function " + name + "("); if (i < 0) throw new Error("not found " + name); let d = 0; for (let k = S.indexOf("{", i); k < S.length; k++) { if (S[k] === "{") d++; else if (S[k] === "}") { d--; if (!d) return S.slice(i, k + 1); } } throw new Error("unbalanced " + name); }
@@ -90,7 +92,7 @@ console.log("0. stripThree undoes the slice exactly");
   const touched = S => ["RETRWEEK", "GWRETR", "DRILLROWS", "DRILLDAYS", "DRILLADD"].map(m => sliceIn(S, "// " + m + "_START", "// " + m + "_END")).join("\n");
   ok("stripped: no trace of the slice (anywhere: the marker / the reader; in the touched blocks: week3, w3, the third slot)", !/DRILLTHREE|retrWeek3|drThreeIn|drAnd\(/.test(SRC0) && !/week3|\bw3\b|\bc\[d(ay)?\]/.test(touched(SRC0)));
   ok("stripped: the old two-slot text is back (refusal names two)", /already has two: '\+esc\(tt\(ks\[0\]\)\)\+' and '\+esc\(tt\(ks\[1\]\)\)/.test(SRC0) && /else return \{ok:false,full:\[a\[day\],b\[day\]\]\};/.test(SRC0));
-  let main = ""; try { main = cp.execSync("git show origin/main:index.html", { cwd: __dirname, encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { main = ""; }
+  let main = ""; try { main = cp.execSync("git show origin/main:index.html", { cwd: __dirname, encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { main = ""; } main = stripPause(stripSwitch(main));   // DRILLPAUSE: the same on origin/main's side
   if (main) {
     const M0 = stripThree(main);
     const regions = [["// RETRWEEK_START", "// RETRWEEK_END"], ["// GWRETR_START", "// GWRETR_END"], ["// RETRLIVE_START", "// RETRLIVE_END"],

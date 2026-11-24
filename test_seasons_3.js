@@ -232,7 +232,7 @@ console.log("\n# Mom's page: one switch, and whose idea it is");
   const document = { getElementById(id) { return nodes[id] || (nodes[id] = el(id)); }, createElement: t => el(t), head: { appendChild() {} } };
   const db = { ref(p) { const P = p === undefined ? "" : p; return { update(v) { writes.push({ op: "update", path: P, val: JSON.parse(JSON.stringify(v)) }); }, set(v) { writes.push({ op: "set", path: P, val: v }); }, on() {} }; } };
   const LS = {};
-  const ctx = { console: { log: console.log, warn() {} }, Date, Math, JSON, document, db, _todayStr: () => "2026-11-21", _dryRun: () => false, momHere: () => true, gwShowToast() {},
+  const ctx = { console: { log: console.log, warn() {} }, Date, Math, JSON, document, db, skJobsN: () => 0, _todayStr: () => "2026-11-21", _dryRun: () => false, momHere: () => true, gwShowToast() {},
     HA_LS: { getItem: k => (k in LS ? LS[k] : null), setItem: (k, v) => { LS[k] = String(v); } }, tab: "moms-plan", mpSubView: "seasons" };
   ctx.window = ctx; vm.createContext(ctx);
   vm.runInContext("const ROSTER_DEF=[{id:'ava',name:'Ava',color:'#2563eb'},{id:'ben',name:'Ben',color:'#16a34a'}]; var calendarData={events:{}};", ctx);

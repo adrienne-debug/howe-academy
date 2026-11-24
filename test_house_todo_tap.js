@@ -132,7 +132,11 @@ for (const [sname, make] of STATES) {
   let MAIN = null; try { MAIN = cp.execSync("git show d0673ec3:house.js", { cwd: __dirname, encoding: "utf8", maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) {}
   if (!MAIN) console.log("  (main's house.js not in git here — the byte check against main is skipped)");
   else for (const [sname, make] of STATES) for (const noMom of [false, true]) {
-    const a = make(), b = mk({ house: false }); b.event = { stopPropagation: () => {} }; vm.runInContext(MAIN, b, { filename: "house_main.js" }); b.householdOnValue(JSON.parse(J(a.get("householdData")))); b.writes.length = 0;
+    // HOUSEQUIET (slice B of the missed-chores design, 2026-11-23) changes on purpose what the Household pages draw (test_house_quiet.js);
+    // every caller asks typeof first, so the branch side here is house.js with that block cut out, set up exactly as main's side.
+    const a0 = make(), a = mk({ house: false }), b = mk({ house: false }), noQ = s => { const i = s.indexOf("// HOUSEQUIET_START"); return i < 0 ? s : s.slice(0, i) + s.slice(s.indexOf("\n", s.indexOf("// HOUSEQUIET_END")) + 1); };
+    a.event = { stopPropagation: () => {} }; vm.runInContext(noQ(V.HJS), a, { filename: "house.js" }); a.householdOnValue(JSON.parse(J(a0.get("householdData")))); a.writes.length = 0;
+    b.event = { stopPropagation: () => {} }; vm.runInContext(MAIN, b, { filename: "house_main.js" }); b.householdOnValue(JSON.parse(J(a0.get("householdData")))); b.writes.length = 0;
     if (noMom) { a.isMom = false; b.isMom = false; }
     const A = pages(a), B = pages(b), diff = Object.keys(A).filter(k => untap(A[k]) !== B[k]);
     ok("vs main d0673ec3, " + sname + (noMom ? ", not Mom" : ", Mom") + ": " + Object.keys(A).length + " pages identical apart from the tap" + (noMom ? " (none)" : ""), diff.length === 0 && (!noMom || Object.keys(A).every(k => A[k] === B[k])), diff.map(k => { const x = untap(A[k]), y = B[k]; let i = 0; while (x[i] === y[i]) i++; return [k, x.slice(i - 60, i + 80), y.slice(i - 60, i + 80)]; }));

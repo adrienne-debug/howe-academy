@@ -83,7 +83,8 @@ async function world(o){
     boot(name,dev,bo){ bo=bo||{}; let seed=0; for(const ch of String(dev)) seed=(seed*31+ch.charCodeAt(0))%2147483647; seed=seed||7; const M=Object.create(Math); M.random=()=>{ seed=(seed*16807)%2147483647; return seed/2147483647; };   // the same keys on every run
       const d=S.bootDevice({name,dev,db,clock,sched,family:FX.family,indexPath:index,globals:{Math:M}}); if(bo.mom) d.momOn(); else d.run("try{ if(typeof haMomOff==='function') haMomOff(); }catch(e){}"); devs.push(d); return d; },
     async flush(ms){ await sched.run(clock.now+(ms==null?5000:ms)); },
-    async at(y,m,d,h,mi){ clock.now=new Date(y,m-1,d,h||0,mi||0,0).getTime(); for(const x of devs){ try{ x.fn("dayRollCheck")(); }catch(e){} } await w.flush(); for(const x of devs){ try{ x.run("typeof hdTick==='function'&&hdTick()"); }catch(e){} } await w.flush(); },
+    async at(y,m,d,h,mi){ await sched.run(clock.now);   // ARCHBOOT (slice 4, 11/23): what a just-started device already began runs before the clock jumps (a start's answers arrive in order, as on a real device)
+      clock.now=new Date(y,m-1,d,h||0,mi||0,0).getTime(); for(const x of devs){ try{ x.fn("dayRollCheck")(); }catch(e){} } await w.flush(); for(const x of devs){ try{ x.run("typeof hdTick==='function'&&hdTick()"); }catch(e){} } await w.flush(); },
     async tick(){ for(const x of devs){ try{ x.run("typeof hdTick==='function'&&hdTick()"); }catch(e){} } await w.flush(); },
     get:(p)=>db.get(p), mark:()=>db.log.length, since:(m)=>db.log.slice(m)
   };
