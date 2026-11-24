@@ -8,6 +8,11 @@ drills and study sessions, not be redundant, and be very customizable per kid, a
 necessary." Every page must work **printed** and on the **tablet**. And her older rule: **one home per control** — a
 setting lives in one place; other places show it read-only with a jump.
 
+What the notebook is **for**, in her words (11/23): "the idea is notebook will mostly be done by themselves except the
+littlest level, and be fun not hard, kinda warm up for the day, but also to prepare and get ready for test, and to
+review things in a new way that are troubling for them on the drills section." A look is a big part of "fun". §8 says
+what a look adds toward each of those five aims, and what it must never do.
+
 This document has three parts: what is there today (Part 1), the plan (Part 2), and the one step that is built on this
 branch (Part 3). It builds on `PLAN_notebooks_study_2026-11-23.md` §14 and §17.
 
@@ -27,7 +32,7 @@ Nothing was written to any database. The app was never opened.
 3. **The first three looks borrow from each other in three spots.** The shark and dinosaur looks print the
    *construction* picture words once letter sounds are on ("d says /d/ · dig ⛏️"). The construction cover lists the
    *dinosaur* animal friends (T-Rex). And the shared letter list says "J is for Julian!" The new looks carry their own
-   words for all three. I did not change the old looks — that is your call (§16, question 2).
+   words for all three. I did not change the old looks — that is your call (§17, question 2).
 4. **One look changes the work: construction.** It counts the kid's counting picture (🚜) instead of the animal of the
    day, so the day's animal never reaches the page. Every other look, old and new, counts the animal.
 5. **Lincoln's snake theme is not in his page words at all.** Zero of the 231 snake words are in page text. 219 are
@@ -45,6 +50,10 @@ Nothing was written to any database. The app was never opened.
    tick which looks a kid may use and the kid picks in Kids' Corner; and one **"Customize this notebook"** home with the
    four dials (Level · Struggles · Units · Look).
 10. **A look never changes the work.** Same letters, numbers and questions, same level, same pages. That is now a test.
+11. **A look's job is "fun, and mine".** The child's name, a mascot they chose, a small surprise that changes each
+    day, and a "Draw YOU…" prompt — on the same pages, with the same work (§8). It must not add reading, time, or pages.
+12. **Setting a kid up should take a minute.** Three choices — grade, look, paper or tablet — and everything else
+    starts at "the usual for that grade" (§14).
 
 ---
 
@@ -205,7 +214,57 @@ instead of carrying their own check, as newer code does. Neither is changed here
 
 # Part 2 — The plan
 
-## 8. A look is one small list of pieces — the same list for every notebook
+## 8. What the notebook is for — and the look's job in it
+
+Your five aims, and what a look does (and must not do) for each:
+
+| Your aim | What a look adds | What a look must never do |
+|---|---|---|
+| **Done by themselves** (except the littlest) | The same mascot and colors mark the same spots every day, so a child finds their place without reading. | Rename a page so the child cannot tell what it is. A themed name always keeps the plain one beside it ("Boot Up · **Morning Notebook**"). |
+| **Fun, not hard** | It is *theirs*: their name on the cover, a look they picked, a mascot that says hello, a badge that changes each day, a "Draw YOU…" prompt, riddles in their world. | Add anything to read or work out. A look's words are short labels, never instructions. |
+| **A warm-up for the day** | Nothing that takes time. | Add a page, a box, or a line. Same page count in every look — tested. |
+| **Get ready for the test** | Nothing. Test-style questions look the way the test looks. | Decorate a question, an answer choice or a passage. |
+| **Trouble from the drills, in a new way** | The 🔁 "Practice Again" mark is the **same in every look**, so you and the child spot it at once. | Swap out a practiced item for a look's picture. (The construction look does this today with the animal of the day — §4 row 4.) |
+
+**What makes any look feel like the child's own** — true of all six Pre-K looks today:
+
+- Their **name** on the cover, in the page title, and traced every day.
+- **"Hi, name!"** from the mascot on the cover, and the mascot in the footer of every page.
+- A **"Draw YOU…"** prompt that puts the child inside the look.
+- A **badge that changes** each day of the week, and a **warm-up path that changes** each day.
+- **They chose it** (once the Kids' Corner picker is built — §13). Choosing is the biggest "mine" of all.
+
+**What each look adds on top:**
+
+| Look | The child becomes… | The daily surprise | The world on the page |
+|---|---|---|---|
+| 🦕 Dinosaurs | a dinosaur ("Draw YOU as a dinosaur!") | Roar! · Stomp Stomp! · Dino Star! | the animal of the day walks to the egg |
+| 🚜 Construction | a driver of a big machine | Hard Hats On! · Dig Dig Dig! · Job Well Done! | a different machine drives to the job site each day; block sign lettering |
+| 🦈 Sharks | a shark | Splash! · Swim Swim! · Shark Star! | a different sea each day — ripples, swells, a dive; sea friends to count |
+| 🚀 Space | a rocket pilot | Blast Off! · Zoom Zoom! · Space Star! | the rocket flies a different line to the moon; Comet, Galaxy, Planet, Telescope |
+| 🐮 Farm | a kid on the farm | Moo! · Oink Oink! · Farm Star! | today's animal walks to the hay; Cow, Duck, Horse, Rooster, Tractor |
+| 🦊 Forest | an explorer in the forest | Hello, New Week! · Hop Hop! · Forest Star! | today's animal follows the trail to the tree; Deer, Hedgehog, Mushroom, Wolf |
+| 🦄 Unicorns | (Lucy's) the star of the week | Keep Shining · Week Complete! | her own coloring, dot-to-dot and paper-doll art |
+| 🤖 Robots | a robot with a code name | Systems Online | power-level moods, a "design your robot" page |
+| 🐍 Reptiles | a keeper / field scientist | — | reptile riddles, ciphers and story starters |
+| 🐴 Horses · ⚽ Sports | a rider · a player | Saddle Up! · Game On! | to write |
+| 📓 Plain | themselves | the day's name | nothing extra — for a kid who is past pictures |
+
+### Ideas from "morning menus" [popular practice, not research]
+
+I looked at how families theme and personalize morning menus (blogs and sellers — what people like, not studies).
+Nothing is copied. Five ideas fit this app:
+
+| What families do | What it would mean here | Where it goes |
+|---|---|---|
+| A **cover with the child's name**, often chosen by the child | Already here: the cover, the greeting, the traced name | done |
+| **Seasonal swaps** — the same menu with autumn, winter or holiday pages each month | A small **season touch** on top of any look: a row of season pictures on the cover (🍂 ❄️ 🌷 ☀️), picked from the month. One optional piece. Never the work. | a later step (question 11) |
+| **Reusable pages** in a menu cover or sleeve, written on with a wipe-off marker | The tablet notebook is this app's wipe-off page. On paper: pages that never change (ABC song, calendar, months) could print **once a month** for a sleeve instead of every week. | the page-list plan (another session) |
+| **Short and the same every day**, so the child can do it alone | Every look keeps the same page skeleton — tested. A look may change words, never the order. | a rule in this plan |
+| **Older kids**: fewer pictures, a place to jot the day's assignments, a short daily write | The **Plain** look; the page ideas belong to the pages-by-grade plan. | §10; the other plan |
+| **Personal pages** — name, address, phone number | Already here (All About Me). It needs a Mom lock first (§7). | page list |
+
+## 9. A look is one small list of pieces — the same list for every notebook
 
 Today the Pre-K look has 36 pieces because it grew with one notebook. The older notebooks need different-sounding
 pieces ("mission", "Boot Up"). Underneath they are the same fifteen jobs. One list:
@@ -243,15 +302,15 @@ stories). A look must not touch a question. So a Lincoln who switches to Space k
 banks are replaced. Your own banks already replace them box by box, and the two "ladder" sessions are building shared
 banks. My advice: leave the questions alone, and let the themed built-ins retire as your banks and the ladders arrive.
 
-## 9. The Plain look
+## 10. The Plain look
 
 - Name: **📓 Plain**. No mascot beyond 📓, no picture row, no badges, no motto.
 - Colors: the slate and teal the Starter notebook already uses.
-- Words: every default in §8. "Daily Page", "task", "Great job!".
+- Words: every default in §9. "Daily Page", "task", "Great job!".
 - It is the look every other look falls back to, piece by piece. So a half-finished look still prints a whole page.
 - It is offered to **every** kid at every age. It is the right default for Taylor, and for any kid who says "no theme".
 
-## 10. Getting the older notebooks there — three safe stages
+## 11. Getting the older notebooks there — three safe stages
 
 Each stage is byte-for-byte the same for the look a kid has today. Nothing prints differently until another look is
 picked.
@@ -267,7 +326,7 @@ picked.
 **Ellis's brand.** His own notebook stays his, word for word, for your family. The shelf's "🤖 Robots" is a generic
 look — bolts, gears, "systems online" — safe for any family.
 
-## 11. The shelf — twelve looks
+## 12. The shelf — twelve looks
 
 | Look | Mascot | Picture row | Colors | Task word | A badge | Doodle | Best for | Today |
 |---|---|---|---|---|---|---|---|---|
@@ -286,7 +345,7 @@ look — bolts, gears, "systems online" — safe for any family.
 
 The kids should pick the next ones. A look is cheap once the pieces exist: the three on this branch are about 150 lines together, helpers included.
 
-## 12. Who picks
+## 13. Who picks
 
 **You** decide which looks a kid may use. **The kid** picks from those, on their own device. It changes the **next**
 notebook built — never a week already printed or sent to a tablet.
@@ -294,8 +353,8 @@ notebook built — never a week already printed or sent to a tablet.
 | Control | Its ONE home | Everywhere else |
 |---|---|---|
 | **Looks this kid may use** (tick list) | Notebook tab ▸ Customize ▸ Look | — |
-| **Which look is on** — kid may choose (2+ ticked) | Kids' Corner ▸ "🎨 My notebook look" | Notebook tab shows "Picked: 🚀 Space" read-only |
-| **Which look is on** — kid may not choose (0–1 ticked) | Notebook tab ▸ Customize ▸ Look (as today) | Kids' Corner shows nothing |
+| **Which look is on** — kid may choose (2+ ticked) | Kids' Corner ▸ "🎨 My notebook look" | the notebook card's top line shows the pick read-only |
+| **Which look is on** — kid may not choose (0–1 ticked) | the notebook card's top line (today's picker) | Kids' Corner shows nothing |
 
 So there is never a moment when two places can both change it.
 
@@ -314,17 +373,37 @@ thumbs-up is saved as "a note to Mom".
 paper. One gap: if you *reprint* the same week after a kid changes look, the reprint comes out in the new look (same
 work, new pictures). Question 6 asks whether that matters.
 
-## 13. One "Customize this notebook" home
+## 14. One "Customize this notebook" home — a kid set up in a minute
 
 Today the kid's card on the Notebook tab holds up to fifteen cards in the order they were built. The plan: one card,
-four dials, the same for every kid.
+four dials, the same for every kid — and **three choices are enough to set a kid up.**
+
+**The one-minute setup.** The card opens folded, showing only three things:
 
 ```
-┌─ 🎛 Customize Finn's notebook ──────────────────────────────── MOM ─┐
-│  Name in the notebook: [ Finn ]        This notebook is: [🖨 Paper] [📱 Tablet]
+┌─ 🎛 Finn's notebook ───────────────────────────────────────── MOM ─┐
+│  Grade:  [ Pre-K ▾ ]        Look:  [🚀 Space ▾]        [🖨 Paper] [📱 Tablet]
+│  Everything else is the usual for Pre-K.      ▸ Customize      ▸ Same as another kid…
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+- **Grade** fills in the level and the page list ("the usual for 1st grade"). **Look** is the fun. **Paper or tablet**
+  is where it goes. A new kid is ready after those three.
+- Everything else starts at a sensible default and stays folded: 2 practice-again slots, the units the kid is already
+  in, no day assignments, the kid may not change the look yet.
+- **"Same as another kid…"** copies one kid's choices to another in one tap (handy for a second Pre-K child, or for
+  another family starting out). It copies settings only — never cards, positions or answers.
+- A dial shows a small dot when it is no longer "the usual", so you can see at a glance what you changed.
+
+**Opened up** (▸ Customize): the same top line stays where it is — it is the one home of those three — and the four
+dials unfold under it.
+
+```
+┌─ 🎛 Finn's notebook ───────────────────────────────────────── MOM ─┐
+│  Grade:  [ Pre-K ▾ ]        Look:  [🚀 Space ▾]        [🖨 Paper] [📱 Tablet]
+│  Name in the notebook: [ Finn ]
 │
-│  📏 LEVEL — what each page asks for
-│     Grade:  Pre-K   (from Family ▸ change)                    ← another session
+│  📏 LEVEL — what each page asks for                 (grade: top line ← another session)
 │     Switches:  🔡 Little letters ○   🔍 Find it ●   🔟 Teens ○   ⭐ Shapes Path ○   🗓 Skip no-school ○
 │     Pages:   ABC ●  Calendar ●  This Month ○  (+ add a page)   ← page list
 │
@@ -338,19 +417,18 @@ four dials, the same for every kid.
 │     📝 Spelling      This Week's Words: all    (set in Units ▸ Spelling ▸)
 │     📘 Daily Grams   on · starts Day 41
 │
-│  🎨 LOOK — colors, pictures, words
-│     Now: 🚀 Space
+│  🎨 LOOK — colors, pictures, words                 (which look is on: top line)
 │     Finn may choose from:  ☑ 🚀 Space  ☑ 🦕 Dinosaurs  ☐ 🚜  ☐ 🦈  ☑ 🐮 Farm  ☐ 🦊  ☐ 📓
-│     (2 or more ticked = Finn picks in Kids' Corner)
+│     (2 or more ticked = Finn picks in Kids' Corner, and the top line shows that pick read-only)
 └──────────────────────────────────────────────────────────────────────┘
    below, unchanged:  This week's plan · question banks · check answers · reading story
 ```
 
 | Existing control | What happens to it |
 |---|---|
-| 🎨 Notebook look (picker) | **moves** into Look |
+| 🎨 Notebook look (picker) | **moves** to the top line; the "may choose from" list is new, in Look |
 | 📏 Level switches | **move** into Level |
-| ✏️ Name in the notebook | **moves** to the top line |
+| ✏️ Name in the notebook | **moves** to just under the top line |
 | 📓 Paper / tablet | **moves** to the top line |
 | 📄 Extra pages | **moves** into Level ▸ Pages (the page-library plan replaces it there) |
 | 🔁 Review folding | **moves** into Struggles, for every kid whose notebook reads it |
@@ -359,12 +437,12 @@ four dials, the same for every kid.
 | Unit pages on/off | stays in Units tab — shown **read-only with a jump** |
 | Spelling page | stays in Units ▸ the unit — **read-only with a jump** |
 | Counting picture | stays in Units — **read-only with a jump**, and only if the look uses it |
-| Grade | lives in Family (the other session's card) — **read-only with a jump** |
+| Grade (the other session's card on this tab) | **becomes** the top line's Grade. With no grade set here, it shows the Family one with a jump. |
 | This week's plan, question banks, answer checks, reading story | **stay as their own cards**, below. They are weekly work, not settings. |
 | 🔒 Personal info, 🎨 Activity pages | become a row each in the page list (page-library plan); both need a Mom lock first |
 | 🗓 Building for, ½″ prong margin, Print | stay at the top of the tab |
 
-## 14. Conflicts with the six sessions
+## 15. Conflicts with the six sessions
 
 | Session | What it touches | Clash with this branch | Clash with this plan |
 |---|---|---|---|
@@ -372,13 +450,13 @@ four dials, the same for every kid.
 | **nb-one-level** (grade) | a grade card between the form and the look card; `ctx.grade`, `ctx.gradeBand`; grade words in every notebook header | **test file only**: both may edit `test_prek_notebook_levels.js` (I changed three checks, lines ~116, 143, 147). The code does not overlap. | Its card is the **Level** dial's first line. The Pre-K look's grade word (`eyebrow`, `grade`) will follow it — the new looks read the same field as the old ones, so they follow too. |
 | **nb-lucy-math** | a block before Lucy's builder; her daily page | none | Stage B for Lucy must not touch its 13 call sites. |
 | **nb-today-list** (tablet) | wraps every page the builders push with `data-nb-day` / `data-nb-name` | none — the new looks add no page and no push | A look that ever adds a page must tag it. (A look never adds a page.) |
-| **ladder-number / ladder-reading** | new files under `ladders/` only | none | They are where the themed built-in questions retire to (§8). |
+| **ladder-number / ladder-reading** | new files under `ladders/` only | none | They are where the themed built-in questions retire to (§9). |
 | **nb-page-library / pages-by-grade** (plans) | — | none | The page list replaces 📄 Extra pages inside **Level ▸ Pages**. Same storage. |
 
 Build the Customize card **after** the first four merge. Moving cards while four sessions edit that screen would
 collide.
 
-## 15. Build order — each its own yes
+## 16. Build order — each its own yes
 
 | # | Step | What changes on screen or paper | Risk |
 |---|---|---|---|
@@ -386,15 +464,16 @@ collide.
 | 1 | **Plain look** for Pre-K | One more button: 📓 Plain | Low |
 | 2 | **Each old look carries its own words** (§4 rows 1–3) | Shark and dinosaur looks stop printing "dig / hammer / truck" as sound words; construction's cover lists its own friends | Low, but it changes what three live looks print in those spots — your yes needed |
 | 3 | **Decide the counting picture** (§4 row 4) | Either construction counts the day's animal like every look, or the counting picture becomes a setting any look can use | Changes Caleb's number card — your call |
-| 4 | **Customize card**, moving cards only | The same controls, under four headings | Medium — merge order (§14) |
+| 4 | **Customize card**, moving cards only — folded to the three-choice setup, the four dials inside | The same controls, under four headings; a new kid needs three choices | Medium — merge order (§15) |
 | 5 | **Looks a kid may use** + the Kids' Corner picker (Pre-K notebooks) | A tick list for you; a picture picker for the kid | Medium — the first kid-side notebook control; one new save |
 | 6 | **Stage A colors — Lincoln**, with Plain and two color looks | Lincoln's picker has four buttons | Low |
 | 7 | Stage A — Lucy, then Ellis | same for them | Low |
 | 8 | **Stage B words** — Lincoln, Lucy, Ellis, one slot per step | Looks get their own page names and badges | Medium — measure every look |
 | 9 | **Stage C fun pages** + the generic 🤖 Robots | Riddles, prompts and puzzles follow the look | Medium |
 | 10 | The shared **Standard notebook** reads looks from day one | Taylor's notebook: Plain, or any look | (with the Standard notebook) |
+| 11 | **Season touch** (optional) | A row of season pictures on the cover, from the month, on top of any look | Low — one optional piece; measure the cover |
 
-## 16. Questions for you — each has a default
+## 17. Questions for you — each has a default
 
 1. **Space, Farm, Forest — good first three?** I swapped your "ocean" for Forest because the shark look is already
    the ocean (waves, sea friends, blue). *Default: keep these three.*
@@ -411,12 +490,16 @@ collide.
    *Default: yes.*
 9. **Which older kid first for Stage A?** *Default: Lincoln (cheapest), then Lucy, then Ellis.*
 10. **The next looks.** *Default: ask the kids; Horses, Sports and Plain are sketched.*
+11. **A season touch on the cover** (🍂 ❄️ 🌷 ☀️ by month, on top of any look) — a morning-menu idea. *Default: later,
+    after Plain; off until you switch it on.*
+12. **The one-minute setup** — grade, look, paper or tablet, everything else "the usual for that grade".
+    *Default: yes; and "Same as another kid…" copies settings only.*
 
 ---
 
 # Part 3 — The first step, built on this branch
 
-## 17. Three new Pre-K looks
+## 18. Three new Pre-K looks
 
 | | 🚀 Space | 🐮 Farm | 🦊 Forest |
 |---|---|---|---|
@@ -429,6 +512,10 @@ collide.
 | Your week-plan card | 🚀 This week's flight plan | 🐮 This week's farm plan | 🦊 This week's trail plan |
 
 - Each fills all 36 pieces, and its own sound words, animal friends and J word.
+- Each gives the child the five "it's mine" touches in §8: their name three ways, a hello from the mascot, a
+  "Draw YOU…" prompt, a badge that changes each day, and a warm-up path that changes each day.
+- None adds a word to read or a second to the page: the look's words are the same length or shorter than the ones the
+  first three looks print in the same spots (tested).
 - None has a counting picture. Each counts the animal of the day, like the dinosaur and shark looks.
 - All letter words start with a consonant, so the same word also works as the letter's sound word.
 - Pictures are emoji and three small drawings of our own (the stripes and the ground under the path). No names of
@@ -438,7 +525,7 @@ collide.
 `index.html` (one helper + one call site, `NB_LOOKS2`: the week-plan card's title), `test_nb_looks2.js` (new),
 `test_prek_notebook_levels.js` (three checks that pinned "exactly three looks" now expect six).
 
-## 18. Tests and measurement
+## 19. Tests and measurement
 
 - `node test_nb_looks2.js` — 63 checks. With `--measure` it also measures every page in Google Chrome: 66 checks.
 - **Unchanged:** 348 notebooks (each kid's own notebook, and each of the first three looks, at four level settings,
@@ -455,7 +542,7 @@ collide.
 - The test was checked against five deliberately broken copies of the new block (no sound words, no animal friends, a
   size change in the colors, and two that reached into the old looks); it caught each one.
 
-## 19. What I could not verify
+## 20. What I could not verify
 
 - **Your picker on screen.** The app was never opened (the rule). The picker builds its buttons from the notebook's
   own list, and a test checks that — but no one has looked at the card with six buttons.
@@ -526,3 +613,14 @@ on this branch).
   the task word 4, mottos 2, mood words 10, brain-break items 18, creative ~8. Logo: one embedded drawing, on every page.
 - **Lucy:** unicorn 1 visible, magic 4, fairy 1, mermaid 1, sparkle 1. Badges 4 fixed + 5 by day + 1 fallback.
   Decoration emoji about 50. Picture slots filled from uploads: dot-to-dot, coloring, symmetry, pattern, maze, dolls.
+
+## Appendix C — where the morning-menu ideas came from
+
+Popular practice only (family blogs and sellers), read for ideas on theming and personalizing. Nothing copied.
+
+- [Tips and tricks for using homeschool menu covers](https://treehouseschoolhouse.com/blog/tips-homeschool-menu-covers-printable-pdf-worksheets) — reusable pages in a menu cover or wipe-off pouch
+- [A classical morning menu](https://happystronghome.com/classical-morning-menu-homeschool/) — a small fixed set reviewed daily, content pages swapped monthly
+- [Spring-themed morning menu for little kids](https://charlottelaila.squarespace.com/membership-blog/spring-morning-menu-for-little-kids) — seasonal versions of the same menu
+- [An early-years morning time menu](https://thepeacefulpress.squarespace.com/blog/beginning-your-days-with-the-peaceful-press-early-years-morning-time-menu) — name, address and phone practice pages
+- [Morning time for middle school](https://ticiamessing.com/morning-time-for-middle-school/) — older kids: review that needs no full class, short daily writing
+- [Printable student calendar pages](https://rockyourhomeschool.net/printable-student-calendar/) — older kids jot the day's assignments; wipe and reuse
