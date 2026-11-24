@@ -1620,6 +1620,7 @@ function lgHTML(){
     +'<b>📒 This is everything on '+esc(cap(kid))+'\'s lists '+(lgWeek?'this week':lgOff===0?'today':'that day')+'.</b><br>✅ done · ○ not done yet · ⏳ still on the list from an earlier day (it pays a little less each day) · ✖ gone from the list (not done in time).<br>'
     +'The line on top adds up the stars.'+((typeof hcGoMom==="function"&&hcGoMom())?' To change how a chore works, tap its name.':'')+(typeof lgRulesHello==="function"?lgRulesHello():'')+'</div>';
   h+=lgWeek?lgWeekHTML(kid):lgDayHTML(kid,lgOff);
+  if(typeof lgDadTip==="function") h+=lgDadTip();   // DADGATE: a locked Dad's one line
   return h+'</div></div>'; }
 function lgDraw(){ lgClose(); document.body.insertAdjacentHTML("beforeend",lgHTML()); }
 function lgClose(){ const o=document.getElementById("lg-pop"); if(o) o.remove(); }
@@ -1639,7 +1640,11 @@ function lgGo(kid,k,w){ if(kid&&SL_KIDS.indexOf(kid)>=0) lgKid=kid; if(k!=null) 
 // day on or after RT_FALL_FROM, stars above 0, paid below them, not a plan row, not held or turned down (lgRow returns those earlier).
 function lgGbId(wk,dn,kid,slot,i){ return "lgb_"+wk+"_"+dn+"_"+kid+"_"+RT_ABBR[slot]+"step"+i; }
 function lgGbLine(kid,id){ return (bank[kid]&&bank[kid].adjustments&&bank[kid].adjustments[id])||null; }
-function lgGbOk(){ return (typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD()); }
+// DADGATE (her answer 2026-11-24: "Yes, ask for code"): Dad's own link gives stars back and undoes it only with his code in (dadAwardOk),
+// the same gate as ➖ Excuse and ⚙ Star rules. Kept as its own copy: each block's test takes the others out. Locked, he sees the
+// rows and every "given back" note, no button, and one line at the foot of the pop-up says how to get them (lgDadTip).
+function lgGbOk(){ return (typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD()&&typeof dadAwardOk==="function"&&dadAwardOk()); }
+function lgDadTip(){ return (typeof momHere==="function"&&momHere())||!(typeof _kioskD==="function"&&_kioskD())||(typeof dadAwardOk==="function"&&dadAwardOk())?'':'<div style="margin-top:10px;font-size:12px;color:#6b7280">🔒 Put your code in under Star controls to give stars back or excuse a chore.</div>'; }
 function lgGbRow(r,slot,kid,D,i,st,E,p,full){
   if(!(r.sh>0)||!(p<full)||!E||!(E.iso>=RT_FALL_FROM)||st.house||!RT_ABBR[slot]) return;
   const id=lgGbId(D.wk,D.dn,kid,slot,i), a=lgGbLine(kid,id), js="('"+kid+"','"+D.wk+"','"+D.dn+"','"+slot+"',"+i+")", ok=lgGbOk();

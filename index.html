@@ -7081,7 +7081,7 @@ function chSettingsClickoffLogHTML(){
       var slbl=(typeof SL_SLBL!=="undefined"&&SL_SLBL[e.slot])||e.slot||"";
       var dlbl=(typeof DAY_LBL!=="undefined"&&DAY_LBL[e._day])||e._day||"";
       h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)'+(e.flagged?';opacity:.6':'')+'">';
-      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">−100</span>':'')+((e.drop&&e.drop.n)?' <span style="color:#b91c1c;font-weight:800">'+(e.drop.gb?'−'+e.drop.n+' ⭐ given back':'−'+e.drop.n+' ⭐')+'</span>':'')/* CHOREDROP: what the drop took */+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
+      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">'+((typeof flagMarkTxt==="function"&&flagMarkTxt(e))||'−100')+'</span>':'')+((e.drop&&e.drop.n)?' <span style="color:#b91c1c;font-weight:800">'+(e.drop.gb?'−'+e.drop.n+' ⭐ given back':'−'+e.drop.n+' ⭐')+'</span>':'')/* CHOREDROP: what the drop took */+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
       if(on&&!e.flagged) h+='<button onclick="rlogFlag(\''+kid+'\',\''+_rlwk+'\',\''+e._day+'\',\''+e._key+'\')" title="Didn\'t actually do it — dock 100 points" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ −100</button>';
       h+='</div>';
     });
@@ -19295,7 +19295,18 @@ function mdCardTogether(){
 // entry; the dock never un-checks the card — the walk-back in the subject sheet fixes the record itself.
 // Mom (momHere) or Dad's own link (?kiosk=dad) may dock; kids' views never see this card. Two targeted writes.
 let ckLogOpen=false;
-function ckLogCanDock(){ try{ return momHere()||_kioskD(); }catch(e){ return false; } }
+// FLAGWHO_START — the 🚩 mark says who made it, and Take stars away off still marks (her words 2026-11-23: "Yes, mark it", "also put
+// who makred mom or dad"). Every new mark stores flagBy "mom" | "dad"; with Take stars away off for that kid (or ⏸ paused) the tap still
+// asks, then marks the line with penalty 0 and takes nothing. An old mark (no flagBy) draws as before.
+function flagWho(){ return (typeof momHere==="function"&&momHere())?"mom":"dad"; }
+function flagWhoName(w){ return w==="dad"?"Dad":"Mom"; }
+function flagMarkTxt(r){ return r&&r.flagBy?"🚩 by "+flagWhoName(r.flagBy)+" · "+(r.penalty===0?"no stars taken":"−100"):""; }
+function flagOffAsk(kid,label){ return "Mark a false check-off for "+cap(kid)+"?\n\n\""+label+"\"\n\n"+starTakeWhy(kid)+", so no stars come off. The line just gets its 🚩 mark."; }
+// FLAGWHO_END
+// DADGATE (her answer 2026-11-24: "Yes, ask for code"): the card is Mom's and Dad's link's (ckLogCanSee); the −100 and the 🚩 mark are
+// Mom's, or Dad's with his code in (dadAwardOk) — the same gate as his other star buttons. Locked, he sees every line and mark, no −100.
+function ckLogCanSee(){ try{ return momHere()||_kioskD(); }catch(e){ return false; } }
+function ckLogCanDock(){ try{ return momHere()||(_kioskD()&&typeof dadAwardOk==="function"&&dadAwardOk()); }catch(e){ return false; } }
 function _ckLogTodayTs(ts){ try{ const d=(typeof _parseCheckTs==="function")?_parseCheckTs(ts):null; if(!d) return true; const n=new Date(); return d.getMonth()===n.getMonth()&&d.getDate()===n.getDate(); }catch(e){ return true; } }
 // → [{kind:"task"|"step", kid, label, ts, at, ref, flagged, pts}]
 function ckLogToday(){
@@ -19305,46 +19316,46 @@ function ckLogToday(){
       if(!t||!t.who||!checked[t.id]||String(t.id||"").endsWith("_c")) return;
       if(effectiveDay(t)!==today||!_ckLogTodayTs(checked[t.id])) return;
       const h=(histState&&histState[t.id])||{};
-      out.push({kind:"task",kid:t.who,label:t.title||"",ts:String(checked[t.id]).replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""),at:(_parseCheckTs(checked[t.id])||new Date(0)).getTime(),ref:t.id,flagged:!!h.flagged,pts:0});
+      out.push({kind:"task",kid:t.who,label:t.title||"",ts:String(checked[t.id]).replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""),at:(_parseCheckTs(checked[t.id])||new Date(0)).getTime(),ref:t.id,flagged:!!h.flagged,flagBy:h.flagBy,penalty:h.penalty,pts:0});   // FLAGWHO
     });
   }catch(e){}
   try{
     Object.keys(routineLog||{}).forEach(kid=>{
       const day=(((routineLog[kid]||{})[wk]||{})[today])||{};
       Object.keys(day).forEach(key=>{ const r=day[key]; if(!r||(r.act!=="on"&&r.act!=="wave")) return;
-        out.push({kind:(r.act==="wave")?"wave":"step",kid:kid,label:(r.label||"Chore"),ts:String(r.ts||"").replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""),at:r.at||0,ref:wk+"/"+today+"/"+key,flagged:!!r.flagged,pts:r.pts||0}); });   // WAVE lines ride along
+        out.push({kind:(r.act==="wave")?"wave":"step",kid:kid,label:(r.label||"Chore"),ts:String(r.ts||"").replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""),at:r.at||0,ref:wk+"/"+today+"/"+key,flagged:!!r.flagged,flagBy:r.flagBy,penalty:r.penalty,pts:r.pts||0}); });   // WAVE lines ride along · FLAGWHO
       if(typeof amIso==="function"){ const _ti=amIso(today); [wk,(typeof _prevWkKey==="function")?_prevWkKey():null].forEach(w=>{ const wl=w?((routineLog[kid]||{})[w]||{}):{};   // SENDAM
         Object.keys(wl).forEach(dn=>{ if(w===wk&&dn===today) return; Object.keys(wl[dn]||{}).forEach(key=>{ const r=wl[dn][key]; if(!r||r.act!=="on"||!_ti||r.am!==_ti) return;
-          out.push({kind:"step",kid:kid,label:"🌅 "+(r.label||"Chore"),ts:String(r.ts||"").replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""),at:r.at||0,ref:w+"/"+dn+"/"+key,flagged:!!r.flagged,pts:r.pts||0}); }); }); }); }
+          out.push({kind:"step",kid:kid,label:"🌅 "+(r.label||"Chore"),ts:String(r.ts||"").replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""),at:r.at||0,ref:w+"/"+dn+"/"+key,flagged:!!r.flagged,flagBy:r.flagBy,penalty:r.penalty,pts:r.pts||0}); }); }); }); }   // FLAGWHO
     });
   }catch(e){}
   return out.sort((a,b)=>(b.at||0)-(a.at||0));
 }
 function ckLogDock(kind,kid,ref,label){
-  if(!ckLogCanDock()||(typeof starTakeNo==="function"&&starTakeNo(kid))) return;   // STARRULES
-  const who=(typeof momHere==="function"&&momHere())?"mom":"dad";
+  if(!ckLogCanDock()) return;
+  const who=(typeof momHere==="function"&&momHere())?"mom":"dad", off=typeof starTakeOk==="function"&&!starTakeOk(kid);   // FLAGWHO: Take stars away off → the 🚩 mark, no stars (as the Click-off Log's ⚠️)
   if(kind==="step"){
     const p=ref.split("/"); const rec=(((routineLog[kid]||{})[p[0]]||{})[p[1]]||{})[p[2]]; if(!rec||rec.flagged) return;
-    if(!confirm("Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||label||"")+"\"")) return;
-    bankDirect(kid,-100,"🚩 false check-off dock — "+(rec.label||label||""));
-    const patch={flagged:true,penalty:-100,flagTs:nowTs(),flagBy:who}; Object.assign(rec,patch);
+    if(!confirm(off?flagOffAsk(kid,rec.label||label||""):"Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||label||"")+"\"")) return;
+    if(!off) bankDirect(kid,-100,"🚩 false check-off dock — "+(rec.label||label||"")+" · by "+flagWhoName(who));   // FLAGWHO
+    const patch={flagged:true,penalty:off?0:-100,flagTs:nowTs(),flagBy:who}; Object.assign(rec,patch);
     if(db&&!_dryRun()) db.ref("routineLog/"+kid+"/"+p[0]+"/"+p[1]+"/"+p[2]).update(patch);
   } else {
     const h=histState[ref]; if(!h||h.flagged) return;
-    if(!confirm("Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(label||"")+"\"\n\n(The card stays checked — use “"+cw("fixFalse")+"” in the subject sheet to undo the record.)")) return;
-    bankDirect(kid,-100,"🚩 false check-off dock — "+(label||""));
-    const patch={flagged:true,penalty:-100,flagTs:nowTs(),flagBy:who}; Object.assign(h,patch);
+    if(!confirm((off?flagOffAsk(kid,label||""):"Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(label||"")+"\"")+"\n\n(The card stays checked — use “"+cw("fixFalse")+"” in the subject sheet to undo the record.)")) return;
+    if(!off) bankDirect(kid,-100,"🚩 false check-off dock — "+(label||"")+" · by "+flagWhoName(who));   // FLAGWHO
+    const patch={flagged:true,penalty:off?0:-100,flagTs:nowTs(),flagBy:who}; Object.assign(h,patch);
     try{ const hs=ld(WK+"_history")||{}; if(hs[ref]){ Object.assign(hs[ref],patch); sv(WK+"_history",hs); } }catch(e){}
     if(db&&!_dryRun()) db.ref(WK+"/history/"+ref).update(patch);
   }
-  dbg("🚩 dock −100 "+kid+" ("+kind+") by "+who+": "+(label||""));
+  dbg("🚩 "+(off?"mark, no stars,":"dock −100")+" "+kid+" ("+kind+") by "+who+": "+(label||""));
   if(typeof renderAll==="function") renderAll();
 }
 function ckLogToggle(){ ckLogOpen=!ckLogOpen; if(typeof renderAll==="function") renderAll(); }
 function mdCardCheckLog(){
   try{
-    if(!ckLogCanDock()) return "";
-    const items=ckLogToday(); if(!items.length) return "";
+    if(!ckLogCanSee()) return "";   // DADGATE
+    const items=ckLogToday(), canDock=ckLogCanDock(); if(!items.length) return "";
     const byKid={}; items.forEach(i=>{ (byKid[i.kid]=byKid[i.kid]||[]).push(i); });
     const kids=Object.keys(byKid).sort((a,b)=>((typeof ROSTER!=="undefined"&&ROSTER)||[]).indexOf(a)-((typeof ROSTER!=="undefined"&&ROSTER)||[]).indexOf(b));
     const docked=items.filter(i=>i.flagged).length;
@@ -19359,12 +19370,13 @@ function mdCardCheckLog(){
           h+='<span style="font-size:11px;color:var(--muted);flex:0 0 62px">'+esc(i.ts)+'</span>';
           h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">'+(i.kind==="step"?'🧹 ':'')+esc(i.label)+(i.pts?' <span style="color:#b45309;font-weight:700">+'+i.pts+'⭐</span>':'')+'</span>';
           if(i.kind==="wave") h+='<span style="flex-shrink:0;font-size:11px;font-weight:800;color:#6b7280">🙋 waved</span>';   // WAVE: nothing to dock
-          else if(i.flagged) h+='<span title="docked −100" style="flex-shrink:0;font-size:11px;font-weight:800;color:#b91c1c">🚩 −100</span>';
-          else h+='<button onclick="event.stopPropagation();ckLogDock(\''+i.kind+'\',\''+i.kid+'\',\''+i.ref.replace(/'/g,"\\'")+'\',\''+esc(i.label).replace(/'/g,"\\'")+'\')" title="Didn’t actually do it — dock 100" style="flex-shrink:0;padding:3px 9px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">−100</button>';
+          else if(i.flagged) h+='<span title="'+(i.penalty===0?'marked, no stars taken':'docked −100')+'" style="flex-shrink:0;font-size:11px;font-weight:800;color:#b91c1c">'+(flagMarkTxt(i)||'🚩 −100')+'</span>';   // FLAGWHO
+          else if(canDock) h+='<button onclick="event.stopPropagation();ckLogDock(\''+i.kind+'\',\''+i.kid+'\',\''+i.ref.replace(/'/g,"\\'")+'\',\''+esc(i.label).replace(/'/g,"\\'")+'\')" title="Didn’t actually do it — dock 100" style="flex-shrink:0;padding:3px 9px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">−100</button>';
           h+='</div>';
         });
       });
       h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px">A dock takes 100 ⭐ from the Star Bank and marks the line. A school card stays checked — use “'+cw("fixFalse")+'” in the subject sheet to undo the record.</div>';
+      if(!canDock) h+='<div style="font-size:11.5px;color:#6b7280;margin-top:6px">🔒 Put your code in under Star controls to use −100.</div>';   // DADGATE: a locked Dad
       h+='</div>';
     }
     h+='</div>';
@@ -30337,6 +30349,36 @@ let scOpen={}, ntEdit=null, ntOpen={};
 function scList(kid){ const o=(roadmapData&&roadmapData[kid]&&roadmapData[kid].scores)||{}; return Object.keys(o).sort().map(function(k){ return Object.assign({key:k},o[k]); }); }
 function scNprCol(n){ if(n==null) return "#94a3b8"; return n>=75?"#16a34a":n>=40?"#475569":n>=25?"#d97706":"#b5394a"; }
 function scArrow(prev,cur){ if(prev==null||cur==null) return ""; const d=cur-prev; if(Math.abs(d)<5) return '<span style="color:#94a3b8">·</span>'; return '<span style="color:'+(d>0?"#16a34a":"#b5394a")+'">'+(d>0?"▲":"▼")+Math.abs(d)+'</span>'; }
+// SCSTRANDS_START — 📊 skill areas by year (her ask 2026-11-23, after Lincoln's November Iowa: "can we also add the things
+// that were below average like spelling from this year and other years … or maybe all the areas"). Every Iowa report already
+// keeps its strands under plans/<kid>/scores/<date>/domains; the strip only showed the latest report's 4 weakest. This draws
+// one row per area and one column per test (latest first): % right + the gap from the national average, red when below.
+// It opens on the areas below average on the latest test; "Show all areas" lists every one. Read-only: no write, no listener.
+// The 2023–24 forms print spelling / capitalization / punctuation under "Language", later forms under "Conventions" — one row.
+let scAll={};
+const SC_GROUPS=[["reading","Reading"],["written_expression","Written Expression"],["conventions","Conventions"],["vocabulary","Vocabulary"],["mathematics","Math"],["computation","Computation"],["social_studies","Social Studies"],["science","Science"],["information_literacy","Information Literacy"],["language","Language"],["listening","Listening"],["word_analysis","Word Analysis"]];
+const SC_ALIAS={language_spelling:"conventions_spelling",language_capitalization:"conventions_capitalization",language_punctuation:"conventions_punctuation"};
+const SC_NAMES={usage_grammar:"Usage & Grammar",planning_organization:"Planning & Organization",authors_craft:"Author's Craft",civics_government:"Civics & Government",earth_space_science:"Earth & Space Science",number_sense_operations:"Number Sense & Operations",alg_patterns_connections:"Algebra & Patterns",data_analysis_prob_stats:"Data, Probability & Statistics",phono_awareness_decoding:"Phonics & Decoding",identify_analyze_word_parts:"Word Parts"};
+function scStrandLabel(k){ let gi=SC_GROUPS.length, g="", rest=k;
+  SC_GROUPS.some(function(p,i){ if(k.indexOf(p[0]+"_")!==0) return false; gi=i; g=p[1]; rest=k.slice(p[0].length+1); return true; });
+  return {gi:gi, group:g, name:SC_NAMES[rest]||rest.replace(/_/g," ").replace(/\b\w/g,function(c){ return c.toUpperCase(); })}; }
+function scStrandsHTML(kid,iowa){
+  const cols=iowa.filter(function(r){ return r.domains; }).reverse(); if(!cols.length) return "";
+  const last=cols[0], rows={};
+  cols.forEach(function(r,ci){ Object.keys(r.domains).forEach(function(k){ const d=r.domains[k]; if(!d||d.pct==null) return; const key=SC_ALIAS[k]||k; (rows[key]=rows[key]||{k:key,c:{}}).c[ci]={pct:d.pct,diff:d.diff==null?null:+d.diff}; }); });
+  let R=Object.keys(rows).map(function(k){ return Object.assign(rows[k],scStrandLabel(k)); });
+  const below=R.filter(function(r){ return r.c[0]&&r.c[0].diff<0; }), all=!!scAll[kid];
+  if(all) R.sort(function(a,b){ return a.gi-b.gi||(a.k<b.k?-1:1); }); else R=below.sort(function(a,b){ return a.c[0].diff-b.c[0].diff; });
+  let h='<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:12px"><span style="font-weight:800;font-size:12.5px">Skill areas by year</span><span style="font-size:11.5px;color:var(--muted)">'+(all?'every area':below.length+' below the national average on the latest test ('+esc(last.date||last.key)+')')+' · % right (gap from the national average) · <b style="color:#b5394a">red</b> = below</span><span style="flex:1"></span><a href="#" onclick="scAll[\''+kid+'\']=!scAll[\''+kid+'\'];renderAll();return false" style="font-size:11.5px;color:var(--muted)">'+(all?"Show below average only":"Show all areas")+'</a></div>';
+  if(!R.length) return h+'<div style="font-size:12px;color:#334155;margin-top:4px">Nothing below the national average on the latest test.</div>';
+  h+='<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;font-size:12px;min-width:100%"><thead><tr><th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:700">Area</th>'+cols.map(function(r){ return '<th style="text-align:right;padding:4px 6px;white-space:nowrap">'+esc(r.date||r.key)+'</th>'; }).join("")+'</tr></thead><tbody>';
+  R.forEach(function(r){ h+='<tr style="border-top:1px solid #f1f5f9"><td style="padding:4px 6px;white-space:nowrap">'+(r.group&&r.group!==r.name?'<span style="color:var(--muted)">'+esc(r.group)+' · </span>':'')+'<b style="color:#334155">'+esc(r.name)+'</b></td>';
+    cols.forEach(function(c,ci){ const d=r.c[ci], lo=d&&d.diff<0;
+      h+='<td style="padding:4px 6px;text-align:right;white-space:nowrap">'+(d?'<span style="color:'+(lo?'#b5394a;font-weight:700':'#334155')+'">'+esc(d.pct)+'%</span>'+(d.diff!=null?' <span style="color:'+(lo?'#b5394a':'#94a3b8')+';font-size:10.5px">('+(d.diff>0?'+':'')+d.diff+')</span>':''):'<span style="color:#cbd5e1">—</span>')+'</td>'; });
+    h+='</tr>'; });
+  return h+'</tbody></table></div>';
+}
+// SCSTRANDS_END
 function scStripHTML(kid){
   const L=scList(kid); if(!L.length&&!scOpen[kid]) return "";
   const iowa=L.filter(function(r){ return r.tests; }), cog=L.filter(function(r){ return r.batteries; });
@@ -30356,6 +30398,7 @@ function scStripHTML(kid){
     const last=iowa[iowa.length-1]; if(last.domains){ const D=Object.keys(last.domains).map(function(k){ return Object.assign({k:k},last.domains[k]); }).filter(function(d){ return d.diff!=null; }).sort(function(a,b){ return a.diff-b.diff; });
       const nm=function(k){ return k.replace(/_/g," ").replace(/\b\w/g,function(c){ return c.toUpperCase(); }); };
       h+='<div style="font-size:11.5px;color:var(--muted);margin-top:8px">'+esc(last.date||"")+' strands vs. nation — <b style="color:#b5394a">weakest</b>: '+D.slice(0,4).map(function(d){ return esc(nm(d.k))+' '+d.pct+'% ('+(d.diff>0?'+':'')+d.diff+')'; }).join(" · ")+' · <b style="color:#16a34a">strongest</b>: '+D.slice(-3).reverse().map(function(d){ return esc(nm(d.k))+' '+d.pct+'% (+'+d.diff+')'; }).join(" · ")+(last.lexile?' · Lexile '+esc(last.lexile):'')+(last.quantile?' · Quantile '+esc(last.quantile):'')+'</div>'; }
+    h+=scStrandsHTML(kid,iowa);   // SCSTRANDS
   }
   cog.forEach(function(r){ const B=r.batteries||{}; h+='<div style="font-size:12px;margin-top:8px"><b>CogAT '+esc(r.date||"")+'</b>'+(r.level?' · Level '+esc(r.level):'')+(r.profile?' · profile '+esc(r.profile):'')+': '+["verbal","quantitative","nonverbal","composite"].filter(function(k){ return B[k]; }).map(function(k){ return k+' <b style="color:'+scNprCol(B[k].npr)+'">'+(B[k].sas!=null?B[k].sas:'')+(B[k].npr!=null?' ('+B[k].npr+')':'')+'</b>'; }).join(" · ")+'</div>'; });
   h+='<div style="font-size:11px;color:var(--muted);margin-top:8px">Typed from the report PDFs — a new report is added by Claude on your ask, one record per test date.</div></div>';
@@ -87641,12 +87684,13 @@ function rlogAppend(kid,slot,label,act,pts,extra){
 function rlogFlag(kid,wk,d,key){
   if(!momHere()) return;   // Mom-only; the Log card lives behind the Admin PIN too
   const rec=routineLog[kid]&&routineLog[kid][wk]&&routineLog[kid][wk][d]&&routineLog[kid][wk][d][key];
-  if(!rec||rec.flagged||(typeof starTakeNo==="function"&&starTakeNo(kid))) return;   // STARRULES
-  if(!confirm("Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||"")+"\"")) return;
-  bankDirect(kid,-100,"🚩 false check-off dock");
-  const patch={flagged:true,penalty:-100,flagTs:nowTs()};
+  if(!rec||rec.flagged) return;
+  const off=typeof starTakeOk==="function"&&!starTakeOk(kid), who=typeof flagWho==="function"?flagWho():"mom";   // FLAGWHO: Take stars away off → the 🚩 mark, no stars
+  if(!confirm(off?flagOffAsk(kid,rec.label||""):"Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||"")+"\"")) return;
+  if(!off) bankDirect(kid,-100,"🚩 false check-off dock"+(typeof flagWhoName==="function"?" · by "+flagWhoName(who):""));
+  const patch={flagged:true,penalty:off?0:-100,flagTs:nowTs(),flagBy:who};
   Object.assign(rec,patch);
-  if(db) db.ref("routineLog/"+kid+"/"+wk+"/"+d+"/"+key).update(patch);
+  if(db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("routineLog/"+kid+"/"+wk+"/"+d+"/"+key).update(patch);
   renderAll();
 }
 // ── Accountability: "Morning not done by <hour> -> lose tech" house rule ──
