@@ -95,6 +95,18 @@ console.log("\n── A2 · room headers and 🏠 Whole house: % done in place o
   ok("drawing every page wrote nothing", c.writes.length === 0, c.writes);
 }
 
+console.log("\n── A2b · a held chore is not in “% done” (hub's fault 2, 2026-11-23) ──");
+{ // a daily in the living room, due every day of the 8 weeks and never done: held, it is on nobody's list, so the room's % must not move
+  const HELD = hold => Object.assign(JOBS(), { l_rugwash: K({ label: "Shampoo the rug", who: "ben", slot: "chores", cad: "daily", room: "living", minutes: 20, hold: hold }) });
+  const base = withLog(mk({ jobs: JOBS() })), held = withLog(mk({ jobs: HELD(true) })), open = withLog(mk({ jobs: HELD(false) }));
+  const pct = c => c.hqDone(c.hhRoomChores().living).pct, head = c => (strip(roomPage(c, "living")).match(/\d+ chores · \d+ min a week · [^🔴]*/) || [""])[0];
+  const chip = c => (roomPage(c, "").split('<div onclick="hhRmGo(').filter(r => r.indexOf(">Living room<") >= 0 && r.indexOf("min/wk") > 0)[0] || "").match(/>(\d+)% done</);
+  ok("the held chore was due in the 8 weeks and never done (hhStats: due " + held.hhStats(held.hhJobs().l_rugwash).due8 + ", done 0)", held.hhStats(held.hhJobs().l_rugwash).due8 > 0 && held.hhStats(held.hhJobs().l_rugwash).done8 === 0);
+  ok("held: the living room's % done = without the chore (" + pct(base) + "%); not held it would be " + pct(open) + "%", pct(held) === pct(base) && pct(open) < pct(base), [pct(base), pct(held), pct(open)]);
+  ok("…in the room header: “" + head(held).replace(/^\d+ chores · \d+ min a week · /, "") + "”", /(\d+)% done/.test(head(held)) && head(held).match(/(\d+)% done/)[1] === String(pct(base)) && head(open).match(/(\d+)% done/)[1] === String(pct(open)), [head(base), head(held), head(open)]);
+  ok("…and in the Whole house chip", !!chip(held) && chip(held)[1] === String(pct(base)) && !!chip(open) && chip(open)[1] === String(pct(open)), [chip(held) && chip(held)[1], chip(open) && chip(open)[1]]);
+}
+
 console.log("\n── A3 · the plan ON, today's plan stored: the plan's own carried rows ──");
 const ON = { meta: { takeover: 1, engine: { mode: "on", on: ago(3) } } };
 const DAY = () => ({ [TODAY]: { built: { ok: 1, sig: "x" },
@@ -187,5 +199,16 @@ const hhPages = A => A.run("(function(){ const o={}; hhView='rooms'; ['living','
   ok("Thu: no daily row is red anywhere on the Household pages", ["Make the bed", "Rinse the sink"].every(lb => Object.values(thu.pgF).every(h => note(h, lb).indexOf(RED) < 0)));
   ok("Thu: the above-level oven is not on a list and the kitchen says “1 above the Cleaning level, not on a list yet”", thu.pgF["room/kitchen"].indexOf("1 above the Cleaning level, not on a list yet") > 0 && !/Deep-clean the oven/.test(strip(thu.kidF)));
   ok("a kid's device drawing the room: the rows, never the grey notes", thu.kidPage.indexOf("Vacuum the den") > 0 && thu.kidPage.indexOf("from Tue") < 0);
+  // hub's fault 1 (2026-11-23): Mom ✕-skips the waiting vacuum today (✕ today in her pop-up, rtWave). The lists' count does not drop it
+  // (rtLateDays checks ✕ only on the chore's own day), so the waiting part must leave it out itself.
+  const vi = A.run("(function(){ day=_todayDay; return (rtStepsFor('chores','kid_a',false,day)||[]).findIndex(function(x){ return x&&x.label==='Vacuum the den'; }); })()");
+  A.run("rtWave('chores','kid_a',_todayDay," + vi + ")"); await w.flush();
+  const xw = JSON.parse(hhPages(A)), xn = A.run("(function(){ const d0=day; day=_todayDay; try{ return mdLateDays('chores','kid_a',_todayDay," + vi + ",rtStepsFor('chores','kid_a',false,day)[" + vi + "]); } finally{ day=d0; } })()");
+  ok("Thu, Mom ✕-skips the waiting vacuum today: it is waved, and the lists' own count still says " + xn + " (so only the ✕ check keeps it off)", vi >= 0 && A.run("rtWaved('chores','kid_a',_todayDay," + vi + ")") === true && xn > 0, [vi, xn]);
+  ok("…not under “Still on their list from an earlier day” on the living room's 🔴 Now", note(xw["room/living"], "Vacuum the den").indexOf("from Tue") < 0 && xw["room/living"].indexOf("Still on their list from an earlier day") < 0, strip(xw["room/living"]).slice(0, 500));
+  ok("…not on 👤 By person ▸ Today (Kid_a)", !/Still on .{1,12}’s list from an earlier day/.test(xw["person/kid_a"]) && note(xw["person/kid_a"], "Vacuum the den").indexOf("from Tue") < 0);
+  const nV = h => h.split(">Vacuum the den<").length - 1;
+  ok("…not on 📅 Schedule today: no note, and one line fewer (today's box and the open day; Tuesday's box still has it, not done)", xw.sched.indexOf("from Tue · day 2") < 0 && thu.pgF.sched.indexOf("from Tue · day 2") > 0 && nV(xw.sched) === nV(thu.pgF.sched) - 2 && nV(xw.sched) >= 1, [nV(thu.pgF.sched), nV(xw.sched)]);
+  ok("…and 🏠 Whole house ▸ 🔴 Now no longer counts it as waiting", !/🛋 Living room [^›]*waiting/.test(strip(xw["room/"]).split("tap one to open it")[1] || ""));
   console.log("\n" + pass + " passed, " + fail + " failed"); process.exit(fail ? 1 : 0);
 })().catch(e => { console.log("  FAIL- threw " + (e && e.stack || e)); process.exit(1); });
