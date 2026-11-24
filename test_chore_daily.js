@@ -49,12 +49,26 @@ const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.ht
   R(`+((r.dly&&_note&&!r.done&&!r.wv)?'<span style="font-size:10.5px;font-weight:700;color:#6b7280;margin-left:6px;white-space:nowrap">'+r.dly+'</span>':'')+'</span>'+   // CHOREDAILY: "missed 2 days · pays 8 of 10 ⭐"; CHOREWAIT`, "+'</span>'+   // CHOREWAIT", "boardStatPop's note");
   R(`:(typeof rtDailyPay==="function")?rtDailyPay(slot,k,i,steps[i]):((steps[i]||{}).pts||0)); });   // CHOREFALL: a falling row counts what it pays today; CHOREDAILY: a daily too`, ":((steps[i]||{}).pts||0)); });   // CHOREFALL: a falling row counts what it pays today", "kcPointsHTML");
   R(`\n      if(due&&dn===today&&typeof rtDailyPay==="function"){ const f=rtDailyPay(slot,who,idx,st); if(f!==row.pts) row.fall=f; }   // CHOREDAILY: a daily after 2+ missed days`, "", "hhCleanRows");
+  // the join stamps (hub's review): whole added lines, and the two pieces inside hhLevelSet's one line
+  R("\n  if(typeof rtDailyJoin===\"function\"&&rtDailyJoin(job)) job.from=rtDailyJoin(job);              // CHOREDAILY: a new daily starts today", "", "hhAddSave's stamp");
+  R("\n        if(typeof rtDailyJoin===\"function\"&&rtDailyJoin(job)) job.from=rtDailyJoin(job);   // CHOREDAILY: a new daily starts today", "", "hhSyncKids' new-row stamp");
+  R(/\n        const _dw=\(typeof rtDailyOn==="function"\)\?rtDailyOn\(j\)\+"\|"\+j\.who\+"\|"\+j\.slot:"";[^\n]*/, "", "hhSyncKids' before");
+  R(/\n        if\(_dw&&rtDailyJoin\(j\)&&_dw!=="true\|"\+j\.who[^\n]*/, "", "hhSyncKids' stamp");
+  R("\n  if(typeof rtDailyJoin===\"function\"&&rtDailyJoin(j)) set(\"from\",rtDailyJoin(j));               // CHOREDAILY: a daily's new owner starts today", "", "hhGiveTo's stamp");
+  R("\n  const _dw=(typeof rtDailyOnIds===\"function\")?rtDailyOnIds():null;   // CHOREDAILY: a level or keep that brings a daily on starts it today", "", "hhSet's before");
+  R("\n  if(_dw) rtDailyStampNew(_dw);   // CHOREDAILY\n  householdOnValue(householdData);\n  if(_hhWrite()){ db.ref(\"household/jobs/\"+id+\"/\"+field)", "\n  householdOnValue(householdData);\n  if(_hhWrite()){ db.ref(\"household/jobs/\"+id+\"/\"+field)", "hhSet's stamp");
+  R("\n  const _dw=(typeof rtDailyOnIds===\"function\")?rtDailyOnIds():null;   // CHOREDAILY: the dailies a level brings on start today", "", "hhLevelSetFor's before");
+  R("\n  if(_dw) rtDailyStampNew(_dw);   // CHOREDAILY", "", "hhLevelSetFor's stamp");
+  R(" const _dw=(typeof rtDailyOnIds===\"function\")?rtDailyOnIds():null; householdData.levels=householdData.levels||{}; householdData.levels.cleaning=", " householdData.levels=householdData.levels||{}; householdData.levels.cleaning=", "hhLevelSet's before");
+  R("{current:v,at:Date.now()}); if(_dw) rtDailyStampNew(_dw); householdOnValue(", "{current:v,at:Date.now()}); householdOnValue(", "hhLevelSet's stamp");
   if (/CHOREDAILY|rtDaily|RT_DAILY_FROM|_b1|_bd\b/.test(s)) throw new Error("test_chore_daily: the app before still mentions CHOREDAILY");
   const t = path.join(os.tmpdir(), "chore_daily_before_" + process.pid + ".html"); fs.writeFileSync(t, s); return t; })();
 const BASE_HJS = (() => { let s = HJS;
   const R = (a, b, l) => { s = once(s, "house.js", a, b, l); };
   R(`    if(due){ if(p<full&&typeof rtDailyRow==="function"&&rtDailyRow(st)){ r.sh=full-p; r.note="paid "+p+" of "+full+" ⭐"; } return r; }   // CHOREDAILY (C5): a daily after 2+ missed days`, "    if(due) return r;", "the ledger's done row");
   R(`    if(D.k===0){ const dl=(typeof rtDailyNote==="function")?rtDailyNote(slot,kid,i,st):""; return Object.assign(r,{ic:"○",note:"not done yet"+(dl?" · "+dl:"")}); }   // CHOREDAILY (C5)`, `    if(D.k===0) return Object.assign(r,{ic:"○",note:"not done yet"});`, "the ledger's open row");
+  R(/\n  const _dw=\(typeof rtDailyOn==="function"\)\?rtDailyOn\(j\)\+"\|"\+j\.slot:"";[^\n]*/, "", "hhEditSet's before");
+  R(/\n  if\(_dw&&field!=="from"&&rtDailyJoin\(j\)[^\n]*/, "", "hhEditSet's stamp");
   if (/CHOREDAILY|rtDaily/.test(s)) throw new Error("test_chore_daily: the app before's house.js still mentions CHOREDAILY");
   return s; })();
 console.log("(the app before: this tree with CHOREDAILY taken out)");
@@ -277,6 +291,58 @@ console.log("\n── K · the 📒 Ledger and 📊 How often ──");
 ok("Mom's 📒 Ledger, today's open row: \"not done yet · missed 2 days · pays 8 of 10 ⭐\" (Wed)", /Unload dishes not done yet · missed 2 days · pays 8 of 10 ⭐/.test(lgRow(S.a["2026-12-02"].ledger, "Unload dishes")) && /Tidy the room not done yet · missed 2 days · pays 8 of 10 ⭐/.test(lgRow(S.a["2026-12-02"].ledger, "Tidy the room")), lgRow(S.a["2026-12-02"].ledger, "Unload dishes"));
 ok("…a 10 ⭐ day says only \"not done yet\" (Tue 12/1)", /^○ 🍽 Unload dishes not done yet 10 ⭐/.test(lgRow(S.a["2026-12-01"].ledger, "Unload dishes")) && !/missed|pays/.test(lgRow(S.a["2026-12-01"].ledger, "Unload dishes")), lgRow(S.a["2026-12-01"].ledger, "Unload dishes"));
 ok("…a done row that paid less: \"✅ Rake leaves paid 6 of 10 ⭐ +6 ⭐\", and the day's \"fell short 4 ⭐\"", /^✅ 🍂 Rake leaves paid 6 of 10 ⭐ \+6 ⭐/.test(lgRow(S.misc.dLedger, "Rake leaves")) && /fell short 4 ⭐/.test(txt(S.misc.dLedger)), [lgRow(S.misc.dLedger, "Rake leaves"), txt(S.misc.dLedger).slice(0, 200)]);
+
+// ── N, P: a row that joins a list, and a row whose place moves ──
+// kid_a 🧹 Sweep porch (never done) · Feed the dog (done every day) · Fold towels (never done) · Wipe the stove (Level 3: off the list)
+// kid_b 🧹 Wipe the door (Fridays, turned daily Wed) · Polish shoes (Level 3, put at Level 1 Wed) · Dust the TV (added Wed)
+// kid_c 🧹 Water the fern (done every day by kid_c; given to kid_d Wed) · kid_d 🧹 Rake leaves (done every day)
+// Wed 12/2 7 AM Mom: + Add (Dust the TV), Wipe the door → Daily, Water the fern → Give to kid_d, Kid A to Level 3, Polish shoes → Level 1.
+// Then Mom's Chores & Stars editor on kid_a's list: Wed 8:30 PM a row put in between Sweep porch and Feed the dog, Thu 8:30 PM taken out
+// again, Fri 8:30 PM Feed the dog and Fold towels swapped.
+{ const JN = () => ({
+    a_sweep: K({ label: "Sweep porch", emoji: "🧹", who: "kid_a", slot: "chores", cad: "daily", pts: 10, order: 0 }),
+    a_dog: K({ label: "Feed the dog", emoji: "🐶", who: "kid_a", slot: "chores", cad: "daily", pts: 10, area: "animals", order: 1 }),
+    a_towel: K({ label: "Fold towels", emoji: "🧺", who: "kid_a", slot: "chores", cad: "daily", pts: 10, order: 2 }),
+    a_stove: K({ label: "Wipe the stove", emoji: "🍳", who: "kid_a", slot: "chores", cad: "daily", pts: 10, level: 3, order: 3 }),
+    b_door: K({ label: "Wipe the door", emoji: "🚪", who: "kid_b", slot: "chores", cad: "wk:4", pts: 10, order: 0 }),
+    b_shoe: K({ label: "Polish shoes", emoji: "👞", who: "kid_b", slot: "chores", cad: "daily", pts: 10, level: 3, order: 1 }),
+    c_fern: K({ label: "Water the fern", emoji: "🪴", who: "kid_c", slot: "chores", cad: "daily", pts: 10, area: "animals", order: 0 }),
+    d_rake: K({ label: "Rake leaves", emoji: "🍂", who: "kid_d", slot: "chores", cad: "daily", pts: 10, area: "animals", order: 0 }) });
+  const X = await mkWorld(IDX, HJS, JN()), R = {}, pay = {};
+  const EDITOR = js => X.A.run("(function(){ const a=routineCfg2.chores.kid_a; " + js + " hhSyncKids(); return a.map(function(s){ return s.label; }).join('|'); })()");
+  for (const iso of DATES.slice(0, 9)) {
+    await at(X.w, iso, 7);
+    if (iso === "2026-12-02") { const j = clone(X.w.get("household/jobs"));
+      X.A.run("Object.assign(hhAdd,{who:'kid_b',slot:'chores',cad:'daily',kind:'chore',label:'Dust the TV',emoji:'📺',pts:'10',area:'cleaning',level:0,room:'any',can:{}}); document.getElementById('hh-add-label').value='Dust the TV'; document.getElementById('hh-add-emoji').value='📺'; document.getElementById('hh-add-pts').value='10'; hhAddSave()");
+      X.A.run("hhEditSet('b_door','cad','daily')"); X.A.run("hhGiveTo('c_fern','kid_d')"); X.A.run("hhLevelSetFor('kid_a',3)"); X.A.run("hhEditSet('b_shoe','level',1)"); await X.w.flush();
+      R.jobsWed = X.w.get("household/jobs"); R.jobsBefore = j; }
+    for (const kid of ["kid_a", "kid_b", "kid_c", "kid_d"]) { draw(X.B, "chores", kid); draw(X.A, "chores", kid); } await X.w.flush();
+    await at(X.w, iso, 20);
+    R[iso] = { a: draw(X.B, "chores", "kid_a"), b: draw(X.B, "chores", "kid_b"), d: draw(X.B, "chores", "kid_d"), momA: pop(X.A, "kid_a", "chores") };
+    pay["dog " + iso] = await (async () => { const b0 = bal(X.w, "kid_a"); tick(X.B, "chores", "kid_a", "Feed the dog"); await X.w.flush(); return bal(X.w, "kid_a") - b0; })();
+    if (iso < "2026-12-02") tick(X.B, "chores", "kid_c", "Water the fern");
+    tick(X.B, "chores", "kid_d", "Rake leaves"); await X.w.flush();
+    if (iso === "2026-12-02") R.ins = EDITOR("a.splice(1,0,{label:'Wipe the table',emoji:'🧽',pts:5,cad:'daily'});");
+    if (iso === "2026-12-03") R.del = EDITOR("a.splice(a.findIndex(function(s){ return s.label==='Wipe the table'; }),1);");
+    if (iso === "2026-12-04") R.swap = EDITOR("const i=a.findIndex(function(s){ return s.label==='Feed the dog'; }), k=a.findIndex(function(s){ return s.label==='Fold towels'; }), t=a[i]; a[i]=a[k]; a[k]=t;");
+    await X.w.flush(); }
+  const WTF = ["2026-12-02", "2026-12-03", "2026-12-04"], P3 = (h, l) => WTF.map(d => pill(R[d][h], l));
+  console.log("\n── N · a daily row that joins a list starts that day (no walk back over days it was not that kid's daily) ──");
+  ok("+ Add a paying daily on Wed (Dust the TV, kid_b, never done): Wed \"+10\", Thu \"+10\", Fri \"10 → 8\"", J(P3("b", "Dust the TV")) === J(["+10 ⭐", "+10 ⭐", "10 → 8 ⭐"]), P3("b", "Dust the TV"));
+  ok("a Fridays chore turned Daily on Wed (Wipe the door): Wed \"+10\", Thu \"+10\", Fri \"10 → 8\"", J(P3("b", "Wipe the door")) === J(["+10 ⭐", "+10 ⭐", "10 → 8 ⭐"]), P3("b", "Wipe the door"));
+  ok("a daily given to another kid on Wed (Water the fern → kid_d, who never does it): Wed \"+10\", Thu \"+10\", Fri \"10 → 8\"", J(P3("d", "Water the fern")) === J(["+10 ⭐", "+10 ⭐", "10 → 8 ⭐"]), P3("d", "Water the fern"));
+  ok("a daily that comes on with a level (Kid A to Level 3 Wed: Wipe the stove): Wed \"+10\", Thu \"+10\", Fri \"10 → 8\"", J(P3("a", "Wipe the stove")) === J(["+10 ⭐", "+10 ⭐", "10 → 8 ⭐"]), P3("a", "Wipe the stove"));
+  ok("a daily whose own level is put at or below the kid's (Polish shoes → Level 1 Wed): Wed \"+10\", Thu \"+10\", Fri \"10 → 8\"", J(P3("b", "Polish shoes")) === J(["+10 ⭐", "+10 ⭐", "10 → 8 ⭐"]), P3("b", "Polish shoes"));
+  const fr = id => ((R.jobsWed || {})[id] || {}).from || "";
+  ok("…each of those rows now says from = Wed 12/2 in the table (the same targeted writes; Rake leaves and Sweep porch untouched)", ["b_door", "c_fern", "a_stove", "b_shoe"].every(id => fr(id) === "2026-12-02") && Object.values(R.jobsWed || {}).filter(j => j.label === "Dust the TV").every(j => j.from === "2026-12-02") && !fr("d_rake") && !fr("a_sweep"), Object.entries(R.jobsWed || {}).map(([k, j]) => [k, j.label, j.from]));
+  console.log("\n── P · a row whose place in the list moves keeps paying what it should (ticks are kept by place) ──");
+  ok("the editor really moved places: Wed night a row in at 2nd place, Thu night out again, Fri night Feed the dog and Fold towels swapped", /^Sweep porch\|Wipe the table\|Feed the dog\|Fold towels/.test(R.ins || "") && /^Sweep porch\|Feed the dog\|Fold towels/.test(R.del || "") && /^Sweep porch\|Fold towels\|Feed the dog/.test(R.swap || ""), [R.ins, R.del, R.swap]);
+  const dogDays = ["2026-12-03", "2026-12-04", "2026-12-05"];
+  ok("Feed the dog (done every day) after each move: Thu, Fri, Sat \"+10 ⭐\", and each tick pays 10", dogDays.every(d => pill(R[d].a, "Feed the dog") === "+10 ⭐" && pay["dog " + d] === 10), dogDays.map(d => [pill(R[d].a, "Feed the dog"), pay["dog " + d]]));
+  ok("…Mom's pop-up the same: no \"missed\" note on Feed the dog", dogDays.every(d => !/missed/.test(popRow(R[d].momA, "Feed the dog"))), dogDays.map(d => popRow(R[d].momA, "Feed the dog")));
+  ok("a row that really was missed (Sweep porch, never done, its place never moved) still pays less: Thu 6, Fri 4, Sat 2", J(dogDays.map(d => pill(R[d].a, "Sweep porch"))) === J(["10 → 6 ⭐", "10 → 4 ⭐", "10 → 2 ⭐"]), dogDays.map(d => pill(R[d].a, "Sweep porch")));
+  ok("…Fold towels, missed every day: Thu \"10 → 6 ⭐\" (the places it reads held no done tick); Fri \"+10 ⭐\": its place now holds Feed the dog's Thursday tick, so the count stops there (unsure: it pays more, never less)", J(["2026-12-03", "2026-12-04"].map(d => pill(R[d].a, "Fold towels"))) === J(["10 → 6 ⭐", "+10 ⭐"]), ["2026-12-03", "2026-12-04", "2026-12-05"].map(d => pill(R[d].a, "Fold towels")));
+}
 
 // ── L ──
 console.log("\n── L · nothing else moves: the app before, byte for byte ──");
