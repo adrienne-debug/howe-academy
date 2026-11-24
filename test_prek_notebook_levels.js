@@ -114,8 +114,9 @@ ok(days(o.student) === 4 && days(ju({}, { weekData: { dates, tasks: tasksFor("ju
    "nbSkipNoSchoolDays: no page on the kid's no-card day (only when the week has the kid's cards)");
 
 console.log("looks: dinosaurs / construction / sharks for any Pre-K notebook");
-// NB_LOOKS2 (2026-11-23): three more looks follow the first three in the picker — space, farm, forest (test_nb_looks2.js)
-ok(JSON.stringify(Object.keys(NB.themes)) === '["dino","construction","shark","space","farm","forest"]' && NB.themes.dino.chip === "🦕 Dinosaurs" && NB.themes.construction.chip === "🚜 Construction" && NB.themes.shark.chip === "🦈 Sharks", "the first three looks lead the picker, in order");
+// NB_LOOKS2 (2026-11-23): three more looks follow the first three in the picker — space, farm, forest (test_nb_looks2.js);
+// NB_LOOKS3 (2026-11-24): then plain, horses, sports (test_nb_looks3.js)
+ok(JSON.stringify(Object.keys(NB.themes)) === '["dino","construction","shark","space","farm","forest","plain","horses","sports"]' && NB.themes.dino.chip === "🦕 Dinosaurs" && NB.themes.construction.chip === "🚜 Construction" && NB.themes.shark.chip === "🦈 Sharks", "the first three looks lead the picker, in order");
 ok(NB.generate("julian", base({ masteryItems: juItems, notebookTheme: "dino" })).student === NB.generate("julian", base({ masteryItems: juItems })).student &&
    NB.generate("caleb", base({ masteryItems: cbItems, notebookTheme: "construction" })).student === NB.generate("caleb", base({ masteryItems: cbItems })).student, "a kid's own look picked on purpose = the original, word for word");
 o = NB.generate("julian", base({ masteryItems: juItems, notebookTheme: "construction", kidName: "Julian" }));
@@ -142,11 +143,11 @@ ok(I.pkSpec("kid9", { notebookTheme: "shark" }).L.ownWeeks === true && I.pkSpec(
 
 console.log("the picker's options (HoweNotebooks.notebookOptions)");
 let op = NB.notebookOptions("julian", { isPreK: true });
-ok(op.looks.map(l => l.key).join() === "dino,construction,shark,space,farm,forest" && op.current === "dino" && op.prek && op.levels.length === 5 && op.levels.every(d => d.on === false) && op.extraPages.length === 3, "Julian: six looks, his own on, five switches off, his three extra pages");
+ok(op.looks.map(l => l.key).join() === "dino,construction,shark,space,farm,forest,plain,horses,sports" && op.current === "dino" && op.prek && op.levels.length === 5 && op.levels.every(d => d.on === false) && op.extraPages.length === 3, "Julian: six looks, his own on, five switches off, his three extra pages");
 op = NB.notebookOptions("caleb", { isPreK: false, notebookTheme: "shark", nbLevel: { nbTeens: false } });
 ok(op.current === "shark" && op.levels.find(d => d.key === "nbTeens").on === false && op.levels.find(d => d.key === "nbLowercase").on === true, "Caleb (school-age on his roster): still a Pre-K notebook — looks + switches, saved choices shown");
 op = NB.notebookOptions("d3", { isPreK: true });
-ok(op.looks.map(l => l.key).join() === ",dino,construction,shark,space,farm,forest" && op.current === "" && !op.prek && op.levels === null && op.extraPages.length === 0, "a Pre-K kid on the starter notebook: Starter + the six looks; no switches until a look is picked");
+ok(op.looks.map(l => l.key).join() === ",dino,construction,shark,space,farm,forest,plain,horses,sports" && op.current === "" && !op.prek && op.levels === null && op.extraPages.length === 0, "a Pre-K kid on the starter notebook: Starter + the six looks; no switches until a look is picked");
 op = NB.notebookOptions("d3", { isPreK: true, notebookTheme: "shark" });
 ok(op.prek && op.current === "shark" && op.levels.length === 5 && op.extraPages.map(p => p.key).join() === "abc,daysSeasons,thisMonth", "…with a look: the level switches AND the ABC / Days & Seasons / This Month pages show — no kid id involved");
 op = NB.notebookOptions("lincoln", {});

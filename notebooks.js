@@ -4169,6 +4169,90 @@ ${extraStrip || ""}
     NB_THEMES[k] = { label: LK2[k].label, chip: LK2[k].chip, planTitle: LK2[k].planTitle, theme: function (ctx) { return lk2Theme(k, ctx); } };
   });
   // NB_LOOKS2_END
+  // NB_LOOKS3_START — three more Pre-K looks: 📓 Plain, 🐴 Horses, ⚽ Sports (her words 2026-11-24 on the looks plan's next
+  // three: "All three now"; PLAN_notebook_looks_2026-11-23.md §10 and §12). Each is a whole look made with the NB_LOOKS2
+  // helpers (lk2Words, lk2Path, lk2Css, lk2Theme) — so this block needs that one above it — and fills every piece those
+  // looks fill: its own colours and print tints, cover, day badges, letter words (consonants only, so each also works as the
+  // letter's sound word), sound words, J word, warm-up strip, guide words, animal friends, plan-card title and unit colours.
+  //  • 📓 Plain is the look for a child who wants no theme: no mascot beyond 📓, no picture row, the plain day name for a
+  //    badge, no motto, the plainest words ("Daily Page", "Great job!", "Hi, name!"), and the slate and teal of the starter
+  //    notebook (its unit pages use the starter notebook's own colours).
+  //  • 🐴 Horses: saddle brown + sky, "Saddle Up!", the horse trots the dotted trail to the barn.
+  //  • ⚽ Sports: field green + white yard lines, "Game On!", the ball rolls the dotted line into the goal.
+  // A look changes words, pictures and colours ONLY — the same letters, numbers, shapes, animals, level switches and page
+  // count as any other look, so none has a counting picture of its own. Pictures are emoji and our own SVG; nothing names a
+  // child, a brand or a character. They come after the six looks in the picker; nothing changes for a kid until a grown-up
+  // picks one (test_nb_looks3.js builds that baseline with this block taken out).
+  var LK3 = {
+    plain: {
+      label: "Plain (Pre-K 📓)", chip: "📓 Plain", planTitle: "📓 This week’s plan", noName: "Little Learner", emoji: "📓", nameIcon: "✏️", shapeStroke: "#475569",
+      coverSub: "trace · count · color · draw", coverBadge: "📓 This Week", coverRow: "", drawCap: "✏️ Draw a picture of YOU!",
+      badges: { monday: "Monday", tuesday: "Tuesday", wednesday: "Wednesday", thursday: "Thursday", friday: "Friday" },
+      words: lk2Words({ J: ["Juice", "🧃"] }),
+      path: function (idx) { return lk2Path("Trace the line!", "🟢", "🔴", idx, "#94a3b8", "none"); },
+      css: lk2Css({
+        v: { dark: "#1e293b", deep: "#0f766e", mid: "#0d9488", light: "#cbd5e1", pale: "#f8fafc", green: "#0f766e", gpale: "#f0fdfa", gold: "#0d9488",
+          gpale2: "#f8fafc", blue: "#334155", bpale: "#f1f5f9", ink: "#1e293b", muted: "#64748b", border: "#e2e8f0", trace: "#cbd5e1", ntTrace: "#64748b" },
+        print: { dark: "#18212f", light: "#bcc7d4", pale: "#eef2f6", gpale: "#ddf6f1", gpale2: "#eef2f6", bpale: "#e4e9ef", trace: "#b6c1ce", ntTrace: "#556275", muted: "#536176", border: "#cfd7e1" },
+        accent: "#0f766e",
+        badge: ["rgba(15,118,110,0.3)", "rgba(203,213,225,0.5)"], label: "#64748b", hint: "#94a3b8", numCard: ["#99f6e4", "#a7e3da", "#c5ece6"]
+      }),
+      guide: { animalIcon: "🐾", nameIcon: "✏️", countWord: "animal", letterExample: "B — /b/ — Bear", closeColors: ["#99f6e4", "#134e4a"],
+        pathRow: ["✏️", "Trace the Line", LK2_GROWN + "the pencil follow the dotted line to the red dot. The line" + LK2_EACH_DAY] },
+      xpColors: ["#0f766e", "#f0fdfa", "#134e4a"],
+      unit: UNIT_INSERT_THEMES.generic,
+      curOpt: { animals: [["Cat", "🐱"], ["Dog", "🐶"], ["Rabbit", "🐰"], ["Mouse", "🐭"]], animalEmoji: {}, animalFallback: "🐾" },
+      // the plainest words: no mascot in the hello, the "I feel?" face or the "great job" line, and the daily page is the Daily Page
+      plain: function (T) { return { hello: "Hi, " + T.name + "!", moodEmoji: "🙂", badgeDefault: "Great job!", dayTitle: "Daily Page" }; }
+    },
+    horses: {
+      label: "Horses (Pre-K 🐴)", chip: "🐴 Horses", planTitle: "🐴 This week’s riding plan", noName: "Little Rider", emoji: "🐴", nameIcon: "🥕", shapeStroke: "#6b4f3a",
+      coverSub: "trace · count · color · ride", coverBadge: "🐴 Saddle Up!", coverRow: "🐴 🌾 🥕 🏇 🌄", drawCap: "✏️ Draw YOU riding a horse!",
+      badges: { monday: "🐴 Saddle Up! New Week", tuesday: "🐎 Giddy Up!", wednesday: "🥕 Halfway, Rider!", thursday: "🌄 Almost There!", friday: "⭐ Horse Star!" },
+      words: lk2Words({ C: ["Carrot", "🥕"], H: ["Horse", "🐴"], J: ["Jeans", "👖"], M: ["Mountain", "⛰️"], P: ["Pony", "🐎"], R: ["Rider", "🏇"], S: ["Sunrise", "🌄"] }),
+      path: function (idx) { return lk2Path("Trot to the barn!", "🐴", "🛖", idx, "#b45309", "#e0f2fe"); },
+      css: lk2Css({
+        v: { dark: "#4a2c17", deep: "#8b4513", mid: "#a0522d", light: "#f1d5b8", pale: "#fbf4ec", green: "#0369a1", gpale: "#f0f9ff", gold: "#ca8a04",
+          gpale2: "#fefce8", blue: "#1d4ed8", bpale: "#eff6ff", ink: "#2a1d14", muted: "#7a6656", border: "#e6d8cb", trace: "#d2bfae", ntTrace: "#8c735f" },
+        print: { dark: "#3f2514", light: "#ecc7a1", pale: "#f7e9db", gpale: "#e0f0fb", gpale2: "#fbf5cf", bpale: "#e2ecfd", trace: "#c4ae9b", ntTrace: "#7a6250", muted: "#665444", border: "#d9c6b5" },
+        accent: "repeating-linear-gradient(90deg, #8b4513 0 14px, #7dd3fc 14px 18px)",
+        badge: ["rgba(160,82,45,0.3)", "rgba(241,213,184,0.5)"], label: "#9a6b4f", hint: "#d9b99f", numCard: ["#bae6fd", "#b4d8ec", "#cde4f0"]
+      }),
+      guide: { animalIcon: "🐴", nameIcon: "🥕", countWord: "animal", letterExample: "P — /p/ — Pony", closeColors: ["#bae6fd", "#0c4a6e"],
+        pathRow: ["🛖", "Trot to the Barn", LK2_GROWN + "the horse trot the dotted trail to the barn. The trail" + LK2_EACH_DAY] },
+      xpColors: ["#8b4513", "#fbf4ec", "#4a2c17"],
+      unit: { GD:"#4a2c17", GM:"#a0522d", GL:"#f1d5b8", GP:"#fbf4ec", GOLD:"#ca8a04", GOLDD:"#a16207", CREAM:"#fefce8", EXTRA:"#0369a1" },
+      curOpt: { animals: [["Pony", "🐎"], ["Donkey", "🫏"], ["Goat", "🐐"], ["Sheep", "🐑"]],
+        animalEmoji: { pony: "🐴", donkey: "🫏", mule: "🫏", goat: "🐐", sheep: "🐑", lamb: "🐑" }, animalFallback: "🐾" }
+    },
+    sports: {
+      label: "Sports (Pre-K ⚽)", chip: "⚽ Sports", planTitle: "⚽ This week’s game plan", noName: "Little Champ", emoji: "⚽", nameIcon: "🏅", shapeStroke: "#3f5a4c",
+      coverSub: "trace · count · color · play", coverBadge: "⚽ Game On!", coverRow: "⚽ 🏀 ⚾ 🏈 🏆", drawCap: "✏️ Draw YOU scoring a goal!",
+      badges: { monday: "⚽ Game On! New Week", tuesday: "🏀 Bounce Bounce!", wednesday: "⚾ Halfway, Champ!", thursday: "🏈 Almost There!", friday: "🏆 Sports Star!" },
+      words: lk2Words({ B: ["Ball", "⚽"], G: ["Goal", "🥅"], J: ["Jersey", "👕"], M: ["Medal", "🏅"], R: ["Racket", "🏸"], T: ["Trophy", "🏆"] }),
+      path: function (idx) { return lk2Path("Kick it to the goal!", "⚽", "🥅", idx, "#16a34a", "#dcfce7"); },
+      css: lk2Css({
+        v: { dark: "#064e3b", deep: "#047857", mid: "#10b981", light: "#a7f3d0", pale: "#ecfdf5", green: "#c2410c", gpale: "#fff7ed", gold: "#d97706",
+          gpale2: "#fffbeb", blue: "#0369a1", bpale: "#f0f9ff", ink: "#10241c", muted: "#5b7268", border: "#d1e7dd", trace: "#b0cbbf", ntTrace: "#6a8378" },
+        print: { dark: "#053f30", light: "#93eec4", pale: "#dcf8ec", gpale: "#fdead6", gpale2: "#fdf3d3", bpale: "#e3f1fb", trace: "#9fbcaf", ntTrace: "#5a7268", muted: "#4b5f56", border: "#bcd9cb" },
+        accent: "repeating-linear-gradient(90deg, #047857 0 20px, #ffffff 20px 23px)",
+        badge: ["rgba(16,185,129,0.3)", "rgba(167,243,208,0.5)"], label: "#4f8a72", hint: "#a3cfbd", numCard: ["#fed7aa", "#f6caa0", "#fbd9bd"]
+      }),
+      guide: { animalIcon: "🐾", nameIcon: "🏅", countWord: "animal", letterExample: "G — /g/ — Goal", closeColors: ["#fed7aa", "#7c2d12"],
+        pathRow: ["🥅", "Kick to the Goal", LK2_GROWN + "the ball roll the dotted line into the goal. The line" + LK2_EACH_DAY] },
+      xpColors: ["#047857", "#ecfdf5", "#064e3b"],
+      unit: { GD:"#064e3b", GM:"#10b981", GL:"#a7f3d0", GP:"#ecfdf5", GOLD:"#d97706", GOLDD:"#b45309", CREAM:"#fffbeb", EXTRA:"#c2410c" },
+      curOpt: { animals: [["Cheetah", "🐆"], ["Kangaroo", "🦘"], ["Eagle", "🦅"], ["Tiger", "🐯"]],
+        animalEmoji: { cheetah: "🐆", leopard: "🐆", kangaroo: "🦘", eagle: "🦅" }, animalFallback: "🐾" }
+    }
+  };
+  Object.keys(LK3).forEach(function (k) {   // into the picker (after the six looks) and the unit-page colour table
+    LK2[k] = LK3[k];   // lk2Theme reads a look from LK2
+    UNIT_INSERT_THEMES[k] = LK3[k].unit;
+    NB_THEMES[k] = { label: LK3[k].label, chip: LK3[k].chip, planTitle: LK3[k].planTitle,
+      theme: function (ctx) { var T = lk2Theme(k, ctx); return LK3[k].plain ? Object.assign(T, LK3[k].plain(T)) : T; } };
+  });
+  // NB_LOOKS3_END
   // SPELLPAGE_START — 📝 the weekly Spelling page (her ask 2026-10-04: "the list of their words that they will be learning
   // that week starting on their learning day … and the spelling checkup section"). Built by the app (ctx.spelling, see
   // nbSpellCtx in index.html); every kid's notebook adds it right after the unit pages. One page: "This Week's Words"
