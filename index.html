@@ -5529,6 +5529,7 @@ function renderAll(){
   // so the overlay has to rebuild or it shows the balance from before the tap.
   try{ if(popView&&popKid&&document.getElementById("kid-pop")) _popPaint(); }catch(e){}
   try{ if(typeof frPanelPaint==="function") frPanelPaint(); }catch(e){}   // 📎 FAMRES: a family item's resources panel
+  try{ if(typeof uadPaint==="function") uadPaint(); }catch(e){}   // 🎨 UACTDOOR: an open activity sheet redraws (a ✓ or a claim shows at once)
   try{ hbAlertsSoon(); }catch(e){}   // 🔴 HBALERT: the Mom's Day tab's red number + the person-waiting ding
   } finally { try{ if(typeof cdRenderEnd==="function") cdRenderEnd(_cdR0); }catch(e){} }   // ⏱ CDBOOTS
 }
@@ -11668,7 +11669,7 @@ function taskCard(t, fromDay, readOnly, doneId){
     '<div class="card-body"'+((_dlv&&typeof tab!=="undefined"&&tab==="kids")?' onclick="if(kcBodyTap(event))'+_go+'" style="cursor:pointer"':'')+'>'+   // 👆 KC_CARDTAP: on Kids' Corner the card opens what its 📂 link opens
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
     '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+(_eicL?eicCardTitle(t):taskTitleShow(t))+'</div>'+mb+((typeof mntXHTML==="function"&&mntXHTML(t,done,claimedHere,readOnly,!!mb))||"")+((typeof stClockHTML==="function"&&stClockHTML(t,done,claimedHere,readOnly,!!mb))||"")+'</div>'+   // MOMNOTTODAY: Mom's ✗ · SETTIME_TODAY: Mom's ⏰
-    '<div class="task-detail">'+cleanDetail+'</div>'+famRow+dr+spinBtn+classRow+linkRow+wbRow+eicRow+rvRow+msRow+llRow+stRow+prRow+nbAnsRow+nbRedoRow+mpdRow+_lr.menu+_lr.kids+((typeof mmCardRow==="function"&&mmCardRow(t,done,claimedHere,readOnly))||"")+   // ⏱ MINMINUTES
+    '<div class="task-detail">'+cleanDetail+'</div>'+famRow+((typeof uadBtnHTML==="function"&&uadBtnHTML(t,done,readOnly))||"")+dr+spinBtn+classRow+linkRow+wbRow+eicRow+rvRow+msRow+llRow+stRow+prRow+nbAnsRow+nbRedoRow+mpdRow+_lr.menu+_lr.kids+((typeof mmCardRow==="function"&&mmCardRow(t,done,claimedHere,readOnly))||"")+   // ⏱ MINMINUTES
     nbtRows+   // 📱 NBTABLET: last in the chain (every earlier seam is pinned by a test)
     '</div></div></div>';
 }
@@ -44382,6 +44383,62 @@ function uacTap(uid,kid,key){
   unitActivityClaim(uid,kid,key); return on()!==was;
 }
 // UACTCLAIM_END
+// UACTDOOR_START — 🎨 a one-kid unit gets a door to its activity (slice 7 of PLAN_unit_activity_types_2026-11-19 §4 row 7 and §1.5: "for
+//   a one-kid unit the activity is only on the Units page and in the notebook" — "Open today's card" needs a family block; her go
+//   2026-11-22/23: "go with her answers and build").
+//   · THE DOOR: a kid's own lesson card (taskCard, right after the family row) whose subject points at a unit (subjects/<kid>/<sk>.unit,
+//     read by utDayForTask) and whose unit day has an activity (dcActivities: its nb, or day = the day's n) gets one 44 px button,
+//     "🎨 Today's activity" ("activities" when more than one). Today's card only (its day is today), done or not — the activity is its
+//     own record — never on a read-only copy. A family card, any card with no unit day, a day with no activity: nothing (byte-for-byte).
+//   · THE SHEET: a plain full-screen sheet (div#uad-sheet, Today's card's colours): ← Back, the subject and the day, then the SAME
+//     activity view Today's card draws — dcDayHTML itself, handed the unit day with only what makes its 🎨 section (the day's id, n
+//     and nb; the unit without its track, so a unit-wide craft does not ride along). So each row is what the big card shows: title,
+//     points, the line, 🧪 steps and supplies, ✍️ Whiteboard, 🔗 the link (the kid's gate), 🖨 the paper / ✍️ on the screen, Mom's ✓
+//     chips, and the kid's own 🙋 I did it (UACTCLAIM: his card of today is his unit day). It sits under the whiteboard / page viewer.
+//   · It repaints with the app (renderAll's one guarded line) so a ✓ or a claim shows at once, and closes itself when the card is gone
+//     or no longer today. The sheet writes nothing itself; the rows' own doors write what they always write. Nothing loads lazily.
+//   No kid's or family's name in code.
+var uadState=null;   // {tid} while the sheet is open (var: renderAll reads it from earlier in the file)
+function uadTask(tid){ let tasks=[]; try{ tasks=(typeof getActiveTasks==="function")?getActiveTasks():(((typeof weekData!=="undefined"&&weekData)||{}).tasks||[]); }catch(e){ tasks=[]; } return (tasks||[]).find(t=>t&&t.id===tid)||null; }
+// a kid's own card of today → its unit day as Today's card's group {day, u, present:[him]}; null when there is no activity to show
+function uadGroup(t){
+  if(!t||t.famBlock||!t.who||!t.subjectKey) return null;
+  try{ if(((typeof effectiveDay==="function")?effectiveDay(t):t.day)!==((typeof _todayDay!=="undefined")?_todayDay:"")) return null; }catch(e){ return null; }
+  let d=null; try{ d=(typeof utDayForTask==="function")?utDayForTask(t):null; }catch(e){ d=null; } if(!d||!d.uid) return null;
+  const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[d.uid]; if(!u) return null;
+  const g={day:d,u:u,first:null,present:[t.who]}; return dcActivities(g).length?g:null;
+}
+// taskCard's hook
+function uadBtnHTML(t,done,readOnly){
+  if(readOnly||!t||t.famBlock) return ""; const g=uadGroup(t); if(!g) return "";
+  return '<div style="margin-top:6px"><button data-uad-door="1" onclick="event.stopPropagation();uadOpen(\''+dcJ(t.id)+'\')" style="min-height:44px;padding:8px 14px;border-radius:12px;border:1.5px solid #c4b5fd;background:#faf5ff;color:#5b21b6;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F3A8} Today’s '+(dcActivities(g).length>1?'activities':'activity')+'</button></div>';
+}
+// the 🎨 section exactly as Today's card draws it, for this day
+function uadActsHTML(g){
+  const d=g.day, day={uid:d.uid,id:d.id}; if(d.n) day.n=d.n; if(d.nb) day.nb=d.nb;
+  const u=Object.assign({},g.u); delete u.track;
+  return dcDayHTML({day:day,u:u,first:null,present:g.present||[]});
+}
+function uadSheetHTML(t,g){
+  const d=g.day, u=g.u, s=(((((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[t.who])||{})[t.subjectKey])||{};
+  let h='<div data-uad-sheet="1" style="max-width:860px;margin:0 auto;padding:16px 16px 32px;box-sizing:border-box;font-family:\'DM Sans\',sans-serif">';
+  h+='<button onclick="uadClose()" style="min-height:44px;border:none;background:rgba(255,255,255,.1);color:#fff;font-size:15px;font-weight:800;cursor:pointer;padding:8px 16px;border-radius:12px;font-family:\'DM Sans\',sans-serif">← Back</button>';
+  h+='<div style="margin-top:18px;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#a5b4fc;overflow-wrap:anywhere">'+dcEsc(s.display||s.name||t.title||"")+(d.n?' · Day '+d.n:'')+'</div>';
+  h+='<h1 style="font-family:\'Fraunces\',serif;font-size:clamp(26px,6vw,44px);line-height:1.15;margin:8px 0 0;color:#fff;overflow-wrap:anywhere">'+(u.emoji?'<span class="memoji">'+dcEsc(u.emoji)+'</span> ':'')+dcEsc(d.t||u.title||"")+'</h1>';
+  return h+uadActsHTML(g)+'</div>';
+}
+function uadOpen(tid){ if(!uadGroup(uadTask(tid))) return false; uadState={tid:String(tid)}; uadPaint(); return true; }
+function uadClose(){ uadState=null; try{ const el=document.getElementById("uad-sheet"); if(el) el.remove(); }catch(e){} }
+// draw / redraw (renderAll's hook); the card gone or no longer today → closed
+function uadPaint(){
+  if(!uadState||typeof document==="undefined") return;
+  const t=uadTask(uadState.tid), g=uadGroup(t); if(!g){ uadClose(); return; }
+  let el=document.getElementById("uad-sheet");
+  if(!el){ el=document.createElement("div"); el.id="uad-sheet"; el.setAttribute("role","dialog"); el.setAttribute("aria-modal","true");
+    el.style.cssText="position:fixed;inset:0;z-index:10040;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;background:#0f172a;color:#fff"; document.body.appendChild(el); }
+  el.innerHTML=uadSheetHTML(t,g);
+}
+// UACTDOOR_END
 // UNITDAY_EXTRAS_START — 🖼 Pictures & documents and 🍎 Snack on a unit day (her words 2026-11-11, for Sara, a beta mom: "Sarah would
 //   like to add on day 6 a gratitude scavenger hunt. She has a picture of it. So it would be good if on each day another section that
 //   they could add to that is pictures and documents that would open when they click it on that day. Also, a section for snacks that
