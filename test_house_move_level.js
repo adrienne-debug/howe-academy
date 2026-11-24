@@ -191,7 +191,7 @@ if (HAVE_BASE) { const S = await mkApp("on", winHH("on", {}), BASE, BHJS); await
 
 // HOUSEQUIET (slice B of the missed-chores design, 2026-11-23) changes on purpose what the Household pages draw (test_house_quiet.js);
 // every caller asks typeof first, so this comparison with the app before runs on house.js with that block cut out.
-const noQ = s => { const i = s.indexOf("// HOUSEQUIET_START"); return i < 0 ? s : s.slice(0, i) + s.slice(s.indexOf("\n", s.indexOf("// HOUSEQUIET_END")) + 1); };
+const noQ = s0 => ["HOUSEQUIET", "HOUSEMIXSET"].reduce((s, k) => { const i = s.indexOf("// " + k + "_START"); return i < 0 ? s : s.slice(0, i) + s.slice(s.indexOf("\n", s.indexOf("// " + k + "_END")) + 1); }, s0);   // + HOUSEMIXSET (step 7 slice 2): Mom's "Mixed in" line on 👤 By person
 console.log("\n── 4 · the whole app, everyone at one level, chores at mixed levels: = " + WAS + " ──");
 if (HAVE_BASE) for (const mode of ["off", "preview", "on"]) for (const L of [1, 2, 3]) {
   if (mode !== "on" && L === 3) continue;   // off / preview never read the plan for lists; levels 1 and 2 cover them
