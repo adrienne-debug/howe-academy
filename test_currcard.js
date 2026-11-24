@@ -242,6 +242,10 @@ function mapOld(h) {
 function matches(want, set) { return (want instanceof RegExp) ? [...set].some(x => want.test(x)) : set.has(want); }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CURRSIMPLE (slice 6): test_curr_simple.js replays every condition pair below in the Simple and Everything views
+module.exports = { renderCard, renderTable, fixture, OLD, RICH, handlers };
+if (require.main !== module) return;   // required (test_curr_simple.js reuses this harness): the definitions only, no checks
+
 console.log("the block, the pill function, the card's helpers");
 {
   ok("CURRCARD block is marked", BLOCK.length > 2000 && src.indexOf("// CURRCARD_END") > src.indexOf("// CURRCARD_START"));

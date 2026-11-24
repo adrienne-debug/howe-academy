@@ -45,8 +45,10 @@ const deck = (subject, n, status) => Array.from({ length: n }, () => card(subjec
 // The feature taken out again: the block, the three ADDFLOW hook lines, the empty chip's door and the two DRILLROWS notes.
 // DRILLTHREE (slice 9) is taken out first, the same way on both sides (test_drill_three.js's stripThree; a no-op on a tree without it).
 const { stripThree } = require("./test_drill_three.js");
+// CURRSIMPLE (slice 6) touches the ADDFLOW sheet (More options): taken out first too, the same way on both sides (a no-op without it).
+const { stripSimple } = require("./test_curr_simple.js");
 function strip(s) {
-  s = stripThree(s);
+  s = stripThree(stripSimple(s));
   const a = s.indexOf("// DRILLADD_START"), b = s.indexOf("// DRILLADD_END");
   if (a >= 0 && b > a) s = s.slice(0, a) + s.slice(b + "// DRILLADD_END\n".length);
   return s
