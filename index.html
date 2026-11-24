@@ -64603,7 +64603,8 @@ function drRows(kid){
     const t=(typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[r.kind])||r.kind;
     return {kind:r.kind,ok:r.ok,title:t,days:r.days,dayText:r.days.map(function(d){ return DR_DAY_SHORT[d]||d; }).join(" "),
       min:(typeof retrSlotMinutes==="function")?retrSlotMinutes(kid,r.kind):null,
-      mom:((typeof retrSlotMom==="function")?retrSlotMom(r.kind):"required")==="none"?"on their own":"with Mom"};
+      mom:((typeof retrSlotMom==="function")?retrSlotMom(r.kind):"required")==="none"?"on their own":"with Mom",
+      pause:(typeof drPauseState==="function")?drPauseWords(drPauseState(kid,r.kind)):"", paused:(typeof drPauseState==="function")&&!!(drPauseState(kid,r.kind)||{}).now};   // DRILLPAUSE
   });
 }
 // An old-style every-day "Drills" subject (the key test taskDeepLinkView already uses) — the child has practice already.
@@ -64613,7 +64614,7 @@ function drHasOldDrills(kid){
 }
 function drLineText(r,name){
   if(!r.ok) return r.title+" · "+r.dayText+" — can’t run for "+name+" yet →";
-  return r.title+" · "+r.dayText+(r.min!=null?" · "+r.min+" min":"")+" · "+r.mom+" →";
+  return r.title+" · "+r.dayText+(r.min!=null?" · "+r.min+" min":"")+" · "+r.mom+(r.pause?" · "+r.pause:"")+" →";   // DRILLPAUSE: + "⏸ paused until Jan 3"
 }
 // The chips that go after the every-day subject chips in the purple strip ("" when there is nothing to show).
 function drStripChips(kid){
@@ -64623,7 +64624,7 @@ function drStripChips(kid){
   const base='margin:2px 4px 2px 0;padding:3px 10px;border-radius:12px;background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;max-width:100%;text-align:left;white-space:normal;';
   let h='';
   rows.forEach(function(r){
-    h+='<button class="dr-row" onclick="'+(r.ok?'drDaysOpen(\''+esc(arg)+'\',\''+r.kind+'\')':go)+'" title="'+(r.ok?'Card practice — tap to see or change the days':'This kind makes no card for '+nm+' — tap to change the plan')+'" style="'+base+'border:1px solid #c4b5fd;color:'+(r.ok?'#6d28d9':'#9ca3af')+'">'+esc(drLineText(r,name))+'</button>';
+    h+='<button class="dr-row" onclick="'+(r.ok?'drDaysOpen(\''+esc(arg)+'\',\''+r.kind+'\')':go)+'" title="'+(r.ok?'Card practice — tap to see or change the days':'This kind makes no card for '+nm+' — tap to change the plan')+'" style="'+base+'border:1px solid #c4b5fd;color:'+((r.ok&&!r.paused)?'#6d28d9':'#9ca3af')+'">'+esc(drLineText(r,name))+'</button>';   // DRILLPAUSE: greyed while paused
   });
   if(!rows.some(function(r){ return r.ok; })&&!drHasOldDrills(kid))
     h+='<button class="dr-empty" onclick="daOpen(\''+esc(arg)+'\')" style="'+base+'border:1.5px dashed #a78bfa;color:#6d28d9">＋ \u{1F0CF} Flash-card practice isn’t on '+nm+'’s week yet — set it up</button>';   // DRILLADD (slice 4): the empty chip opens ＋ Add subject ▸ 🃏 Card practice
@@ -64745,6 +64746,7 @@ function drDaysHtml(kid,kind){
     h+='</div></div>';
   }
   h+='<div style="margin-top:12px;font-size:12px;font-weight:700;color:#6d28d9">'+(min!=null?min+' min · ':'')+mom+'</div>';
+  if(typeof drPauseSheetHtml==="function"&&typeof drPauseState==="function") h+=drPauseSheetHtml(kid,kind);   // DRILLPAUSE: ⏸ Pause · Pause from / Resume on · ▶ Resume
   h+='<div class="dr-saved" style="margin-top:6px;font-size:12px;color:var(--muted)">'+(drDaysSaved===kid+"|"+kind
     ?'<b style="color:#15803d">Saved ✓</b>'+((typeof retrLivePending==="function"&&retrLivePending(kid))?' · this week’s cards update in a moment':'')
     :'Tap a day on or off — it saves by itself.')+'</div>';
@@ -64766,12 +64768,12 @@ function drDaysOpen(kid,kind){
   if(!_drCanRun(kid,kind)){ drGo(kid); return false; }   // a kind that makes no card for this child stays a pointer
   if(_drDaysTimer){ clearTimeout(_drDaysTimer); _drDaysTimer=null; }
   if(drDaysKid!==kid||drDaysKind!==kind) drDaysSaved=null;
-  drDaysKid=kid; drDaysKind=kind; drDaysFull=null;
+  drDaysKid=kid; drDaysKind=kind; drDaysFull=null; drPauseMsg="";   // DRILLPAUSE
   drDaysRender();
   return true;
 }
 function drDaysClose(quiet){
-  drDaysKid=null; drDaysKind=null; drDaysFull=null; drDaysSaved=null;
+  drDaysKid=null; drDaysKind=null; drDaysFull=null; drDaysSaved=null; drPauseMsg="";   // DRILLPAUSE
   if(typeof document!=="undefined"&&document.body){
     document.body.style.overflow="";
     const w=document.getElementById("dr-days-wrap");
@@ -64781,6 +64783,55 @@ function drDaysClose(quiet){
   if(!quiet&&typeof renderAll==="function") renderAll();   // the line behind shows the new days
 }
 function drDaysMastery(){ const kid=drDaysKid; drDaysClose(true); if(kid) drGo(kid); }
+// DRILLPAUSESHEET_START — ⏸ the pause rows on a card-practice line's day sheet (DRILLPAUSE, above in RETRWEEK, holds the rule and
+// the words). Family Time's own pause row (FTPAUSE) is mirrored: "Pause from" / "Resume on" date boxes, "✕ Don't pause" for a
+// pause that hasn't begun, ▶ Resume. Plus a plain ⏸ Pause (until ▶ Resume — her "and a plain pause"). Each tap = ONE write of
+// the kind's one leaf through drPlanWrite with {rhythm:true}, so the live pass (retrLiveQueue → relayWeek "retrieval") takes
+// this week's open cards off from today (or puts them back) the way a day tap does. Mom only (momHere); a refused date is
+// not saved and says why in a plain line — no dialogs. Test: test_drill_pause.js.
+let drPauseMsg="";
+function drPauseWrite(kid,kind,val){
+  if(!kid||!_drMom()||DR_KINDS.indexOf(kind)<0) return false;
+  const pl={}; pl["pausedKinds/"+kind]=val;
+  if(!drPlanWrite(kid,pl,{rhythm:true})) return false;
+  drDaysSaved=kid+"|"+kind; drPauseMsg="";
+  return true;
+}
+function drPauseNow(){ const ok=drPauseWrite(drDaysKid,drDaysKind,true); drDaysRender(); return ok; }   // ⏸ until ▶ Resume
+function drResumeNow(){ const ok=drPauseWrite(drDaysKid,drDaysKind,null); drDaysRender(); return ok; }   // ▶ Resume / ✕ Don't pause: the leaf goes
+// Pause from `from` (a past or empty date = today) · Resume on `back` (needed; the first day back, after `from`, after today)
+function drPauseDates(from,back){
+  const kid=drDaysKid, kind=drDaysKind; if(!kid||!kind||!_drMom()) return false;
+  const today=drToday(); from=(drIsoOk(from)&&from>today)?from:today;
+  const say=function(m){ drPauseMsg=m; drDaysRender(); return false; };
+  if(!drIsoOk(back)) return say("Pick the day it comes back (Resume on) — or tap ⏸ Pause to pause until you tap ▶ Resume.");
+  if(back<=today) return say("Resume on "+drMD(back)+" has already come — nothing saved. Pick a later day.");
+  if(back<=from) return say("Resume on has to be after Pause from — nothing saved.");
+  const ok=drPauseWrite(kid,kind,{pauseFrom:from,resumeOn:back}); drDaysRender(); return ok;
+}
+function drPauseSheetHtml(kid,kind){
+  const today=drToday(), st=drPauseState(kid,kind,today);
+  const name=(typeof cap==="function")?cap(kid):kid;
+  const bt=function(cls,lbl,fn,on){ return '<button class="'+cls+'" onclick="'+fn+'" style="min-height:44px;padding:8px 14px;border-radius:10px;border:1.5px solid #c4b5fd;background:'+(on?'#5b21b6':'#fff')+';color:'+(on?'#fff':'#5b21b6')+';font-size:12.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  const inp='min-height:44px;box-sizing:border-box;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif;background:#fff;max-width:100%';
+  const L=function(t){ return '<span style="font-size:12px;font-weight:800;color:#5b21b6">'+t+'</span>'; };
+  let h='<div class="ce-sheet-lbl">Pause</div><div class="dr-pause" style="font-size:12px">';
+  if(!st){
+    h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+bt('dr-pause-now','⏸ Pause',"drPauseNow()",false)+'<span style="color:var(--muted)">until you tap ▶ Resume</span></div>';
+    h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px">'+L('Or pause from')+'<input data-drp="f" type="date" min="'+today+'" value="'+today+'" style="'+inp+'">'
+      +L('Resume on')+'<input data-drp="r" type="date" min="'+drIsoAdd(today,1)+'" value="" style="'+inp+'">'
+      +bt('dr-pause-dates','⏸ Pause these days',"var p=this.parentNode;drPauseDates(p.querySelector('[data-drp=f]').value,p.querySelector('[data-drp=r]').value)",false)+'</div>';
+  } else {
+    h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="dr-pause-words" style="font-weight:800;color:#b45309">'+esc(drPauseWords(st))+'</span>'
+      +(st.now?bt('dr-resume','▶ Resume',"drResumeNow()",true):bt('dr-resume','✕ Don’t pause',"drResumeNow()",true))+'</div>';
+    h+='<div style="margin-top:6px;color:#92400e;line-height:1.4">'+esc(st.now
+      ?'No '+((typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[kind])||kind)+' card goes on '+name+'’s days while it’s paused. '+(st.back?'It comes back by itself on '+drMD(st.back)+', on the same days.':'▶ Resume brings it back on the same days.')
+      :'It runs as usual until '+drMD(st.from)+'. '+(st.back?'Then it’s off until it comes back by itself on '+drMD(st.back)+'.':'Then it’s off until you tap ▶ Resume.'))+'</div>';
+  }
+  if(drPauseMsg) h+='<div class="dr-pause-msg" style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#fef3c7;border:1px solid #fcd34d;color:#92400e">'+esc(drPauseMsg)+'</div>';
+  return h+'</div>';
+}
+// DRILLPAUSESHEET_END
 // DRILLDAYS_END
 // DRILLADD_START — 🃏 "＋ Add subject ▸ Card practice" on a child's Curriculum page (slice 4 of
 // DESIGN_drill_rows_curriculum_2026-11-19.md, §3.4 / §3.5 / §3.7 / §4). Her picks 2026-11-22: a brand-new kind must be
@@ -88573,7 +88624,7 @@ function retrCoopOff(kid,ds,kind){
   try{ return retrSlotMom(kind)==="required"&&!!coopNoMomBaseFor(kid,ds); }catch(e){ return false; }
 }
 // the kinds laid for this child on weekday dk (mon…fri) of date ds (YYYY-MM-DD); no date = the plan's kinds, as before
-function retrDayKindsOn(kid,dk,ds){ return retrDayKinds(kid,dk).filter(function(k){ return !retrCoopOff(kid,ds,k); }); }
+function retrDayKindsOn(kid,dk,ds){ return retrDayKinds(kid,dk).filter(function(k){ return !retrCoopOff(kid,ds,k)&&!(typeof retrPausedOn==="function"&&retrPausedOn(kid,ds,k)); }); }   // DRILLPAUSE: + a kind paused on that date
 // the co-op children whose practice cards the one-date flip re-lays: plan on, and ds is today or later in the active week
 function retrCoopFlipKids(ds,kids){
   const out=[];
@@ -88587,6 +88638,57 @@ function retrCoopFlipKids(ds,kids){
   return out;
 }
 // DRILLCOOP_END
+// DRILLPAUSE_START — ⏸ pause one kind of card practice, plain or with dates (her picks 2026-11-22 on the design's question 7,
+// DESIGN_drill_rows_curriculum_2026-11-19.md §3.6 / slice 5: "Pause with dates" and then "and a plain pause"). Stored as one leaf
+// in the plan node, written only through drPlanWrite (DRILLSAVE) as ONE targeted path:
+//   · mastery/retrievalPlan/<kid>/pausedKinds/<kind> = true — paused on every date until ▶ Resume (the design's shape)
+//   · … = {pauseFrom:"YYYY-MM-DD", resumeOn:"YYYY-MM-DD"} — Family Time's two leaves with Family Time's meaning (FTPAUSE,
+//     uftPausedOn): pauseFrom is the first paused day, resumeOn the first day back, so "Dec 1 – Jan 3" is stored Dec 1 / Jan 4
+//     and it comes back by itself on Jan 4. A pause whose resumeOn has come is over and simply stops applying (no clean-up write).
+// ▶ Resume removes the leaf. The saved days (week / week2 / week3) are never touched, so Resume brings back the same days.
+// One laying rule, one place: retrDayKindsOn (DRILLCOOP) leaves a paused kind out on that date, so the week builder
+// (gwInjectRetrieval), the live-week pass (RETRLIVE), the Grid's Min column and the brain-work strip follow. The plan's own
+// readers do not change (retrDayKinds, retrOn, drPlanFor): a paused kind is still on the plan — its Curriculum line stays
+// (greyed, with ⏸ and until when), its day buttons stay lit, it keeps its slot in the three-a-day limit and ＋ Add subject ▸
+// Card practice never offers it again as missing. Test: test_drill_pause.js.
+const DR_MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function drIsoOk(s){ return typeof s==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(s); }
+function drIsoAdd(s,n){ const p=s.split("-"), d=new Date(+p[0],+p[1]-1,+p[2]+n); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function drMD(s){ const p=s.split("-"); return DR_MON[+p[1]-1]+" "+(+p[2]); }
+function drToday(){ if(typeof calToday==="function") return calToday(); const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+// the stored pause of one kind → null | {plain:true} | {plain:false, from, back} (an object with no good date = a plain pause)
+function retrPauseOf(kid,kind){
+  const rp=((typeof masteryData!=="undefined"&&masteryData&&masteryData.retrievalPlan)||{})[kid]||{};
+  const pk=rp.pausedKinds; if(!pk||typeof pk!=="object") return null;
+  const v=pk[kind];
+  if(v===true) return {plain:true,from:null,back:null};
+  if(!v||typeof v!=="object") return null;
+  const f=drIsoOk(v.pauseFrom)?v.pauseFrom:null, b=drIsoOk(v.resumeOn)?v.resumeOn:null;
+  return (f||b)?{plain:false,from:f,back:b}:{plain:true,from:null,back:null};
+}
+// is `kind` paused for this child on date ds? plain → every date; dated → pauseFrom ≤ ds < resumeOn (Family Time's rule)
+function retrPausedOn(kid,ds,kind){
+  const p=retrPauseOf(kid,kind); if(!p) return false;
+  if(p.plain) return true;
+  if(!drIsoOk(ds)) return false;
+  return (!p.from||ds>=p.from)&&(!p.back||ds<p.back);
+}
+// for the line and the sheet, on `today`: null (no pause, or one that is over) | {now:true|false, plain, from, back}
+function drPauseState(kid,kind,today){
+  const p=retrPauseOf(kid,kind); if(!p) return null;
+  today=drIsoOk(today)?today:drToday();
+  if(p.plain) return {now:true,plain:true,from:null,back:null};
+  if(p.back&&p.back<=today) return null;
+  return {now:!(p.from&&p.from>today),plain:false,from:p.from,back:p.back};
+}
+// "⏸ paused" · "⏸ paused until Jan 3" (the last paused day) · ahead: "⏸ pauses Dec 1 – Jan 3" / "⏸ pauses from Dec 1"
+function drPauseWords(st){
+  if(!st) return "";
+  const last=st.back?drMD(drIsoAdd(st.back,-1)):"";
+  if(st.now) return "⏸ paused"+(last?" until "+last:"");
+  return "⏸ pauses "+(st.from?(last?drMD(st.from)+" – "+last:"from "+drMD(st.from)):"");
+}
+// DRILLPAUSE_END
 // RETRWEEK_END
 // P3 Match heat-map: per-deck accuracy over the last heatmap_window calendar days of
 // drill history; suggest the WORST deck among those Match can actually play (≥4 pairs).
@@ -88720,11 +88822,23 @@ function drPlanWrite(kid,payload,o){
   if(!kid||typeof kid!=="string"||/[.#$\[\]\/]/.test(kid)) return false;
   if(!payload||typeof payload!=="object"||Array.isArray(payload)||!Object.keys(payload).length) return false;
   if(!masteryData.retrievalPlan) masteryData.retrievalPlan={};
-  masteryData.retrievalPlan[kid]=Object.assign({},masteryData.retrievalPlan[kid]||{},JSON.parse(JSON.stringify(payload)));   // update() keeps the kid's other keys — the mirror does too
+  const _dpLeaf=Object.keys(payload).filter(function(k){ return k.indexOf("/")>=0; });   // DRILLPAUSE: "pausedKinds/<kind>" = that one leaf (update() writes that path only)
+  if(_dpLeaf.some(function(k){ return !/^[^.#$\[\]\/]+(\/[^.#$\[\]\/]+)+$/.test(k); })) return false;   // DRILLPAUSE: no empty or bad path part
+  const _dpFlat={}; Object.keys(payload).forEach(function(k){ if(k.indexOf("/")<0) _dpFlat[k]=payload[k]; });   // DRILLPAUSE
+  masteryData.retrievalPlan[kid]=Object.assign({},masteryData.retrievalPlan[kid]||{},JSON.parse(JSON.stringify(_dpFlat)));   // update() keeps the kid's other keys — the mirror does too
+  _dpLeaf.forEach(function(k){ drPlanMirrorLeaf(masteryData.retrievalPlan[kid],k,payload[k]); });   // DRILLPAUSE
   if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/retrievalPlan/"+kid).update(payload);
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   if(o.rhythm&&typeof retrLiveQueue==="function") retrLiveQueue(kid);
   return true;
+}
+// DRILLPAUSE: the mirror of one "a/b" leaf — copies on the way down (never edits a shared object), null removes it and any
+// parent it leaves empty (as the database does)
+function drPlanMirrorLeaf(obj,p,v){
+  const ks=p.split("/"), path=[obj]; let o=obj;
+  for(let i=0;i<ks.length-1;i++){ o[ks[i]]=(o[ks[i]]&&typeof o[ks[i]]==="object")?Object.assign({},o[ks[i]]):{}; o=o[ks[i]]; path.push(o); }
+  if(v===null||v===undefined) delete o[ks[ks.length-1]]; else o[ks[ks.length-1]]=JSON.parse(JSON.stringify(v));
+  for(let i=ks.length-2;i>=0;i--){ if(Object.keys(path[i+1]).length) break; delete path[i][ks[i]]; }
 }
 // DRILLSAVE_END
 // RETRSAVE_END
@@ -88867,12 +88981,13 @@ function retrSchedStripHtml(kid,day){
     let ml=(masteryData.matchLog||{})[kid]||[]; if(!Array.isArray(ml)) ml=Object.values(ml);
     const matchDone=ml.some(e=>e&&e.date===today);
     const kinds=retrTodayKinds(kid).filter(k=>!(typeof retrCoopOff==="function"&&retrCoopOff(kid,(typeof calToday==="function")?calToday():today,k)));   // DRILLCOOP: no Mom-run chip on a ticked co-op day
+    const _dpKinds=kinds.filter(k=>!(typeof retrPausedOn==="function"&&retrPausedOn(kid,(typeof calToday==="function")?calToday():today,k)));   // DRILLPAUSE: no chip for a kind paused today
     const chip=(icon,label,done,view)=>'<button onclick="retrSchedGo(\''+kid+'\',\''+view+'\')" '
       +'style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;border:1.5px solid '+(done?'#86efac':'#e2ddd6')
       +';background:'+(done?'#f0fdf4':'#fff')+';color:'+(done?'#15803d':'#57534e')
       +';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+icon+' '+esc(label)+(done?' ✓':'')+'</button>';
     let chips=chip("\u{1F0CF}","Daily Drill",drillDone,"drill");
-    kinds.forEach(kind=>{
+    _dpKinds.forEach(kind=>{   // DRILLPAUSE
       if(kind==="sprint"||kind==="recheck"){
         let lbl=kind==="recheck"?"Re-checks":"Sprint";
         try{

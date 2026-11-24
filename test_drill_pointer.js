@@ -62,7 +62,8 @@ module.exports = { stripPoint };
 if (require.main !== module) return;
 
 const fs = require("fs"), path = require("path"), vm = require("vm"), cp = require("child_process");
-const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const { stripPause } = require("./test_drill_pause.js");   // DRILLPAUSE (slice 5): this test pins its own slice on the tree with the pause taken out (both sides); test_drill_pause.js pins the pause
+const src = stripPause(fs.readFileSync(path.join(__dirname, "index.html"), "utf8"));   // DRILLPAUSE
 let pass = 0, fail = 0;
 function ok(n, c, x) { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + JSON.stringify(x).slice(0, 700) + ")" : "")); } }
 function fnIn(S, name) { const i = S.indexOf("function " + name + "("); if (i < 0) throw new Error("not found " + name); let d = 0; for (let k = S.indexOf("{", i); k < S.length; k++) { if (S[k] === "{") d++; else if (S[k] === "}") { d--; if (!d) return S.slice(i, k + 1); } } throw new Error("unbalanced " + name); }
@@ -84,7 +85,7 @@ console.log("0. stripPoint undoes the slice exactly");
   ok("stripped: no trace of the slice", !/DRILLPOINT|drPoint|dr-point/.test(S0));
   ok("stripped: the old day buttons, their tap and the whole-plan Reset are back", /function retrAdminCycleDay\(day,row\)\{/.test(S0) && /Weekly rhythm — tap a day to cycle/.test(S0)
     && /if\(db\) db\.ref\("mastery\/retrievalPlan\/"\+kid\)\.remove\(\);/.test(S0));
-  let main = ""; try { main = cp.execSync("git show origin/main:index.html", { cwd: __dirname, encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { main = ""; }
+  let main = ""; try { main = cp.execSync("git show origin/main:index.html", { cwd: __dirname, encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { main = ""; } main = stripPause(main);   // DRILLPAUSE: the same on origin/main's side
   if (main) {
     const M0 = stripPoint(main);
     ok("stripped, the Retrieval Plan panel (P3 → P4) equals origin/main's (stripped the same way — still true after the merge)", sliceIn(S0, PANEL0, PANEL1) === sliceIn(M0, PANEL0, PANEL1));
