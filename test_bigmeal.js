@@ -32,7 +32,7 @@ function world(opt) {
   const document = { body, head, getElementById(id) { return nodes[id] || null; }, createElement(t) { const e = el(""); e.tag = t; if (t === "script") o.scripts.push(e); return e; } };
   const db = { ref(p) { return { update(v) { o.writes.push({ path: p, val: JSON.parse(JSON.stringify(v)) }); }, set(v) { o.writes.push({ path: p, set: v }); }, remove() { o.writes.push({ path: p, remove: true }); },
     on(ev, cb) { o.on.push(p); o.cbs[p] = cb; }, once() {} }; } };
-  const ctx = { console: { log() {}, warn() {} }, Date, Math, JSON, document, db, location: { hostname: "localhost" },
+  const ctx = { console: { log() {}, warn() {} }, Date, Math, JSON, document, db, skJobsN: () => 0, location: { hostname: "localhost" },
     _todayStr: () => o.today, _dryRun: () => o.dry, momHere: () => o.mom, _kioskD: () => false, gwShowToast: m => o.toasts.push(m),
     HA_LS: { getItem: () => null, setItem() {} }, tab: "moms-plan", mpSubView: "seasons", momSchedView: false, renderMomsPlan() {}, mpGoto() {},
     momdayData: {}, setTimeout: () => 0, bankDirect: () => "b", bankDirectRemove() {}, cuUnpay: () => false, choreVerifyOn: () => false,
