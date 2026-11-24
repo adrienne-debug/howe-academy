@@ -43200,7 +43200,7 @@ function dcActChecksHTML(g,act){
     const st='display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:2px solid '+(done?'#4ade80':(wait?'#fcd34d':'rgba(255,255,255,.25)'))+';background:'+(done?'#166534':'transparent')+';color:#fff;font-size:15px;font-weight:800;font-family:\'DM Sans\',sans-serif';
     const inner=dcEsc(dcName(k))+' <span>'+(done?'✓':(wait?'⏳':'○'))+'</span>';
     if(mom) h+='<button data-dc-actkid="'+dcEsc(k)+'" onclick="dcActTap(\''+dcJ(uid)+'\',\''+dcJ(k)+'\',\''+dcJ(act.key)+'\')" style="'+st+';cursor:pointer">'+inner+'</button>';
-    else h+='<span data-dc-actkid="'+dcEsc(k)+'" style="'+st+'">'+inner+'</span>'; });
+    else h+=((typeof uacChipHTML==="function")&&uacChipHTML(g,act,k,done,wait,st))||('<span data-dc-actkid="'+dcEsc(k)+'" style="'+st+'">'+inner+'</span>'); });   // UACTCLAIM: his own chip on his own device = 🙋 I did it
   return h+'</div>';
 }
 // UNITACTCHK_END
@@ -44332,6 +44332,56 @@ function uahCardHTML(g,act){
   return h;
 }
 // UACTHANDS_END
+// UACTCLAIM_START — 🙋 the kid's own "I did it" on Today's card (slice 6 of PLAN_unit_activity_types_2026-11-19 §4 row 6 and §2(b):
+//   "Slice 6 adds 🙋 I did it for the kid on the card (today a kid can only claim what is queued to his notebook)"; her go 2026-11-22/23:
+//   "go with her answers and build").
+//   · THE GATE (unitActivityClaim, U7 — one guarded clause): a kid may claim an activity Mom queued to his notebook (as before) OR one
+//     on TODAY'S unit day for him, tapped on his OWN device (the Kids' Corner kid, Mom mode off, the same kid, enrolled in the unit).
+//     "Today's unit day for him" = a family card of today he is at (DAYCARD's dcTodayGroups: his copy, not marked away) or his own
+//     subject's card of today (utDayForTask), and the activity is one that day shows (dcActivities: its nb, or day = the day's n).
+//     Another kid's chip, another day's activity, the shared board, Mom's device: refused.
+//   · THE CHIP (UNITACTCHK's row, one guarded hook): on his device his own chip — only his — is a button: "🙋 I did it" → the claim, and
+//     the chip turns ⏳ (tap it again = the claim's own "Cancel this claim?"). ✓ done stays a plain chip; a sibling's chip stays a plain
+//     name; Mom's chips stay her ✓ buttons; the board's stay plain. 44 px tall for a finger.
+//   · WHAT IS WRITTEN: nothing new — unitActivityClaim's own leaf, unitStudies/<id>/activityClaims/<kid>/<key> = {ts} (cancel: that leaf
+//     removed), by the kid, through the app's dry-run db patch. Mom's Day ("waiting for your check" / approvals) lists it with ✓ Approve
+//     and ✗ as it lists a notebook claim; ✓ Approve posts the activity's points as today (unitActivityApprove, momHere()). Those approve
+//     controls are unchanged — no new approve control is added, Mom-only or otherwise.
+//   No kid's or family's name in code.
+// this device's kid: the Kids' Corner kid when Mom is not here; "" on Mom's device and the shared board
+function uacDevKid(){
+  try{ if((typeof dcMom==="function"&&dcMom())||(typeof momHere==="function"&&momHere())) return "";
+    const R=(typeof ROSTER!=="undefined"&&Array.isArray(ROSTER))?ROSTER:[]; return (typeof kcKid!=="undefined"&&kcKid&&R.indexOf(kcKid)>=0)?String(kcKid):""; }catch(e){ return ""; }
+}
+// his own subject cards of today (family time is dcTodayGroups')
+function uacKidCards(kid){
+  let tasks=[]; try{ tasks=(typeof getActiveTasks==="function")?getActiveTasks():(((typeof weekData!=="undefined"&&weekData)||{}).tasks||[]); }catch(e){ tasks=[]; }
+  const td=(typeof _todayDay!=="undefined")?_todayDay:"";
+  return (tasks||[]).filter(t=>{ if(!t||t.who!==kid||t.famBlock||!t.subjectKey) return false; try{ return ((typeof effectiveDay==="function")?effectiveDay(t):t.day)===td; }catch(e){ return false; } });
+}
+// unitActivityClaim's second door: this activity is on today's unit day for this kid, and this is his own device
+function uacToday(uid,kid,key){
+  if(!uid||!kid||!key||uacDevKid()!==kid) return false;
+  const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[uid]; if(!u||!((u.enrolled||{})[kid])) return false;
+  const has=g=>dcActivities(g).some(a=>a&&a.key===key);
+  let gs=[]; try{ gs=dcTodayGroups(); }catch(e){ gs=[]; }
+  if(gs.some(g=>g&&g.day&&g.day.uid===uid&&(g.present||[]).indexOf(kid)>=0&&has(g))) return true;
+  return uacKidCards(kid).some(t=>{ let d=null; try{ d=utDayForTask(t); }catch(e){ d=null; } return !!(d&&d.uid===uid&&has({day:d,u:u})); });
+}
+// UNITACTCHK's hook: his own chip on his own device → a button; "" = the plain chip as before
+function uacChipHTML(g,act,k,done,wait,st){
+  if(done||!g||!g.day||!g.day.uid||!act||!act.key) return "";
+  const me=uacDevKid(); if(!me||me!==k||(g.present||[]).indexOf(k)<0) return "";
+  return '<button data-dc-actkid="'+dcEsc(k)+'" data-uac-claim="'+(wait?'wait':'open')+'" onclick="uacTap(\''+dcJ(g.day.uid)+'\',\''+dcJ(k)+'\',\''+dcJ(act.key)+'\')" style="'+st+';min-height:44px;cursor:pointer'+(wait?'':';background:#4338ca;border-color:#a5b4fc')+'">'+dcEsc(dcName(k))+' <span>'+(wait?'⏳':'\u{1F64B} I did it')+'</span></button>';
+}
+// the tap: only his own chip, on his own device; unitActivityClaim does the rest (and checks the day)
+function uacTap(uid,kid,key){
+  if(!kid||uacDevKid()!==kid||typeof unitActivityClaim!=="function") return false;
+  const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[uid]; if(!u) return false;
+  const on=()=>!!(((u.activityClaims||{})[kid]||{})[key]), was=on();
+  unitActivityClaim(uid,kid,key); return on()!==was;
+}
+// UACTCLAIM_END
 // UNITDAY_EXTRAS_START — 🖼 Pictures & documents and 🍎 Snack on a unit day (her words 2026-11-11, for Sara, a beta mom: "Sarah would
 //   like to add on day 6 a gratitude scavenger hunt. She has a picture of it. So it would be good if on each day another section that
 //   they could add to that is pictures and documents that would open when they click it on that day. Also, a section for snacks that
@@ -56238,7 +56288,7 @@ function unitActivityClaim(unitId,kid,actKey){
     delete u.activityClaims[kid][actKey];
     if(db) db.ref("unitStudies/"+unitId+"/activityClaims/"+kid+"/"+actKey).remove();
   } else {
-    if(_nbActKeys(u,kid).indexOf(actKey)<0) return; // claimable only once Mom queued it to THIS kid
+    if(_nbActKeys(u,kid).indexOf(actKey)<0&&!(typeof uacToday==="function"&&uacToday(unitId,kid,actKey))) return; // claimable once Mom queued it to THIS kid — UACTCLAIM: or it is on today's unit day for him, tapped on his own device
     u.activityClaims[kid][actKey]={ts:Date.now()};
     if(db) db.ref("unitStudies/"+unitId+"/activityClaims/"+kid+"/"+actKey).set({ts:Date.now()});
   }
