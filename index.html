@@ -61142,6 +61142,7 @@ function kyPanelHTML(kid,col){
   const tabs=[["hours",cw("kyHours")],["terms",cw("schoolSessions")],["lanes",cw("kyLanes")],["all",cw("allSubjects")]];
   if(!tabs.some(function(t){ return t[0]===kyTab; })) kyTab="hours";
   let h='<div id="ky-panel" style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;scroll-margin-top:170px">';
+  if(typeof lmcRowHTML==="function") h+=lmcRowHTML(kid,col);   // LMCLEAR: the one-time Clear old make-ups row, only while there are any
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">';
   tabs.forEach(function(t){ const on=kyTab===t[0];
     h+='<button onclick="kySetTab(\''+t[0]+'\')" style="padding:5px 12px;border-radius:14px;border:1.5px solid '+(on?col:'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+t[1]+'</button>'; });
@@ -61174,6 +61175,76 @@ function kyCopyLand(kid,sk){
 // 📋 Plan resources on the card draws its 📎 panel itself; the Grid then must not draw a second copy (its inputs are read by id).
 function kyLrpOnCard(){ return !!(typeof lrPanel!=="undefined"&&lrPanel&&typeof ceEditKid!=="undefined"&&ceEditKid===lrPanel.kid&&ceEditKey===lrPanel.sk&&typeof lrpIsOpen==="function"&&lrpIsOpen(lrPanel.kid,lrPanel.sk)); }
 // KIDYEAR_END
+// LMCLEAR_START — 🧹 Clear old make-ups: a one-time row at the top of 📅 <Kid>’s year (Curriculum streamline slice 3b,
+//   LMCLEANUP; her call 2026-11-23 answering AUDIT_lessonmap_dead_2026-11-21.md §11 question 1: "A Clear button I tap").
+//   The old Finish Line "Extend" tool left make-up slots behind — scheduleOverrides/<date>/<kid>/added/<subject> === true —
+//   and its only Clear button sat on the retired Subjects page (removed in this slice). The live ➕ make-up writes the very
+//   same `true`, so code cannot tell an Extend leftover from one she added by hand: she sees every date, then taps.
+//   The row shows only while the kid has any such entry and is gone once there are none; counts and dates come from the
+//   data. Clear removes exactly the listed entries — one multi-path update of nulls on scheduleOverrides/<date>/<kid>/
+//   added/<subject> — and nothing else: a moved-in make-up (its value is a lesson string), `removed`, every other kid stay.
+//   It leaves things as N taps of ✕ make-up would (gvMenuOffAdded → lmDropSlot): the same entries gone, an armed ➡ move
+//   dropped (lmMovePick=null), a re-render — no re-lay, no toast, no history, no week write (✕ make-up does none of those).
+//   Mom-only; the write goes through db only when db && !_dryRun(); a dry run changes nothing and says so.
+let lmcAsk=null;   // the kid whose Clear list is open (the in-page confirm), or null
+// Every added[subject]===true entry for this kid, by date: [{date, sks:[subject…]}], oldest first.
+function lmcList(kid){
+  const out=[];
+  Object.keys(scheduleOverrides||{}).sort().forEach(function(d){
+    const a=(((scheduleOverrides||{})[d]||{})[kid]||{}).added;
+    if(!a||typeof a!=="object") return;
+    const sks=Object.keys(a).filter(function(sk){ return a[sk]===true; }).sort();
+    if(sks.length) out.push({date:d,sks:sks});
+  });
+  return out;
+}
+function lmcDate(d){ try{ return new Date(d+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",year:"numeric"}); }catch(e){ return d; } }
+function lmcRowHTML(kid,col){
+  if(typeof momHere!=="function"||!momHere()) return "";
+  const L=lmcList(kid); if(!L.length){ if(lmcAsk===kid) lmcAsk=null; return ""; }
+  const n=L.reduce(function(t,e){ return t+e.sks.length; },0);
+  const B="border-radius:8px;padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;flex-shrink:0";
+  let h='<div id="lmc-row" style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:12px">';
+  h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><div style="font-size:12px;color:#92400e;flex:1;min-width:0">🧹 <b>'+n+'</b> old make-up'+(n>1?'s':'')+' on <b>'+L.length+'</b> day'+(L.length>1?'s':'')+', <b>'+esc(lmcDate(L[0].date))+'</b>'+(L.length>1?' – <b>'+esc(lmcDate(L[L.length-1].date))+'</b>':'')+'. Most were left by the old Extend button; a ➕ make-up looks the same.</div>';
+  if(lmcAsk!==kid) h+='<button onclick="lmcOpen(\''+kid+'\')" style="'+B+';border:1px solid #f59e0b;background:#fff;color:#b45309">See the dates…</button>';
+  h+='</div>';
+  if(lmcAsk===kid){
+    h+='<div style="margin-top:8px;font-size:11.5px;color:#78350f">These go — make-ups on each day:</div>';
+    h+='<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin:6px 0 10px;font-size:11.5px">';
+    L.forEach(function(e){ h+='<span class="lmc-day">'+esc(lmcDate(e.date))+' · <b>'+e.sks.length+'</b></span>'; });
+    h+='</div><div style="display:flex;gap:8px;flex-wrap:wrap">';
+    h+='<button onclick="lmcClear(\''+kid+'\')" style="'+B+';border:none;background:#b45309;color:#fff">🧹 Clear these '+n+'</button>';
+    h+='<button onclick="lmcOpen(\''+kid+'\')" style="'+B+';border:1px solid var(--border);background:#fff;color:var(--text)">Cancel</button>';
+    h+='</div>';
+  }
+  return h+'</div>';
+}
+function lmcOpen(kid){ if(typeof momHere!=="function"||!momHere()) return; lmcAsk=(lmcAsk===kid)?null:kid; renderAll(); }
+function lmcClear(kid){
+  if(typeof momHere!=="function"||!momHere()) return;
+  const L=lmcList(kid);
+  if(!L.length){ lmcAsk=null; renderAll(); return; }
+  if(typeof _dryRun==="function"&&_dryRun()){ try{ gwShowToast("Dry run — nothing was cleared."); }catch(e){} return; }
+  const up={};
+  L.forEach(function(e){ e.sks.forEach(function(sk){ up[e.date+"/"+kid+"/added/"+sk]=null; }); });
+  // This device's copy and its save baseline (SO): drop the same entries and prune what empties, as setSchedOverride
+  // does after ✕ make-up — so the next override save sees nothing new to write.
+  [scheduleOverrides,(typeof _soBase!=="undefined"?_soBase:null)].forEach(function(T){
+    if(!T) return;
+    L.forEach(function(e){
+      const o=(T[e.date]||{})[kid]; if(!o||!o.added) return;
+      e.sks.forEach(function(sk){ if(o.added[sk]===true) delete o.added[sk]; });
+      if(!Object.keys(o.added).length) delete o.added;
+      if(!Object.keys(o).length) delete T[e.date][kid];
+      if(T[e.date]&&!Object.keys(T[e.date]).length) delete T[e.date];
+    });
+  });
+  try{ HA_LS.setItem("ha_sched_overrides",JSON.stringify(scheduleOverrides)); }catch(e){}
+  if(db&&!_dryRun()) db.ref("scheduleOverrides").update(up);
+  lmcAsk=null; lmMovePick=null;
+  renderAll();
+}
+// LMCLEAR_END
 // Multi-cell (Excel-style) selection: pick many cells, then Clear or Fill them at once.
 let gvSelMode=false, gvSel=new Set(), gvSelAnchor=null, gvSelUndo=null;
 
