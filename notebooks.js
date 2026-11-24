@@ -43,6 +43,46 @@
 
   function cap(s) { s = String(s == null ? "" : s); return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
 
+  // NBLEVEL_START — one level (notebooks study step 2, approved 2026-11-23: "Notebook reads the Family grade (Pre-K to 8th),
+  // with an override … Headers show the right grade; the 5th/6th mismatch goes away. No content change."). The app passes
+  // ctx.grade (the grade word: "Pre-K", "Kindergarten", "1st Grade" … "12th Grade" — index.html nbLevelGrade: the Notebook tab
+  // override, else the Settings ▸ Family grade) and ctx.gradeBand (Pre-K · K · 1st–2nd · 3rd–4th · 5th–6th · 7th–8th — for
+  // later builds; nothing here reads it yet). Every grade word typed into a notebook goes through nbLvWord: no ctx.grade (or
+  // one it can't read) = exactly the word typed there, so a kid with no grade set prints byte for byte what printed before.
+  // Grade words only — which notebook a kid gets, its content, layout and level switches are untouched.
+  function nbLvNum(g) {   // -1 Pre-K · 0 K · n grade n (1–12) · null unknown
+    g = String(g == null ? "" : g).trim(); if (!g) return null;
+    if (/^pre-?\s*k/i.test(g)) return -1; if (/^k$|^kinder/i.test(g)) return 0;
+    var m = g.match(/^(\d{1,2})(?!\d)/), n = m ? parseInt(m[1], 10) : NaN;
+    return n >= 1 && n <= 12 ? n : null;
+  }
+  function nbLvOrd(n) { return n + (n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"); }
+  // form "long" (headers, footers, covers): Pre-K · Kindergarten · 6th Grade — "short" (picker labels): Pre-K · K · 6th
+  function nbLvWord(ctx, fallback, form) {
+    var n = nbLvNum(ctx && ctx.grade); if (n === null) return fallback;
+    if (n === -1) return "Pre-K";
+    if (form === "short") return n === 0 ? "K" : nbLvOrd(n);
+    return n === 0 ? "Kindergarten" : nbLvOrd(n) + " Grade";
+  }
+  // a config / theme object whose .grade is a typed grade word → the same object, or a copy carrying the context's word
+  function nbLvWith(obj, ctx) { var g = nbLvWord(ctx, obj.grade, "long"); return g === obj.grade ? obj : Object.assign({}, obj, { grade: g }); }
+  // Two older notebooks print their grade inside many page functions: generateEllis / generateLucy set this to the
+  // build's ctx first thing (the same pattern as the US Path record), and lvG reads it. null = the typed word.
+  var _nbLvCtx = null;
+  function lvG(fallback, form) { return nbLvWord(_nbLvCtx, fallback, form); }
+  // A Pre-K notebook's own look (JU_THEME, CB_THEME — written for one child) carries its grade word in .grade, its eyebrow and
+  // footer (and the page set's P): when ctx.grade gives another word, those fields take it. The data-driven looks already
+  // read it through pkKidName. Same word, or none = the look untouched.
+  function pkOwnGrade(T, ctx) {
+    var old = T && T.grade, want = old ? nbLvWord(ctx, old, "long") : old;
+    if (!old || want === old) return T;
+    var sub = function (v) { return typeof v === "string" ? v.split(old).join(want) : v; };
+    var out = Object.assign({}, T, { grade: want, eyebrow: sub(T.eyebrow), footer: sub(T.footer) });
+    if (T.P) out.P = Object.assign({}, T.P, { eyebrow: sub(T.P.eyebrow), footer: sub(T.P.footer) });
+    return out;
+  }
+  // NBLEVEL_END
+
   /* ── Calendar-time helpers (days / months / seasons / weather) ── */
   var DOW_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   var DOW_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -1422,7 +1462,7 @@
       '    <span class="path-end">🥚</span>\n';
   }
 
-  function juPageParent(weekNum, weekDates, cur, teachNotes) {
+  function juPageParent(weekNum, weekDates, cur, teachNotes, T) {
     var letters = cur.letters.join(" · ");
     var numbers = cur.numbers.join(" · ");
     var shapes = cur.shapes.join(", ");
@@ -1444,7 +1484,7 @@
         + revBits.join(" · ") + '. These are the ones he\'s stumbled on in drills, so they resurface in the daily pages (look for the 🔁 badge) for a friendly second look — no pressure.</div>'
       : "";
     return '<div class="page-label">Parent Guide — Week ' + weekNum + '</div>\n<div class="page">\n' +
-      juHeader("Howe Academy · Pre-K", "Julian's Grown-Up Guide", "how to do the notebook with a 4-year-old", "Week " + weekNum, weekDates, "💛 For Mom") +
+      juHeader((T && T.eyebrow) || "Howe Academy · Pre-K", "Julian's Grown-Up Guide", "how to do the notebook with a 4-year-old", "Week " + weekNum, weekDates, "💛 For Mom") +
       '\n<div class="body" style="gap:9px;">\n\n' +
       '  <div class="p-banner">\n' +
       '    <strong>10 quiet minutes, side-by-side.</strong> Julian can\'t read yet — that\'s the point.\n' +
@@ -1500,6 +1540,7 @@
   function generatePreK(ctx, T, lv, kidId) {
     ctx = ctx || {};
     T = pkOwnName(T || JU_THEME, ctx);   // NBNAME: a name set on the Notebook tab reaches a kid's own look too
+    T = pkOwnGrade(T, ctx);   // NBLEVEL: the kid's grade word reaches a kid's own look too
     lv = lv || JU_LEVEL;
     var weekData = ctx.weekData || {};
     if (Array.isArray(weekData)) weekData = weekData[0] || {};
@@ -1810,7 +1851,7 @@
       '    <span class="path-end">🏗️</span>\n';
   }
 
-  function cbPageParent(weekNum, weekDates, cur, picks, teachNotes) {
+  function cbPageParent(weekNum, weekDates, cur, picks, teachNotes, eyebrow) {
     var _wk = function (sub, list, f) { var seen = []; (picks[sub] || []).forEach(function (sl) { var v = list[sl.idx]; v = f ? f(v) : v; if (v != null && seen.indexOf(v) < 0) seen.push(v); }); return seen; };   // QA_BATCH2: this week's picks
     var wkLetters = (picks.letters || []).map(function (s) { return cur.letters[s.idx]; }).join(" · ");
     var wkNumbers = (picks.numbers || []).map(function (s) { return cur.numbers[s.idx]; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(" · ");
@@ -1831,7 +1872,7 @@
       ? '<span class="p-name">Letter of the Day</span> — A lowercase letter. Say its name, then its sound when the card shows one ("a says /a/ — apple"). Sounds are on for: <strong>' + Object.keys(cur.sounds).sort().join(" ") + '</strong>. Trace together, read the stroke words aloud, then he circles every one in the row and finds its big letter.'
       : '<span class="p-name">Letter of the Day</span> — A lowercase letter, <strong>name only</strong> for now ("This is little a"). Trace it together, read the stroke words aloud, then he circles every one in the row and finds its BIG letter. Sounds come later, when he knows most of his little letters — the app will say when he\'s ready.';
     return '<div class="page-label">Parent Guide — Week ' + weekNum + '</div>\n<div class="page">\n' +
-      juHeader("Kindergarten", "Caleb's Grown-Up Guide", "how to do the notebook with a kindergartner", "Week " + weekNum, weekDates, "💛 For Mom") +
+      juHeader(eyebrow || "Kindergarten", "Caleb's Grown-Up Guide", "how to do the notebook with a kindergartner", "Week " + weekNum, weekDates, "💛 For Mom") +
       '\n<div class="body" style="gap:9px;">\n\n' +
       '  <div class="p-banner">\n' +
       '    <strong>10–15 minutes, side-by-side.</strong> You read each prompt aloud; Caleb traces, finds, counts and colors.\n' +
@@ -1878,7 +1919,7 @@
     badges: CB_DAY_BADGES, badgeDefault: "🚜 Great Job!", letterWords: CB_LETTER_WORDS, soundWords: CB_SOUND_WORDS,
     traceName: "CALEB", traceSize: 52, traceNameMixed: "Caleb", traceSizeMixed: 52, pathHtml: cbPathHtml,
     css: CB_CSS, fonts: CB_FONTS, P: CB_P, legacyFindLayout: true,   // PK_FIT: his card stays as printed until Mom okays the fitted one
-    parent: function (wn, wd, cur, tn, T, picks) { return cbPageParent(wn, wd, cur, picks, tn); }, parentLevel: CB_LEVEL,
+    parent: function (wn, wd, cur, tn, T, picks) { return cbPageParent(wn, wd, cur, picks, tn, T && T.eyebrow); }, parentLevel: CB_LEVEL,
     guide: { animalIcon: "🦁", nameIcon: "🦺", countWord: "picture", letterExample: "T — /t/ — Truck", closeColors: ["#d6ebb0", "#33450f"],
       pathRow: ["〰️", "Drive to the Job Site", "Pencil-control warm-up: drive the machine along the dotted road."] },
     xpColors: ["#ea580c", "#fff7ed", "#9a3412"], unitTheme: "caleb", curOpt: null
@@ -1969,7 +2010,7 @@
   function pkKidName(ctx, fallback) {
     var esc = function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
     var raw = String((ctx && (ctx.kidName || ctx.nbKidName)) || "").trim() || fallback;
-    var gr = String((ctx && ctx.nbGrade) || "").trim() || "Pre-K";
+    var gr = nbLvWord(ctx, String((ctx && ctx.nbGrade) || "").trim() || "Pre-K", "long");   // NBLEVEL: ctx.grade first
     var mixed = raw.charAt(0).toUpperCase() + raw.slice(1);
     // Dotted capitals measure ~0.93em a letter (Chromium, 2026-11-08), and on a 21–100 day the tens-and-ones card needs ~455px,
     // leaving the name ~260px: full size up to 5 letters, then smaller (the shark notebook allowed 7, ~60px too wide then).
@@ -4344,7 +4385,7 @@ ${extraStrip || ""}
     var weekNum = ctx.weekNum;
     if (typeof weekNum === "string") { var dd = weekNum.replace(/\D/g, ""); weekNum = dd ? parseInt(dd, 10) : weekNum; }
     var weekDates = ctx.weekDates || "";
-    var cfg = LINCOLN_CONFIG, student = cfg.student;
+    var cfg = nbLvWith(LINCOLN_CONFIG, ctx), student = cfg.student;   // NBLEVEL: cfg.grade = ctx.grade's word, else "6th Grade"
     var tasks = weekData.tasks || [];
     var datesMap = weekData.dates || {};
     var schoolDays = nbCalendarDays(datesMap);   // NBDAYORDER: calendar order from the week's real start day
@@ -4388,7 +4429,7 @@ ${extraStrip || ""}
     });
 
     // Full page order: weekly · bb0 · 4 enrichment · (day · bb)×4 · day5 · creative · eow
-    var T = LN_EXTRA.enrich.theme_lincoln;
+    var T = nbLvWith(LN_EXTRA.enrich.theme_lincoln, ctx);   // NBLEVEL
     var bbOn = xpOn(ctx, "brainBreaks");   // Notebook tab ▸ Extra Pages toggle; missing config = on
     var parts = bbOn ? [weeklyH, lnBrainBreakPage(0, wn)] : [weeklyH];
     if (xpOn(ctx, "allAboutMe")) parts.push(enPageAllAboutMe(T, ctx.personal || null, wn));
@@ -4604,7 +4645,7 @@ ${ellFooter("Howe Academy · Training Simulation · Week " + weekNum + " · Chal
     var schedStyled = sched.replace('<div class="sched-grid">', '<div class="sched-grid" style="grid-template-columns:repeat(' + nDays + ',1fr);">');
     return `<!-- PAGE 1: MISSION BRIEFING (Weekly) -->
 <div class="page">
-${ellHeader("Howe Academy · 4th Grade · Samuel Ellis Howe", "MISSION", "BRIEFING", "Week", ellPad2(weekNum), weekDates)}
+${ellHeader("Howe Academy · " + lvG("4th Grade") + " · Samuel Ellis Howe", "MISSION", "BRIEFING", "Week", ellPad2(weekNum), weekDates)}
 
   <div class="page-body" style="flex-direction:row;gap:14px;">
 
@@ -4770,7 +4811,7 @@ ${ellFooter("Howe Academy · Mission Briefing · Week " + weekNum)}
     </div>`;
     return `<!-- DAILY PAGE: ${dayCap.toUpperCase()} -->
 <div class="page">
-${ellHeader("Daily Operations · Week " + weekNum, "<span class='hl'>" + dayCap.toUpperCase() + "</span> —", "" + dateStr, "Year", "2026", "4TH GRADE")}
+${ellHeader("Daily Operations · Week " + weekNum, "<span class='hl'>" + dayCap.toUpperCase() + "</span> —", "" + dateStr, "Year", "2026", lvG("4th Grade").toUpperCase())}
 
   <div class="page-body">
 
@@ -5088,6 +5129,7 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
 
   function generateEllis(ctx) {
     ctx = ctx || {};
+    _nbLvCtx = ctx;   // NBLEVEL: the grade word the page builders print (lvG)
     _usNb = usNbOf(ctx);   // USNB
     var weekData = ctx.weekData || {};
     if (Array.isArray(weekData)) weekData = weekData[0] || {};
@@ -5103,7 +5145,7 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
     var prevWeek = wn - 1;
     var paceRows = (ctx.pace && ctx.pace.length) ? ctx.pace.map(function (p) { return [p.subject, p.pct, p.status]; }) : ELLIS_DATA.pace_priority.map(function (k) { return [ELLIS_DATA.pace_map[k] || k, 38, "on"]; });
     var summary = ctx.prevSummary || {};
-    var T = ELLIS_DATA.theme;
+    var T = nbLvWith(ELLIS_DATA.theme, ctx);   // NBLEVEL
 
     var pages = [];
     pages.push(ellWeeklyPage(wn, weekDates, weekData, paceRows, summary, prevWeek));
@@ -5208,7 +5250,7 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
     }).join("");
     return `<div class="page-label">Weekly Overview — Monday kick-off</div>
 <div class="page">
-${luStdHeader("Howe Academy · 1st Grade · Weekly Review", "Lucy's Weekly Review", "last week · this week's plan · pace check", "Week " + weekNum, weekDates, "🦄 Keep Shining")}
+${luStdHeader("Howe Academy · " + lvG("1st Grade") + " · Weekly Review", "Lucy's Weekly Review", "last week · this week's plan · pace check", "Week " + weekNum, weekDates, "🦄 Keep Shining")}
 <div class="body">
 
   <div style="flex-shrink:0;">
@@ -5314,7 +5356,7 @@ ${luFooter("Howe Academy · Lucy Howe · Weekly Review", "Week " + weekNum + " �
     var grid = monthGridHtml(info, "lm", { rowLabel: function (r) { return "Week " + (r + 1); } });
     return `<div class="page-label">This Month — Week ${weekNum}</div>
 <div class="page">
-${luStdHeader("Howe Academy · 1st Grade · Calendar", "This Month", "days in the month · which week · what day is it", "Week " + weekNum, weekDates, "🗒️ Calendar")}
+${luStdHeader("Howe Academy · " + lvG("1st Grade") + " · Calendar", "This Month", "days in the month · which week · what day is it", "Week " + weekNum, weekDates, "🗒️ Calendar")}
 <div class="body" style="gap:8px;">
   <div class="mood-row" style="padding:6px 16px;">
     <div style="font-family:'Fredoka One',cursive;font-size:24px;color:var(--lu-dark);line-height:1;">${semoji} ${info.month} ${info.year}</div>
@@ -5334,7 +5376,7 @@ ${luStdHeader("Howe Academy · 1st Grade · Calendar", "This Month", "days in th
     <div class="lm-q">How many school days are left in ${info.month} after today?<span class="blank sm"></span></div>
   </div>
 </div>
-${luFooter("Howe Academy · Lucy Howe · 1st Grade", weekDates)}
+${luFooter("Howe Academy · Lucy Howe · " + lvG("1st Grade"), weekDates)}
 </div>`;
   }
 
@@ -5351,7 +5393,7 @@ ${luFooter("Howe Academy · Lucy Howe · 1st Grade", weekDates)}
     }).join("");
     return `<div class="page-label">Months of the Year — Week ${weekNum}</div>
 <div class="page">
-${luStdHeader("Howe Academy · 1st Grade · Calendar", "Months of the Year", "12 months · 4 seasons · sing them!", "Week " + weekNum, weekDates, "📅 Calendar")}
+${luStdHeader("Howe Academy · " + lvG("1st Grade") + " · Calendar", "Months of the Year", "12 months · 4 seasons · sing them!", "Week " + weekNum, weekDates, "📅 Calendar")}
 <div class="body" style="gap:9px;">
   <div class="mood-row" style="flex-shrink:0;">
     <div class="mood-label">🎵 Sing: "January, February, March, April…" &nbsp;⭐ = this month</div>
@@ -5372,7 +5414,7 @@ ${luFooter("Howe Academy · Lucy Howe · Calendar", weekDates)}
     var addrModel = addrLines.length ? addrLines.map(function (a) { return '<div class="aam-model">' + a + '</div>'; }).join("") : '<div class="aam-blank"></div><div class="aam-blank"></div>';
     return `<div class="page-label">All About Me — Week ${weekNum}</div>
 <div class="page">
-${luStdHeader("Howe Academy · 1st Grade · Safety", "All About Me", "important things to know by heart", "Week " + weekNum, weekDates, "💛 Keep Safe")}
+${luStdHeader("Howe Academy · " + lvG("1st Grade") + " · Safety", "All About Me", "important things to know by heart", "Week " + weekNum, weekDates, "💛 Keep Safe")}
 <div class="body" style="gap:11px; justify-content:space-between;">
   <div class="mood-row" style="flex-shrink:0;">
     <div class="mood-label">💛 Learn these BY HEART — practice till you can say them with your eyes closed!</div>
@@ -5443,7 +5485,7 @@ ${luFooter("Howe Academy · Lucy Howe · Keep this private 🔒", weekDates)}
     var dateBlock = (FONTS_OK && traceDate) ? '<div class="nt-trace" style="font-size:25px;">' + dotted(traceDate) + '</div>' : '<div class="lu-dateline"></div>';
     return `<div class="page-label">Daily Page — ${cap(day)}</div>
 <div class="page">
-${luStdHeader("Howe Academy · 1st Grade · Daily Notebook", "Lucy's Daily Page", "learn · practice · shine", cap(day), dateStr, badge)}
+${luStdHeader("Howe Academy · " + lvG("1st Grade") + " · Daily Notebook", "Lucy's Daily Page", "learn · practice · shine", cap(day), dateStr, badge)}
 <div class="body">
 
   <div class="bookend bookend-start">
@@ -5803,7 +5845,7 @@ ${rightCol}
     });
     return `<div class="page-label">End of Week — Wrap-Up</div>
 <div class="page">
-${luStdHeader("Howe Academy · 1st Grade · End of Week", "Lucy's Weekly Wrap-Up", "how I did · what I loved · next week", "Week " + weekNum, weekDates, "🌈 Week Complete!")}
+${luStdHeader("Howe Academy · " + lvG("1st Grade") + " · End of Week", "Lucy's Weekly Wrap-Up", "how I did · what I loved · next week", "Week " + weekNum, weekDates, "🌈 Week Complete!")}
 <div class="body">
 
   <div style="flex-shrink:0;">
@@ -5897,7 +5939,7 @@ ${luFooter("Howe Academy · Lucy Howe · End of Week", "Week " + weekNum + " · 
 <div class="page">
 <div class="header companion-header">
   <div>
-    <div class="header-eyebrow">Howe Academy · 1st Grade · Teaching Companion</div>
+    <div class="header-eyebrow">Howe Academy · ${lvG("1st Grade")} · Teaching Companion</div>
     <div class="header-name">Mom's Guide <span class="parent-badge">not for Lucy</span></div>
     <div class="header-sub">answer keys · blend tips · what to watch · notes</div>
   </div>
@@ -6186,6 +6228,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
 
   function generateLucy(ctx) {
     ctx = ctx || {};
+    _nbLvCtx = ctx;   // NBLEVEL: the grade word the page builders print (lvG)
     var weekData = ctx.weekData || {};
     if (Array.isArray(weekData)) weekData = weekData[0] || {};
     var weekNum = ctx.weekNum;
@@ -6629,7 +6672,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       lucy:    { name: "Lucy",    grade: "1st Grade", color: "#be185d" },
       julian:  { name: "Julian",  grade: "Pre-K",     color: "#c2410c" }
     };
-    var sections = "", styles = "", links = {}, present = [], wk = "", wd = "", binding = false;
+    var sections = "", styles = "", links = {}, present = [], wk = "", wd = "", binding = false, metaOut = {};
     order.forEach(function (kid) {
       var ctx = ctxByKid[kid]; if (!ctx) return;
       if (ctx.bindingMargin) binding = true;
@@ -6646,13 +6689,14 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       var sec = "." + kid + "-sec";
       styles += "\n/* ===== " + kid + " ===== */\n" + scopeCss(css, sec);
       var body = (html.match(/<body[^>]*>([\s\S]*?)<\/body>/i) || [, ""])[1];
-      var m = META[kid];
+      var m = Object.assign({}, META[kid], { grade: nbLvWord(ctx, META[kid].grade, "long") });   // NBLEVEL
+      metaOut[kid] = m;
       var divider = cpDividerPage(m.name, m.grade, m.color, wk, wd);
       // each kid section starts on a fresh sheet, opening with its divider page
       sections += '\n<div class="' + kid + '-sec" style="break-before:page;page-break-before:always;">\n' + divider + "\n" + body + "\n</div>\n";
     });
     if (!present.length) throw new Error("No parent guides to combine (no kid data).");
-    var cover = '<div class="cover-sec">\n' + cpCoverPage(wk, wd, present.map(function (k) { return META[k]; })) + "\n</div>";
+    var cover = '<div class="cover-sec">\n' + cpCoverPage(wk, wd, present.map(function (k) { return metaOut[k]; })) + "\n</div>";
     var title = opts.title || ("Howe Academy — Parent Guide (Week " + wk + ")");
     var doc = '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<title>' + title + '</title>\n' +
       '<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' +
