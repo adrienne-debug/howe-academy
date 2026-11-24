@@ -14756,12 +14756,13 @@ function momSchedHouse(dayName,dayTasks){
       if(x.done) out.push({m:x.at,o:3,html:_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ 🧽 '+lbl+'</span>')});
       else out.push({m:x.at,o:2,html:_lbBox('#f0fdf4','#16a34a','<span style="flex:1;font-size:13px">🧽 '+lbl+' · '+x.mins+' min'+_kpCd(x.at,x.at+x.mins)+'</span>'+_kpBtn('✓ Done',"hhPlanCheck('"+mwTodayIso()+"','"+x.id+"')",true))}); }); return out.sort(function(a,b2){ return (a.m-b2.m)||(a.o-b2.o); }); }
   const list=hhHouseToday(); if(!list.length) return out;
-  const next=(typeof momSchedNextMom==="function")?momSchedNextMom(dayTasks||[]):null, def=hhHouseDefaultMin(), iso=mwTodayIso();
+  const next=(typeof momSchedNextMom==="function")?momSchedNextMom(dayTasks||[]):null, def=hhHouseDefaultMin(), iso=mwTodayIso(), P=(typeof hmixPlaced==="function")?hmixPlaced(dayName,dayTasks||[],list):null;   // 🏡 HOUSEMIX
   list.forEach(function(x){ const r=x.r, b=x.rec, key=hhHouseKey(r.id), lbl='<b>'+esc(r.label)+'</b> <span style="color:#6b6560">· '+esc(hhRoomName(hhRoomOf(r.job)))+'</span>';
     const doneBtn=_kpBtn('✓ Done',r.on,true), skipBtn=_kpBtn('Not now',"hhHouseBlockSet('"+_lbQ(r.id)+"','skip')",false), laterBtn=_kpBtn('⏰ 30 min later',"hhHouseBlockSet('"+_lbQ(r.id)+"','later')",false);
     if(r.done){ const ts=(((momdayData||{})[iso]||{}).chores||{})[(r.job.src&&r.job.src.id)||r.id]; const dm=(typeof ts==="number")?_lbMin(ts):def;
       out.push({m:(dm>=0&&dm<24*60)?dm:def,o:3,html:_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ 🏡 '+lbl+'</span>')}); return; }
     if(b&&b.at==="skip"){ out.push({m:def,o:1,html:_lbBox('#f0fdf4','#86efac','<span style="flex:1;font-size:13px">🏡 '+lbl+'</span>'+doneBtn)}); return; }
+    if(!b&&P&&P[r.id]){ out.push(hmixRow(r,lbl,P[r.id],doneBtn,skipBtn)); return; }   // 🏡 HOUSEMIX: placed in a gap
     if(!b){ out.push({m:def,o:1,html:_lbBox('#f0fdf4','#16a34a','<span style="flex:1 1 100%;font-size:13px">🏡 '+lbl+' — block out time?</span>'
         +'<label style="font-size:12px;color:#334155;font-weight:700">How long? <input id="hb-min-'+key+'" type="number" min="1" max="240" value="'+r.mins+'" style="width:54px;padding:4px 6px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px;font-family:\'DM Sans\',sans-serif"> min</label>'
         +_lbQBtn('Now',"hhHouseBlockSet('"+_lbQ(r.id)+"','now')",true)+(next?_lbQBtn('After '+esc(_lbCardName(next)),"hhHouseBlockSet('"+_lbQ(r.id)+"','after','"+_lbQ(next.id)+"')",false):'')+_lbQBtn('Later',"hhHouseBlockSet('"+_lbQ(r.id)+"','later')",false)+_lbQBtn('Not now',"hhHouseBlockSet('"+_lbQ(r.id)+"','skip')",false))}); return; }
@@ -14807,6 +14808,23 @@ function hgapLay(o){ o=o||{}; const win={start:Math.max(+o.now||0,+o.start||0),e
   const busy=hgapBusy(o.cards,o), gaps=hgapGaps(busy,win,o.cushion);
   return {busy:busy,gaps:gaps,placed:hgapPlace(o.chores,gaps,win)}; }
 // HOUSEGAP_END
+// HOUSEMIX_START — step 7 slice 2 (PLAN_house_step7 §5 row 2): once Mom taps "Mixed in" on 👤 By person (household/people/mom/fit
+// stored "mixed"; the unset default is not her tap — her answer 2026-11-20 "When I tap Mixed in"), momSchedHouse draws each unanswered
+// chore where hgapLay places it in her laid day as drawn, with ✓ Done · Now · ⏰ Later · Not now (today's taps, today's writes).
+// Worked out on each draw, kept nowhere, never handed to the Mom loop: no lesson moves for it. Not placed: no gap → after school, as
+// today. No school or her Mom-off day → by time of day (Morning 7:00 · Afternoon 12:00 · Night 5:00 PM, as Dad's); any time → as today.
+function hmixOn(){ return hhPeopleOf("mom").fit==="mixed"; }
+function hmixNoSchool(iso){ const d=new Date(iso+"T12:00:00").getDay(); if(d===0||d===6||scheduleBreakToday()) return true; return ROSTER.length>0&&ROSTER.every(function(k){ return !!smapIsKidOff(k,iso); }); }
+function hmixPlaced(dn,cards,list){ try{ if(!hmixOn()) return null; const P={};
+  const ch=list.filter(function(x){ return !x.r.done&&!x.rec; }).map(function(x){ return {id:x.r.id,mins:x.r.mins,slot:mcSlotOf(x.r.job),score:1}; });
+  if(mlMomOff()||hmixNoSchool(mwTodayIso())){ ch.forEach(function(c){ const m=DAD_SLOT_MIN[c.slot]; if(m!=null) P[c.id]={at:m,end:m+c.mins,how:"slot",slot:c.slot}; }); return P; }
+  const blocks=momBlockOpen().concat(hhHouseBlocksOpen(),kitPrepBlocksOpen()).filter(function(b){ return _mlBlkLaid[b.key]!=null; }).map(function(b){ return [_mlBlkLaid[b.key],_mlBlkLaid[b.key]+b.mins]; });
+  hgapLay({cards:cards,chores:ch,blocks:blocks,now:_mlNowMin(),start:gateStartMin(dn),end:coSchoolEnd(),lunch:_mlLunchWin(),done:function(t){ return !!_mlFinished(t.id,t); },lead:famIsMomCard,helper:helperHolds,span:mlMomSpan})
+    .placed.forEach(function(p){ if(p.how==="gap") P[p.id]=p; }); return P; }catch(e){ return null; } }
+function hmixRow(r,lbl,p,doneBtn,skipBtn){ const S=MC_SLOTS[p.slot];
+  return {m:p.at,o:1,html:_lbBox('#f0fdf4','#16a34a','<span style="flex:1 1 100%;font-size:13px">🏡 '+lbl+' · '+r.mins+' min · '+(S?S.ic+' '+S.nm:fromMin(p.at)+'–'+fromMin(p.end)+' · in a gap')+'</span>'
+    +doneBtn+_kpBtn('Now',"hhHouseBlockSet('"+_lbQ(r.id)+"','now')",false)+_kpBtn('⏰ Later',"hhHouseBlockSet('"+_lbQ(r.id)+"','later')",false)+skipBtn)}; }
+// HOUSEMIX_END
 // HH_SETTINGS_METER_START — PR A of the distributing cleaning day (her 2026-10-11: "settings per card on how often they should be
 // done and which kids can do … percentage wise farthest from being done … a cleaning day's start etc needs to be settings much
 // like a school day"). Three things, no behaviour change on any list:
