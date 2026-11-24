@@ -136,7 +136,8 @@ console.log("\n── lnPauseRelay ──");
 console.log("\n── the doors (source checks) ──");
 {
   ok("the editor toggle calls the re-lay with the NEW state, plan-backed only", /const wasPaused=!!s\.paused;[\s\S]{0,900}lnPauseRelay\(ceEditKid,ceEditKey,!wasPaused\)/.test(src));
-  ok("the quick ⏸ calls it with the new state, plan-backed only", /planBacked\(kid,key\)\) lnPauseRelay\(kid,key,now\)/.test(src));
+  // (the quick ⏸ on the old Subjects list card, ceQuickPause, went in LMCLEANUP slice 3b — her call 2026-11-23 "Remove it";
+  //  the editor toggle above is the card's ⏸)
   ok("reprojectSubjectWeek forwards the flag into the diff", /dropUnwanted:!!\(opts&&opts\.dropUnwanted\)/.test(src));
   ok("the flag is set in exactly ONE place: the pause re-lay", (src.match(/\{dropUnwanted:true\}/g) || []).length === 1);
   ok("reprojectSubjectWeek reports completion on every path (early returns, lock refused, done)", (src.match(/_then\(null\)/g) || []).length >= 6 && /finally\{ release\(\); _then\(out\); \}/.test(src));

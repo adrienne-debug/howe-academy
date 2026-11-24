@@ -287,7 +287,7 @@ console.log("── C. the rendered grid, real data, lanes injected ──");
       cbExtendInfo: () => null, cbDayCap: () => 0, cbOverCapDays: () => 0, smapIsKidOff: () => false, coopBlocksBase: () => false, coopNoMomBaseFor: () => "", coopsOnDate: () => [],
       schedOv: (d, k) => ((sov || {})[d] || {})[k] || null, computeFutureSlots: () => ({}), retrTracks: () => [], formatPlanDate: d => d, cap: s => s, cbRenderRules: () => "", cbRenderGate: () => "",
       document: { getElementById: () => null, querySelector: () => null }, setTimeout: () => 0,
-      ROSTER: KIDS, currViewKid: kid, gvKidCfgOpen: false, cbMsg: "", cbLastBuild: null, momVerifyKid: null, lmLastMove: null, gvScrollTop: 0, gvScrollLeft: 0, RETR_SLOT_TITLE: {},
+      ROSTER: KIDS, currViewKid: kid, gvKidCfgOpen: false, cbMsg: "", cbLastBuild: null, momVerifyKid: null, gvScrollTop: 0, gvScrollLeft: 0, RETR_SLOT_TITLE: {},
       ceRenderSessions: () => "", ceConvUndoBanner: () => "", fbRender: () => "", gvAuditRender: () => "", alignPlanPreview: () => null,
       pacePhantomKeys: () => [], lidUnassigned: () => [], lidImportPending: () => [], lidOutOfOrderAll: () => [], skiplogLeftovers: () => [], dayTokenLeftovers: () => [],
       capLeftovers: () => ({ items: [], orphans: [], node: null }), planPending: () => [], gvNoSeqSubjects: () => [], gvMissingDays: () => [], gvSelFilledCount: () => 0, gvSelSingleSubject: () => null,

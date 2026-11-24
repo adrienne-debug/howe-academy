@@ -42,7 +42,8 @@ ok(e.currExpectedToDate("taylor","nope")===null,"subject with no plan → null (
 const und=plan(); delete und.lessons.taylor[1].date;
 ok(env({empty:false,stored:"week2",WK:"week2",today:"2026-10-11",currData:und}).currExpectedToDate("taylor","saxon")===10,"undated plan → keeps the week rule");
 // call sites
-ok((src.match(/currExpectedToDate\((kid|k),sk\)/g)||[]).length===2,"Mom's Day chip + Settings pace line both use the before-today rule");
+// (the other call site was the old Subjects-page card, ceBuildCard — unreachable, gone in LMCLEANUP slice 3b)
+ok((src.match(/currExpectedToDate\((kid|k),sk\)/g)||[]).length===1&&/currExpectedToDate\(k,sk\)/.test(src.slice(src.indexOf("function paceKidStatus("),src.indexOf("function paceKidStatus(")+3000)),"the Settings pace line (paceKidStatus) uses the before-today rule");
 // C — Howe sessions seed Howe only
 ok(src.includes("if(!hasSavedPlans&&HA_IS_HOWE) Object.entries(PACE_DEFAULT_PLANS)"),"Howe's sessions seed only Howe");
 if(fail){console.log(fail+" failed");process.exit(1);} console.log("all passed");
