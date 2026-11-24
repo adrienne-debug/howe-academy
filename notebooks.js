@@ -1077,7 +1077,7 @@
     var cap = (ctx.reviewCap == null) ? JU_REVIEW_CAP : Math.max(0, Math.min(5, parseInt(ctx.reviewCap, 10) || 0));
     cur = juNumbersWeek(cur, juNumberStart(ctx.numberCursor, wk, cur.numbersFront), dayCount, ctx.juPicks);   // JU_NUMBERS_AHEAD: same list as the print, so the planner matches the pages
     var picks = juWeekPicks(wk, cur, dayCount, cap, ctx.juPicks, juLetterStart(ctx.letterCursor, wk, cur.letters.length));
-    return juPlanShape(cur, picks, wk, dayCount, ["letters", "numbers", "shapes", "colors", "animals"]);
+    return juPlanShape(cur, picks, wk, dayCount, (ctx.countPic === "animal" || ctx.countPic === "picture") ? pkPlanSubs(pkCountPicLook(ctx), ctx) : ["letters", "numbers", "shapes", "colors", "animals"]);   // NB_COUNTPIC
   }
   // The planner's shape for a week's picks: every item a slot can take (🔁 flags) + the day-by-day slots. Shared by
   // the dinosaur Pre-K planner and the construction notebook's (CBPLAN).
@@ -1319,7 +1319,9 @@
     // dashed so he can see "how many more to 10". 1–10 = one frame, 11–20 = two frames,
     // 21–100 = tens and ones (juCountVisual).
     // A theme with its own counting picture (construction: 🚜) counts the kid's Mastery counting picture instead of the animal.
-    var countVis = juCountVisual(n, T.countEmoji ? (countEmoji || T.countEmoji) : aemoji), countAni = countVis.ani;
+    // NB_COUNTPIC: generatePreK passes {pic} — the one answer (pkCountPic) to "what does the number card count"; "" = the animal.
+    var countVis = juCountVisual(n, (countEmoji && typeof countEmoji === "object") ? (countEmoji.pic || aemoji)
+      : T.countEmoji ? (countEmoji || T.countEmoji) : aemoji), countAni = countVis.ani;
 
     var tidx = dowIndex(day);
     var ar = aroundDay(day), yest = ar[0], tod = ar[1], tom = ar[2];
@@ -1623,7 +1625,8 @@
     var numStart = juNumberStart(ctx.numberCursor, wkInt || 1, cur.numbersFront);
     var curWk = juNumbersWeek(cur, numStart, days.length, ctx.juPicks);   // JU_NUMPICK (🚜 CBPLAN): a number Mom picks on the planner joins the list
     var picks = juWeekPicks(pickWk, curWk, days.length, reviewCap, ctx.juPicks, letterStart);
-    if (ctx.planOnly) { var _pl = juPlanShape(curWk, picks, wkInt || 1, days.length, pkPlanSubs(T)); _pl.days = days.slice(); _pl.lowercase = !!lv.nbLowercase; return { plan: _pl }; }   // 🚜 CBPLAN: the planner reads these exact picks
+    var countPic = pkCountPic(T, ctx);   // NB_COUNTPIC: what the number card counts — the page, the guide and the plan all ask this
+    if (ctx.planOnly) { var _pl = juPlanShape(curWk, picks, wkInt || 1, days.length, pkPlanSubs(T, ctx)); _pl.days = days.slice(); _pl.lowercase = !!lv.nbLowercase; return { plan: _pl }; }   // 🚜 CBPLAN: the planner reads these exact picks
     var curCover = cur;
     if (curWk.numbersFromFront) {
       var wkNums = (picks.numbers || []).map(function (s2) { return curWk.numbers[s2.idx]; }).filter(function (v, i2, a) { return a.indexOf(v) === i2; });
@@ -1641,7 +1644,7 @@
     if (xpOn(ctx, "thisMonth")) { var _jym = /\b(\d{4})\b/.exec(weekDates || ""); var _jmp = juPageMonth(weekNum, weekDates, dates, _jym ? _jym[1] : "", P); if (_jmp) parts.push(nbTagXp(ctx, _jmp, "thisMonth", "This Month")); }
     for (var i = 0; i < days.length; i++) {
       parts.push(nbTag(ctx, juPageDaily(weekNum, days[i], dates[days[i]] || "", i, curWk, juDayPick(curWk, picks, i),
-        xpStrip(pagesForDay(ctx, null, days[i], PREK_EXTRA_PAGES), T.xpColors[0], T.xpColors[1], T.xpColors[2]), T, lv, ctx.countEmoji), days[i], "Daily page"));
+        xpStrip(pagesForDay(ctx, null, days[i], PREK_EXTRA_PAGES), T.xpColors[0], T.xpColors[1], T.xpColors[2]), T, lv, countPic), days[i], "Daily page"));
     }
     var uT = UNIT_INSERT_THEMES[T.unitTheme];
     (ctx.units || []).forEach(function (ins) { nbTagUnit(ctx, ins, unitInsertPages(ins, weekNum, uT)).forEach(function (p) { parts.push(p); }); });
@@ -1652,7 +1655,7 @@
     // A legacy kid's own guide while the levels are the ones it was written for; otherwise the guide built from the levels.
     var guide = (T.parent && pkSameLevel(lv, T.parentLevel || JU_LEVEL)) ? T.parent : pkPageParent;
     var parent = juHtmlHead(weekNum, T.guideTitle, css, T.fonts) + "\n" +
-      guide(weekNum, weekDates, curSum, ctx.teachNotes || "", T, picks, lv) + "\n</body>\n</html>";
+      guide(weekNum, weekDates, curSum, ctx.teachNotes || "", pkCountPicGuide(T, countPic), picks, lv) + "\n</body>\n</html>";   // NB_COUNTPIC
 
     var out = { student: student, parent: parent };
     // the app persists this to notebookSettings/<kid>/letterCursor after a print, so the
@@ -2259,7 +2262,7 @@
   // plan.days = the days that get a page; plan.look = the look on; plan.lowercase = little letters. Any Pre-K notebook has
   // one — except where the planner lives in the app already (prek.ownPlanner: the dinosaur notebook's juPlanPreview card).
   var PK_PLAN_SUBS = ["letters", "numbers", "shapes", "colors"];
-  function pkPlanSubs(T) { return (T && T.countEmoji) ? PK_PLAN_SUBS : PK_PLAN_SUBS.concat(["animals"]); }
+  function pkPlanSubs(T, ctx) { return pkCountPic(T, ctx).counts === "picture" ? PK_PLAN_SUBS : PK_PLAN_SUBS.concat(["animals"]); }   // NB_COUNTPIC
   function pkHasPlan(kid, opt) { var g = GENERATORS[kid], sp = pkSpec(kid, opt || {}); return !!sp && !(g && g.prek && g.prek.ownPlanner); }
   function pkPlanFor(kid, ctx) {
     if (!pkHasPlan(kid, ctx)) return null;
@@ -2270,6 +2273,43 @@
     return r.plan;
   }
   // CBPLAN_END
+  // NB_COUNTPIC_START — what the Pre-K number card counts, per kid, for ANY look (looks study §4 row 4 / §17 q3; her answer
+  // 2026-11-24: "Make it a setting"). notebookSettings/<kid>/countPic = "animal" | "picture" (the app passes it as ctx.countPic).
+  // Nothing saved = the look's own rule, so every notebook prints what it printed before: a look with its own counting picture
+  // (T.countEmoji — construction 🚜) counts the kid's Mastery counting picture (ctx.countEmoji), else its own; every other look
+  // counts the animal of the day. "picture" on any look = the kid's Mastery counting picture (the look's own when it has one and
+  // the kid has none); no picture at all = the animal, with fallback:true so the app can say so — never an empty frame.
+  // "animal" = the animal of the day on every look, construction too. ONE answer for the daily page's number card, the guide's
+  // Number of the Day row, the week's plan rows (pkPlanSubs — the animal reaches paper exactly when it is counted) and the
+  // trouble card's decks (NBNEEDS reviewDecks).
+  function pkCountPic(T, ctx) {
+    var lookPic = (T && T.countEmoji) || "", own = String((ctx && ctx.countEmoji) || ""), c = ctx && ctx.countPic;
+    var def = lookPic ? "picture" : "animal", choice = (c === "animal" || c === "picture") ? c : def;
+    if (choice === "animal") return { counts: "animal", pic: "", choice: choice, def: def, fallback: false };
+    var pic = own || lookPic;
+    return pic ? { counts: "picture", pic: pic, choice: choice, def: def, fallback: false }
+      : { counts: "animal", pic: "", choice: choice, def: def, fallback: true };
+  }
+  // The guide's "Touch and count each ___" word follows the answer; the look's own word whenever the answer is the look's own.
+  function pkCountPicGuide(T, cp) {
+    if (!T || cp.counts === (T.countEmoji ? "picture" : "animal")) return T;
+    return Object.assign({}, T, { guide: Object.assign({}, T.guide || {}, { countWord: cp.counts === "picture" ? "picture" : "animal" }) });
+  }
+  // The look a dinosaur-notebook kid wears, for its own planner card (juPlanPreview has no kid): the picked look, else its own.
+  function pkCountPicLook(ctx) {
+    var k = nbThemeKey(ctx);
+    try { return (k && k !== "dino") ? NB_THEMES[k].theme(ctx, JU_LEVEL) : JU_THEME; } catch (e) { return JU_THEME; }
+  }
+  // For the Notebook tab's look card: null when the kid's notebook has no number card (not a Pre-K notebook); else the answer,
+  // plus the look's own picture. opt = { notebookTheme, nbLevel, countPic, countEmoji } — the app's view of the kid.
+  function nbCountPicFor(kid, opt) {
+    opt = opt || {};
+    var sp = pkSpec(kid, opt); if (!sp) return null;
+    var T = sp.T;
+    if (!T) { try { T = NB_THEMES[sp.key].theme(opt, sp.L); } catch (e) { return null; } }
+    return Object.assign({ look: sp.key, lookPic: (T && T.countEmoji) || "" }, pkCountPic(T, opt));
+  }
+  // NB_COUNTPIC_END
   // NBNEEDS_START — 🔁 "Giving trouble this week" (study step 1 "See it", her yes 2026-11-23: "I really want these notebooks to
   // complement their drills and study sessions, not be redundant, and be very customizable per kid, and to help add extra
   // practice where necessary"). The app's Mom card (index.html NBNEEDS) lists each kid's trouble cards and says, per deck,
@@ -2289,7 +2329,7 @@
       var T = sp.T;
       if (!T) { try { T = NB_THEMES[sp.key].theme(opt, sp.L); } catch (e) { T = null; } }
       var name = { letters: sp.L.nbLowercase ? "Lowercase" : "Letters", numbers: "Numbers", shapes: "Shapes", colors: "Colors", animals: "Animals" };
-      return { readsCap: true, decks: pkPlanSubs(T).map(function (s) { return { deck: name[s], how: "comes back 🔁 on a daily page", cap: true }; }) };
+      return { readsCap: true, decks: pkPlanSubs(T, opt).map(function (s) { return { deck: name[s], how: "comes back 🔁 on a daily page", cap: true }; }) };
     }
     var g = GENERATORS[kid];
     if (g && g.build === generateLucy) {
@@ -4169,6 +4209,90 @@ ${extraStrip || ""}
     NB_THEMES[k] = { label: LK2[k].label, chip: LK2[k].chip, planTitle: LK2[k].planTitle, theme: function (ctx) { return lk2Theme(k, ctx); } };
   });
   // NB_LOOKS2_END
+  // NB_LOOKS3_START — three more Pre-K looks: 📓 Plain, 🐴 Horses, ⚽ Sports (her words 2026-11-24 on the looks plan's next
+  // three: "All three now"; PLAN_notebook_looks_2026-11-23.md §10 and §12). Each is a whole look made with the NB_LOOKS2
+  // helpers (lk2Words, lk2Path, lk2Css, lk2Theme) — so this block needs that one above it — and fills every piece those
+  // looks fill: its own colours and print tints, cover, day badges, letter words (consonants only, so each also works as the
+  // letter's sound word), sound words, J word, warm-up strip, guide words, animal friends, plan-card title and unit colours.
+  //  • 📓 Plain is the look for a child who wants no theme: no mascot beyond 📓, no picture row, the plain day name for a
+  //    badge, no motto, the plainest words ("Daily Page", "Great job!", "Hi, name!"), and the slate and teal of the starter
+  //    notebook (its unit pages use the starter notebook's own colours).
+  //  • 🐴 Horses: saddle brown + sky, "Saddle Up!", the horse trots the dotted trail to the barn.
+  //  • ⚽ Sports: field green + white yard lines, "Game On!", the ball rolls the dotted line into the goal.
+  // A look changes words, pictures and colours ONLY — the same letters, numbers, shapes, animals, level switches and page
+  // count as any other look, so none has a counting picture of its own. Pictures are emoji and our own SVG; nothing names a
+  // child, a brand or a character. They come after the six looks in the picker; nothing changes for a kid until a grown-up
+  // picks one (test_nb_looks3.js builds that baseline with this block taken out).
+  var LK3 = {
+    plain: {
+      label: "Plain (Pre-K 📓)", chip: "📓 Plain", planTitle: "📓 This week’s plan", noName: "Little Learner", emoji: "📓", nameIcon: "✏️", shapeStroke: "#475569",
+      coverSub: "trace · count · color · draw", coverBadge: "📓 This Week", coverRow: "", drawCap: "✏️ Draw a picture of YOU!",
+      badges: { monday: "Monday", tuesday: "Tuesday", wednesday: "Wednesday", thursday: "Thursday", friday: "Friday" },
+      words: lk2Words({ J: ["Juice", "🧃"] }),
+      path: function (idx) { return lk2Path("Trace the line!", "🟢", "🔴", idx, "#94a3b8", "none"); },
+      css: lk2Css({
+        v: { dark: "#1e293b", deep: "#0f766e", mid: "#0d9488", light: "#cbd5e1", pale: "#f8fafc", green: "#0f766e", gpale: "#f0fdfa", gold: "#0d9488",
+          gpale2: "#f8fafc", blue: "#334155", bpale: "#f1f5f9", ink: "#1e293b", muted: "#64748b", border: "#e2e8f0", trace: "#cbd5e1", ntTrace: "#64748b" },
+        print: { dark: "#18212f", light: "#bcc7d4", pale: "#eef2f6", gpale: "#ddf6f1", gpale2: "#eef2f6", bpale: "#e4e9ef", trace: "#b6c1ce", ntTrace: "#556275", muted: "#536176", border: "#cfd7e1" },
+        accent: "#0f766e",
+        badge: ["rgba(15,118,110,0.3)", "rgba(203,213,225,0.5)"], label: "#64748b", hint: "#94a3b8", numCard: ["#99f6e4", "#a7e3da", "#c5ece6"]
+      }),
+      guide: { animalIcon: "🐾", nameIcon: "✏️", countWord: "animal", letterExample: "B — /b/ — Bear", closeColors: ["#99f6e4", "#134e4a"],
+        pathRow: ["✏️", "Trace the Line", LK2_GROWN + "the pencil follow the dotted line to the red dot. The line" + LK2_EACH_DAY] },
+      xpColors: ["#0f766e", "#f0fdfa", "#134e4a"],
+      unit: UNIT_INSERT_THEMES.generic,
+      curOpt: { animals: [["Cat", "🐱"], ["Dog", "🐶"], ["Rabbit", "🐰"], ["Mouse", "🐭"]], animalEmoji: {}, animalFallback: "🐾" },
+      // the plainest words: no mascot in the hello, the "I feel?" face or the "great job" line, and the daily page is the Daily Page
+      plain: function (T) { return { hello: "Hi, " + T.name + "!", moodEmoji: "🙂", badgeDefault: "Great job!", dayTitle: "Daily Page" }; }
+    },
+    horses: {
+      label: "Horses (Pre-K 🐴)", chip: "🐴 Horses", planTitle: "🐴 This week’s riding plan", noName: "Little Rider", emoji: "🐴", nameIcon: "🥕", shapeStroke: "#6b4f3a",
+      coverSub: "trace · count · color · ride", coverBadge: "🐴 Saddle Up!", coverRow: "🐴 🌾 🥕 🏇 🌄", drawCap: "✏️ Draw YOU riding a horse!",
+      badges: { monday: "🐴 Saddle Up! New Week", tuesday: "🐎 Giddy Up!", wednesday: "🥕 Halfway, Rider!", thursday: "🌄 Almost There!", friday: "⭐ Horse Star!" },
+      words: lk2Words({ C: ["Carrot", "🥕"], H: ["Horse", "🐴"], J: ["Jeans", "👖"], M: ["Mountain", "⛰️"], P: ["Pony", "🐎"], R: ["Rider", "🏇"], S: ["Sunrise", "🌄"] }),
+      path: function (idx) { return lk2Path("Trot to the barn!", "🐴", "🛖", idx, "#b45309", "#e0f2fe"); },
+      css: lk2Css({
+        v: { dark: "#4a2c17", deep: "#8b4513", mid: "#a0522d", light: "#f1d5b8", pale: "#fbf4ec", green: "#0369a1", gpale: "#f0f9ff", gold: "#ca8a04",
+          gpale2: "#fefce8", blue: "#1d4ed8", bpale: "#eff6ff", ink: "#2a1d14", muted: "#7a6656", border: "#e6d8cb", trace: "#d2bfae", ntTrace: "#8c735f" },
+        print: { dark: "#3f2514", light: "#ecc7a1", pale: "#f7e9db", gpale: "#e0f0fb", gpale2: "#fbf5cf", bpale: "#e2ecfd", trace: "#c4ae9b", ntTrace: "#7a6250", muted: "#665444", border: "#d9c6b5" },
+        accent: "repeating-linear-gradient(90deg, #8b4513 0 14px, #7dd3fc 14px 18px)",
+        badge: ["rgba(160,82,45,0.3)", "rgba(241,213,184,0.5)"], label: "#9a6b4f", hint: "#d9b99f", numCard: ["#bae6fd", "#b4d8ec", "#cde4f0"]
+      }),
+      guide: { animalIcon: "🐴", nameIcon: "🥕", countWord: "animal", letterExample: "P — /p/ — Pony", closeColors: ["#bae6fd", "#0c4a6e"],
+        pathRow: ["🛖", "Trot to the Barn", LK2_GROWN + "the horse trot the dotted trail to the barn. The trail" + LK2_EACH_DAY] },
+      xpColors: ["#8b4513", "#fbf4ec", "#4a2c17"],
+      unit: { GD:"#4a2c17", GM:"#a0522d", GL:"#f1d5b8", GP:"#fbf4ec", GOLD:"#ca8a04", GOLDD:"#a16207", CREAM:"#fefce8", EXTRA:"#0369a1" },
+      curOpt: { animals: [["Pony", "🐎"], ["Donkey", "🫏"], ["Goat", "🐐"], ["Sheep", "🐑"]],
+        animalEmoji: { pony: "🐴", donkey: "🫏", mule: "🫏", goat: "🐐", sheep: "🐑", lamb: "🐑" }, animalFallback: "🐾" }
+    },
+    sports: {
+      label: "Sports (Pre-K ⚽)", chip: "⚽ Sports", planTitle: "⚽ This week’s game plan", noName: "Little Champ", emoji: "⚽", nameIcon: "🏅", shapeStroke: "#3f5a4c",
+      coverSub: "trace · count · color · play", coverBadge: "⚽ Game On!", coverRow: "⚽ 🏀 ⚾ 🏈 🏆", drawCap: "✏️ Draw YOU scoring a goal!",
+      badges: { monday: "⚽ Game On! New Week", tuesday: "🏀 Bounce Bounce!", wednesday: "⚾ Halfway, Champ!", thursday: "🏈 Almost There!", friday: "🏆 Sports Star!" },
+      words: lk2Words({ B: ["Ball", "⚽"], G: ["Goal", "🥅"], J: ["Jersey", "👕"], M: ["Medal", "🏅"], R: ["Racket", "🏸"], T: ["Trophy", "🏆"] }),
+      path: function (idx) { return lk2Path("Kick it to the goal!", "⚽", "🥅", idx, "#16a34a", "#dcfce7"); },
+      css: lk2Css({
+        v: { dark: "#064e3b", deep: "#047857", mid: "#10b981", light: "#a7f3d0", pale: "#ecfdf5", green: "#c2410c", gpale: "#fff7ed", gold: "#d97706",
+          gpale2: "#fffbeb", blue: "#0369a1", bpale: "#f0f9ff", ink: "#10241c", muted: "#5b7268", border: "#d1e7dd", trace: "#b0cbbf", ntTrace: "#6a8378" },
+        print: { dark: "#053f30", light: "#93eec4", pale: "#dcf8ec", gpale: "#fdead6", gpale2: "#fdf3d3", bpale: "#e3f1fb", trace: "#9fbcaf", ntTrace: "#5a7268", muted: "#4b5f56", border: "#bcd9cb" },
+        accent: "repeating-linear-gradient(90deg, #047857 0 20px, #ffffff 20px 23px)",
+        badge: ["rgba(16,185,129,0.3)", "rgba(167,243,208,0.5)"], label: "#4f8a72", hint: "#a3cfbd", numCard: ["#fed7aa", "#f6caa0", "#fbd9bd"]
+      }),
+      guide: { animalIcon: "🐾", nameIcon: "🏅", countWord: "animal", letterExample: "G — /g/ — Goal", closeColors: ["#fed7aa", "#7c2d12"],
+        pathRow: ["🥅", "Kick to the Goal", LK2_GROWN + "the ball roll the dotted line into the goal. The line" + LK2_EACH_DAY] },
+      xpColors: ["#047857", "#ecfdf5", "#064e3b"],
+      unit: { GD:"#064e3b", GM:"#10b981", GL:"#a7f3d0", GP:"#ecfdf5", GOLD:"#d97706", GOLDD:"#b45309", CREAM:"#fffbeb", EXTRA:"#c2410c" },
+      curOpt: { animals: [["Cheetah", "🐆"], ["Kangaroo", "🦘"], ["Eagle", "🦅"], ["Tiger", "🐯"]],
+        animalEmoji: { cheetah: "🐆", leopard: "🐆", kangaroo: "🦘", eagle: "🦅" }, animalFallback: "🐾" }
+    }
+  };
+  Object.keys(LK3).forEach(function (k) {   // into the picker (after the six looks) and the unit-page colour table
+    LK2[k] = LK3[k];   // lk2Theme reads a look from LK2
+    UNIT_INSERT_THEMES[k] = LK3[k].unit;
+    NB_THEMES[k] = { label: LK3[k].label, chip: LK3[k].chip, planTitle: LK3[k].planTitle,
+      theme: function (ctx) { var T = lk2Theme(k, ctx); return LK3[k].plain ? Object.assign(T, LK3[k].plain(T)) : T; } };
+  });
+  // NB_LOOKS3_END
   // SPELLPAGE_START — 📝 the weekly Spelling page (her ask 2026-10-04: "the list of their words that they will be learning
   // that week starting on their learning day … and the spelling checkup section"). Built by the app (ctx.spelling, see
   // nbSpellCtx in index.html); every kid's notebook adds it right after the unit pages. One page: "This Week's Words"
@@ -7718,6 +7842,25 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     return emojiToImages(applySafariPrintFit(binding ? applyBindingMargin(doc) : doc));
   }
 
+  // NB_LOOKPICK_START — 🎨 a look's own small picture, for the Kids' Corner look picker (her decisions 2026-11-24: "Kid picks
+  // from mine" — Mom ticks which looks a kid may use and, with two or more ticked, the kid picks among them; Pre-K kids too,
+  // "Yes, with pictures"; "it would need to be on their kids corner"). The app draws each big button from this, so no look
+  // is ever typed into index.html and a child who can't read yet can still choose: the look's mascot, its picture row (the
+  // cover's row) and a colour swatch (the colours of its extra-page strip), all from the look's own theme, built with no
+  // child's name in it. Read only: nothing here changes what any notebook prints.
+  // key → { key, emoji, row: [pictures], colors: ["#main", "#pale", "#deep"], label } — or null for a key that isn't a look.
+  function lookCard(key) {
+    var k = String(key == null ? "" : key);
+    if (!k || !Object.prototype.hasOwnProperty.call(NB_THEMES, k) || !NB_THEMES[k] || typeof NB_THEMES[k].theme !== "function") return null;
+    var D = NB_THEMES[k], T = null;
+    try { T = D.theme({}, PK_LEVEL_DEFAULT); } catch (e) { T = null; }
+    if (!T) return null;
+    var row = String(T.coverRow || "").split(/\s+/).filter(function (x) { return !!x; });
+    var colors = (T.xpColors || []).filter(function (c) { return typeof c === "string" && /^#[0-9a-fA-F]{3,8}$/.test(c); });
+    return { key: k, emoji: String(T.emoji || row[0] || ""), row: row, colors: colors, label: String(D.chip || D.label || k) };
+  }
+  // NB_LOOKPICK_END
+
   window.HoweNotebooks = {
     version: "1-julian",
     fontsOk: FONTS_OK,
@@ -7740,6 +7883,8 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     // 🚜 CBPLAN: any Pre-K notebook's planner (opt/ctx = the kid's notebookTheme / nbLevel, so a themed kid has one too)
     hasPlan: pkHasPlan,
     planFor: pkPlanFor,
+    countPicFor: nbCountPicFor,         // NB_COUNTPIC: what this kid's number card counts (Notebook tab look card)
+    lookCard: lookCard,                 // 🎨 NB_LOOKPICK: a look's mascot, picture row and colours (Kids' Corner look picker)
     reviewDecks: nbReviewDecks,         // 🔁 NBNEEDS: which drill decks this kid's notebook brings back to paper (Notebook tab card)
     ladders: NB_LADDERS,                // 📚 NBLADDER: the two notebook ladders — engine + placement (the 1st-grade notebook prints reading)
     ladderPages: nbLadReadPages,        // 📖 NBLADREAD: does this kid's notebook print a ladder? (the Ladders card's note)
