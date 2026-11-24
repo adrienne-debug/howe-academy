@@ -30,7 +30,7 @@ const db = { ref(p) { const P = p === undefined ? "" : p; return {
   remove() { writes.push({ op: "remove", path: P }); }, push(v) { writes.push({ op: "push", path: P, val: v }); },
   on(ev, fn) { listens.push(P); } }; } };
 const LS = {};
-const ctx = { console: { log: console.log, warn() {} }, Date, Math, JSON, document, db, _todayStr: () => "2026-11-20", _dryRun: () => dryRun, momHere: () => mom, gwShowToast() {},
+const ctx = { console: { log: console.log, warn() {} }, Date, Math, JSON, document, db, skJobsN: () => 0, _todayStr: () => "2026-11-20", _dryRun: () => dryRun, momHere: () => mom, gwShowToast() {},
   HA_LS: { getItem: k => (k in LS ? LS[k] : null), setItem: (k, v) => { LS[k] = String(v); } }, tab: "moms-plan", mpSubView: "seasons" };
 ctx.window = ctx; vm.createContext(ctx);
 vm.runInContext("const ROSTER_DEF=[{id:'ava',name:'Ava',color:'#2563eb'},{id:'ben',name:'Ben',color:'#16a34a'},{id:'cora',name:'Cora',color:'#db2777'}]; var calendarData={events:{}};"

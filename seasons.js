@@ -278,7 +278,7 @@ function ahead(r){const n=Math.floor(+r.ahead);return n>0?Math.min(n,SN_AHEAD_MA
 function showDay(L){const d=tdDue(L);return d?addDays(d,-ahead(L.r)):"";}   // her answer 1: its due day, or "ahead" days before it
 // Why a to-do is NOT on Dad's list ("" = it should be). The one rule the sync and Mom's row both use.
 function dadWhy(L){return (L.r.who||"mom")!=="dad"?"who":outWhy(L);}
-function kidWhy(L){return isKidId(L.r.who)?outWhy(L):"who";}   // SEASONJOBS step B: the same rule for a kid's jobs
+function kidWhy(L){return (kidPageOk()&&isKidId(L.r.who))?outWhy(L):"who";}   // SEASONJOBS step B: the same rule for a kid's jobs
 function outWhy(L){
   const s=season(L.sid);if(!s||s.closed)return "closed";
   if(L.it&&hideOf(L.it))return "secret";
@@ -289,7 +289,11 @@ function outWhy(L){
 // ── 🧒 a to-do for a kid → their own jobs (SEASONJOBS step B) ──
 const SN_STARS_MAX=50;
 function isKidId(w){return !!w&&roster().some(k=>k.id===w);}
-function kidCopy(L){const k=L.r.jobFor;return (k&&typeof k==="string")?(((snJobs[k]||{})[L.id])||null):null;}   // its job record, where it was sent
+// KIDPAGE guard: kids' jobs need the page's kids' side (index.html SEASONKID block + seasonkid.js). skJobsN is that block's job
+// counter, so it is there only where a kid can see and tick a job. An older page without it: a kid's to-do is a plain to-do with
+// their name — no seasonJobs read or write, no job chips, no ⭐, no pay, no 🧒 Open it to the kids. Old kids/jobFor/stars just sit.
+function kidPageOk(){return typeof skJobsN==="function";}
+function kidCopy(L){const k=L.r.jobFor;return (k&&typeof k==="string"&&kidPageOk())?(((snJobs[k]||{})[L.id])||null):null;}   // its job record, where it was sent
 function jobStars(r){const n=Math.floor(+((r||{}).stars));return n>0?Math.min(n,SN_STARS_MAX):0;}
 function jobRec(L){const it=L.it,s=season(L.sid)||{},r={t:String(L.r.t||"").slice(0,120),for:(it?((it.emoji?it.emoji+" ":"")+(it.t||"")):((s.emoji||"🎉")+" "+(s.name||""))).trim(),show:showDay(L),due:tdDue(L),sn:L.sid+"/"+(L.iid||"-")+"/"+L.id};
   const st=jobStars(L.r);if(st)r.stars=st;return r;}
@@ -311,7 +315,7 @@ function dadSync(){
   const c0=cal();if(!c0.events||typeof c0.events!=="object")return 0;
   let D={};try{D=(typeof daddayData!=="undefined"&&daddayData)||{};}catch(e){}
   const want=dadPlan(),up={};
-  if(snJobsOk)kidPlanUp(up);   // SEASONJOBS step B: the kids' jobs, in the same update
+  if(snJobsOk&&kidPageOk())kidPlanUp(up);   // SEASONJOBS step B: the kids' jobs, in the same update (never on a page with no kids' side)
   Object.keys(D).forEach(iso=>{if(!isIso(iso))return;const T=(D[iso]||{}).todos||{};
     Object.keys(T).forEach(k=>{const c=T[k];if(k.indexOf("sn")!==0||!c||typeof c!=="object"||c.src!=="season"||c.done||want[iso+"/"+k])return;
       up["dadday/"+iso+"/todos/"+k]=null;   // its to-do is gone, changed, moved, done here or no longer Dad's
@@ -494,7 +498,7 @@ function headHTML(s){
     if(c.past)h+='<div class="sn-line" style="color:#b45309">'+c.past+' went by — did '+(c.past===1?"it":"they")+' happen?</div>';
     if(P.length)h+='<div class="sn-picks"><span class="sn-pl">Everyone’s picks</span>'+P.map(x=>'<span class="sn-pick'+(x.warn?" warn":"")+'"><i style="background:'+esc(x.color)+'"></i>'+esc(x.name)+' '+x.got+' of '+x.n+(x.stars?' ⭐'+(x.stMiss?"":"✓"):"")+(x.warn?" ⚠":"")+'</span>').join("")+'</div>';
   }
-  if(!s.closed)h+='<div class="sn-kids'+(s.kids?" on":"")+'"><span>'+(s.kids?"🧒 <b>Open to the kids.</b> They see it in Kids’ Corner ▸ ✨ Our plans, add ideas, ✋ and ⭐. Surprises never show there.":"🧒 Only you see this list.")+'</span>'
+  if(!s.closed&&kidPageOk())h+='<div class="sn-kids'+(s.kids?" on":"")+'"><span>'+(s.kids?"🧒 <b>Open to the kids.</b> They see it in Kids’ Corner ▸ ✨ Our plans, add ideas, ✋ and ⭐. Surprises never show there.":"🧒 Only you see this list.")+'</span>'
     +'<button class="sn-tool" onclick="snKids()">'+(s.kids?"Close it to the kids":"Open it to the kids")+'</button></div>';
   return h+'</div></div>';
 }
@@ -654,7 +658,7 @@ function lineSheet(){
       +'<div class="sn-lab">Who</div><div class="sn-chips">'+people().map(p=>'<button class="sn-pchip'+(f.who===p.id?" on":"")+'" style="--c:'+esc(p.color)+'" onclick="snLineWho(\''+esc(p.id)+'\')">'+esc(p.name)+'</button>').join("")+'</div>'
       +'<div class="sn-form">'+field("due","When — a date (optional)","","date")+(it?field("before","…or days before its day","3","number"):"")+'</div>'
       +(it?'<div class="sn-sub">“Days before” moves by itself when the idea moves. '+(many?"It’s on more than one day, so this counts back from the first one, "+fmtDay(day)+". The to-do happens once, not every time.":(day?"Its day is "+fmtDay(day)+" right now.":"It has no day yet, so the to-do waits for one."))+'</div>':"")
-      +(isKidId(f.who)?((it&&hideOf(it))?'<div class="sn-sub">🤫 This idea is a surprise, so its to-dos stay on this page. They never go to a kid.</div>'
+      +((kidPageOk()&&isKidId(f.who))?((it&&hideOf(it))?'<div class="sn-sub">🤫 This idea is a surprise, so its to-dos stay on this page. They never go to a kid.</div>'
         :'<div class="sn-form">'+field("ahead","Show it to "+esc(who(f.who).name)+" early — days ahead","0","number")+field("stars","⭐ for doing it (optional)","0","number")+'</div><div class="sn-sub">'+esc(who(f.who).name)+' sees it in Kids’ Corner ▸ ✨ Our plans ▸ Your jobs, on the day it’s due (or this many days ahead), and ticks it there. Stars pay only if you put a number here — on the tick, the same way a chore pays.</div>'):"")
       +(f.who==="dad"?((it&&hideOf(it))?'<div class="sn-sub">🤫 This idea is a surprise, so its to-dos stay on this page. They never go to Dad’s list.</div>'
         :'<div class="sn-form">'+field("ahead","Show it on Dad’s list early — days ahead","0","number")+'</div><div class="sn-sub">Dad’s to-dos go on his own list by themselves, on the day they’re due (or this many days ahead). When he ticks it, it’s ticked here too.</div>'):"");
@@ -710,7 +714,7 @@ function snDelSeason(){
   const up={};up["seasons/list/"+snEdit.id]=null;if((snData.extra||{})[snEdit.id])up["seasons/extra/"+snEdit.id]=null;apply(up);snEdit=null;snSid=null;draw();
 }
 function snKids(){   // slice 3: ONE field — is this season open to the kids? (off until she taps)
-  const s=season(curSid());if(!s||s.closed)return;const up={};up["seasons/list/"+s.id+"/kids"]=s.kids?null:true;apply(up);
+  const s=season(curSid());if(!s||s.closed||!kidPageOk())return;const up={};up["seasons/list/"+s.id+"/kids"]=s.kids?null:true;apply(up);
   toast(s.kids?"🧒 Closed to the kids":"🧒 The kids can see it now — never the surprises");draw();
 }
 function snPick(sid){snSid=sid;try{HA_LS.setItem("ha_sn_sid",sid);}catch(e){}snFilter="all";snAsk=null;draw();}
@@ -1252,7 +1256,7 @@ function snListen(){
   try{db.ref("dadday").once("value",()=>{snDdFresh=true;syncSoon();});}catch(e){}   // SEASONJOBS fix: wait for the server's answer for Dad's list (the app's own listener keeps daddayData current after)
   db.ref("seasons").on("value",s=>{snData=s.val()||{};if(!a){a=true;got();}else if(onPage()&&!snEdit)draw();if(snLoaded)syncSoon();bmHook();});
   db.ref("seasonSecret").on("value",s=>{snSecret=s.val()||{};if(!b){b=true;got();}else if(onPage()&&!snEdit)draw();if(snLoaded)syncSoon();bmHook();});
-  db.ref("seasonJobs").on("value",s=>{snJobs=s.val()||{};snJobsOk=true;if(snLoaded){if(onPage()&&!snEdit)draw();syncSoon();}bmHook();});   // SEASONJOBS step B: the kids' ticks come back here
+  if(kidPageOk())db.ref("seasonJobs").on("value",s=>{snJobs=s.val()||{};snJobsOk=true;if(snLoaded){if(onPage()&&!snEdit)draw();syncSoon();}bmHook();});   // SEASONJOBS step B: the kids' ticks come back here
 }
 const SN_CSS=`
 .sn-wrap{padding:10px 12px 40px;max-width:760px;margin:0 auto;font-family:'DM Sans',sans-serif}
