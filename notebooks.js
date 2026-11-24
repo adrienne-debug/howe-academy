@@ -5410,7 +5410,7 @@ ${luFooter("Howe Academy · Lucy Howe · Keep this private 🔒", weekDates)}
 </div>`;
   }
 
-  function luPageDaily(weekNum, day, dateStr, tasks, blend, subProblems, badge, year, extraStrip, word) {
+  function luPageDaily(weekNum, day, dateStr, tasks, blend, subProblems, badge, year, extraStrip, word, mathDay) {   // LU_MATH: mathDay
     var dayTasks = luTasksForDay(tasks, day);
     var luWordApps = word ? luWordAppsCard(dayTasks, word) : null;   // LU_WORDS: no word → the apps card exactly as before
     var pills = dayTasks.map(function (t) { return '<span class="pill ' + luPillType(t.title) + '">' + String(t.title || "").split(" — ")[0] + '</span>\n'; }).join("");
@@ -5502,11 +5502,11 @@ ${extraStrip || ""}
 
   <div class="divider" style="flex-shrink:0;"></div>
 
-  <div class="card card-purple" style="flex:1.05;min-height:0;display:flex;flex-direction:column;justify-content:space-between;">
+  ${mathDay ? luMathCard(mathDay) : `<div class="card card-purple" style="flex:1.05;min-height:0;display:flex;flex-direction:column;justify-content:space-between;">
     <div class="slabel">Subtraction practice — try your best!</div>
     <div class="sub-problems">${subHtml}</div>
     ${luNumberLine()}
-  </div>
+  </div>`}
 
   <div class="divider" style="flex-shrink:0;"></div>
 
@@ -5774,12 +5774,12 @@ ${rightCol}
 </div>`;
   }
 
-  function luPageEndOfWeek(weekNum, weekDates, blends, subtraction, days, tasks) {
+  function luPageEndOfWeek(weekNum, weekDates, blends, subtraction, days, tasks, math) {   // LU_MATH: math
     var allSubjects = [], seen = {};
     (days || []).forEach(function (day) {
       luTasksForDay(tasks, day).forEach(function (t) { var s = luSubjectName(t.title); if (!seen[s]) { seen[s] = 1; allSubjects.push(s); } });
     });
-    var forTable = allSubjects.concat(["Blending (" + blends.map(function (b) { return b.digraph; }).join(" · ") + ")", "Subtraction"]);
+    var forTable = allSubjects.concat(["Blending (" + blends.map(function (b) { return b.digraph; }).join(" · ") + ")", math ? math.desc.row : "Subtraction"]);   // LU_MATH: the deck names the row
     // The wrap-up rates the WHOLE week's subjects — 16 rows this week — in a single full-width
     // column that ran 130px past .body (overflow:hidden) and cut the "draw it!" box off the
     // bottom (2026-08-30). The table only ever uses a name + three bubbles, so past 8 subjects
@@ -5820,10 +5820,10 @@ ${luStdHeader("Howe Academy · 1st Grade · End of Week", "Lucy's Weekly Wrap-Up
       <div class="write-prompt" style="font-size:12px;">My favorite blend word this week was:</div>
       <div class="write-line"></div>
     </div>
-    <div class="card card-purple">
+    ${math ? luMathEowCard(math) : `<div class="card card-purple">
       <div class="slabel">Subtraction answers — circle any that were tricky</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;margin:8px 0 6px;">${ansHtml}</div>
-    </div>
+    </div>`}
   </div>
 
   <div class="divider" style="flex-shrink:0;"></div>
@@ -5859,7 +5859,7 @@ ${luFooter("Howe Academy · Lucy Howe · End of Week", "Week " + weekNum + " · 
 </div>`;
   }
 
-  function luPageTeachingCompanion(weekNum, weekDates, days, tasks, blends, subtraction, teachNotes, words) {
+  function luPageTeachingCompanion(weekNum, weekDates, days, tasks, blends, subtraction, teachNotes, words, math) {   // LU_MATH: math
     var DAY_NAMES = { monday: "Monday", tuesday: "Tuesday", wednesday: "Wednesday", thursday: "Thursday", friday: "Friday" };
     var subKeyRows = "";
     (days || []).forEach(function (day, i) {
@@ -5911,7 +5911,7 @@ ${luFooter("Howe Academy · Lucy Howe · End of Week", "Week " + weekNum + " · 
 
   <div class="teach-banner" style="flex-shrink:0;">
     <strong style="font-size:9px;letter-spacing:0.06em;text-transform:uppercase;">How to use this page —</strong>
-    Check subtraction answers <em>with</em> Lucy right after she finishes — immediate feedback matters most at this age.
+    Check ${math ? "the math facts" : "subtraction answers"} <em>with</em> Lucy right after she finishes — immediate feedback matters most at this age.
     For blending, listen to her say the words aloud; correct gently by modeling the sound yourself, not by labeling it wrong.
     Keep every correction warm and short — 30 seconds max. Celebrate effort out loud every single day.
   </div>
@@ -5919,13 +5919,13 @@ ${luFooter("Howe Academy · Lucy Howe · End of Week", "Week " + weekNum + " · 
   <div class="col2" style="flex:1;min-height:0;gap:14px;align-items:start;">
 
     <div style="display:flex;flex-direction:column;gap:10px;">
-      <div class="key-section">
+      ${math ? luMathCompanion(math, days, DAY_NAMES) : `<div class="key-section">
         <div class="key-head">Subtraction Answers — All Five Days</div>
         <div class="key-body">
           ${subKeyRows}
           <div class="key-row"><div class="key-label">Watch for</div><div style="font-size:10.5px;color:var(--muted);line-height:1.55;">Common struggle: larger minus small (e.g. 10−3, 10−4). Have her use the number line on the page. Counting back on fingers is completely normal and expected. The goal is understanding "take away," not memorized facts.</div></div>
         </div>
-      </div>
+      </div>`}
       <div class="key-section">
         <div class="key-head">App Lessons This Week</div>
         <div class="key-body">${appRows}</div>
@@ -6184,6 +6184,227 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
   }
   // LU_WORDS_END
 
+  // LU_MATH_START — 🔢 the daily math block follows the child's own Math Facts cards and gives the PICTURE (study piece B,
+  // PLAN_notebooks_study_2026-11-23.md §19 / §24 B; slice 2 "LU_MATH" of PLAN_notebook_lucy_2026-11-10.md). Her rule 11/23:
+  // "I really want these notebooks to complement their drills and study sessions, not be redundant, and be very customizable
+  // per kid, and to help add extra practice where necessary." Before this, every daily page printed three typed-in
+  // subtraction facts within 10 (luSubWeek) over a bare 0–10 line, while the Math Facts deck — addition, 1+1 … 4+4 — was
+  // never read, and the week's answers printed on the End of Week page. Now, when the context carries Math Facts cards:
+  //  • Three facts a day from the deck. First the cards giving trouble — the notebook's one rule for that (recentMiss > 0, or
+  //    demoted and not back to a slow tier; worst first), via juCurriculumFromMastery like the Sight Words — marked 🔁, at
+  //    most reviewCap of them a week, each on two or three DIFFERENT days (three when only one), never twice on a page and
+  //    never more than two hard facts on one page. Then the cards being introduced (status "introduction"), up to two a
+  //    page, so a known fact still rides along. Then the rest in a rotation shuffled by the week. Same deck + same week →
+  //    the same page, so a re-print matches. "Parked" cards are not taught yet and never print (a warm-up practises what
+  //    has been taught, never something new — §19 research). + and − cards within 20 work; × or anything else is skipped.
+  //  • The picture, plain (no art), and never the answer: a ten-frame for the day's first fact with ONLY its first number
+  //    filled in (two frames when the deck goes past 10) — "draw 2 more · how many now?" / "cross out 3 · how many are left?"
+  //    — and under the facts a NUMBER PATH (squares 1…10 or 1…20, no zero) printed right above a NUMBER LINE (0…10 or
+  //    0…20), square k over the step k−1 → k: the path-to-line hand-over (§19 "The hand-overs"). No hops are drawn in.
+  //  • ctx.mathPic picks what sits under the facts, so a later build can let Mom choose per kid: "both" (default — the
+  //    path over the line), "path" (the path alone), "line" (the line alone), "frame" (the ten-frame only). There is no
+  //    control for it yet.
+  //  • The answers print only on the Teaching Companion. End of Week lists the same facts with no answers ("circle any that
+  //    were tricky"); its rating row, the companion and the Weekly Review focus card describe the deck ("Adding within 8 ·
+  //    3 new facts") instead of the typed-in subtraction text.
+  //  • No usable Math Facts cards → null, and every page prints exactly as before (luSubWeek, luNumberLine, the old text).
+  // Read-only: the notebook looks at the cards and writes nothing.
+  var LU_MATH_PICS = { both: 1, path: 1, line: 1, frame: 1 };
+  // "4+2", "4 + 2 =", "4 + 2 = ?", "7 - 3", "7 − 3" → {a, b, op}; anything else (×, ÷, a missing-number card, words) → null.
+  function luMathParse(prompt) {
+    var m = /^\s*(\d{1,2})\s*([+\-−–])\s*(\d{1,2})\s*(?:=\s*\??\s*)?$/.exec(String(prompt == null ? "" : prompt));
+    if (!m) return null;
+    var a = parseInt(m[1], 10), b = parseInt(m[3], 10), op = m[2] === "+" ? "+" : "−";
+    if (op === "−" && b > a) return null;
+    return { a: a, b: b, op: op, key: a + op + b };
+  }
+  function luMathAns(f) { return f.op === "+" ? f.a + f.b : f.a - f.b; }
+  function luMathTop(f) { return f.op === "+" ? f.a + f.b : f.a; }   // the biggest number the fact touches
+  // How the deck reads in words, from the facts that can print: "Adding within 8", "Subtracting within 10",
+  // "Adding and subtracting within 20".
+  function luMathDescribe(facts) {
+    var add = facts.some(function (f) { return f.op === "+"; }), sub = facts.some(function (f) { return f.op !== "+"; });
+    var top = facts.reduce(function (t, f) { return Math.max(t, luMathTop(f)); }, 0);
+    var verb = add && sub ? "Adding and subtracting" : (add ? "Adding" : "Subtracting");
+    return { add: add, sub: sub, top: top, detail: verb + " within " + top,
+      label: add && sub ? "Adding & subtracting" : (add ? "Adding" : "Subtracting"), row: add && sub ? "Math facts (+ and −)" : (add ? "Adding facts" : "Subtracting facts") };
+  }
+  // The week's math: {days:[{facts:[{a,b,op,key,review,isNew}], ...}], range 10|20, twoFrames, pic, desc, focus, newN, hardN}
+  // — or null when the context has no usable Math Facts cards (the page then prints exactly as before).
+  function luMathWeek(ctx, wn, dayCount) {
+    ctx = ctx || {};
+    if (!(dayCount > 0)) return null;
+    var m = luWordsFromMastery(ctx.masteryItems, "math facts");
+    if (!m) return null;
+    var facts = [], byKey = {};
+    m.list.forEach(function (p) {
+      var st = m.status[p];
+      if (st === "parked") return;                       // not taught yet
+      var f = luMathParse(p);
+      if (!f || luMathTop(f) > 20) return;               // past 20 doesn't fit two ten-frames or the 0–20 line
+      var old = byKey[f.key];
+      var score = m.flag[p] ? (m.flagScore[p] || 0) : -1;
+      if (old) { if (score > old.score) old.score = score; if (st === "introduction") old.isNew = true; return; }
+      f.isNew = st === "introduction"; f.score = score; f.review = false;
+      byKey[f.key] = f; facts.push(f);
+    });
+    if (!facts.length) return null;
+    var rcap = (ctx.reviewCap == null) ? JU_REVIEW_CAP : Math.max(0, Math.min(5, parseInt(ctx.reviewCap, 10) || 0));
+    var D = dayCount, PER = Math.min(3, facts.length), days = [];
+    for (var d = 0; d < D; d++) days.push([]);
+    var onPage = function (d, f) { return days[d].indexOf(f) >= 0; };
+    // 1. the hard ones: worst first, capped; each on r different days, spread across the week, ≤ 2 on a page
+    var hard = facts.filter(function (f) { return f.score >= 0; }).sort(function (x, y) { return y.score - x.score; });
+    hard = hard.slice(0, Math.min(rcap, 2 * D, PER >= 2 ? 2 * D : D));
+    var k = hard.length, r = Math.min(D, k === 1 ? 3 : 2);
+    while (r > 1 && k * r > 2 * D) r--;
+    hard.forEach(function (f, j) {
+      f.review = true;
+      for (var t = 0; t < r; t++) {
+        var want = (j + Math.round(t * D / r)) % D;
+        for (var s = 0; s < D; s++) {
+          var dd = (want + s) % D;
+          if (!onPage(dd, f) && days[dd].length < Math.min(2, PER)) { days[dd].push(f); break; }
+        }
+      }
+    });
+    // 2. the facts being introduced, up to two a page (a known fact still gets a seat when there is one)
+    var fresh = facts.filter(function (f) { return f.isNew && !f.review; });
+    var rest = facts.filter(function (f) { return !f.isNew && !f.review; });
+    lnRngShuffle(lnRng(((parseInt(wn, 10) || 1) * 104729 + 17) >>> 0), rest);   // 3. the rest, a fresh order each week
+    var np = 0, rp = 0;
+    var take = function (list, ptr, d) {                 // next fact in a list that is not already on this page
+      for (var q = 0; q < list.length; q++) { var f = list[(ptr + q) % list.length]; if (!onPage(d, f)) return { f: f, next: ptr + q + 1 }; }
+      return null;
+    };
+    for (d = 0; d < D; d++) {
+      var newRoom = Math.min(2, PER - days[d].length - (rest.length ? 1 : 0));
+      for (var n = 0; n < newRoom && fresh.length; n++) { var g = take(fresh, np, d); if (!g) break; days[d].push(g.f); np = g.next; }
+      while (days[d].length < PER) {
+        var h = rest.length ? take(rest, rp, d) : null;
+        if (h) { days[d].push(h.f); rp = h.next; continue; }
+        h = take(fresh, np, d) || take(facts, d, d);     // a deck smaller than the page: whatever is left, still no repeats
+        if (!h) break;
+        days[d].push(h.f);
+        if (fresh.indexOf(h.f) >= 0) np = h.next;
+      }
+    }
+    var desc = luMathDescribe(facts);
+    var pic = LU_MATH_PICS[ctx.mathPic] ? ctx.mathPic : "both";
+    var range = desc.top > 10 ? 20 : 10;
+    var newN = facts.filter(function (f) { return f.isNew; }).length;
+    var subLine = (newN ? newN + " new fact" + (newN === 1 ? "" : "s") : "Facts from the drill cards") + (k ? " · " + k + " to practice again" : "") + " — daily practice";
+    var clean = function (f) { return { a: f.a, b: f.b, op: f.op, key: f.key, review: !!f.review, isNew: !!f.isNew }; };
+    return {
+      days: days.map(function (list) { return { facts: list.map(clean), range: range, twoFrames: range === 20, pic: pic }; }),
+      range: range, twoFrames: range === 20, pic: pic, desc: desc, newN: newN, hardN: k,
+      focus: { emoji: "🔢", label: desc.label, detail: desc.detail, sub: subLine }
+    };
+  }
+  var LU_MATH_INK = "#2d1b69", LU_MATH_LINE = "#7c3aed";
+  // Ten-frame(s) with the first number filled in, left to right, top row first ("5 and some more"). Plain dots.
+  function luMathFrames(n, two) {
+    var c = two ? 15 : 18, frames = two ? 2 : 1, gap = 6, W = frames * 5 * c + (frames - 1) * gap + 2, H = 2 * c + 2, out = "";
+    for (var fr = 0; fr < frames; fr++) {
+      var x0 = 1 + fr * (5 * c + gap);
+      out += '<rect x="' + x0 + '" y="1" width="' + (5 * c) + '" height="' + (2 * c) + '" fill="#fff" stroke="' + LU_MATH_LINE + '" stroke-width="1.6"/>';
+      for (var i = 1; i < 5; i++) out += '<line x1="' + (x0 + i * c) + '" y1="1" x2="' + (x0 + i * c) + '" y2="' + (1 + 2 * c) + '" stroke="' + LU_MATH_LINE + '" stroke-width="1"/>';
+      out += '<line x1="' + x0 + '" y1="' + (1 + c) + '" x2="' + (x0 + 5 * c) + '" y2="' + (1 + c) + '" stroke="' + LU_MATH_LINE + '" stroke-width="1"/>';
+      for (var s = 0; s < 10; s++) {
+        if (fr * 10 + s >= n) break;
+        var cx = x0 + (s % 5) * c + c / 2, cy = 1 + Math.floor(s / 5) * c + c / 2;
+        out += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (c * 0.31).toFixed(1) + '" fill="' + LU_MATH_INK + '"/>';
+      }
+    }
+    return '<svg class="lm-frame" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg">' + out + '</svg>';
+  }
+  // The number path (squares 1…R, no zero) printed right above the number line (0…R), square k over the step k−1 → k.
+  // pic "path" = the path alone, "line" = the line alone. Nothing is hopped in — the child draws the hops.
+  function luMathStrip(R, pic) {
+    var W = 640, m = 12, u = (W - 2 * m) / R, showPath = pic !== "line", showLine = pic !== "path";
+    var ph = 19, fs = R > 10 ? 10.5 : 12, out = "", y = 1;
+    var X = function (k) { return (m + k * u).toFixed(1); };
+    if (showPath) {
+      for (var k = 1; k <= R; k++) {
+        out += '<rect x="' + X(k - 1) + '" y="' + y + '" width="' + u.toFixed(1) + '" height="' + ph + '" fill="#fff" stroke="' + LU_MATH_LINE + '" stroke-width="1.3"/>' +
+          '<text x="' + (m + (k - 0.5) * u).toFixed(1) + '" y="' + (y + ph / 2 + fs * 0.36).toFixed(1) + '" text-anchor="middle" font-size="' + fs + '" font-weight="700" fill="' + LU_MATH_INK + '">' + k + '</text>';
+      }
+      y += ph + (showLine ? 4 : 1);
+    }
+    if (showLine) {
+      var ly = y + 1;
+      out += '<line x1="' + (m - 6) + '" y1="' + ly + '" x2="' + (W - m + 6) + '" y2="' + ly + '" stroke="' + LU_MATH_INK + '" stroke-width="1.8"/>' +
+        '<path d="M' + (W - m + 9) + ' ' + ly + ' l-6 -4 v8 z" fill="' + LU_MATH_INK + '"/>';
+      for (var t = 0; t <= R; t++) {
+        var big = t % 5 === 0;
+        out += '<line x1="' + X(t) + '" y1="' + (ly - (big ? 6 : 4)) + '" x2="' + X(t) + '" y2="' + (ly + (big ? 6 : 4)) + '" stroke="' + LU_MATH_INK + '" stroke-width="' + (big ? 2 : 1.3) + '"/>' +
+          '<text x="' + X(t) + '" y="' + (ly + 5 + fs) + '" text-anchor="middle" font-size="' + fs + '" font-weight="' + (big ? 800 : 600) + '" fill="' + LU_MATH_INK + '">' + t + '</text>';
+      }
+      y = ly + 7 + fs;
+    }
+    var H = Math.ceil(y + 1);
+    return '<svg class="lm-strip-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMinYMid meet" style="width:100%;height:' + H + 'px;" xmlns="http://www.w3.org/2000/svg" font-family="Nunito, sans-serif">' + out + '</svg>';
+  }
+  // The daily card: three facts with empty answer lines, the ten-frame for the first, and the path over the line.
+  function luMathCard(md) {
+    var facts = md.facts || [];
+    var factHtml = facts.map(function (f) {
+      return '<div class="sub-problem lm-fact"><span class="sub-num">' + f.a + '</span><span class="sub-op">' + (f.op === "+" ? "+" : "−") + '</span><span class="sub-num">' + f.b +
+        '</span><span class="sub-eq">=</span><span class="sub-blank"></span>' + (f.review ? '<span class="lm-rev" title="practice again">🔁</span>' : '') + '</div>';
+    }).join("\n      ");
+    var f0 = facts[0], frame = "";
+    if (f0) {
+      var says = f0.op === "+" ? 'Draw <b>' + f0.b + '</b> more.<br>How many now?' : 'Cross out <b>' + f0.b + '</b>.<br>How many are left?';
+      frame = '<div class="lm-framebox"><div class="lm-cap"><span class="lm-cap-f">' + f0.a + ' ' + (f0.op === "+" ? "+" : "−") + ' ' + f0.b + '</span> · ' + says + '</div>' + luMathFrames(f0.a, md.twoFrames) + '</div>';
+    }
+    var add = facts.some(function (f) { return f.op === "+"; }), sub = facts.some(function (f) { return f.op !== "+"; });
+    var lab = add && sub ? '+ hop forward<br>− hop back' : (sub ? 'Hop back<br>to take away' : 'Hop forward<br>to add');
+    var strip = md.pic === "frame" ? "" : '\n    <div class="lm-strip"><div class="lm-strip-lab">' + lab + '</div>' + luMathStrip(md.range, md.pic) + '</div>';
+    return '<div class="card card-purple lm-card' + (md.twoFrames ? ' lm-20' : '') + '" style="flex:1.05;min-height:0;display:flex;flex-direction:column;justify-content:space-between;padding:5px 12px;">\n' +
+      '    <div class="slabel">Math practice — try your best!</div>\n' +
+      '    <div class="lm-top">\n      <div class="lm-facts">' + factHtml + '</div>\n      ' + frame + '\n    </div>' + strip + '\n  </div>';
+  }
+  // End of Week: the week's facts once each, no answers — she circles the tricky ones; the answers are on the Companion.
+  function luMathEowCard(math) {
+    var seen = {}, list = [];
+    math.days.forEach(function (d) { d.facts.forEach(function (f) { if (!seen[f.key]) { seen[f.key] = 1; list.push(f); } }); });
+    var cells = list.map(function (f) {
+      return '<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700;color:var(--ink);">' + f.a + ' ' + (f.op === "+" ? "+" : "−") + ' ' + f.b + '</div>';
+    }).join("\n");
+    return '<div class="card card-purple">\n      <div class="slabel">Math facts I practiced — circle any that were tricky</div>\n' +
+      '      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 20px;margin:8px 0 6px;">' + cells + '</div>\n    </div>';
+  }
+  // The Companion's answer key: each day's facts with answers (🔁 = a card giving trouble in drills), where they came from,
+  // and what to watch for.
+  function luMathCompanion(math, days, dayNames) {
+    var rows = (days || []).map(function (day, i) {
+      var md = math.days[i]; if (!md) return "";
+      var ans = md.facts.map(function (f) { return f.a + (f.op === "+" ? "+" : "−") + f.b + "=" + luMathAns(f) + (f.review ? " 🔁" : ""); }).join(" &nbsp;&nbsp; ");
+      return '<div class="key-row"><div class="key-label">' + (dayNames[day] || cap(day)) + '</div><div><span class="key-ans">' + ans + '</span></div></div>\n';
+    }).join("");
+    var d = math.desc;
+    var watch = 'From the Math Facts cards: ' + d.detail + (math.newN ? ' · ' + math.newN + ' new' : '') + '. 🔁 = missed in drills lately. ' +
+      (d.add ? 'Count on from the first number; a full frame row is 5 (7 is 5 and 2). ' : '') + (d.sub ? 'Take away: cross out or hop back. ' : '') +
+      'Square 3 sits over the hop from 2 to 3.';
+    return '<div class="key-section">\n        <div class="key-head">Math Facts — Answers, All Days</div>\n        <div class="key-body">\n          ' + rows +
+      '          <div class="key-row"><div class="key-label">Watch for</div><div style="font-size:10.5px;color:var(--muted);line-height:1.5;">' + watch + '</div></div>\n        </div>\n      </div>';
+  }
+  var LU_MATH_CSS = "\n  /* LU_MATH */\n" +
+    "  .lm-card .slabel { margin-bottom:2px; }\n" +
+    "  .lm-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }\n" +
+    "  .lm-facts { flex:1; display:flex; justify-content:space-around; align-items:center; gap:10px; min-width:0; }\n" +
+    "  .lm-fact { padding:4px 9px; } .lm-fact .sub-num { font-size:26px; } .lm-fact .sub-op, .lm-fact .sub-eq { font-size:22px; } .lm-fact .sub-blank { min-width:40px; height:28px; }\n" +
+    "  .lm-20 .lm-facts { gap:6px; } .lm-20 .lm-fact { gap:4px; padding:4px 6px; } .lm-20 .lm-fact .sub-num { font-size:22px; } .lm-20 .lm-fact .sub-op, .lm-20 .lm-fact .sub-eq { font-size:18px; } .lm-20 .lm-fact .sub-blank { min-width:30px; }\n" +
+    "  .lm-rev { font-size:11px; align-self:flex-start; margin-left:-3px; }\n" +
+    "  .lm-framebox { flex:0 0 auto; display:flex; align-items:center; gap:7px; }\n" +
+    "  .lm-cap { font-size:9.5px; font-weight:700; color:var(--lu-dark); line-height:1.3; text-align:right; }\n" +
+    "  .lm-cap-f { font-family:'Fredoka One',cursive; font-size:12px; color:var(--lu-mid); }\n" +
+    "  .lm-frame { display:block; flex:0 0 auto; }\n" +
+    "  .lm-strip { display:flex; align-items:center; gap:8px; background:white; border:1.5px solid var(--lu-light); border-radius:8px; padding:1px 8px; }\n" +
+    "  .lm-strip-lab { flex:0 0 64px; font-size:8.5px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; line-height:1.3; }\n" +
+    "  .lm-strip-svg { display:block; flex:1; min-width:0; }\n";
+  // LU_MATH_END
+
   function generateLucy(ctx) {
     ctx = ctx || {};
     var weekData = ctx.weekData || {};
@@ -6199,6 +6420,8 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     var blends = phono || LUCY_DATA.blends, focus = LUCY_DATA.focus, pace = (ctx.pace && ctx.pace.length) ? ctx.pace : LUCY_DATA.pace;
     var subtraction = luSubWeek(wn, days.length);
     var words = luWordsWeek(ctx, days.length);   // LU_WORDS: the week's sight words, or null → nothing new prints
+    var math = luMathWeek(ctx, wn, days.length);   // LU_MATH: the week's facts from the Math Facts cards, or null → the old subtraction block
+    if (math) focus = [focus[0], math.focus];   // LU_MATH: the focus card describes the deck
     var prevStats = ctx.prevStats || {};   // dashes until the shared history wiring
     var category = LUCY_DATA.category_order[((wn - 1) % LUCY_DATA.category_order.length + LUCY_DATA.category_order.length) % LUCY_DATA.category_order.length];
     var curMonth = days.length ? monthFromDate(dates[days[0]] || "") : "";
@@ -6217,14 +6440,14 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       var subPrbs = subtraction[i] || [];
       var badge = LUCY_DATA.day_badges[day] || "🦄 Great Work!";
       parts.push(luPageDaily(wn, day, dateStr, tasks, blend, subPrbs, badge, year,
-        xpStrip(pagesForDay(ctx, "lucy", day), "#f472b6", "#fdf2f8", "#be185d"), words ? words.days[i] : null));
+        xpStrip(pagesForDay(ctx, "lucy", day), "#f472b6", "#fdf2f8", "#be185d"), words ? words.days[i] : null, math ? math.days[i] : null));   // LU_MATH
       if (day === "monday") parts.push(luPageBb1(wn, ctx.dotdot || null));
       else if (day === "tuesday") parts.push(luPageBb2Coloring(wn, ctx.coloring || null, category));
       else if (day === "wednesday") parts.push(luPageBb3(wn, ctx.symmetry || null, ctx.pattern || null));
       else if (day === "thursday") parts.push(luPageBb4(wn, ctx.maze || null));
       else if (day === "friday") parts.push(luPageCreative(wn));
     });
-    parts.push(luPageEndOfWeek(wn, weekDates, blends, subtraction, days, tasks));
+    parts.push(luPageEndOfWeek(wn, weekDates, blends, subtraction, days, tasks, math));   // LU_MATH
     luMyWordsPages(ctx, words, wn).forEach(function (p) { parts.push(p); });   // LU_WORDS: after End of Week, so the day/back pairs don't move
 
     // Paper dolls — doll figure (always) + this week's outfit, each on its OWN sheet with a blank
@@ -6236,9 +6459,9 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       if (dolls.outfit) { parts.push(luPageDoll(dolls.outfit, "Outfit — cut me out!")); parts.push(luBlankPage()); }
     }
 
-    var luCss = (phono ? LU_PHONO_CSS : "") + (words ? LU_WORDS_CSS : "");   // LU_WORDS
+    var luCss = (phono ? LU_PHONO_CSS : "") + (words ? LU_WORDS_CSS : "") + (math ? LU_MATH_CSS : "");   // LU_WORDS · LU_MATH
     var student = luShell(parts.join("\n"), "Lucy's Notebook — Week " + wn, luCss);
-    var companion = luPageTeachingCompanion(wn, weekDates, days, tasks, blends, subtraction, ctx.teachNotes || "", words);
+    var companion = luPageTeachingCompanion(wn, weekDates, days, tasks, blends, subtraction, ctx.teachNotes || "", words, math);   // LU_MATH
     var parent = luShell(companion, "Lucy's Parent Companion — Week " + wn, luCss);
     var out = { student: student, parent: parent };
     if (words) out.wordCursor = words.cursor;   // LU_WORDS: the app saves it (notebookSettings/<kid>/wordCursor) so next week continues
