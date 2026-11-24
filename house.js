@@ -838,7 +838,7 @@ function hqSq(c,mode,full,id,iso){ const o=c.hq!==undefined?c.hq:(c.late>0&&!c.o
   if(c.over||(c.fut&&mode==="preview")) return hpSqHTML(Object.assign({},c,{late:0}),full)+hqChip(o,true,!full);
   return _hhRmSq({who:c.who,done:c.done},full)+hqChip(o,true,!full); }
 // The note rides on the cell as a hidden (non-enumerable) field, so a cell reads exactly as before to anything that lists its fields.
-function hqSchedToday(out,f,rows){ const J=hhJobs(), inS={}, put=function(c,o){ Object.defineProperty(c,"hq",{value:o}); return c; }; hwIds(f).forEach(function(id){ inS[id]=1; });
+function hqSchedToday(out,f,rows){ const J=hhJobs(), inS={}, put=function(c,o){ Object.defineProperty(c,"hq",{value:o,configurable:true}); return c; };   /* a chore in two rows (the plan's no room and the lists'): the last wins, as its cell does */ hwIds(f).forEach(function(id){ inS[id]=1; });
   rows.forEach(function(r){ if(out[r.x.id]&&!out[r.x.id].over) put(out[r.x.id],hqRowNote(r.x,J[r.x.id],r.R)); });
   const W=hqWaits(); Object.keys(W).forEach(function(id){ if(!inS[id]||out[id]||!J[id]) return; out[id]=put({who:W[id].who,done:false,late:0},hqWaitNote(W[id])); });
   return out; }
