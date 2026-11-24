@@ -46860,6 +46860,7 @@ function renderKidsCorner(el){
         h+=kcCalToggleHTML(k);
         if(typeof wlTileHTML==="function") h+=wlTileHTML(k); if(typeof skTileHTML==="function") h+=skTileHTML(k);   // 🎁 WISHES: the 🎁 My wish list button · ✨ SEASONKID: the ✨ Our plans button
         h+=kcModeBodyHTML(k);   // KC_LISTS: Today | My Lists | Month
+        if(typeof nbLookPickKcHtml==="function") h+=nbLookPickKcHtml(k);   // NB_LOOKPICK: 🎨 My notebook look (2+ looks ticked by Mom)
       }
     }
   }
@@ -50131,6 +50132,123 @@ function _nbMomLockHtml(){ nbPinOpen=false; return ""; }   // MOMSWITCH (2026-11
 function nbPinLock(){ haMomOff(); nbPinOpen=false; renderAll(); }   // UNIMOM
 // Review-folding cap (struggled-with drill items folded back into the week), per kid. Default 2, clamped 0–5.
 function nbReviewCap(kid){ const v=notebookSettings&&notebookSettings[kid]&&notebookSettings[kid].reviewCap; const n=parseInt(v,10); return isNaN(n)?2:Math.max(0,Math.min(5,n)); }
+// NB_LOOKPICK_START — 🎨 the looks a kid may use + the Kids' Corner look picker (looks plan §13 / step 5; her decisions
+// 2026-11-24: who picks — "Kid picks from mine"; Pre-K kids too — "Yes, with pictures"; where — "it would need to be on their
+// kids corner"). Each control has ONE home, and only one of them can change the look at any moment:
+//   · MOM'S TICK LIST — the Notebook tab's 🎨 look card, Mom only (momHere): "<name> may choose from:" one tick per look the
+//     kid's notebook offers (HoweNotebooks.notebookOptions — never a typed list). Saved one tick at a time:
+//     notebookSettings/<kid>/looksAllowed/<lookKey> = true, or removed. Ticking never changes the look itself.
+//   · 0 or 1 ticked → Mom's picker works exactly as today; Kids' Corner shows nothing new.
+//   · 2 or more ticked → the kid picks in their own Kids' Corner (kcKid) on "🎨 My notebook look"; Mom's picker becomes a
+//     read-only line ("<name> chose <look>") and nbSetLook refuses — Mom changes it by changing the ticks. A look that is on
+//     but not ticked keeps printing until the kid picks (no button selected); unticking down to one brings her picker back
+//     with that look selected. Nothing here ever changes a kid's look on its own.
+//   · THE KID'S TAP (nbLookKidSet) saves only notebookSettings/<kid>/notebookTheme — one targeted write, db && !_dryRun() only,
+//     mirrored to the same local cache nbSetLook uses — and only for the kid whose Kids' Corner it is, only to a ticked look,
+//     only while 2+ are ticked. Anything else is refused. nbSetLook's Mom gate is untouched.
+//   · The buttons come from the look's own pieces (HoweNotebooks.lookCard: mascot, picture row, colour swatch), so no look is
+//     typed in here and a child who can't read yet can choose. A change shapes only the NEXT notebook built: nothing is
+//     rebuilt, re-laid or rescheduled; a week already printed or sent to a tablet is a stored copy and never changes.
+//   · No separate "note to Mom": the games' 👍 note lives in mastery/<kid>_settings/gameLikes/<game> and is read only by the
+//     games grid, so it doesn't fit a look; the kid's pick shows on Mom's look card instead.
+function _nlpOkKey(k){ return typeof k==="string"&&/^[A-Za-z0-9_-]{1,40}$/.test(k); }
+// The looks this kid's notebook offers that have a picture card: [{key,label,card}] in the notebook's own order.
+function nbLookPickOffer(kid,o){
+  const N=window.HoweNotebooks; if(!N||typeof N.lookCard!=="function") return [];
+  o=o||nbLookOpts(kid); if(!o||!Array.isArray(o.looks)) return [];
+  const out=[];
+  o.looks.forEach(l=>{ if(!l||!_nlpOkKey(l.key)) return; let c=null; try{ c=N.lookCard(l.key); }catch(e){ c=null; } if(c) out.push({key:l.key,label:String(l.label||c.label||l.key),card:c}); });
+  return out;
+}
+function _nlpTicks(kid){ const t=(((typeof notebookSettings!=="undefined"&&notebookSettings)||{})[kid]||{}).looksAllowed; return (t&&typeof t==="object")?t:{}; }
+function _nlpRawCount(kid){ const t=_nlpTicks(kid); return Object.keys(t).filter(k=>t[k]===true).length; }
+// The ticked looks this notebook still offers, in the notebook's order (a tick for a look it no longer offers is ignored).
+function nbLooksAllowed(kid,o){ const t=_nlpTicks(kid); return nbLookPickOffer(kid,o).filter(x=>t[x.key]===true).map(x=>x.key); }
+// 2+ ticked = the kid picks (Kids' Corner); otherwise Mom's picker is the live control.
+function nbLookKidPicks(kid,o){ return nbLooksAllowed(kid,o).length>=2; }
+// Mom's tick — one field: set true, or removed.
+function nbLookAllow(kid,key){
+  if(!momHere()) return false;
+  if(!nbLookPickOffer(kid).some(x=>x.key===key)) return false;
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  const ns=notebookSettings[kid]; if(!ns.looksAllowed||typeof ns.looksAllowed!=="object") ns.looksAllowed={};
+  const on=ns.looksAllowed[key]===true;
+  if(on) delete ns.looksAllowed[key]; else ns.looksAllowed[key]=true;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db&&!_dryRun()){ const r=db.ref("notebookSettings/"+kid+"/looksAllowed/"+key); if(on) r.remove(); else r.set(true); } }catch(e){}
+  if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
+  return true;
+}
+// The kid's tap — a separate function with its own three checks (never nbSetLook's Mom gate).
+function nbLookKidSet(kid,key){
+  try{ _kcLoadKid(); }catch(e){}
+  if(!kid||typeof kcKid==="undefined"||kcKid!==kid) return false;   // only on this kid's own Kids' Corner
+  const al=nbLooksAllowed(kid);
+  if(al.length<2) return false;                                     // only while Mom has 2+ ticked
+  if(al.indexOf(key)<0) return false;                               // only a look Mom ticked
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  if(notebookSettings[kid].notebookTheme===key) return true;        // already the next look — nothing to write
+  notebookSettings[kid].notebookTheme=key;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db&&!_dryRun()) db.ref("notebookSettings/"+kid+"/notebookTheme").set(key); }catch(e){}
+  try{ renderAll(); }catch(e){}
+  return true;
+}
+// The Notebook tab's look card: Mom's pills (0–1 ticked) or the kid's pick read-only (2+), then the tick list. A notebook
+// that offers fewer than two looks with pictures gets the pills back untouched.
+function nbLookPickRow(sel,o,pillsHtml){
+  const offer=nbLookPickOffer(sel,o); if(offer.length<2) return pillsHtml;
+  const t=_nlpTicks(sel), al=offer.filter(x=>t[x.key]===true).map(x=>x.key), kidPicks=al.length>=2, name=esc(cap(sel));
+  let top=pillsHtml;
+  if(kidPicks){
+    const cur=(o&&o.current)||"", curL=((o.looks||[]).find(l=>l&&l.key===cur)||{}).label||"";
+    top=al.indexOf(cur)>=0
+      ?'<div id="nblookpick-chose" style="font-size:12.5px;color:#1f2937;line-height:1.45"><b>'+name+' chose '+esc(curL)+'</b> — the next notebook will be '+esc(curL)+'. To change it, change the ticks below.</div>'
+      :'<div id="nblookpick-chose" style="font-size:12.5px;color:#1f2937;line-height:1.45"><b>'+name+' hasn’t picked yet.</b> The next notebook stays '+esc(curL||"as it is")+' until '+name+' picks in Kids’ Corner. To change it, change the ticks below.</div>';
+  }
+  const ticks=offer.map(x=>{ const on=t[x.key]===true;
+    return '<button onclick="nbLookAllow(\''+sel+'\',\''+x.key+'\')" aria-pressed="'+(on?'true':'false')+'" title="'+(on?'Ticked — tap to untick':'Tap to let '+name+' choose this look')+'" style="min-height:44px;padding:6px 11px;border-radius:20px;border:1.5px solid '+(on?'#16a34a':'var(--border)')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#166534':'#1f2937')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(on?'☑ ':'☐ ')+esc(x.label)+'</button>';
+  }).join("");
+  return top+
+    '<div id="nblookpick-ticks" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">'+
+      '<div style="font-size:12px;font-weight:800;color:#9a3412;margin-bottom:5px">'+name+' may choose from:</div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">'+ticks+'</div>'+
+      '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-top:5px">2 or more ticked = '+name+' picks in Kids’ Corner; you’ll see the pick here. None or one ticked = you pick, as now.</div>'+
+    '</div>';
+}
+// Kids' Corner ▸ "🎨 My notebook look" — this kid's own Corner only, only with 2+ looks ticked, not over a game or drill.
+let _nlpLoading=false;
+function nbLookPickKcHtml(k){
+  try{
+    _kcLoadKid();
+    if(!k||kcKid!==k) return "";
+    const m=kcCalGet(k); if(m==="drills"||m==="games"||m==="card") return "";
+    if(_nlpRawCount(k)<2) return "";
+    if(!window.HoweNotebooks){   // the notebook code loads on first use — then draw the card
+      if(!_nlpLoading&&typeof haLoadNotebooksLib==="function"){ _nlpLoading=true; haLoadNotebooksLib().then(()=>{ _nlpLoading=false; if(tab==="kids"&&kcKid===k) renderAll(); }).catch(()=>{ _nlpLoading=false; }); }
+      return "";
+    }
+    const o=nbLookOpts(k), offer=nbLookPickOffer(k,o), t=_nlpTicks(k), al=offer.filter(x=>t[x.key]===true);
+    if(al.length<2) return "";
+    const cur=(o&&o.current)||"", pick=al.find(x=>x.key===cur)||null, col=KID_COLOR[k]||"#2B7A78";
+    const hex=c=>/^#[0-9a-fA-F]{3,8}$/.test(String(c||""));
+    const btns=al.map(x=>{ const c=x.card, on=!!pick&&pick.key===x.key;
+      const sw=(c.colors||[]).filter(hex).map(cc=>'<span style="flex:1;height:14px;background:'+cc+'"></span>').join("");
+      return '<button onclick="nbLookKidSet(\''+k+'\',\''+x.key+'\')" aria-pressed="'+(on?'true':'false')+'" aria-label="'+esc(c.label)+'" style="position:relative;flex:1 1 130px;min-width:120px;min-height:120px;padding:10px 8px;border-radius:18px;border:'+(on?'4px solid '+col:'2px solid #e2ddd6')+';background:'+(on?_kcTint(col,0.88):'#fff')+';cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent;text-align:center">'+
+        (on?'<span style="position:absolute;top:6px;right:8px;width:28px;height:28px;border-radius:50%;background:'+col+';color:#fff;font-size:17px;font-weight:900;line-height:28px">✓</span>':'')+
+        '<div style="font-size:44px;line-height:1.1">'+esc(c.emoji)+'</div>'+
+        '<div style="font-size:19px;line-height:1.3;margin-top:4px;letter-spacing:1px">'+esc((c.row||[]).join(" "))+'</div>'+
+        '<div style="display:flex;border-radius:7px;overflow:hidden;margin:8px 6px 6px;border:1px solid rgba(0,0,0,.08)">'+sw+'</div>'+
+        '<div style="font-size:14px;font-weight:800;color:#374151">'+esc(c.label)+'</div></button>';
+    }).join("");
+    return '<div id="kc-nblook" style="padding:14px 12px 0"><div style="max-width:640px;margin:0 auto;padding:14px;border-radius:18px;background:#f8f7f4;border:2px dashed #e2ddd6;box-sizing:border-box">'+
+      '<div style="font-size:18px;font-weight:800;color:#57534e;margin-bottom:10px">\u{1F3A8} My notebook look</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:10px">'+btns+'</div>'+
+      '<div style="font-size:15px;font-weight:700;color:#57534e;margin-top:10px;text-align:center">'+(pick?'Your next notebook will be '+esc(pick.card.label)+'.':'Tap a picture to pick your next notebook.')+'</div>'+
+    '</div></div>';
+  }catch(e){ return ""; }
+}
+// NB_LOOKPICK_END
 // PREKLEVEL_WIRE_START — the notebook's look + level switches (her ask 2026-11-08: "a setting where they could change between
 // which theme, construction, dinosaurs, or sharks" → "for every kid, there will be a quick theme changer"). Mom's picker saves
 // to notebookSettings/<kid>/notebookTheme and notebookSettings/<kid>/nbLevel/<switch> (targeted writes, synced like reviewCap);
@@ -50147,7 +50265,7 @@ function nbLevelOf(kid){
 }
 function nbGradeOf(kid){ const g=((nbRecOf(kid).notebook||{}).gradeLabel); if(g==="K") return "Kindergarten"; if(typeof g==="string"&&g.trim()) return g.trim(); return isPreK(kid)?"Pre-K":null; }
 function nbLookOpts(kid){ const N=window.HoweNotebooks; return (N&&typeof N.notebookOptions==="function")?N.notebookOptions(kid,{isPreK:isPreK(kid),notebookTheme:nbThemeOf(kid),nbLevel:nbLevelOf(kid)}):null; }
-function nbSetLook(kid,key){ if(!momHere()) return;
+function nbSetLook(kid,key){ if(!momHere()) return; if(typeof nbLookKidPicks==="function"&&nbLookKidPicks(kid)) return;   // NB_LOOKPICK: 2+ ticked = the kid picks in Kids' Corner
   if(!notebookSettings[kid]) notebookSettings[kid]={};
   notebookSettings[kid].notebookTheme=String(key||"");
   try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
@@ -59017,7 +59135,7 @@ function renderNotebook(el){
     lookHtml='<div id="nblook-card" style="margin-top:14px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:12px 14px">'+
       '<div style="font-size:12px;font-weight:800;color:#9a3412;margin-bottom:2px">🎨 Notebook look <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fed7aa;color:#7c2d12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></div>'+
       '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:7px">'+(lookOpts.looks.length>1?'Pick the pictures and colors. It changes the next notebook you print — nothing already printed changes.':'This notebook has one look for now.')+'</div>'+
-      '<div style="display:flex;gap:6px;flex-wrap:wrap">'+looks+'</div>'+
+      nbLookPickRow(sel,lookOpts,'<div style="display:flex;gap:6px;flex-wrap:wrap">'+looks+'</div>')+   // NB_LOOKPICK: Mom's pills (0–1 ticked) or the kid's pick (2+), then the tick list
       (lvRows?'<div style="font-size:12px;font-weight:800;color:#9a3412;margin:12px 0 2px">📏 Level</div><div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:4px">The same notebook at a different level — turn on what this child is ready for.</div>'+lvRows:'')+
       nbNameCardHtml(sel,lookOpts)+   // NBNAME: ✏️ Name in the notebook (Pre-K notebooks)
       ((typeof nbCountPicCardHtml==="function")?nbCountPicCardHtml(sel):"")+   // NB_COUNTPIC: 🔢 Number card counts (Pre-K notebooks)

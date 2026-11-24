@@ -7842,6 +7842,25 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     return emojiToImages(applySafariPrintFit(binding ? applyBindingMargin(doc) : doc));
   }
 
+  // NB_LOOKPICK_START — 🎨 a look's own small picture, for the Kids' Corner look picker (her decisions 2026-11-24: "Kid picks
+  // from mine" — Mom ticks which looks a kid may use and, with two or more ticked, the kid picks among them; Pre-K kids too,
+  // "Yes, with pictures"; "it would need to be on their kids corner"). The app draws each big button from this, so no look
+  // is ever typed into index.html and a child who can't read yet can still choose: the look's mascot, its picture row (the
+  // cover's row) and a colour swatch (the colours of its extra-page strip), all from the look's own theme, built with no
+  // child's name in it. Read only: nothing here changes what any notebook prints.
+  // key → { key, emoji, row: [pictures], colors: ["#main", "#pale", "#deep"], label } — or null for a key that isn't a look.
+  function lookCard(key) {
+    var k = String(key == null ? "" : key);
+    if (!k || !Object.prototype.hasOwnProperty.call(NB_THEMES, k) || !NB_THEMES[k] || typeof NB_THEMES[k].theme !== "function") return null;
+    var D = NB_THEMES[k], T = null;
+    try { T = D.theme({}, PK_LEVEL_DEFAULT); } catch (e) { T = null; }
+    if (!T) return null;
+    var row = String(T.coverRow || "").split(/\s+/).filter(function (x) { return !!x; });
+    var colors = (T.xpColors || []).filter(function (c) { return typeof c === "string" && /^#[0-9a-fA-F]{3,8}$/.test(c); });
+    return { key: k, emoji: String(T.emoji || row[0] || ""), row: row, colors: colors, label: String(D.chip || D.label || k) };
+  }
+  // NB_LOOKPICK_END
+
   window.HoweNotebooks = {
     version: "1-julian",
     fontsOk: FONTS_OK,
@@ -7865,6 +7884,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     hasPlan: pkHasPlan,
     planFor: pkPlanFor,
     countPicFor: nbCountPicFor,         // NB_COUNTPIC: what this kid's number card counts (Notebook tab look card)
+    lookCard: lookCard,                 // 🎨 NB_LOOKPICK: a look's mascot, picture row and colours (Kids' Corner look picker)
     reviewDecks: nbReviewDecks,         // 🔁 NBNEEDS: which drill decks this kid's notebook brings back to paper (Notebook tab card)
     ladders: NB_LADDERS,                // 📚 NBLADDER: the two notebook ladders — engine + placement (the 1st-grade notebook prints reading)
     ladderPages: nbLadReadPages,        // 📖 NBLADREAD: does this kid's notebook print a ladder? (the Ladders card's note)
