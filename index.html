@@ -14505,6 +14505,43 @@ function momSchedHouse(dayName,dayTasks){
   return out.sort(function(a,b2){ return (a.m-b2.m)||(a.o-b2.o); });
 }
 // HOUSECARDS_END
+// HOUSEGAP_START — 🏡 Household step 7 "Mixed in", slice 1 (PLAN_house_step7_2026-11-19 §5 row 1): where Mom's unanswered house
+// chores WOULD sit in her school day. The design (DESIGN_household_rooms §4.5): "a chore is placed in the first gap that is long
+// enough … most-needed first. It is worked out every time the screen draws, so it moves with the school day." Her answers
+// 2026-11-20: a chore may sit during a "May need Mom" card ("Yes") · "Yes, 5 minutes" free before her next lesson.
+// Pure: inputs in, times out — no page, no globals but toMin, no writes, no timers. NOTHING calls it in this slice (slice 2 draws
+// it on her schedule). It never feeds the Mom loop (_blkIv · momBlocks · mlQueueLay), so no lesson can move because of a chore;
+// her own Now / After / Later tap still makes a real block, as today. test_momloop_house.js proves it.
+// hgapLay({cards, chores, now, start, end, lunch, blocks, done, lead, helper, span, cushion}) → {busy, gaps, placed}
+//   cards  = her laid day (mpSchTasks("mom",today)). Busy = a Mom-required card not done (o.done(t)), not a helper's (o.helper(t)),
+//            only its Mom part (o.span(t,s,d) → [a,b]) · family time she leads (o.lead(t)) — 5 min cushion before each of those —
+//            and lunch [a,b] + o.blocks [[a,b],…] (her laundry / meal-prep / tapped house blocks), no cushion. "May need Mom" is free.
+//   chores = [{id, mins, slot:"morning"|"afternoon"|"night"|"", score}] in room order; the window = later of now and start … end.
+//   placed = [{id, at, end, how:"gap"|"after"}], most-needed first (score high → low, ties in room order), each in the first gap it
+//            fits whole (never split): Morning ends by lunch, Afternoon starts after it (no lunch: noon), Night never in school
+//            time; no fit → "after" at school end, as today.
+const HGAP_CUSHION=5;
+function hgapBusy(cards,o){ o=o||{}; const out=[], f=function(k,t){ try{ return !!(o[k]&&o[k](t)); }catch(e){ return false; } };
+  (cards||[]).forEach(function(t){ if(!t||!t.time||f("done",t)) return; const s=toMin(String(t.time)); if(!(s>0)) return; const d=t.dur||20; let w=null;
+    if(t.mom==="required"&&!t.momPartDone&&!f("helper",t)){ w=[s,s+d]; try{ if(o.span) w=o.span(t,s,d)||w; }catch(e){} }
+    else if(f("lead",t)) w=[s,s+d];
+    if(w) out.push({a:w[0],b:w[1],c:1}); });
+  if(o.lunch) out.push({a:o.lunch[0],b:o.lunch[1],c:0});
+  (o.blocks||[]).forEach(function(w){ if(w) out.push({a:w[0],b:w[1],c:0}); });
+  return out.sort(function(x,y){ return (x.a-y.a)||(x.b-y.b); }); }
+function hgapGaps(busy,win,cu){ const g=[]; let t=win.start; if(cu==null) cu=HGAP_CUSHION;
+  (busy||[]).map(function(x){ return [x.a-(x.c?cu:0),x.b]; }).sort(function(p,q){ return p[0]-q[0]; })
+    .forEach(function(x){ if(x[0]>t) g.push([t,Math.min(x[0],win.end)]); if(x[1]>t) t=x[1]; });
+  g.push([t,win.end]); return g.filter(function(x){ return x[1]>x[0]; }); }
+function hgapPlace(chores,gaps,win){ const G=(gaps||[]).map(function(x){ return x.slice(); }), L=win.lunch||[720,720];
+  return (chores||[]).map(function(c,i){ const v=parseFloat(c.score); return {c:c,i:i,s:isFinite(v)?v:1}; }).sort(function(x,y){ return (y.s-x.s)||(x.i-y.i); })
+    .map(function(x){ const c=x.c, m=parseInt(c.mins,10), lo=(c.slot==="afternoon")?L[1]:-1, hi=(c.slot==="morning")?L[0]:1e9;
+      if(m>0&&c.slot!=="night") for(let k=0;k<G.length;k++){ const s=Math.max(G[k][0],lo); if(s+m<=Math.min(G[k][1],hi)){ G.splice(k,1,[G[k][0],s],[s+m,G[k][1]]); return {id:c.id,at:s,end:s+m,how:"gap"}; } }
+      return {id:c.id,at:win.end,end:win.end+(m>0?m:0),how:"after"}; }); }
+function hgapLay(o){ o=o||{}; const win={start:Math.max(+o.now||0,+o.start||0),end:+o.end||0,lunch:o.lunch||null};
+  const busy=hgapBusy(o.cards,o), gaps=hgapGaps(busy,win,o.cushion);
+  return {busy:busy,gaps:gaps,placed:hgapPlace(o.chores,gaps,win)}; }
+// HOUSEGAP_END
 // HH_SETTINGS_METER_START — PR A of the distributing cleaning day (her 2026-10-11: "settings per card on how often they should be
 // done and which kids can do … percentage wise farthest from being done … a cleaning day's start etc needs to be settings much
 // like a school day"). Three things, no behaviour change on any list:
