@@ -54,7 +54,8 @@ function stripPause(s) {
 module.exports = { stripPause };
 if (require.main !== module) return;
 
-const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const { stripSwitch } = require("./test_drill_switch.js");   // DRILLSWITCH (slice 7): its door / strip / paper-drill lines and its block are taken out on both sides (test_drill_switch.js pins them)
+const src = stripSwitch(fs.readFileSync(path.join(__dirname, "index.html"), "utf8"));   // DRILLSWITCH
 let pass = 0, fail = 0;
 function ok(n, c, x) { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + JSON.stringify(x).slice(0, 600) + ")" : "")); } }
 function fnIn(S, name) { const i = S.indexOf("function " + name + "("); if (i < 0) throw new Error("not found " + name); let d = 0; for (let k = S.indexOf("{", i); k < S.length; k++) { if (S[k] === "{") d++; else if (S[k] === "}") { d--; if (!d) return S.slice(i, k + 1); } } throw new Error("unbalanced " + name); }
@@ -71,10 +72,10 @@ const toMin = s => { const m = String(s || "").match(/(\d+):(\d+)\s*(AM|PM)/i); 
 const fromMin = mn => { let h = Math.floor(mn / 60), m = mn % 60, ap = h >= 12 ? "PM" : "AM"; h = h % 12; if (h === 0) h = 12; return h + ":" + String(m).padStart(2, "0") + " " + ap; };
 function rng(seed) { let a = seed >>> 0; return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
-let MAIN = ""; try { MAIN = cp.execSync("git show origin/main:index.html", { cwd: __dirname, encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { MAIN = ""; }
+let MAIN = ""; try { MAIN = cp.execSync("git show origin/main:index.html", { cwd: __dirname, encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { MAIN = ""; } MAIN = stripSwitch(MAIN);   // DRILLSWITCH: the same on origin/main's side
 const OLD = stripPause(MAIN || src);   // origin/main (as-if-merged: the merged tree with the slice taken out again)
 // the tree this branch was cut from (origin/main can move on with unrelated work while the branch waits)
-let BASE = ""; try { const mb = cp.execSync("git merge-base HEAD origin/main", { cwd: __dirname, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); BASE = stripPause(cp.execSync("git show " + mb + ":index.html", { cwd: __dirname, encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] })); } catch (e) { BASE = ""; }
+let BASE = ""; try { const mb = cp.execSync("git merge-base HEAD origin/main", { cwd: __dirname, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); BASE = stripPause(stripSwitch(cp.execSync("git show " + mb + ":index.html", { cwd: __dirname, encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] }))); } catch (e) { BASE = ""; }   // DRILLSWITCH
 
 // ───────────────────────────────────────────────────────────────────────────────────────────────
 console.log("0. the slice, and stripPause undoing it exactly");
