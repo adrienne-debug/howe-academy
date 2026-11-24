@@ -48,7 +48,8 @@ console.log("\n── Finish Line: a waiting lane member ──");
   ok("no lane → no waiting rows at all", rows3.every(r => r.status !== "waiting"));
 }
 {
-  ok("the 🏁 chip renders the waiting state", /waiting:"#6366f1"/.test(src) && /else if\(_fl\.status==="waiting"\) txt="🛤 "\+_fl\.remaining\+" left · waits for "/.test(src));
+  // (the 🏁 chip that drew the waiting state lived on the old Subjects-page card, ceBuildCard — unreachable, gone in LMCLEANUP
+  //  slice 3b; the waiting row itself, above, and the weekly report's reading of it, below, are what stay live)
   ok("the weekly report does not flag a waiting member as 'needs a look'", /f\.status!=="ontime"&&f\.status!=="done"&&f\.status!=="waiting"/.test(src));
 }
 console.log("\n" + pass + " passed, " + fail + " failed"); process.exit(fail ? 1 : 0);

@@ -91,7 +91,7 @@ function world(S, o) {
     smapIsKidOff: () => false, schedOvKidOff: () => false, schedOv: () => null, coopBlocksBase: () => false, coopNoMomBaseFor: () => "", coopsOnDate: () => [],
     computeFutureSlots: () => ({}), retrTracks: () => [], formatPlanDate: d => d, cap: s => s, cbRenderRules: () => "", cbRenderGate: () => "",
     document: { getElementById: () => null, querySelector: () => null }, setTimeout: () => 0,
-    ROSTER: ["kid"], currViewKid: "kid", gvKidCfgOpen: false, cbMsg: "", cbLastBuild: null, momVerifyKid: null, lmLastMove: null, gvScrollTop: 0, gvScrollLeft: 0, RETR_SLOT_TITLE: {},
+    ROSTER: ["kid"], currViewKid: "kid", gvKidCfgOpen: false, cbMsg: "", cbLastBuild: null, momVerifyKid: null, gvScrollTop: 0, gvScrollLeft: 0, RETR_SLOT_TITLE: {},
     ceRenderSessions: () => "", ceConvUndoBanner: () => "", fbRender: () => "", gvAuditRender: () => "", alignPlanPreview: () => null,
     pacePhantomKeys: () => [], lidUnassigned: () => [], lidImportPending: () => [], lidOutOfOrderAll: () => [], skiplogLeftovers: () => [], dayTokenLeftovers: () => [],
     capLeftovers: () => ({ items: [], orphans: [], node: null }), planPending: () => [], gvNoSeqSubjects: () => [], gvMissingDays: () => [], gvSelFilledCount: () => 0, gvSelSingleSubject: () => null,
@@ -226,8 +226,8 @@ const ROWS = [
 const BEFORE = [].concat(...ROWS.map(r => r.before));
 
 // the Curriculum page's draw functions, and the confirms / toasts it raises
-const PAGE_FNS = ("renderCurriculumView ceBuildCard ceRenderSessions ceRenderEditSheet _ceMarkDoneUI ceRenderAddSheet cePracticeSectionHTML " +
-  "ceMomPartSectionHTML mmEditorSectionHTML lnRenderSection cbRenderSummary cbRenderRules cbRenderGate renderCurrBuilder cbRenderForm renderCurrGrid " +
+const PAGE_FNS = ("renderCurriculumView ceRenderSessions ceRenderEditSheet _ceMarkDoneUI ceRenderAddSheet cePracticeSectionHTML " +
+  "ceMomPartSectionHTML mmEditorSectionHTML lnRenderSection cbRenderRules cbRenderGate cbRenderForm renderCurrGrid " +
   "gvAuditRender gvMarkMenuHTML _ceMarkDoneAsk gvMakePlan gvMakePlanAll gvMakePlanUndo ceUnfinishLesson ceConvApply rlSet gvAuditFixGap " +
   "gvReconcileAdopt gvOpenCell gvMarkNotDone gvDeleteLesson ceRelayRemaining ceWalkApply ceSetCap cwdUseMonThu lnPauseRelay cbApply cbRebuildAll " +
   "gvMenuDone gvSelShiftUp ckLogDock mdCardCheckLog mmRulesCardHTML rulesFamilyCardsHTML afSheetHTML afSaved afPut afLater afGo").split(" ");   // ADDFLOW (slice 5): the guided Add steps

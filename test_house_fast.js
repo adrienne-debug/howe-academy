@@ -25,6 +25,10 @@ const J = x => JSON.stringify(x), HJS = V.HJS;
 const BEFORE = "c6bedace";   // origin/main when this branch started; house.js before HOUSEFAST
 let BHJS = process.env.BASE_HOUSE ? fs.readFileSync(process.env.BASE_HOUSE, "utf8") : null;
 if (!BHJS) { try { BHJS = cp.execSync("git show " + BEFORE + ":house.js", { cwd: __dirname, maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] }).toString("utf8"); } catch (e) { BHJS = null; } }
+// HOUSEQUIET (slice B of the missed-chores design, 2026-11-23) changes on purpose what the Household pages draw (no red late badge,
+// Mom's notes, % done; test_house_quiet.js). Every caller asks typeof first, so the comparisons with BEFORE's pages run on house.js with
+// that block cut out: what HOUSEFAST's memo must leave byte for byte as it was.
+const noQ = s => { const i = s.indexOf("// HOUSEQUIET_START"); return i < 0 ? s : s.slice(0, i) + s.slice(s.indexOf("\n", s.indexOf("// HOUSEQUIET_END")) + 1); };
 console.log("(base: " + (BHJS ? "house.js at " + (process.env.BASE_HOUSE || BEFORE) : "none — git show " + BEFORE + " failed; part 1 is skipped") + ")");
 
 // ── the made-up big family (deterministic) ──
@@ -125,7 +129,7 @@ const TAPS = [
 const S = c => c.get("JSON.stringify([householdData,houseDayData,routineLog,momdayData,daddayData,laundryLine])");
 if (BHJS) for (const mode of ["off", "preview", "on"]) {
   console.log("\n── 1. " + mode + ": every page = " + BEFORE + "'s, before and after each tap ──");
-  const a = world(mode, HJS), b = world(mode, BHJS);
+  const a = world(mode, noQ(HJS)), b = world(mode, BHJS);   // HOUSEQUIET: noQ
   const cmp = (when, few) => { const w0 = a.writes.length, l0 = a.lsw.length, s0 = S(a), P = pages(a, few), Q = pages(b, few), bad = Object.keys(Q).filter(k => P[k] !== Q[k]);
     ok(mode + ", " + when + ": all " + Object.keys(Q).length + " pages byte for byte (Whole house " + P.whole.length + " chars)", !bad.length && Object.keys(P).length === Object.keys(Q).length, bad);
     ok(mode + ", " + when + ": drawing them wrote nothing (no db call, no storage, no data change)", a.writes.length === w0 && a.lsw.length === l0 && S(a) === s0); return P; };
@@ -204,9 +208,9 @@ const mutant = (name, a, b) => { const n = HJS.split(a).length - 1; if (n !== 1)
 { const m = mutant("rnRows keyed without its room", 'hfMemo("rn|"+rid,', 'hfMemo("rn|",');
   if (m) { const a = world("on", m), b = world("on", HJS), x = whole(a), y = whole(b); ok("mutation 2 — every room's 🔴 Now rows from one memo slot → the Whole house page is no longer the same", x !== y); } }
 { const m = mutant("the need forgets lastDone", "  let last=st.last; if(j.lastDone&&/^\\d{4}-\\d{2}-\\d{2}$/.test(j.lastDone)&&(!last||j.lastDone>last)) last=j.lastDone;\n  if(!last) return {pct:Infinity", "  let last=st.last;\n  if(!last) return {pct:Infinity");
-  if (m) { const r = needSame(m); let page = true; if (BHJS) { const a = world("off", m), b = world("off", BHJS); page = whole(a) !== whole(b); }
+  if (m) { const r = needSame(m); let page = true; if (BHJS) { const a = world("off", noQ(m)), b = world("off", BHJS); page = whole(a) !== whole(b); }
     ok("mutation 3 — _hfNeedOf drops the cleaning-day lastDone → part 4 fails" + (BHJS ? " and Whole house differs from " + BEFORE + "'s" : ""), !r.text && !r.ans && page, r); } }
 { const m = mutant("stats shared by every chore", 'hfMemo("st|"+id,', 'hfMemo("st|",');
-  if (m && BHJS) { const a = world("off", m), b = world("off", BHJS); ok("mutation 4 — one stats slot for every chore → Whole house differs from " + BEFORE + "'s", whole(a) !== whole(b)); } }
+  if (m && BHJS) { const a = world("off", noQ(m)), b = world("off", BHJS); ok("mutation 4 — one stats slot for every chore → Whole house differs from " + BEFORE + "'s", whole(a) !== whole(b)); } }
 
 console.log("\n" + pass + " passed, " + fail + " failed"); process.exit(fail ? 1 : 0);

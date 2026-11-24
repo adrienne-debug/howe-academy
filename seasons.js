@@ -15,13 +15,17 @@
 //                                  ev:{<eventId>:true}, did?:"YYYY-MM-DD", skip?:true, ts}                     an idea everyone may see
 //   seasonSecret/<sid>/<iid>      the SAME record + hide:"hint"|"none", and for 🤐: on:{<id>:{d, time?}}        a 🤫 surprise — its real
 //                                  words live ONLY here, a node no kid page ever reads (the later kids' page reads seasons/ideas only)
-//   calendar/events/<eventId>     the calendar's OWN record {title, date, time, who, emoji, addedBy} — what 📅 Schedule writes.
-//                                  A ✨ hint's event is {title:"A surprise", emoji:"✨"}: the real words never reach the calendar.
+//   calendar/events/<eventId>     the calendar's OWN record {title, date, time, who, emoji, addedBy, mins?, hold?} — what 📅 Schedule
+//                                  writes. A ✨ hint's event is {title:"A surprise", emoji:"✨"}: the real words never reach the calendar.
+//                                  mins = how long it lasts (only when start + end make a readable length); hold:true = ⏰ school is
+//                                  planned around it (only with mins). Both are only ever written as a value or removed — never false/0.
 // THE DATE IS NEVER STORED ON AN IDEA: an idea is "scheduled" while one of its ev ids is still in the calendar, and its date and time
 // are that event's. Move or remove the event in the calendar and the idea follows. (🤐 has no event, so its date is in `on`.)
 // SCHOOL IS NEVER TOUCHED: every write goes through apply(), which refuses any path outside seasons/, seasonSecret/ and
-// calendar/events/. Family events are display-only in the app — no scheduler, generator or re-lay code reads them — and this file
-// never writes holidays, vacations, co-ops, kid days off or Family Time.
+// calendar/events/. A family event is display-only UNLESS it holds its time (⏰ hold:true + mins): the scheduler reads a held event
+// (index.html EVHOLD) and lays school around it. This file never runs scheduler code itself: after a write that makes, changes or
+// removes an event, apply() hands each one to the calendar's ONE re-plan door, evHoldRelay — which decides by itself whether anything
+// needs re-planning. This file never writes holidays, vacations, co-ops, kid days off or Family Time.
 // Every write is ONE multi-path update of exact records/fields (db.ref().update), and only when !_dryRun() (?dryrun=1 stays inert).
 // who = a roster kid id, "mom", "dad" or "family". Counts, open days and Everyone's picks are worked out on screen, never stored.
 //
@@ -149,6 +153,8 @@ function evs(){return cal().events||{};}
 function apply(up){
   const P=Object.keys(up);if(!P.length)return false;
   if(P.some(p=>!SN_OK.test(p))){try{console.warn("seasons: refused a write outside its own nodes",P);}catch(e){}return false;}
+  const EV=[],was={},LK={};P.forEach(p=>{const a=p.split("/");if(a[0]==="calendar"&&a[2]&&EV.indexOf(a[2])<0){EV.push(a[2]);was[a[2]]=clone(evs()[a[2]]||null);}});   // SEASONHOLD: each event before
+  P.forEach(p=>{if(up[p]===null&&SN_EVLINK.test(p)&&linkNow(p)===true)LK[p]=true;});   // …and each idea→event link this write takes off
   P.forEach(p=>{const a=p.split("/"),v=up[p];
     if(a[0]==="seasons")setIn(snData,a.slice(1),v);
     else if(a[0]==="seasonSecret")setIn(snSecret,a.slice(1),v);
@@ -157,7 +163,25 @@ function apply(up){
     else if(a[0]==="dadday"){try{if(typeof daddayData!=="undefined"&&daddayData){setIn(daddayData,a.slice(1),v);if(!dry())HA_LS.setItem("ha_dadday",JSON.stringify(daddayData));}}catch(e){}}
     else{const c=cal();if(!c.events)c.events={};setIn(c.events,a.slice(2),v);}});
   if(live())db.ref().update(up);
+  if(live())relay(EV,was,LK);   // SEASONHOLD: only after a real write
   return true;
+}
+// SEASONHOLD: after a REAL write (never ?dryrun=1), every event it made, changed or removed goes to the calendar's one re-plan door.
+// The door re-plans only when a held block on the built week appears, changes or goes (several within 2 s = one re-plan, one Undo).
+// A HELD day taken off (✕ one · take all off · 🌙): the door's Undo brings the calendar event back — so the idea's link to it goes in
+// the SAME Undo (relayWeek joins calls within 2 s into one re-plan and merges its undo list by path). Deleting the idea or switching
+// it to 🤐 takes no link path off, so its Undo brings back only the event (left as it was — the hub's call 11/23).
+const SN_EVLINK=/^(seasons\/ideas|seasonSecret)\/[^\/]+\/[^\/]+\/ev\/[^\/]+$/;
+function linkNow(p){const a=p.split("/");let o=a[0]==="seasons"?snData:snSecret;for(let i=1;i<a.length&&o!=null;i++)o=(typeof o==="object")?o[a[i]]:undefined;return o;}
+function relay(ids,was,LK){
+  if(typeof evHoldRelay!=="function")return;
+  ids.forEach(id=>{try{
+    const now=clone(evs()[id]||null);
+    if(evHoldRelay(id,was[id],now)===true&&!now&&typeof relayWeek==="function"){
+      const back=Object.keys(LK||{}).filter(p=>p.slice(p.lastIndexOf("/")+1)===id).map(p=>({p,was:true}));
+      if(back.length)relayWeek("calendar",{undo:back});
+    }
+  }catch(e){try{console.warn("seasons: re-plan door",e);}catch(x){}}});
 }
 
 // ── what's there ─────────────────────────────────────────────────────────────
@@ -572,7 +596,7 @@ function schedSheet(){
   let h='<div class="sn-h2">'+(mv?"↪ Move":"📅 Schedule")+' — '+esc(it.t)+'</div>';
   h+='<div class="sn-sub">'+(mv?"Now on "+whenTxt(mv)+". ":"")+(h0==="hint"?"✨ The family calendar will only say “"+SN_HINT_TITLE+"”."
     :(h0==="none"?"🤐 Nothing goes on the family calendar. Only you see the day, here.":((!mv&&e.mode&&e.mode!=="one")?"Each day goes on the family calendar for everyone.":"Tap a day. It goes on the family calendar for everyone.")))+'</div>';
-  h+='<div class="sn-form">'+field("time","Time (optional)","2:00 PM");
+  h+='<div class="sn-form">'+field("time","Time (optional)","2:00 PM")+holdRows(e,h0);
   if(h0!=="none")h+='<label class="sn-fl"><span>For</span><select onchange="snSet(\'who\',this.value)"><option value="family"'+(e.form.who==="family"?" selected":"")+'>The whole family</option>'
     +roster().map(k=>'<option value="'+esc(k.id)+'"'+(e.form.who===k.id?" selected":"")+'>'+esc(k.name)+'</option>').join("")+'</select></label>';
   h+='</div>';
@@ -777,9 +801,40 @@ function snDelIdea(){
 // ── 📅 Schedule ──────────────────────────────────────────────────────────────
 function snSched(iid,moveId){
   const sid=curSid();if(!flush(iid))return;const it=idea(sid,iid);if(!it)return;
-  const mv=moveId?whens(it).find(w=>w.id===moveId):null,E=evs();
+  const mv=moveId?whens(it).find(w=>w.id===moveId):null,E=evs(),mr=(mv&&mv.k==="ev")?E[mv.id]:null;
   const dow=dOf(ideaDay(it)||schedRange(season(sid),0).from).getUTCDay();   // "every week" starts on its own weekday, else today's
-  snEdit={type:"sched",sid,id:iid,move:mv?mv.id:null,mode:"one",openOnly:false,more:0,form:{time:mv?mv.time:"",who:(mv&&mv.k==="ev"&&E[mv.id]&&E[mv.id].who)||"family",any:"",dow,n:4,sel:{}}};draw();
+  snEdit={type:"sched",sid,id:iid,move:mv?mv.id:null,mode:"one",openOnly:false,more:0,form:{time:mv?mv.time:"",who:(mr&&mr.who)||"family",any:"",dow,n:4,sel:{},
+    end:holdEndOf(mr),hold:!!(mr&&holdOk()&&evHeld(mr))}};draw();
+}
+// ── SEASONHOLD (her "Yes, add it" 2026-11-23): ⏰ an Ends box + "Hold this time" on the 📅 Schedule pop-up — the calendar form's
+// own rule (index.html EVHOLD: evHoldFormRow / evHoldTick / evHoldEntry), same words. Mom's lens only (momHere), never for a 🤐
+// (no event, nothing to hold). An old index.html without the ev* helpers → no boxes, and a ↪ Move leaves mins/hold as they were.
+const SN_HOLD_WHY="To hold the time, give a start and an end like 2:30 PM and 4:00 PM.";
+function holdOk(){return typeof evHoldMins==="function"&&typeof evHeld==="function"&&typeof momHere==="function"&&!!momHere();}
+function schedEnd(e){return String(e.form.end||"").trim().slice(0,12);}
+function holdLen(e){return holdOk()?evHoldMins(schedTime(e),schedEnd(e)):null;}
+function holdEndOf(r){   // a ↪ Move's Ends box: start + mins, as the calendar form shows it
+  if(!r||!holdOk()||typeof evMin!=="function"||typeof fromMin!=="function")return "";
+  const s=evMin(r.time),n=+r.mins;return (s!=null&&n>0&&s+n<=1440)?fromMin(s+n):"";
+}
+// what the pop-up adds to an event: {} · {mins} · {mins, hold:true}. null = ⏰ ticked without a readable length → say why, save nothing.
+function holdBits(e,h){
+  if(h==="none"||!holdOk())return {};
+  const n=holdLen(e);if(e.form.hold&&n==null)return null;
+  const x={};if(n!=null){x.mins=n;if(e.form.hold)x.hold=true;}return x;
+}
+function holdNo(e){e.msg=SN_HOLD_WHY;e.holdWhy=true;draw();}
+function holdRows(e,h){
+  if(h==="none"||!holdOk())return "";
+  return field("end","Ends (optional)","4:00 PM")
+    +'<label class="sn-hold"><input type="checkbox"'+(e.form.hold?" checked":"")+' onchange="snHold(this)"> ⏰ Hold this time — school is planned around it</label>'
+    +'<div class="sn-sub sn-holdwhy'+(e.holdWhy?" no":"")+'">'+SN_HOLD_WHY+'</div>';
+}
+function snHold(el){   // as evHoldTick: ticking it without a readable start + end un-ticks it, and the line under it turns red
+  const e=snEdit;if(!e||e.type!=="sched"||!el)return;
+  if(!el.checked){e.form.hold=false;return;}
+  if(holdLen(e)!=null){e.form.hold=true;if(e.holdWhy){e.holdWhy=false;draw();}return;}
+  el.checked=false;e.form.hold=false;e.holdWhy=true;draw();
 }
 function snDaysOpen(v){if(!snEdit||snEdit.type!=="sched")return;snEdit.openOnly=!!v;draw();}
 function snDaysMore(){if(!snEdit||snEdit.type!=="sched")return;snEdit.more=(snEdit.more||0)+1;draw();}
@@ -804,8 +859,9 @@ function snPutPicked(){if(!schedMany())return 0;return putNights(keys(snEdit.for
 // or for 🤐 its own date kept here — all in ONE update. A day it is already on is skipped, never doubled; a day gone by is never added.
 function putNights(D){
   const e=snEdit,it=idea(e.sid,e.id);if(!it){snEdit=null;draw();return 0;}
-  const h=hideOf(it),b=base(e.sid,e.id,h),have=nightsOf(it),t=today(),up={},got=[];let skip=0;
-  D.slice().sort().forEach(d=>{if(!isIso(d)||d<t)return;if(have[d]){skip++;return;}if(got.length>=SN_PICK_MAX)return;have[d]=true;got.push(d);nightPaths(it,h,b,d,schedTime(e),schedWho(e),up);});
+  const h=hideOf(it),b=base(e.sid,e.id,h),have=nightsOf(it),t=today(),up={},got=[],hb=holdBits(e,h);let skip=0;
+  if(hb===null){holdNo(e);return 0;}   // ⏰ ticked but no readable length: say why, save nothing
+  D.slice().sort().forEach(d=>{if(!isIso(d)||d<t)return;if(have[d]){skip++;return;}if(got.length>=SN_PICK_MAX)return;have[d]=true;got.push(d);nightPaths(it,h,b,d,schedTime(e),schedWho(e),up,hb);});
   if(!got.length){e.msg=skip?"It’s already on "+(skip===1?"that day.":"those days."):"Pick a day first.";draw();return 0;}
   if(it.skip)up[b+"/skip"]=null;
   apply(up);snEdit=null;toast((h==="none"?"🤐 ":"📅 ")+(it.t||"Idea")+" → "+got.length+" day"+(got.length===1?"":"s")+(skip?" ("+skip+" already on)":""));draw();
@@ -818,9 +874,9 @@ function snUnschedAll(iid){   // take every day off at once (one ✕ per day is 
 }
 function schedTime(e){return String(e.form.time||"").trim().slice(0,12);}
 function schedWho(e){return (e.form.who&&e.form.who!=="family"&&roster().some(k=>k.id===e.form.who))?e.form.who:"family";}
-function nightPaths(it,h,b,d,time,forWho,up){   // ONE new day for an idea: a calendar event + the idea's link to it, or a 🤐 date
+function nightPaths(it,h,b,d,time,forWho,up,hb){   // ONE new day for an idea: a calendar event (+ ⏰ hb {mins?,hold?}) + the idea's link to it, or a 🤐 date
   if(h==="none"){let k;do k=rid("o");while(up[b+"/on/"+k]);const o={d};if(time)o.time=time;up[b+"/on/"+k]=o;}
-  else{let id;do id=newEvId(d);while(up["calendar/events/"+id]);up["calendar/events/"+id]=eventFor(it,h,d,time,forWho);up[b+"/ev/"+id]=true;}
+  else{let id;do id=newEvId(d);while(up["calendar/events/"+id]);up["calendar/events/"+id]=Object.assign(eventFor(it,h,d,time,forWho),hb||{});up[b+"/ev/"+id]=true;}
   return up;
 }
 // One tap on a day. An idea everyone can see (or a ✨ hint) → ONE family event + the idea's link to it. A 🤐 → its date kept here only.
@@ -828,11 +884,13 @@ function nightPaths(it,h,b,d,time,forWho,up){   // ONE new day for an idea: a ca
 function snPickDay(d){
   const e=snEdit;if(!e||e.type!=="sched"||!isIso(d))return;
   const it=idea(e.sid,e.id);if(!it){snEdit=null;draw();return;}
-  const h=hideOf(it),b=base(e.sid,e.id,h),time=schedTime(e),forWho=schedWho(e),up={};
+  const h=hideOf(it),b=base(e.sid,e.id,h),time=schedTime(e),forWho=schedWho(e),up={},hb=holdBits(e,h);
+  if(hb===null){holdNo(e);return;}   // ⏰ ticked but no readable length: say why, save nothing
   const mv=e.move?whens(it).find(w=>w.id===e.move):null;
-  if(mv&&mv.k==="ev"){up["calendar/events/"+mv.id+"/date"]=d;up["calendar/events/"+mv.id+"/time"]=time;up["calendar/events/"+mv.id+"/who"]=forWho;}
+  if(mv&&mv.k==="ev"){const p="calendar/events/"+mv.id+"/";up[p+"date"]=d;up[p+"time"]=time;up[p+"who"]=forWho;
+    if(holdOk()){up[p+"mins"]=hb.mins||null;up[p+"hold"]=hb.hold?true:null;}}   // ⏰ the new length/switch, or cleared (never false/0)
   else if(mv){const o={d};if(time)o.time=time;up[b+"/on/"+mv.id]=o;}
-  else nightPaths(it,h,b,d,time,forWho,up);
+  else nightPaths(it,h,b,d,time,forWho,up,hb);
   if(it.skip)up[b+"/skip"]=null;
   apply(up);snEdit=null;toast((h==="none"?"🤐 ":"📅 ")+(it.t||"Idea")+" → "+fmtDay(d));draw();
 }
@@ -1241,6 +1299,8 @@ const SN_CSS=`
 .sn-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px 10px;margin-top:6px}
 .sn-fl{display:flex;flex-direction:column;gap:3px;font-size:11px;font-weight:700;color:var(--muted);margin-top:6px}
 .sn-fl.wide{grid-column:1/-1}
+.sn-hold{grid-column:1/-1;display:flex;gap:6px;align-items:center;cursor:pointer;font-size:13px;font-weight:600;color:#0f172a}
+.sn-holdwhy{grid-column:1/-1;font-size:11px;margin:-4px 0 2px}.sn-holdwhy.no{color:#b91c1c;font-weight:700}
 .sn-fl input,.sn-fl select,.sn-fl textarea{font:inherit;font-size:14px;font-weight:500;color:#0f172a;padding:8px 9px;border:1.5px solid var(--border);border-radius:9px;background:#fff;font-family:inherit;width:100%;box-sizing:border-box}
 .sn-daylist{margin-top:8px;display:flex;flex-direction:column;gap:5px}
 .sn-day{display:flex;flex-direction:column;gap:2px;text-align:left;border:1.5px solid var(--border);border-radius:10px;background:#fff;padding:8px 10px;cursor:pointer;font-family:inherit;color:#0f172a}
@@ -1293,7 +1353,7 @@ window.renderSeasons=function(el,ah){
   snRoot=el;snAh=ah||"";snListen();draw();
 };
 Object.assign(window,{snNewSeason,snKind,snEditSeason,snDelSeason,snPick,snPastToggle,snFilterSet,snForToggle,snQuickAdd,snOpenIdea,snSet,snWant,snStar,snSize,snHide,snSave,snCancel,snDelIdea,
-  snSched,snDaysOpen,snDaysMore,snPickAny,snPickDay,snUnsched,snMode,snDow,snWeeks,snPickToggle,snPutWeeks,snPutPicked,snUnschedAll,snDid,snUndid,snSkip,snUnskip,
+  snSched,snDaysOpen,snDaysMore,snPickAny,snPickDay,snUnsched,snMode,snDow,snWeeks,snPickToggle,snPutWeeks,snPutPicked,snUnschedAll,snHold,snDid,snUndid,snSkip,snUnskip,
   snKids,snViewSet,snLine,snLineWho,snLineDel,snFoodMid,snFoodShop,snMenu,snMenuDay,snMenuSlot,snMenuGo,snMenuOff,snSupHave,snSupList,snSupSame,snAskNo,snSupAll,snTodoTick,snTodoMine,snBooked,snNowOpen,seasonNowLines});
 window._snTest={data:()=>snData,secret:()=>snSecret,setData:(d,s)=>{snData=d||{};snSecret=s||{};snLoaded=true;},reset:()=>{snSid=null;snFilter="all";snEdit=null;snFor={};snPast=false;snView="ideas";snAsk=null;},
   lines,line,tdDue,tdState,tdDone,supState,bookState,shopLabel,nowItems,ideaDay,view:()=>snView,ask:()=>snAsk,

@@ -20,7 +20,7 @@ function world(o) {
   const ctx = {
     console, WK: "week24", activeWk: () => "week24", _todayDay: "thursday", ROSTER: ["julian", "lucy", "lincoln", "ellis"], PACE_KCOL: {},
     weekData: { tasks: o.tasks || [] }, checked: o.checked || {}, histState: o.hist || {}, routineLog: o.rlog || {},
-    effectiveDay: t => t.day, momHere: () => o.who === "mom", _kioskD: () => o.who === "dad",
+    effectiveDay: t => t.day, momHere: () => o.who === "mom", _kioskD: () => o.who === "dad", dadAwardOk: () => !!o.code,   // DADGATE: his code in
     bankDirect: (k, p, n) => { banks.push([k, p, n]); return "bd1"; }, confirm: m => { confirms.push(m); return o.say !== false; },
     cap: s => s.charAt(0).toUpperCase() + s.slice(1), esc: s => String(s), nowTs: () => "3:00 PM " + MD, dbg: () => {}, renderAll: () => {},
     ld: () => ({}), sv: () => {}, _dryRun: () => false, db: { ref: p => ({ update: v => writes.push([p, v]) }) },
@@ -61,7 +61,7 @@ console.log("\n── the dock ──");
   ok("chore step: the routine Log's own dock (same record, same mark)", w.banks.length === 2 && w.writes.some(x => x[0] === "routineLog/lucy/week24/thursday/k1" && x[1].flagged && x[1].penalty === -100));
   w.call("ckLogToggle()");
   const open = w.call("mdCardCheckLog()");
-  ok("docked lines show 🚩 −100 instead of the button; header counts them", (open.match(/🚩 −100/g) || []).length === 2 && /🚩 2 docked/.test(open) && (open.match(/−100<\/button>/g) || []).length === 1);
+  ok("docked lines show who and −100 (\"🚩 by Mom · −100\", FLAGWHO 2026-11-23) instead of the button; header counts them", (open.match(/🚩 by Mom · −100/g) || []).length === 2 && /🚩 2 docked/.test(open) && (open.match(/−100<\/button>/g) || []).length === 1);
 }
 {
   const w = world({ who: "mom", tasks: T, checked: CK, hist: { dm: {} }, say: false });
@@ -69,10 +69,10 @@ console.log("\n── the dock ──");
   ok("Cancel on the confirm → nothing happens", w.banks.length === 0 && w.writes.length === 0);
 }
 {
-  const w = world({ who: "dad", tasks: T, checked: CK, rlog: RL, hist: { dm: {} } });
+  const w = world({ who: "dad", code: true, tasks: T, checked: CK, rlog: RL, hist: { dm: {} } });
   ok("Dad's link sees the card", w.call("mdCardCheckLog()") !== "");
   w.call("ckLogDock('task','lucy','dm','Dimensions')");
-  ok("Dad can dock, and the mark says so", w.banks.length === 1 && w.writes[0][1].flagBy === "dad");
+  ok("Dad with his code in can dock, and the mark says so", w.banks.length === 1 && w.writes[0][1].flagBy === "dad");
 }
 {
   const w = world({ who: "kid", tasks: T, checked: CK, rlog: RL, hist: { dm: {} } });

@@ -47,8 +47,10 @@ const deck = (subject, n, status) => Array.from({ length: n }, () => card(subjec
 const { stripThree } = require("./test_drill_three.js");
 // CURRSIMPLE (slice 6) touches the ADDFLOW sheet (More options): taken out first too, the same way on both sides (a no-op without it).
 const { stripSimple } = require("./test_curr_simple.js");
+// DRILLCOOP (the co-op laying rule) adds a block to RETRWEEK: taken out first, the same way on both sides (a no-op without it).
+const { stripCoop } = require("./test_drill_coop.js");
 function strip(s) {
-  s = stripThree(stripSimple(s));
+  s = stripThree(stripSimple(stripCoop(s)));
   const a = s.indexOf("// DRILLADD_START"), b = s.indexOf("// DRILLADD_END");
   if (a >= 0 && b > a) s = s.slice(0, a) + s.slice(b + "// DRILLADD_END\n".length);
   return s
