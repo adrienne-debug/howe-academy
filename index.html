@@ -2573,7 +2573,7 @@ function rtSetAlwaysOpenDay(d){
   if(db) db.ref("config/routineTimes").set(routineTimes);
   renderAll();
 }
-function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtAlwaysOpen(d)||(d===_todayDay&&typeof hhCleanOn==="function"&&hhCleanOn(_todayStr()))||rtSchoolworkDone(kid,d)||(d===_todayDay&&typeof openPmToday==="function"&&openPmToday(kid))||(d!==_todayDay)||(new Date().getHours()>=rtAfternoonHour()); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
+function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtAlwaysOpen(d)||(d===_todayDay&&typeof hhCleanOn==="function"&&hhCleanOn(_todayStr()))||rtSchoolworkDone(kid,d)||(d===_todayDay&&typeof schoolOffToday==="function"&&schoolOffToday())||(d===_todayDay&&typeof openPmToday==="function"&&openPmToday(kid))||(d!==_todayDay)||(new Date().getHours()>=rtAfternoonHour()); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
 // MEALS_START — after-meal jobs (her ask 2026-10-02, DeWalt table-jobs chart: set/clear/wipe table, sweep,
 // dishwasher after every meal). A step tagged st.meal sits in its meal's list under its own heading:
 // breakfast → Morning, lunch → Afternoon, supper → Evening. Lunch and Supper open at their OWN hour
@@ -8089,6 +8089,7 @@ function eicReopenTodayFor(kid){
 // A score saved on the engine = today's sitting done: check off today's first open Editor in Chief card for that kid.
 function eicCheckCard(kid){
   try{
+    if(typeof schoolOffToday==="function"&&schoolOffToday()) return false;   // 🏖 BRKTODAY: no card today on a break — the exercise still scores, as on a day with no card
     if(typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return false;
     const t=weekData.tasks.filter(x=>x&&x.who===kid&&eicIsSubject(kid,x.subjectKey)&&!String(x.id||"").endsWith("_c")&&!x._eowOverflow
       &&!(checked&&checked[x.id])&&effectiveDay(x)===_todayDay).sort((a,b)=>toMin(a.time)-toMin(b.time))[0];
@@ -8998,6 +8999,7 @@ function helperName(id){ return ((helpersData&&helpersData[id])||{}).name||"Help
 function helperIcon(id){ return ((helpersData&&helpersData[id])||{}).icon||"🙋"; }
 // Today's cards this helper is approved for (done or not), in time order.
 function helperTasksToday(id){
+  if(typeof schoolOffToday==="function"&&schoolOffToday()) return [];   // 🏖 BRKTODAY: no school cards today on a break — her list, Dad's helper cards and the count follow
   const p=helpersData[id]; if(!p) return [];
   let all=[]; try{ all=(typeof getActiveTasks==="function"?getActiveTasks():weekData.tasks)||[]; }catch(e){ all=[]; }
   return all.filter(t=>t&&!String(t.id||"").endsWith("_c")&&!/lunch/i.test(t.title||"")&&(t.mom==="required"||t.mom==="maybe"||(typeof famPresGivable==="function"&&famPresGivable(t)))&&_hlpIsToday(t)&&(_hlpApproved(p,t)||(typeof helperGivenTo==="function"&&helperGivenTo(t)===id)))   // 🙋 + what Mom gave her today
@@ -9483,6 +9485,29 @@ function scheduleBreakToday(){
   return scan(calendarData.holidays,"holiday")||scan(calendarData.vacations,"vacation")
     ||((typeof hhCleanDay==="function"&&hhCleanDay(ds))?{name:"Cleaning day",type:"cleaning",start:ds,end:ds,pause:"school"}:null);   // 🧽 CLEANINGDAY: pauses like a vacation
 }
+// 🏖 BRKTODAY_START — ONE rule for today's school work on a break day (her "fix all" 2026-11-24, after Kids' Corner's fix: "if they're on
+//   break, there shouldn't be anything there"). A full break week builds no week, so the active week is still LAST week's and its
+//   cards match today's day name; a one-day holiday added after the week was built leaves cards laid on that day. On a day
+//   scheduleBreakToday() returns a break (holiday, vacation, cleaning day — the Schedule tab's own test, never a second one) there
+//   are no school cards TODAY, and every screen and gate that asks about today's school work asks schoolOffToday(). Today only:
+//   past and future days, the week views, effectiveDay, the week builder and which week is active are not changed. Reads only.
+function schoolOffToday(){ try{ return !!scheduleBreakToday(); }catch(e){ return false; } }
+// The one plain line a "today" agenda draws where its school cards would be — the words and look of Kids' Corner's break line.
+function brkTodayLineHTML(){
+  let b=null; try{ b=scheduleBreakToday(); }catch(e){ b=null; } if(!b) return "";
+  return '<div style="padding:22px 14px;text-align:center;font-size:15px;font-weight:700;color:var(--muted)">'+(b.type==="cleaning"?'No school today \u2014 it\u2019s cleaning day \u{1F9FD}':'No school today \u2014 '+esc(b.name)+' \u{1F389}')+'</div>';
+}
+// Mom's 🗓 Schedule ▸ Today and Dad's ▸ All on a break day: the line, then only the rows that are not school cards — Mom's laundry,
+// meal-prep and house blocks (momAgendaHtml with no cards), Dad's own column (extra) — as each agenda draws a day with no cards.
+function brkTodayAgendaHTML(who,d,extra){
+  const _pk=kid, _pd=day; let rest="";
+  try{ kid=who; day=d;
+    if(who==="mom"){ const h=momAgendaHtml([]); if(h.indexOf('class="mom-agenda"')>=0) rest=h; }
+    else if(extra&&Array.isArray(extra.items)&&extra.items.length) rest=allAgendaHtml([],null,{extra:extra});
+  }catch(e){ rest=""; } finally{ kid=_pk; day=_pd; }
+  return brkTodayLineHTML()+rest;
+}
+// 🏖 BRKTODAY_END
 // First weekday strictly after today that isn't a calendar off-day and sits in a
 // real plan week — i.e. the day school actually picks back up. Capped so a
 // misconfigured calendar can never loop forever.
@@ -9764,7 +9789,7 @@ function momAgendaHtml(dayTasks){
   h+='</div>';
   return h;
 }
-function _boardTaskCounts(kid,d){ var ts=getActiveTasks().filter(function(t){return t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title)}); return {total:ts.length, done:ts.filter(function(t){return !!checked[t.id]}).length}; }
+function _boardTaskCounts(kid,d){ if(d===_todayDay&&typeof schoolOffToday==="function"&&schoolOffToday()) return {total:0,done:0};   /* 🏖 BRKTODAY: no school cards today on a break */ var ts=getActiveTasks().filter(function(t){return t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title)}); return {total:ts.length, done:ts.filter(function(t){return !!checked[t.id]}).length}; }
 function renderMomBoard(el){
   if(!el){el=document.getElementById("content");if(!el)return;}
   function pill(t,ok,extra,click){ return '<span class="bpill'+(ok?" ok":"")+'"'+(click?' onclick="'+click+'"':'')+' style="'+(click?'cursor:pointer;':'')+(extra||"")+'">'+t+'</span>'; }
@@ -9873,6 +9898,7 @@ function boardStatPop(kid,slot,d){
       if(!_due&&!_wv&&!(st.cad==="asneeded"&&_dn)) return;
       rows.push({lab:(st.emoji?st.emoji+" ":"")+(st.label||("Step "+(i+1)))+((_due||_wv)?"":" (as needed)"),done:_dn,ts:rec.ts||"",i:i,wv:_wv,hs:st,dly:(_due&&typeof rtDailyNote==="function"&&day===_todayDay)?rtDailyNote("morning",kid,i,st):""}); });   // CHOREDAILY: Mom's note   // LISTS_TAP: i → the ○/✅ is a tap
   } else if(slot==="tasks"){ title="📅 School work";
+    if(!(day===_todayDay&&typeof schoolOffToday==="function"&&schoolOffToday()))   // 🏖 BRKTODAY: no school cards today on a break
     getActiveTasks().filter(t=>t.who===kid&&effectiveDay(t)===day&&!t.id.endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title))
       .forEach(t=>{ const cv=checked[t.id]; rows.push({lab:t.title||"",done:!!cv,ts:(cv&&cv.ts)||(typeof cv==="string"?cv:"")}); });
   } else if(slot==="stars"){ title="⭐ Today's stars";
@@ -10927,6 +10953,7 @@ function _efCapOk(kid,t,todayCount){
 }
 function efPullNext(kid){
   try{
+    if(typeof schoolOffToday==="function"&&schoolOffToday()) return null;   // 🏖 BRKTODAY: a break day pulls nothing forward (this writes)
     if(!kid||typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return null;
     if(typeof fbTasksLoaded!=="undefined"&&!fbTasksLoaded) return null;
     const today=_todayDay; const ti=_efDayIdx(today); if(ti<0||ti>=EF_DAYS.length-1) return null;
@@ -11233,7 +11260,7 @@ let _rvHealed={};
 function rvRecOf(id){ for(const k in (reviews||{})){ const r=(reviews[k]||{})[id]; if(r) return r; } return null; }
 function rvSchoolEndMin(){ try{ return _mlDayEndMin(); }catch(e){ return toMin("4:15 PM"); } }
 function rvKidOff(kid,dn){ try{ const ds=_pushDateStr(dn); if(!ds) return true; if(typeof schedOvKidOff==="function"&&schedOvKidOff(kid,ds)) return true; if(typeof smapIsKidOff==="function"&&smapIsKidOff(kid,ds)) return true; if(typeof coopTimedEndMin==="function"&&coopTimedEndMin(kid,(typeof routineDateISO==="function"?routineDateISO(dn):ds))>0) return true; if(typeof coopFullDayFor==="function"&&coopFullDayFor(kid,(typeof routineDateISO==="function"?routineDateISO(dn):ds))) return true; }catch(e){} return false; }
-function rvCanToday(kid,minutes){ try{ return !rvKidOff(kid,_todayDay)&&(_mlNowMin()+minutes<=rvSchoolEndMin()); }catch(e){ return false; } }
+function rvCanToday(kid,minutes){ try{ if(typeof schoolOffToday==="function"&&schoolOffToday()) return false;   /* 🏖 BRKTODAY: no "later today" on a break */ return !rvKidOff(kid,_todayDay)&&(_mlNowMin()+minutes<=rvSchoolEndMin()); }catch(e){ return false; } }
 function rvNextSchoolDay(kid,from){ let dn=(typeof _nextSchoolDay==="function")?_nextSchoolDay(kid,from):null; let g=0; while(dn&&rvKidOff(kid,dn)&&g++<7){ dn=_nextSchoolDay(kid,dn); } return dn||null; }
 // → {day,time} or null (no school day left this week)
 function rvPlanDay(kid,minutes,when){
@@ -26854,6 +26881,7 @@ function mpSchTasks(who,d){
   return src.filter(t=>base(t)&&t.who===who);
 }
 function mpSchAgendaHTML(who,d){
+  if(d===mdTodayName()&&typeof schoolOffToday==="function"&&schoolOffToday()) return brkTodayAgendaHTML(who,d);   // 🏖 BRKTODAY: a break day draws no school agenda — the line, then Mom's own rows
   const ts=mpSchTasks(who,d), _pk=kid, _pd=day;
   try{ kid=who; day=d; return who==="mom"?momAgendaHtml(ts):allAgendaHtml(ts,who==="all"?null:[who]); }
   finally{ kid=_pk; day=_pd; }
@@ -27123,6 +27151,7 @@ function renderDadAll(el){
   try{ kid="all"; day=d; dadTapView=true; ag=allAgendaHtml(mpSchTasks("all",d),null,{extra:{key:"dad",label:"\u{1F468} Dad",color:"#2C5F8A",items:dadSchedItems(d)}}); }
   catch(e){ ag='<div style="padding:20px;text-align:center;color:var(--muted)">Couldn\u2019t draw today.</div>'; }
   finally{ kid=_pk; day=_pd; dadTapView=false; }
+  if(typeof schoolOffToday==="function"&&schoolOffToday()){ try{ kid="all"; day=d; dadTapView=true; ag=brkTodayAgendaHTML("all",d,{key:"dad",label:"\u{1F468} Dad",color:"#2C5F8A",items:dadSchedItems(d)}); }catch(e){} finally{ kid=_pk; day=_pd; dadTapView=false; } }   // 🏖 BRKTODAY: Dad gets what Mom gets — the line, then his own column
   h+='<div style="padding:4px 4px 0">'+ag+'</div></div>';
   el.innerHTML=h;
 }
@@ -32076,7 +32105,7 @@ function storeOpenFor(kid){
   if(c.open===false) return false;
   if(c.closedFor&&c.closedFor[kid]) return false;
   const m=c.mode||"always";
-  const school=(typeof rtSchoolworkDone==="function")?rtSchoolworkDone(kid,_todayDay):true;
+  const school=(typeof schoolOffToday==="function"&&schoolOffToday())?true:((typeof rtSchoolworkDone==="function")?rtSchoolworkDone(kid,_todayDay):true);   // 🏖 BRKTODAY: a break day has no school work to finish
   const past=(new Date().getHours())>=((c.hour!=null?c.hour:16));
   if(m==="afterSchool") return school;
   if(m==="time") return past;
@@ -32088,7 +32117,7 @@ function storeClosedReason(kid){
   if(c.open===false) return "🚪 The store is closed right now";
   if(c.closedFor&&c.closedFor[kid]) return "🚪 The store is closed for "+cap(kid)+" right now";
   const m=c.mode||"always";
-  if((m==="afterSchool"||m==="both")&&(typeof rtSchoolworkDone==="function")&&!rtSchoolworkDone(kid,_todayDay)) return "📚 Opens when school work is done";
+  if((m==="afterSchool"||m==="both")&&!(typeof schoolOffToday==="function"&&schoolOffToday())&&(typeof rtSchoolworkDone==="function")&&!rtSchoolworkDone(kid,_todayDay)) return "📚 Opens when school work is done";   // 🏖 BRKTODAY
   if((m==="time"||m==="both")&&(new Date().getHours())<((c.hour!=null?c.hour:16))) return "⏰ Opens at "+_storeFmtHour(c.hour!=null?c.hour:16);
   return "";
 }
@@ -39171,6 +39200,7 @@ function _famCelebNames(list){ list=list.map(cap); return list.length>1?list.sli
 function _famCelebCards(d){ const lay=(d===_todayDay&&typeof _rtSwTodayLay==="function")?_rtSwTodayLay():null; return (lay||getActiveTasks()).filter(function(t){ return t&&t.famBlock&&effectiveDay(t)===d&&!(typeof famBoState==="function"&&famBoState(t)); }); }   // 🚫 FAMBLOCKOUT: an out copy isn't waited on
 // 1️⃣ A kid's own work is done and a celebrating family time is still ahead → confetti, never a song (her rule 10/4).
 function famCelebOwnWork(kid,d){
+  if(d===_todayDay&&typeof schoolOffToday==="function"&&schoolOffToday()) return false;   // 🏖 BRKTODAY: stale cards on a break day never fire "own work done"
   if(d!==_todayDay||hasCelebrated(kid,d)||_famCelebHas(kid+"_"+d+"_own")) return false;
   if(rtSchoolworkDone(kid,d)||!rtSchoolworkDone(kid,d,true)) return false;   // whole day done → the normal show · own work not done yet
   const defs=famDefs();
@@ -43055,6 +43085,7 @@ function dcLevel(kid){
 function dcKidsAt(level,kids){ return (kids||[]).filter(k=>dcLevel(k)===level); }
 // ── today's family cards, grouped by block + item: [{bid, key, b, it, copies:[t], present:[kid], done, label, day, u}] ──
 function dcTodayGroups(){
+  if(typeof schoolOffToday==="function"&&schoolOffToday()) return [];   // 🏖 BRKTODAY: no family-time cards today on a break — the Today's-card tile and everything else reading this follow
   const td=(typeof _todayDay!=="undefined")?_todayDay:""; let tasks=[];
   try{ tasks=(typeof getActiveTasks==="function")?getActiveTasks():(((typeof weekData!=="undefined"&&weekData)||{}).tasks||[]); }catch(e){ tasks=[]; }
   const defs=(typeof famDefs==="function")?famDefs():{}; const groups={}, order=[];
@@ -46927,6 +46958,7 @@ function renderKidsCorner(el){
         h+=kcCalToggleHTML(k);
         if(typeof wlTileHTML==="function") h+=wlTileHTML(k); if(typeof skTileHTML==="function") h+=skTileHTML(k);   // 🎁 WISHES: the 🎁 My wish list button · ✨ SEASONKID: the ✨ Our plans button
         h+=kcModeBodyHTML(k);   // KC_LISTS: Today | My Lists | Month
+        if(typeof nbLookPickKcHtml==="function") h+=nbLookPickKcHtml(k);   // NB_LOOKPICK: 🎨 My notebook look (2+ looks ticked by Mom)
       }
     }
   }
@@ -50198,6 +50230,123 @@ function _nbMomLockHtml(){ nbPinOpen=false; return ""; }   // MOMSWITCH (2026-11
 function nbPinLock(){ haMomOff(); nbPinOpen=false; renderAll(); }   // UNIMOM
 // Review-folding cap (struggled-with drill items folded back into the week), per kid. Default 2, clamped 0–5.
 function nbReviewCap(kid){ const v=notebookSettings&&notebookSettings[kid]&&notebookSettings[kid].reviewCap; const n=parseInt(v,10); return isNaN(n)?2:Math.max(0,Math.min(5,n)); }
+// NB_LOOKPICK_START — 🎨 the looks a kid may use + the Kids' Corner look picker (looks plan §13 / step 5; her decisions
+// 2026-11-24: who picks — "Kid picks from mine"; Pre-K kids too — "Yes, with pictures"; where — "it would need to be on their
+// kids corner"). Each control has ONE home, and only one of them can change the look at any moment:
+//   · MOM'S TICK LIST — the Notebook tab's 🎨 look card, Mom only (momHere): "<name> may choose from:" one tick per look the
+//     kid's notebook offers (HoweNotebooks.notebookOptions — never a typed list). Saved one tick at a time:
+//     notebookSettings/<kid>/looksAllowed/<lookKey> = true, or removed. Ticking never changes the look itself.
+//   · 0 or 1 ticked → Mom's picker works exactly as today; Kids' Corner shows nothing new.
+//   · 2 or more ticked → the kid picks in their own Kids' Corner (kcKid) on "🎨 My notebook look"; Mom's picker becomes a
+//     read-only line ("<name> chose <look>") and nbSetLook refuses — Mom changes it by changing the ticks. A look that is on
+//     but not ticked keeps printing until the kid picks (no button selected); unticking down to one brings her picker back
+//     with that look selected. Nothing here ever changes a kid's look on its own.
+//   · THE KID'S TAP (nbLookKidSet) saves only notebookSettings/<kid>/notebookTheme — one targeted write, db && !_dryRun() only,
+//     mirrored to the same local cache nbSetLook uses — and only for the kid whose Kids' Corner it is, only to a ticked look,
+//     only while 2+ are ticked. Anything else is refused. nbSetLook's Mom gate is untouched.
+//   · The buttons come from the look's own pieces (HoweNotebooks.lookCard: mascot, picture row, colour swatch), so no look is
+//     typed in here and a child who can't read yet can choose. A change shapes only the NEXT notebook built: nothing is
+//     rebuilt, re-laid or rescheduled; a week already printed or sent to a tablet is a stored copy and never changes.
+//   · No separate "note to Mom": the games' 👍 note lives in mastery/<kid>_settings/gameLikes/<game> and is read only by the
+//     games grid, so it doesn't fit a look; the kid's pick shows on Mom's look card instead.
+function _nlpOkKey(k){ return typeof k==="string"&&/^[A-Za-z0-9_-]{1,40}$/.test(k); }
+// The looks this kid's notebook offers that have a picture card: [{key,label,card}] in the notebook's own order.
+function nbLookPickOffer(kid,o){
+  const N=window.HoweNotebooks; if(!N||typeof N.lookCard!=="function") return [];
+  o=o||nbLookOpts(kid); if(!o||!Array.isArray(o.looks)) return [];
+  const out=[];
+  o.looks.forEach(l=>{ if(!l||!_nlpOkKey(l.key)) return; let c=null; try{ c=N.lookCard(l.key); }catch(e){ c=null; } if(c) out.push({key:l.key,label:String(l.label||c.label||l.key),card:c}); });
+  return out;
+}
+function _nlpTicks(kid){ const t=(((typeof notebookSettings!=="undefined"&&notebookSettings)||{})[kid]||{}).looksAllowed; return (t&&typeof t==="object")?t:{}; }
+function _nlpRawCount(kid){ const t=_nlpTicks(kid); return Object.keys(t).filter(k=>t[k]===true).length; }
+// The ticked looks this notebook still offers, in the notebook's order (a tick for a look it no longer offers is ignored).
+function nbLooksAllowed(kid,o){ const t=_nlpTicks(kid); return nbLookPickOffer(kid,o).filter(x=>t[x.key]===true).map(x=>x.key); }
+// 2+ ticked = the kid picks (Kids' Corner); otherwise Mom's picker is the live control.
+function nbLookKidPicks(kid,o){ return nbLooksAllowed(kid,o).length>=2; }
+// Mom's tick — one field: set true, or removed.
+function nbLookAllow(kid,key){
+  if(!momHere()) return false;
+  if(!nbLookPickOffer(kid).some(x=>x.key===key)) return false;
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  const ns=notebookSettings[kid]; if(!ns.looksAllowed||typeof ns.looksAllowed!=="object") ns.looksAllowed={};
+  const on=ns.looksAllowed[key]===true;
+  if(on) delete ns.looksAllowed[key]; else ns.looksAllowed[key]=true;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db&&!_dryRun()){ const r=db.ref("notebookSettings/"+kid+"/looksAllowed/"+key); if(on) r.remove(); else r.set(true); } }catch(e){}
+  if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
+  return true;
+}
+// The kid's tap — a separate function with its own three checks (never nbSetLook's Mom gate).
+function nbLookKidSet(kid,key){
+  try{ _kcLoadKid(); }catch(e){}
+  if(!kid||typeof kcKid==="undefined"||kcKid!==kid) return false;   // only on this kid's own Kids' Corner
+  const al=nbLooksAllowed(kid);
+  if(al.length<2) return false;                                     // only while Mom has 2+ ticked
+  if(al.indexOf(key)<0) return false;                               // only a look Mom ticked
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  if(notebookSettings[kid].notebookTheme===key) return true;        // already the next look — nothing to write
+  notebookSettings[kid].notebookTheme=key;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db&&!_dryRun()) db.ref("notebookSettings/"+kid+"/notebookTheme").set(key); }catch(e){}
+  try{ renderAll(); }catch(e){}
+  return true;
+}
+// The Notebook tab's look card: Mom's pills (0–1 ticked) or the kid's pick read-only (2+), then the tick list. A notebook
+// that offers fewer than two looks with pictures gets the pills back untouched.
+function nbLookPickRow(sel,o,pillsHtml){
+  const offer=nbLookPickOffer(sel,o); if(offer.length<2) return pillsHtml;
+  const t=_nlpTicks(sel), al=offer.filter(x=>t[x.key]===true).map(x=>x.key), kidPicks=al.length>=2, name=esc(cap(sel));
+  let top=pillsHtml;
+  if(kidPicks){
+    const cur=(o&&o.current)||"", curL=((o.looks||[]).find(l=>l&&l.key===cur)||{}).label||"";
+    top=al.indexOf(cur)>=0
+      ?'<div id="nblookpick-chose" style="font-size:12.5px;color:#1f2937;line-height:1.45"><b>'+name+' chose '+esc(curL)+'</b> — the next notebook will be '+esc(curL)+'. To change it, change the ticks below.</div>'
+      :'<div id="nblookpick-chose" style="font-size:12.5px;color:#1f2937;line-height:1.45"><b>'+name+' hasn’t picked yet.</b> The next notebook stays '+esc(curL||"as it is")+' until '+name+' picks in Kids’ Corner. To change it, change the ticks below.</div>';
+  }
+  const ticks=offer.map(x=>{ const on=t[x.key]===true;
+    return '<button onclick="nbLookAllow(\''+sel+'\',\''+x.key+'\')" aria-pressed="'+(on?'true':'false')+'" title="'+(on?'Ticked — tap to untick':'Tap to let '+name+' choose this look')+'" style="min-height:44px;padding:6px 11px;border-radius:20px;border:1.5px solid '+(on?'#16a34a':'var(--border)')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#166534':'#1f2937')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(on?'☑ ':'☐ ')+esc(x.label)+'</button>';
+  }).join("");
+  return top+
+    '<div id="nblookpick-ticks" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">'+
+      '<div style="font-size:12px;font-weight:800;color:#9a3412;margin-bottom:5px">'+name+' may choose from:</div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">'+ticks+'</div>'+
+      '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-top:5px">2 or more ticked = '+name+' picks in Kids’ Corner; you’ll see the pick here. None or one ticked = you pick, as now.</div>'+
+    '</div>';
+}
+// Kids' Corner ▸ "🎨 My notebook look" — this kid's own Corner only, only with 2+ looks ticked, not over a game or drill.
+let _nlpLoading=false;
+function nbLookPickKcHtml(k){
+  try{
+    _kcLoadKid();
+    if(!k||kcKid!==k) return "";
+    const m=kcCalGet(k); if(m==="drills"||m==="games"||m==="card") return "";
+    if(_nlpRawCount(k)<2) return "";
+    if(!window.HoweNotebooks){   // the notebook code loads on first use — then draw the card
+      if(!_nlpLoading&&typeof haLoadNotebooksLib==="function"){ _nlpLoading=true; haLoadNotebooksLib().then(()=>{ _nlpLoading=false; if(tab==="kids"&&kcKid===k) renderAll(); }).catch(()=>{ _nlpLoading=false; }); }
+      return "";
+    }
+    const o=nbLookOpts(k), offer=nbLookPickOffer(k,o), t=_nlpTicks(k), al=offer.filter(x=>t[x.key]===true);
+    if(al.length<2) return "";
+    const cur=(o&&o.current)||"", pick=al.find(x=>x.key===cur)||null, col=KID_COLOR[k]||"#2B7A78";
+    const hex=c=>/^#[0-9a-fA-F]{3,8}$/.test(String(c||""));
+    const btns=al.map(x=>{ const c=x.card, on=!!pick&&pick.key===x.key;
+      const sw=(c.colors||[]).filter(hex).map(cc=>'<span style="flex:1;height:14px;background:'+cc+'"></span>').join("");
+      return '<button onclick="nbLookKidSet(\''+k+'\',\''+x.key+'\')" aria-pressed="'+(on?'true':'false')+'" aria-label="'+esc(c.label)+'" style="position:relative;flex:1 1 130px;min-width:120px;min-height:120px;padding:10px 8px;border-radius:18px;border:'+(on?'4px solid '+col:'2px solid #e2ddd6')+';background:'+(on?_kcTint(col,0.88):'#fff')+';cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent;text-align:center">'+
+        (on?'<span style="position:absolute;top:6px;right:8px;width:28px;height:28px;border-radius:50%;background:'+col+';color:#fff;font-size:17px;font-weight:900;line-height:28px">✓</span>':'')+
+        '<div style="font-size:44px;line-height:1.1">'+esc(c.emoji)+'</div>'+
+        '<div style="font-size:19px;line-height:1.3;margin-top:4px;letter-spacing:1px">'+esc((c.row||[]).join(" "))+'</div>'+
+        '<div style="display:flex;border-radius:7px;overflow:hidden;margin:8px 6px 6px;border:1px solid rgba(0,0,0,.08)">'+sw+'</div>'+
+        '<div style="font-size:14px;font-weight:800;color:#374151">'+esc(c.label)+'</div></button>';
+    }).join("");
+    return '<div id="kc-nblook" style="padding:14px 12px 0"><div style="max-width:640px;margin:0 auto;padding:14px;border-radius:18px;background:#f8f7f4;border:2px dashed #e2ddd6;box-sizing:border-box">'+
+      '<div style="font-size:18px;font-weight:800;color:#57534e;margin-bottom:10px">\u{1F3A8} My notebook look</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:10px">'+btns+'</div>'+
+      '<div style="font-size:15px;font-weight:700;color:#57534e;margin-top:10px;text-align:center">'+(pick?'Your next notebook will be '+esc(pick.card.label)+'.':'Tap a picture to pick your next notebook.')+'</div>'+
+    '</div></div>';
+  }catch(e){ return ""; }
+}
+// NB_LOOKPICK_END
 // PREKLEVEL_WIRE_START — the notebook's look + level switches (her ask 2026-11-08: "a setting where they could change between
 // which theme, construction, dinosaurs, or sharks" → "for every kid, there will be a quick theme changer"). Mom's picker saves
 // to notebookSettings/<kid>/notebookTheme and notebookSettings/<kid>/nbLevel/<switch> (targeted writes, synced like reviewCap);
@@ -50214,7 +50363,7 @@ function nbLevelOf(kid){
 }
 function nbGradeOf(kid){ const g=((nbRecOf(kid).notebook||{}).gradeLabel); if(g==="K") return "Kindergarten"; if(typeof g==="string"&&g.trim()) return g.trim(); return isPreK(kid)?"Pre-K":null; }
 function nbLookOpts(kid){ const N=window.HoweNotebooks; return (N&&typeof N.notebookOptions==="function")?N.notebookOptions(kid,{isPreK:isPreK(kid),notebookTheme:nbThemeOf(kid),nbLevel:nbLevelOf(kid)}):null; }
-function nbSetLook(kid,key){ if(!momHere()) return;
+function nbSetLook(kid,key){ if(!momHere()) return; if(typeof nbLookKidPicks==="function"&&nbLookKidPicks(kid)) return;   // NB_LOOKPICK: 2+ ticked = the kid picks in Kids' Corner
   if(!notebookSettings[kid]) notebookSettings[kid]={};
   notebookSettings[kid].notebookTheme=String(key||"");
   try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
@@ -59084,7 +59233,7 @@ function renderNotebook(el){
     lookHtml='<div id="nblook-card" style="margin-top:14px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:12px 14px">'+
       '<div style="font-size:12px;font-weight:800;color:#9a3412;margin-bottom:2px">🎨 Notebook look <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fed7aa;color:#7c2d12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></div>'+
       '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:7px">'+(lookOpts.looks.length>1?'Pick the pictures and colors. It changes the next notebook you print — nothing already printed changes.':'This notebook has one look for now.')+'</div>'+
-      '<div style="display:flex;gap:6px;flex-wrap:wrap">'+looks+'</div>'+
+      nbLookPickRow(sel,lookOpts,'<div style="display:flex;gap:6px;flex-wrap:wrap">'+looks+'</div>')+   // NB_LOOKPICK: Mom's pills (0–1 ticked) or the kid's pick (2+), then the tick list
       (lvRows?'<div style="font-size:12px;font-weight:800;color:#9a3412;margin:12px 0 2px">📏 Level</div><div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:4px">The same notebook at a different level — turn on what this child is ready for.</div>'+lvRows:'')+
       nbNameCardHtml(sel,lookOpts)+   // NBNAME: ✏️ Name in the notebook (Pre-K notebooks)
       ((typeof nbCountPicCardHtml==="function")?nbCountPicCardHtml(sel):"")+   // NB_COUNTPIC: 🔢 Number card counts (Pre-K notebooks)
@@ -85962,6 +86111,7 @@ function _mlDayOf(t){ try{ return (typeof effectiveDay==="function")?effectiveDa
 // A kid's Mom-required work still outstanding today. Carry twins are not their own sitting.
 function mlRemaining(kid){
   try{
+    if(typeof schoolOffToday==="function"&&schoolOffToday()) return [];   // 🏖 BRKTODAY: last week's (or a holiday's) cards are not Mom work today — no banner, no turn, nothing left on the strip
     return (getActiveTasks()||[]).filter(function(t){
       return t&&t.who===kid&&_mlDayOf(t)===_todayDay&&t.mom==="required"
         &&!(typeof helperHolds==="function"&&helperHolds(t))   // 🙋 a helper has it
@@ -90785,6 +90935,7 @@ function msPosEditToggle(){ if(!momHere()) return; msPosEdit=!msPosEdit; if(type
 // today's open Math Sprints card for the kid checks itself off (same as EIC)
 function msCheckCard(kid){
   try{
+    if(typeof schoolOffToday==="function"&&schoolOffToday()) return false;   // 🏖 BRKTODAY: no card today on a break — the sprint still scores, as on a day with no card
     if(typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return false;
     const t=weekData.tasks.filter(x=>x&&x.who===kid&&msIsCard(x)&&!String(x.id||"").endsWith("_c")&&!x._eowOverflow&&!(checked&&checked[x.id])&&effectiveDay(x)===_todayDay).sort((a,b)=>toMin(a.time)-toMin(b.time))[0];
     if(!t) return false; const ts=(claimed&&claimed[t.id])||nowTs();
