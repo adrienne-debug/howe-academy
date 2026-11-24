@@ -7027,7 +7027,7 @@ function chSettingsClickoffLogHTML(){
       var slbl=(typeof SL_SLBL!=="undefined"&&SL_SLBL[e.slot])||e.slot||"";
       var dlbl=(typeof DAY_LBL!=="undefined"&&DAY_LBL[e._day])||e._day||"";
       h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)'+(e.flagged?';opacity:.6':'')+'">';
-      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">−100</span>':'')+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
+      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">'+((typeof flagMarkTxt==="function"&&flagMarkTxt(e))||'−100')+'</span>':'')+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
       if(on&&!e.flagged) h+='<button onclick="rlogFlag(\''+kid+'\',\''+_rlwk+'\',\''+e._day+'\',\''+e._key+'\')" title="Didn\'t actually do it — dock 100 points" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ −100</button>';
       h+='</div>';
     });
@@ -19211,6 +19211,14 @@ function mdCardTogether(){
 // entry; the dock never un-checks the card — the walk-back in the subject sheet fixes the record itself.
 // Mom (momHere) or Dad's own link (?kiosk=dad) may dock; kids' views never see this card. Two targeted writes.
 let ckLogOpen=false;
+// FLAGWHO_START — the 🚩 mark says who made it, and Take stars away off still marks (her words 2026-11-23: "Yes, mark it", "also put
+// who makred mom or dad"). Every new mark stores flagBy "mom" | "dad"; with Take stars away off for that kid (or ⏸ paused) the tap still
+// asks, then marks the line with penalty 0 and takes nothing. An old mark (no flagBy) draws as before.
+function flagWho(){ return (typeof momHere==="function"&&momHere())?"mom":"dad"; }
+function flagWhoName(w){ return w==="dad"?"Dad":"Mom"; }
+function flagMarkTxt(r){ return r&&r.flagBy?"🚩 by "+flagWhoName(r.flagBy)+" · "+(r.penalty===0?"no stars taken":"−100"):""; }
+function flagOffAsk(kid,label){ return "Mark a false check-off for "+cap(kid)+"?\n\n\""+label+"\"\n\n"+starTakeWhy(kid)+", so no stars come off. The line just gets its 🚩 mark."; }
+// FLAGWHO_END
 function ckLogCanDock(){ try{ return momHere()||_kioskD(); }catch(e){ return false; } }
 function _ckLogTodayTs(ts){ try{ const d=(typeof _parseCheckTs==="function")?_parseCheckTs(ts):null; if(!d) return true; const n=new Date(); return d.getMonth()===n.getMonth()&&d.getDate()===n.getDate(); }catch(e){ return true; } }
 // → [{kind:"task"|"step", kid, label, ts, at, ref, flagged, pts}]
@@ -19221,17 +19229,17 @@ function ckLogToday(){
       if(!t||!t.who||!checked[t.id]||String(t.id||"").endsWith("_c")) return;
       if(effectiveDay(t)!==today||!_ckLogTodayTs(checked[t.id])) return;
       const h=(histState&&histState[t.id])||{};
-      out.push({kind:"task",kid:t.who,label:t.title||"",ts:String(checked[t.id]).replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""),at:(_parseCheckTs(checked[t.id])||new Date(0)).getTime(),ref:t.id,flagged:!!h.flagged,pts:0});
+      out.push({kind:"task",kid:t.who,label:t.title||"",ts:String(checked[t.id]).replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""),at:(_parseCheckTs(checked[t.id])||new Date(0)).getTime(),ref:t.id,flagged:!!h.flagged,flagBy:h.flagBy,penalty:h.penalty,pts:0});   // FLAGWHO
     });
   }catch(e){}
   try{
     Object.keys(routineLog||{}).forEach(kid=>{
       const day=(((routineLog[kid]||{})[wk]||{})[today])||{};
       Object.keys(day).forEach(key=>{ const r=day[key]; if(!r||(r.act!=="on"&&r.act!=="wave")) return;
-        out.push({kind:(r.act==="wave")?"wave":"step",kid:kid,label:(r.label||"Chore"),ts:String(r.ts||"").replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""),at:r.at||0,ref:wk+"/"+today+"/"+key,flagged:!!r.flagged,pts:r.pts||0}); });   // WAVE lines ride along
+        out.push({kind:(r.act==="wave")?"wave":"step",kid:kid,label:(r.label||"Chore"),ts:String(r.ts||"").replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""),at:r.at||0,ref:wk+"/"+today+"/"+key,flagged:!!r.flagged,flagBy:r.flagBy,penalty:r.penalty,pts:r.pts||0}); });   // WAVE lines ride along · FLAGWHO
       if(typeof amIso==="function"){ const _ti=amIso(today); [wk,(typeof _prevWkKey==="function")?_prevWkKey():null].forEach(w=>{ const wl=w?((routineLog[kid]||{})[w]||{}):{};   // SENDAM
         Object.keys(wl).forEach(dn=>{ if(w===wk&&dn===today) return; Object.keys(wl[dn]||{}).forEach(key=>{ const r=wl[dn][key]; if(!r||r.act!=="on"||!_ti||r.am!==_ti) return;
-          out.push({kind:"step",kid:kid,label:"🌅 "+(r.label||"Chore"),ts:String(r.ts||"").replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""),at:r.at||0,ref:w+"/"+dn+"/"+key,flagged:!!r.flagged,pts:r.pts||0}); }); }); }); }
+          out.push({kind:"step",kid:kid,label:"🌅 "+(r.label||"Chore"),ts:String(r.ts||"").replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""),at:r.at||0,ref:w+"/"+dn+"/"+key,flagged:!!r.flagged,flagBy:r.flagBy,penalty:r.penalty,pts:r.pts||0}); }); }); }); }   // FLAGWHO
     });
   }catch(e){}
   return out.sort((a,b)=>(b.at||0)-(a.at||0));
@@ -19242,13 +19250,13 @@ function ckLogDock(kind,kid,ref,label){
   if(kind==="step"){
     const p=ref.split("/"); const rec=(((routineLog[kid]||{})[p[0]]||{})[p[1]]||{})[p[2]]; if(!rec||rec.flagged) return;
     if(!confirm("Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||label||"")+"\"")) return;
-    bankDirect(kid,-100,"🚩 false check-off dock — "+(rec.label||label||""));
+    bankDirect(kid,-100,"🚩 false check-off dock — "+(rec.label||label||"")+" · by "+flagWhoName(who));   // FLAGWHO
     const patch={flagged:true,penalty:-100,flagTs:nowTs(),flagBy:who}; Object.assign(rec,patch);
     if(db&&!_dryRun()) db.ref("routineLog/"+kid+"/"+p[0]+"/"+p[1]+"/"+p[2]).update(patch);
   } else {
     const h=histState[ref]; if(!h||h.flagged) return;
     if(!confirm("Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(label||"")+"\"\n\n(The card stays checked — use “"+cw("fixFalse")+"” in the subject sheet to undo the record.)")) return;
-    bankDirect(kid,-100,"🚩 false check-off dock — "+(label||""));
+    bankDirect(kid,-100,"🚩 false check-off dock — "+(label||"")+" · by "+flagWhoName(who));   // FLAGWHO
     const patch={flagged:true,penalty:-100,flagTs:nowTs(),flagBy:who}; Object.assign(h,patch);
     try{ const hs=ld(WK+"_history")||{}; if(hs[ref]){ Object.assign(hs[ref],patch); sv(WK+"_history",hs); } }catch(e){}
     if(db&&!_dryRun()) db.ref(WK+"/history/"+ref).update(patch);
@@ -19275,7 +19283,7 @@ function mdCardCheckLog(){
           h+='<span style="font-size:11px;color:var(--muted);flex:0 0 62px">'+esc(i.ts)+'</span>';
           h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">'+(i.kind==="step"?'🧹 ':'')+esc(i.label)+(i.pts?' <span style="color:#b45309;font-weight:700">+'+i.pts+'⭐</span>':'')+'</span>';
           if(i.kind==="wave") h+='<span style="flex-shrink:0;font-size:11px;font-weight:800;color:#6b7280">🙋 waved</span>';   // WAVE: nothing to dock
-          else if(i.flagged) h+='<span title="docked −100" style="flex-shrink:0;font-size:11px;font-weight:800;color:#b91c1c">🚩 −100</span>';
+          else if(i.flagged) h+='<span title="'+(i.penalty===0?'marked, no stars taken':'docked −100')+'" style="flex-shrink:0;font-size:11px;font-weight:800;color:#b91c1c">'+(flagMarkTxt(i)||'🚩 −100')+'</span>';   // FLAGWHO
           else h+='<button onclick="event.stopPropagation();ckLogDock(\''+i.kind+'\',\''+i.kid+'\',\''+i.ref.replace(/'/g,"\\'")+'\',\''+esc(i.label).replace(/'/g,"\\'")+'\')" title="Didn’t actually do it — dock 100" style="flex-shrink:0;padding:3px 9px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">−100</button>';
           h+='</div>';
         });
@@ -88015,12 +88023,13 @@ function rlogAppend(kid,slot,label,act,pts,extra){
 function rlogFlag(kid,wk,d,key){
   if(!momHere()) return;   // Mom-only; the Log card lives behind the Admin PIN too
   const rec=routineLog[kid]&&routineLog[kid][wk]&&routineLog[kid][wk][d]&&routineLog[kid][wk][d][key];
-  if(!rec||rec.flagged||(typeof starTakeNo==="function"&&starTakeNo(kid))) return;   // STARRULES
-  if(!confirm("Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||"")+"\"")) return;
-  bankDirect(kid,-100,"🚩 false check-off dock");
-  const patch={flagged:true,penalty:-100,flagTs:nowTs()};
+  if(!rec||rec.flagged) return;
+  const off=typeof starTakeOk==="function"&&!starTakeOk(kid), who=typeof flagWho==="function"?flagWho():"mom";   // FLAGWHO: Take stars away off → the 🚩 mark, no stars
+  if(!confirm(off?flagOffAsk(kid,rec.label||""):"Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||"")+"\"")) return;
+  if(!off) bankDirect(kid,-100,"🚩 false check-off dock"+(typeof flagWhoName==="function"?" · by "+flagWhoName(who):""));
+  const patch={flagged:true,penalty:off?0:-100,flagTs:nowTs(),flagBy:who};
   Object.assign(rec,patch);
-  if(db) db.ref("routineLog/"+kid+"/"+wk+"/"+d+"/"+key).update(patch);
+  if(db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("routineLog/"+kid+"/"+wk+"/"+d+"/"+key).update(patch);
   renderAll();
 }
 // ── Accountability: "Morning not done by <hour> -> lose tech" house rule ──
