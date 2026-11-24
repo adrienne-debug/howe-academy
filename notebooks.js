@@ -3647,6 +3647,153 @@ ${extraStrip || ""}
     construction: { GD:"#27272a", GM:"#f59e0b", GL:"#fde68a", GP:"#fffbeb", GOLD:"#ea580c", GOLDD:"#b45309", CREAM:"#fff7ed", EXTRA:"#4d7c0f" },   // 🚜 PREKLEVEL
     generic: { GD:"#1e293b", GM:"#0f766e", GL:"#cbd5e1", GP:"#f8fafc", GOLD:"#0d9488", GOLDD:"#115e59", CREAM:"#f8fafc", EXTRA:"#475569" }   // 📓 starter notebook
   };
+  // NB_LOOKS2_START — three more Pre-K looks: 🚀 space, 🐮 farm, 🦊 forest (her words 2026-11-23: looks should be
+  // "adjustable", "maybe build up several different themes for the kids to even change", and a session on "developing
+  // different themes and how they can be interchangeable" between the Pre-K kids). Each is a theme object for
+  // generatePreK that fills every piece the first three looks fill — plus three pieces those leave to another look's words:
+  // its own sound-picture words (without them little letters + sounds print the construction ones: dig, hammer, truck), its
+  // own default animal friends (without them the cover lists T-Rex), and its own word for J (the base list's J names a child).
+  // A key in NB_THEMES is all the picker needs (notebookOptions lists Object.keys(NB_THEMES)). The block sits here, after
+  // UNIT_INSERT_THEMES, because each look adds its unit-page colours to that table too.
+  // A look changes words, pictures and colours ONLY: the same letters, numbers, shapes, animals, level switches and page
+  // count as any other look — so none of these has a counting picture of its own (that swaps the day's animal out of the
+  // ten-frame). Pictures are emoji and our own SVG; nothing here names a child. A kid on dino / construction / shark, or on
+  // their own notebook, prints byte for byte what printed before (test_nb_looks2.js builds that baseline with this block
+  // taken out). Page fit: the first look's sheet with colours over it — same class names and sizes — measured in Chromium.
+  var LK2_HINT = "✏️ your grown-up can write your name here too";
+  // Picture words for a letter's SOUND (little letters, once the Letter Sounds deck is on): short vowels, hard consonants,
+  // nothing from another look. A look's own letter words replace the matching ones (lk2Words).
+  var LK2_SOUND_WORDS = {
+    a: ["apple", "🍎"], b: ["bear", "🐻"], c: ["cat", "🐱"], d: ["dog", "🐶"], e: ["egg", "🥚"], f: ["fish", "🐟"], g: ["goat", "🐐"],
+    h: ["hat", "🎩"], i: ["insect", "🐛"], j: ["jet", "✈️"], k: ["kite", "🪁"], l: ["lion", "🦁"], m: ["mouse", "🐭"], n: ["nest", "🪺"],
+    o: ["octopus", "🐙"], p: ["pig", "🐷"], q: ["queen", "👑"], r: ["rabbit", "🐰"], s: ["sun", "☀️"], t: ["turtle", "🐢"],
+    u: ["umbrella", "☂️"], v: ["van", "🚐"], w: ["web", "🕸️"], x: ["fox", "🦊"], y: ["yo-yo", "🪀"], z: ["zebra", "🦓"]
+  };
+  // over = { C: ["Comet", "☄️"], … } (consonants only, so each word also works as the letter's sound word).
+  function lk2Words(over) {
+    var sound = Object.assign({}, LK2_SOUND_WORDS);
+    Object.keys(over).forEach(function (L) { sound[L.toLowerCase()] = [over[L][0].toLowerCase(), over[L][1]]; });
+    return { letter: Object.assign({}, JU_LETTER_WORDS, over), sound: sound };
+  }
+  // The warm-up strip: the same 200×42 box and markup as the first looks' (so the strip keeps its measured height), with the
+  // look's own words, traveller, dotted line and ground. A different line each day.
+  var LK2_PATHS = ["M4 21 H196", "M4 34 Q100 -8 196 34", "M4 8 L36 32 L68 8 L100 32 L132 8 L164 32 L196 8",
+    "M4 21 Q28 2 52 21 T100 21 T148 21 T196 21", "M4 28 C36 -6 60 38 92 18 S150 -2 196 26"];
+  function lk2Path(say, from, to, idx, stroke, groundFill) {
+    return '    <div style="font-size:10px;font-weight:800;color:var(--ju-deep);white-space:nowrap;">' + say + '</div>\n' +
+      '    <span class="path-end">' + from + '</span>\n' +
+      '    <svg class="path-svg" viewBox="0 0 200 42" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">' +
+      '<path d="M0 37 Q25 33 50 37 T100 37 T150 37 T200 37 V42 H0 Z" fill="' + groundFill + '"/>' +
+      '<path d="' + LK2_PATHS[idx % LK2_PATHS.length] + '" fill="none" stroke="' + stroke + '" stroke-width="4" stroke-linecap="round" stroke-dasharray="3 9"/></svg>\n' +
+      '    <span class="path-end">' + to + '</span>\n';
+  }
+  // Colours over the first look's sheet. p.v = the 16 colour variables, p.print = their print tints, then the accent bar,
+  // the header badge, the page label, the cover hint, and the borders of the number card (they sit on a re-tinted card).
+  function lk2Css(p) {
+    var v = p.v, pr = p.print;
+    return JU_CSS +
+      "  :root {\n" +
+      "    --ju-dark:  " + v.dark + "; --ju-deep:  " + v.deep + "; --ju-mid:   " + v.mid + "; --ju-light: " + v.light + ";\n" +
+      "    --ju-pale:  " + v.pale + "; --ju-green: " + v.green + "; --ju-gpale: " + v.gpale + "; --ju-gold:  " + v.gold + ";\n" +
+      "    --ju-gpale2:" + v.gpale2 + "; --ju-blue:  " + v.blue + "; --ju-bpale: " + v.bpale + ";\n" +
+      "    --ink:      " + v.ink + "; --muted: " + v.muted + "; --border: " + v.border + ";\n" +
+      "    --trace:    " + v.trace + "; --rule:     " + v.trace + "; --nt-trace: " + v.ntTrace + ";\n" +
+      "  }\n" +
+      "  @media print { :root { --ju-dark: " + pr.dark + "; --ju-light: " + pr.light + "; --ju-pale: " + pr.pale + "; --ju-gpale: " + pr.gpale + "; --ju-gpale2: " + pr.gpale2 + ";\n" +
+      "    --ju-bpale: " + pr.bpale + "; --trace: " + pr.trace + "; --nt-trace: " + pr.ntTrace + "; --muted: " + pr.muted + "; --border: " + pr.border + "; } }\n" +
+      "  .accent-bar { background:" + p.accent + "; }\n" +
+      "  .dino-badge { background:" + p.badge[0] + "; border-color:" + p.badge[1] + "; }\n" +
+      "  .page-label { color:" + p.label + "; }\n  .cover-draw-hint { color:" + p.hint + "; }\n" +
+      "  .card-green { border-color:" + p.numCard[0] + "; }\n  .jm-cell.thisweek { box-shadow:inset 0 0 0 2px " + p.numCard[0] + "; }\n" +
+      "  .tf-cell { border-color:" + p.numCard[1] + "; }\n  .hc-cell { border-color:" + p.numCard[2] + "; }\n";
+  }
+  var LK2_GROWN = "Pencil-control warm-up: help ", LK2_EACH_DAY = " changes every day — straight, a hill, a zigzag, a wave, a loop. No \"right\" way.";
+  var LK2 = {
+    space: {
+      label: "Space (Pre-K 🚀)", chip: "🚀 Space", planTitle: "🚀 This week’s flight plan", noName: "Little Astronaut", emoji: "🚀", nameIcon: "🪐", shapeStroke: "#4c4a6b",
+      coverSub: "trace · count · color · zoom", coverBadge: "🚀 Blast Off!", coverRow: "🚀 🌙 ⭐ 🪐 🛸", drawCap: "✏️ Draw YOU flying a rocket!",
+      badges: { monday: "🚀 Blast Off! New Week", tuesday: "🌙 Zoom Zoom!", wednesday: "🪐 Halfway, Astronaut!", thursday: "☄️ Almost There!", friday: "⭐ Space Star!" },
+      words: lk2Words({ C: ["Comet", "☄️"], G: ["Galaxy", "🌌"], J: ["Jet", "✈️"], M: ["Moon", "🌙"], P: ["Planet", "🪐"], R: ["Rocket", "🚀"], T: ["Telescope", "🔭"] }),
+      path: function (idx) { return lk2Path("Fly to the moon!", "🚀", "🌙", idx, "#818cf8", "#e0e7ff"); },
+      css: lk2Css({
+        v: { dark: "#1e1b4b", deep: "#4338ca", mid: "#6366f1", light: "#c7d2fe", pale: "#eef2ff", green: "#0f766e", gpale: "#f0fdfa", gold: "#d97706",
+          gpale2: "#fffbeb", blue: "#1d4ed8", bpale: "#eff6ff", ink: "#1b1a33", muted: "#62648a", border: "#d5d7ee", trace: "#b3b6dc", ntTrace: "#6d7099" },
+        print: { dark: "#1a1842", light: "#b3bffb", pale: "#e2e8fe", gpale: "#def7f1", gpale2: "#fdf3d3", bpale: "#e2ecfd", trace: "#a3a7d0", ntTrace: "#5d6088", muted: "#51537a", border: "#c0c3e2" },
+        accent: "#312e81 url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='6'%3E%3Ccircle cx='4' cy='3' r='1.3' fill='%23fcd34d'/%3E%3Ccircle cx='14' cy='1.6' r='.8' fill='%23ffffff'/%3E%3Ccircle cx='22' cy='4.2' r='1' fill='%23c7d2fe'/%3E%3C/svg%3E\") repeat-x",
+        badge: ["rgba(99,102,241,0.3)", "rgba(199,210,254,0.5)"], label: "#6b6fa8", hint: "#aeb3e2", numCard: ["#b9e6dc", "#b7dcd4", "#cfe6e0"]
+      }),
+      guide: { animalIcon: "🐾", nameIcon: "🪐", countWord: "animal", letterExample: "R — /r/ — Rocket", closeColors: ["#b9e6dc", "#134e48"],
+        pathRow: ["🚀", "Fly to the Moon", LK2_GROWN + "the rocket fly the dotted line to the moon. The flight" + LK2_EACH_DAY] },
+      xpColors: ["#4f46e5", "#eef2ff", "#3730a3"],
+      unit: { GD:"#1e1b4b", GM:"#6366f1", GL:"#c7d2fe", GP:"#eef2ff", GOLD:"#d97706", GOLDD:"#b45309", CREAM:"#fffbeb", EXTRA:"#0f766e" },
+      curOpt: { animals: [["Lion", "🦁"], ["Giraffe", "🦒"], ["Elephant", "🐘"], ["Monkey", "🐵"]], animalEmoji: {}, animalFallback: "🐾" }
+    },
+    farm: {
+      label: "Farm (Pre-K 🐮)", chip: "🐮 Farm", planTitle: "🐮 This week’s farm plan", noName: "Little Farmer", emoji: "🐮", nameIcon: "🌻", shapeStroke: "#6b4a44",
+      coverSub: "trace · count · color · grow", coverBadge: "🌾 Let's Grow!", coverRow: "🐮 🐷 🐔 🐴 🌾", drawCap: "✏️ Draw YOU on the farm!",
+      badges: { monday: "🐮 Moo! New Week", tuesday: "🐷 Oink Oink!", wednesday: "🐔 Halfway, Farmer!", thursday: "🌾 Almost There!", friday: "⭐ Farm Star!" },
+      words: lk2Words({ C: ["Cow", "🐮"], D: ["Duck", "🦆"], H: ["Horse", "🐴"], J: ["Jet", "✈️"], R: ["Rooster", "🐓"], T: ["Tractor", "🚜"] }),
+      path: function (idx, aemoji) { return lk2Path("Walk to the hay!", aemoji, "🌾", idx, "#ca8a04", "#dcfce7"); },
+      css: lk2Css({
+        v: { dark: "#7f1d1d", deep: "#b91c1c", mid: "#dc2626", light: "#fecaca", pale: "#fef2f2", green: "#15803d", gpale: "#f0fdf4", gold: "#ca8a04",
+          gpale2: "#fefce8", blue: "#0369a1", bpale: "#f0f9ff", ink: "#2a1614", muted: "#7d6763", border: "#ead6d2", trace: "#d9bdb7", ntTrace: "#8f6f69" },
+        print: { dark: "#6f1919", light: "#fbb4b4", pale: "#fde3e3", gpale: "#dff7e6", gpale2: "#fbf5cf", bpale: "#e3f1fb", trace: "#cbaaa3", ntTrace: "#7d5f59", muted: "#665350", border: "#d9bfba" },
+        accent: "repeating-linear-gradient(90deg, #b91c1c 0 12px, #fef2f2 12px 16px)",
+        badge: ["rgba(220,38,38,0.3)", "rgba(254,202,202,0.5)"], label: "#a66a62", hint: "#e3b9b3", numCard: ["#bbf7d0", "#b7dcc4", "#cfe6d6"]
+      }),
+      guide: { animalIcon: "🐮", nameIcon: "🌻", countWord: "farm friend", letterExample: "P — /p/ — Pig", closeColors: ["#bbf7d0", "#14532d"],
+        pathRow: ["🌾", "Walk to the Hay", LK2_GROWN + "today's animal walk the dotted line to the hay. The path" + LK2_EACH_DAY] },
+      xpColors: ["#b91c1c", "#fef2f2", "#7f1d1d"],
+      unit: { GD:"#7f1d1d", GM:"#dc2626", GL:"#fecaca", GP:"#fef2f2", GOLD:"#ca8a04", GOLDD:"#a16207", CREAM:"#fefce8", EXTRA:"#15803d" },
+      curOpt: { animals: [["Cow", "🐮"], ["Pig", "🐷"], ["Horse", "🐴"], ["Chicken", "🐔"]],
+        animalEmoji: { cow: "🐮", pig: "🐷", horse: "🐴", pony: "🐴", chicken: "🐔", hen: "🐔", rooster: "🐓", chick: "🐥", sheep: "🐑", lamb: "🐑", goat: "🐐",
+          duck: "🦆", turkey: "🦃", llama: "🦙", bee: "🐝", mouse: "🐭", dog: "🐶", cat: "🐱", rabbit: "🐰", bunny: "🐰" }, animalFallback: "🐾" }
+    },
+    forest: {
+      label: "Forest (Pre-K 🦊)", chip: "🦊 Forest", planTitle: "🦊 This week’s trail plan", noName: "Little Explorer", emoji: "🦊", nameIcon: "🍄", shapeStroke: "#4d5f52",
+      coverSub: "trace · count · color · hike", coverBadge: "🌲 Let's Explore!", coverRow: "🦊 🌲 🐻 🦉 🍄", drawCap: "✏️ Draw YOU in the forest!",
+      badges: { monday: "🦊 Hello, New Week!", tuesday: "🐿️ Hop Hop!", wednesday: "🦉 Halfway, Explorer!", thursday: "🌲 Almost There!", friday: "⭐ Forest Star!" },
+      words: lk2Words({ D: ["Deer", "🦌"], F: ["Forest", "🌲"], H: ["Hedgehog", "🦔"], J: ["Jet", "✈️"], L: ["Leaf", "🍃"], M: ["Mushroom", "🍄"], R: ["Raccoon", "🦝"],
+        S: ["Squirrel", "🐿️"], T: ["Tree", "🌳"], W: ["Wolf", "🐺"] }),
+      path: function (idx, aemoji) { return lk2Path("Follow the trail!", aemoji, "🌲", idx, "#a16207", "#bbf7d0"); },
+      css: lk2Css({
+        v: { dark: "#14532d", deep: "#166534", mid: "#16a34a", light: "#bbf7d0", pale: "#f0fdf4", green: "#7e22ce", gpale: "#faf5ff", gold: "#c2410c",
+          gpale2: "#fff7ed", blue: "#0369a1", bpale: "#f0f9ff", ink: "#14241a", muted: "#5f7265", border: "#d3e2d6", trace: "#b3c8b8", ntTrace: "#6c8271" },
+        print: { dark: "#114827", light: "#a3eebf", pale: "#e2f8e9", gpale: "#f1e6fd", gpale2: "#fdeedd", bpale: "#e3f1fb", trace: "#a2b9a8", ntTrace: "#5b7160", muted: "#4e6054", border: "#bfd3c4" },
+        accent: "#bbf7d0 url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='6'%3E%3Cpath d='M0 6 L6 0 L12 6Z' fill='%2315803d'/%3E%3C/svg%3E\") repeat-x",
+        badge: ["rgba(22,163,74,0.3)", "rgba(187,247,208,0.5)"], label: "#5c8a6b", hint: "#a9cdb5", numCard: ["#e9d5ff", "#dcc3f5", "#e6d6f8"]
+      }),
+      guide: { animalIcon: "🦊", nameIcon: "🍄", countWord: "forest friend", letterExample: "B — /b/ — Bear", closeColors: ["#e9d5ff", "#581c87"],
+        pathRow: ["🌲", "Follow the Trail", LK2_GROWN + "today's animal follow the dotted trail to the tree. The trail" + LK2_EACH_DAY] },
+      xpColors: ["#15803d", "#f0fdf4", "#14532d"],
+      unit: { GD:"#14532d", GM:"#16a34a", GL:"#bbf7d0", GP:"#f0fdf4", GOLD:"#c2410c", GOLDD:"#9a3412", CREAM:"#fff7ed", EXTRA:"#7e22ce" },
+      curOpt: { animals: [["Fox", "🦊"], ["Bear", "🐻"], ["Owl", "🦉"], ["Deer", "🦌"]],
+        animalEmoji: { fox: "🦊", bear: "🐻", owl: "🦉", deer: "🦌", squirrel: "🐿️", chipmunk: "🐿️", rabbit: "🐰", bunny: "🐰", hedgehog: "🦔", raccoon: "🦝",
+          wolf: "🐺", skunk: "🦨", beaver: "🦫", bat: "🦇", bird: "🐦", frog: "🐸", mouse: "🐭", snail: "🐌", turtle: "🐢" }, animalFallback: "🐾" }
+    }
+  };
+  // One look for one kid. The kid's name and grade word come from the data (pkKidName), as in every data-driven look.
+  function lk2Theme(key, ctx) {
+    var D = LK2[key], K = pkKidName(ctx, D.noName), nm = K.nm, gr = K.grade;
+    return {
+      key: key, name: nm,
+      eyebrow: gr, book: nm + "'s Notebook", guideTitle: nm + "'s Parent Guide", grade: gr,
+      coverSub: D.coverSub, coverBadge: D.coverBadge, hello: "Hi, " + nm + "! " + D.emoji,
+      coverRow: D.coverRow, drawCap: D.drawCap, drawHint: LK2_HINT,
+      footer: nm + " · " + gr, emoji: D.emoji, moodEmoji: D.emoji, nameIcon: D.nameIcon, bigIcon: "🔠", shapeStroke: D.shapeStroke,
+      dayTitle: nm + "'s Day", daySub: "a grown-up reads · " + nm + " traces, counts &amp; colors",
+      badges: D.badges, badgeDefault: D.emoji + " Great Job!", letterWords: D.words.letter, soundWords: D.words.sound,
+      traceName: K.up, traceSize: K.size, traceNameMixed: K.mixed, traceSizeMixed: K.size, pathHtml: D.path,
+      css: D.css, fonts: null, P: { eyebrow: gr, footer: nm + " · " + gr, emoji: D.emoji, abcTitle: D.emoji + " Sing your ABCs!", lowerFirst: false },
+      guide: D.guide, xpColors: D.xpColors, unitTheme: key, curOpt: D.curOpt
+    };
+  }
+  Object.keys(LK2).forEach(function (k) {   // into the picker (after the first three) and the unit-page colour table
+    UNIT_INSERT_THEMES[k] = LK2[k].unit;
+    // planTitle = the title of Mom's week-plan card for this look (index.html nbPlanTitle)
+    NB_THEMES[k] = { label: LK2[k].label, chip: LK2[k].chip, planTitle: LK2[k].planTitle, theme: function (ctx) { return lk2Theme(k, ctx); } };
+  });
+  // NB_LOOKS2_END
   // SPELLPAGE_START — 📝 the weekly Spelling page (her ask 2026-10-04: "the list of their words that they will be learning
   // that week starting on their learning day … and the spelling checkup section"). Built by the app (ctx.spelling, see
   // nbSpellCtx in index.html); every kid's notebook adds it right after the unit pages. One page: "This Week's Words"
