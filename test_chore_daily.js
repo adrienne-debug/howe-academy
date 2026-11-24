@@ -16,6 +16,9 @@
  *   A · the function and where it is read · B the design's table on every list and every payer/display, the week boundary included ·
  *   C 5 / 15 / 22 ⭐ rounding · D missed / done / missed / done · E ✕ / ➖ / 😷 / 🌅 restart the count · F the per-kid switch · G ⏸ Pause ·
  *   H un-tick returns exactly what was paid · I nothing is ever taken: a 0 ⭐ daily, the bank · J dry-run · K the 📒 ledger's words ·
+ *   N a daily that joins a list starts that day · P a row whose place moves · Q family-calendar days off ·
+ *   S each start-date stamp is a targeted write (every tap's writes, op / path / value, = the app before's plus from = today) ·
+ *   T the same chore words on two lists (a tick on one never counts for the other) ·
  *   L nothing else moves: = the app before, byte for byte (every other day done 11/28 … 12/9; misses only before the slate).
  * "The app before" = THIS tree with C5 taken out (no git, no pinned commit): index.html minus CHOREDAILY and its hooks, house.js minus
  * its two ledger hooks (each must match exactly once). CD_INDEX / CD_HJS = other copies (a mutation check). CD_DUMP = a file for the
@@ -366,6 +369,75 @@ console.log("\n── Q · a holiday / vacation that took a list off that day is
   ok("…Morning and Evening kept running, so they count as before: Wed 12/2 \"10 → 8\", Fri 12/4 \"10 → 4\", Sun 12/6 \"10 → 0\"", ["m", "e"].every(k => J(["2026-12-02", "2026-12-04", "2026-12-06"].map(d => C[d][k])) === J(["10 → 8 ⭐", "10 → 4 ⭐", "10 → 0 ⭐"])), ["m", "e"].map(k => ["2026-12-02", "2026-12-04", "2026-12-06"].map(d => C[d][k])));
   ok("a school-only holiday (12/5 … 12/6, every list on) changes nothing: Chores Sun 12/6 \"10 → 8\" and Mon \"10 → 6\" as any days, Morning as the table", C["2026-12-05"].slots === "morning,afternoon,chores,evening" && C["2026-12-06"].c === "10 → 8 ⭐" && C["2026-12-07"].c === "10 → 6 ⭐" && C["2026-12-07"].m === "10 → 0 ⭐", [C["2026-12-05"].slots, C["2026-12-06"].c, C["2026-12-07"].c, C["2026-12-07"].m]);
 }
+
+// ── S: every start-date stamp is a targeted write ──
+// Wed 12/2 7 AM, Mom's device, one tap at a time; each tap's writes recorded (op, path, value) on this tree and on the app before.
+// The rule: the only difference is from = today on the rows that join a list, written as household/jobs/<id>/from (alone, or as one
+// key of the update the tap already makes) or inside a NEW row's own first write; never a set of household/jobs/<id> for a row that
+// was already there, and nothing of any other chore.
+console.log("\n── S · each start-date stamp is a targeted write: household/jobs/<id>/from = today, nothing else of any chore ──");
+{ const JS = () => ({
+    a_sweep: K({ label: "Sweep porch", who: "kid_a", slot: "chores", cad: "daily", pts: 10, order: 0 }),
+    a_hi: K({ label: "Wipe the stove", who: "kid_a", slot: "chores", cad: "daily", pts: 10, level: 3, order: 1 }),
+    b_door: K({ label: "Wipe the door", who: "kid_b", slot: "chores", cad: "wk:4", pts: 10, order: 0 }),
+    b_shoe: K({ label: "Polish shoes", who: "kid_b", slot: "chores", cad: "daily", pts: 10, level: 3, order: 1 }),
+    b_old: K({ label: "Dust the lamp", who: "kid_b", slot: "chores", cad: "daily", pts: 10, status: "retired", verdict: "retire", order: 2 }),
+    c_fern: K({ label: "Water the fern", who: "kid_c", slot: "chores", cad: "daily", pts: 10, order: 0 }),
+    c_hi: K({ label: "Shake the rugs", who: "kid_c", slot: "evening", cad: "daily", pts: 10, level: 3, order: 1 }),
+    d_rake: K({ label: "Rake leaves", who: "kid_d", slot: "chores", cad: "daily", pts: 10, order: 0 }),
+    d_mop: K({ label: "Mop the hall", who: "kid_d", slot: "chores", cad: "daily", pts: 10, order: 1 }) });
+  const REC = "globalThis.__W=[];(function(){ const r0=db.ref; db.ref=function(p){ const r=r0.apply(db,arguments), o=Object.create(r), P=String(p==null?'':p), c=function(v){ return v===undefined?null:JSON.parse(JSON.stringify(v)); }; o.set=function(v){ __W.push(['set',P,c(v)]); return r.set(v); }; o.update=function(m){ __W.push(['update',P,c(m)]); return r.update(m); }; o.remove=function(){ __W.push(['remove',P,null]); return r.remove(); }; return o; }; })();1";
+  const TAPS = [
+    ["＋ Add a paying daily (Dust the TV → kid_b)", "Object.assign(hhAdd,{who:'kid_b',slot:'chores',cad:'daily',kind:'chore',label:'Dust the TV',emoji:'📺',pts:'10',area:'cleaning',level:0,room:'any',can:{}}); document.getElementById('hh-add-label').value='Dust the TV'; document.getElementById('hh-add-emoji').value='📺'; document.getElementById('hh-add-pts').value='10'; hhAddSave()", ["new:Dust the TV"]],
+    ["the card's days → Daily (Wipe the door, Fridays)", "hhEditCadMode_set('b_door','daily')", ["b_door"]],
+    ["the card's list → Evening (Sweep porch)", "hhEditSet('a_sweep','slot','evening')", ["a_sweep"]],
+    ["→ Give to (Water the fern → kid_d)", "hhGiveTo('c_fern','kid_d')", ["c_fern"]],
+    ["a person's level (kid_a → Level 3: Wipe the stove)", "hhLevelSetFor('kid_a',3)", ["a_hi"]],
+    ["a row's own level (Polish shoes → Level 1)", "hhEditSet('b_shoe','level',1)", ["b_shoe"]],
+    ["a row's status (Dust the lamp, retired → Keep)", "hhSet('b_old','verdict','keep')", ["b_old"]],
+    ["the family level (→ Level 3: Shake the rugs)", "hhLevelSet(3)", ["c_hi"]],
+    ["the Chores & Stars editor under Take over (Rake leaves → kid_d's Evening list, a new Brush the dog there)", "(function(){ const c=routineCfg2.chores.kid_d, e=routineCfg2.evening.kid_d=routineCfg2.evening.kid_d||[]; const i=c.findIndex(function(s){ return s.label==='Rake leaves'; }); e.push(c.splice(i,1)[0]); e.push({label:'Brush the dog',emoji:'🐕',pts:10,cad:'daily'}); hhSyncKids(); })()", ["d_rake", "new:Brush the dog"]]];
+  const run = async (index, hjs) => { const X = await mkWorld(index, hjs, JS()), out = [];
+    await at(X.w, "2026-12-02", 7); X.A.run(REC); await X.w.flush();
+    for (const [, js] of TAPS) { X.A.run("__W.length=0"); X.A.run(js); await X.w.flush(); out.push(JSON.parse(X.A.run("JSON.stringify(__W)"))); }
+    return { out, jobs: X.w.get("household/jobs") }; };
+  const N = await run(IDX, HJS), O = await run(BASE_IDX, BASE_HJS), OLD = Object.keys(JS()), T = "2026-12-02";
+  // take the stamps out of this tree's writes; what is left must be the app before's writes, op for op
+  const strip = ws => { const st = [], rest = [];
+    for (const [op, p, v] of ws) { const m = /^household\/jobs\/([^/]+)\/from$/.exec(p), n = /^household\/jobs\/([^/]+)$/.exec(p);
+      if (op === "set" && m && v === T) { st.push(m[1]); continue; }
+      if (op === "set" && n && OLD.indexOf(n[1]) < 0 && v && v.from === T) { st.push("new:" + v.label); const o = clone(v); delete o.from; rest.push([op, p, o]); continue; }
+      if (op === "update") { const o = {};
+        for (const [k, x] of Object.entries(v || {})) { const q = /^household\/jobs\/([^/]+)\/from$/.exec(k), r = /^household\/jobs\/([^/]+)$/.exec(k);
+          if (q && x === T) { st.push(q[1]); continue; }
+          if (r && OLD.indexOf(r[1]) < 0 && x && x.from === T) { st.push("new:" + x.label); const y = clone(x); delete y.from; o[k] = y; continue; }
+          o[k] = x; }
+        if (Object.keys(o).length) rest.push([op, p, o]); continue; }
+      rest.push([op, p, v]); }
+    return { st: st.sort(), rest }; };
+  TAPS.forEach(([name, , exp], i) => { const s = strip(N.out[i]);
+    const wholeOld = N.out[i].filter(([op, p, v]) => (op === "set" && OLD.some(id => p === "household/jobs/" + id)) || (op === "update" && Object.keys(v || {}).some(k => OLD.some(id => k === "household/jobs/" + id))));
+    ok(name + ": stamps " + J(exp) + " = " + T + "; every other write = the app before's; no set of a whole existing chore",
+      J(s.st) === J(exp.slice().sort()) && J(s.rest) === J(O.out[i]) && wholeOld.length === 0 && N.out[i].length > 0,
+      { stamps: s.st, now: N.out[i], before: O.out[i] }); });
+  const byLab = (jobs, l) => Object.values(jobs || {}).filter(j => j && j.label === l)[0] || {};
+  ok("…and the table ends with from = " + T + " on exactly those rows (Mop the hall, never moved, has none)", ["Dust the TV", "Wipe the door", "Sweep porch", "Water the fern", "Wipe the stove", "Polish shoes", "Dust the lamp", "Shake the rugs", "Rake leaves", "Brush the dog"].every(l => byLab(N.jobs, l).from === T) && !byLab(N.jobs, "Mop the hall").from && Object.values(O.jobs).every(j => !j.from || j.label === "Wipe the door"), Object.values(N.jobs).map(j => [j.label, j.from])); }
+
+// ── T: the same chore words on two lists ──
+console.log("\n── T · the same chore on two lists: a tick on one list never counts for the other ──");
+{ const JT = () => ({
+    a_am: K({ label: "Brush teeth", who: "kid_a", slot: "morning", cad: "daily", pts: 10, area: "pickup", order: 0 }),
+    a_pm: K({ label: "Brush teeth", who: "kid_a", slot: "evening", cad: "daily", pts: 10, area: "pickup", order: 1 }),
+    b_am: K({ label: "Brush teeth", who: "kid_b", slot: "morning", cad: "daily", pts: 10, area: "pickup", order: 0 }),
+    b_pm: K({ label: "Brush teeth", who: "kid_b", slot: "evening", cad: "daily", pts: 10, area: "pickup", order: 1 }) });
+  const X = await mkWorld(IDX, HJS, JT()), R = {}, D = DATES.slice(0, 6);   // Sat 11/28 … Thu 12/3
+  for (const iso of D) { await at(X.w, iso, 7); for (const sl of ["morning", "evening"]) for (const k of ["kid_a", "kid_b"]) { draw(X.B, sl, k); draw(X.A, sl, k); } await X.w.flush();
+    await at(X.w, iso, 20); R[iso] = { am: pill(draw(X.B, "morning", "kid_a"), "Brush teeth"), pm: pill(draw(X.B, "evening", "kid_a"), "Brush teeth"), bam: pill(draw(X.B, "morning", "kid_b"), "Brush teeth"), bpm: pill(draw(X.B, "evening", "kid_b"), "Brush teeth") };
+    tick(X.B, "morning", "kid_a", "Brush teeth"); tick(X.B, "evening", "kid_b", "Brush teeth"); await X.w.flush();
+    if (iso === "2026-12-03") for (const [k, sl] of [["kid_a", "evening"], ["kid_b", "morning"]]) { const b0 = bal(X.w, k); tick(X.B, sl, k, "Brush teeth"); await X.w.flush(); R[k] = bal(X.w, k) - b0; } }
+  const MT = D.slice(2), col = k => MT.map(d => R[d][k]), FALL = ["+10 ⭐", "+10 ⭐", "10 → 8 ⭐", "10 → 6 ⭐"];
+  ok("kid_a ticks Morning \"Brush teeth\" every day, never Evening's: Evening Mon … Thu \"+10\", \"+10\", \"10 → 8\", \"10 → 6\" (its Thursday tick pays 6); Morning \"+10\" every day", J(col("pm")) === J(FALL) && R.kid_a === 6 && col("am").every(x => x === "+10 ⭐"), [col("pm"), R.kid_a, col("am")]);
+  ok("…the other way round (kid_b ticks Evening, never Morning): Morning \"+10\", \"+10\", \"10 → 8\", \"10 → 6\" (pays 6); Evening \"+10\" every day", J(col("bam")) === J(FALL) && R.kid_b === 6 && col("bpm").every(x => x === "+10 ⭐"), [col("bam"), R.kid_b, col("bpm")]); }
 
 // ── L ──
 console.log("\n── L · nothing else moves: the app before, byte for byte ──");
