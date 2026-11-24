@@ -61,7 +61,7 @@ console.log("\n── the dock ──");
   ok("chore step: the routine Log's own dock (same record, same mark)", w.banks.length === 2 && w.writes.some(x => x[0] === "routineLog/lucy/week24/thursday/k1" && x[1].flagged && x[1].penalty === -100));
   w.call("ckLogToggle()");
   const open = w.call("mdCardCheckLog()");
-  ok("docked lines show 🚩 −100 instead of the button; header counts them", (open.match(/🚩 −100/g) || []).length === 2 && /🚩 2 docked/.test(open) && (open.match(/−100<\/button>/g) || []).length === 1);
+  ok("docked lines show who and −100 (\"🚩 by Mom · −100\", FLAGWHO 2026-11-23) instead of the button; header counts them", (open.match(/🚩 by Mom · −100/g) || []).length === 2 && /🚩 2 docked/.test(open) && (open.match(/−100<\/button>/g) || []).length === 1);
 }
 {
   const w = world({ who: "mom", tasks: T, checked: CK, hist: { dm: {} }, say: false });

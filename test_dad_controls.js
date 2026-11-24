@@ -101,13 +101,14 @@ M.actor = M.A; D.actor = D.Dd; D.Dd.run("dadUnlocked=true;1");
   const act = async S => { const o = {}; S.actor.run("__toast.length=0;__cf.length=0;1");
     tick(S.Kk, "kid_a", "Dust the shelves"); tick(S.Kk, "kid_b", "Sweep the porch"); tick(S.Kk, "kid_a", "Make the bed"); tick(S.Kk, "kid_b", "Feed the dog"); await S.w.flush();
     const kb = logKey(S.A, "kid_b", "Feed the dog"), ka = logKey(S.A, "kid_a", "Make the bed");
-    let m = S.w.mark(); S.actor.run("ckLogDock('step','kid_b'," + J(kb.join("/")) + ",'Feed the dog')"); o.refused = writes(S.w, m); o.toast = S.actor.run("JSON.stringify(__toast)"); o.cf1 = S.actor.run("__cf.length");
+    let m = S.w.mark(); S.actor.run("ckLogDock('step','kid_b'," + J(kb.join("/")) + ",'Feed the dog')"); await S.w.flush(); o.refused = writes(S.w, m).map(x => x.replace(/-P\d+$/, "*")); o.toast = S.actor.run("JSON.stringify(__toast)"); o.ask1 = S.actor.run("__cf[0]||''"); o.offRec = (({ flagTs, ...x }) => x)(S.w.get("routineLog/kid_b/" + kb.join("/")) || {});
     m = S.w.mark(); S.actor.run("ckLogDock('step','kid_a'," + J(ka.join("/")) + ",'Make the bed')"); await S.w.flush(); o.dock = writes(S.w, m); o.flagBy = (S.w.get("routineLog/kid_a/" + ka.join("/")) || {}).flagBy;
     spotPick(S.A, "kid_b", "Sweep the porch", 8); S.A.run("__cf.length=0;1"); S.A.run("spResolve('kid_b',0,'no')"); await S.w.flush(); o.spotAsk = S.A.run("__cf[0]||''");
-    o.bank = [bankOf(S.w, "kid_a"), bankOf(S.w, "kid_b")]; return o; };
+    o.who = [bankOf(S.w, "kid_a"), bankOf(S.w, "kid_b")].flat().filter(x => / · by (Mom|Dad)$/.test(x[1])).map(x => x[1].slice(-3));
+    o.bank = [bankOf(S.w, "kid_a"), bankOf(S.w, "kid_b")].map(L => L.map(x => [x[0], x[1].replace(/ · by (Mom|Dad)$/, "")])); return o; };   // FLAGWHO: a dock's line says who (compared below)
   const am = await act(M), ad = await act(D);
-  ok("his switches pay the same: kid_a's late dust pays 10 (not 8), kid_b's porch 8 — the same Star Bank lines as Mom's world", J(am.bank) === J(ad.bank) && am.bank[0].some(x => x[0] === 10 && /Dust the shelves/.test(x[1])) && am.bank[1].some(x => x[0] === 8 && /Sweep the porch/.test(x[1])), [am.bank, ad.bank]);
-  ok("his own 🧾 −100 on kid_b (Take stars away off): nothing written, no ask, the same toast as Mom's", ad.refused.length === 0 && am.refused.length === 0 && ad.cf1 === 0 && ad.toast === am.toast && /Taking stars away is off for .*so nothing was taken\. 📒 Ledger ⚙ changes it\./.test(ad.toast), [am.toast, ad.toast]);
+  ok("his switches pay the same: kid_a's late dust pays 10 (not 8), kid_b's porch 8 — the same Star Bank lines as Mom's world (but the dock's \" · by Mom\" / \" · by Dad\", FLAGWHO)", J(am.bank) === J(ad.bank) && J(am.who) === J(["Mom"]) && J(ad.who) === J(["Dad"]) && am.bank[0].some(x => x[0] === 10 && /Dust the shelves/.test(x[1])) && am.bank[1].some(x => x[0] === 8 && /Sweep the porch/.test(x[1])), [am.bank, ad.bank]);
+  ok("his own 🧾 −100 on kid_b (Take stars away off): as Mom's — the same ask (no stars, why), ONE write marking the line with penalty 0, no bank line; the mark says Dad (FLAGWHO)", J(ad.refused) === J(am.refused) && ad.refused.length === 1 && /^update routineLog\/kid_b\//.test(ad.refused[0]) && ad.ask1 === am.ask1 && /Taking stars away is off for .*so no stars come off\./.test(ad.ask1) && ad.toast === "[]" && ad.offRec.penalty === 0 && ad.offRec.flagBy === "dad" && am.offRec.flagBy === "mom" && !ad.bank[1].some(x => /false check-off/.test(x[1])), [am.refused, ad.refused, ad.offRec]);
   ok("…his −100 on kid_a works as before (the switch is on for kid_a): the same writes as Mom's, the mark says flagBy \"dad\" (hers \"mom\")", J(ad.dock) === J(am.dock) && ad.dock.length > 0 && ad.flagBy === "dad" && am.flagBy === "mom", [am.dock, ad.dock]);
   ok("…Mom's 🔎 ✗ on kid_b after HIS switch: the porch back to not done, no extra 100 (\"…so nothing more comes off\"), as in Mom's world", am.spotAsk === ad.spotAsk && /so nothing more comes off/.test(ad.spotAsk) && !ad.bank[1].some(x => /Spot check/.test(x[1])));
   // pause, and back on
@@ -115,9 +116,10 @@ M.actor = M.A; D.actor = D.Dd; D.Dd.run("dadUnlocked=true;1");
   await M.w.flush(); await D.w.flush();
   ok("…the banner on his ledger says \"Tap ⚙ to change.\" (he can)", /⏸ Star rules are paused for everyone: no stars fall and none are taken\. Tap ⚙ to change\./.test(txt(LG(D.Dd, "lgRulesOpen=false;lgShow()"))));
   for (const S of [M, D]) { tick(S.Kk, "kid_a", "Wipe the sink"); await S.w.flush(); }
-  const pz = S => { S.actor.run("__toast.length=0;1"); const k = logKey(S.A, "kid_a", "Wipe the sink"), m = S.w.mark(); S.actor.run("ckLogDock('step','kid_a'," + J(k.join("/")) + ",'Wipe the sink')"); return { w: writes(S.w, m), t: S.actor.run("JSON.stringify(__toast)") }; };
-  const zm = pz(M), zd = pz(D);
-  ok("paused (by him): his own −100 on kid_a takes nothing and says ⏸, as Mom's does", zd.w.length === 0 && zm.w.length === 0 && zd.t === zm.t && /⏸ Star rules are paused for everyone, so nothing was taken/.test(zd.t), [zm, zd]);
+  const pz = async S => { S.actor.run("__toast.length=0;__cf.length=0;1"); const k = logKey(S.A, "kid_a", "Wipe the sink"), m = S.w.mark(); S.actor.run("ckLogDock('step','kid_a'," + J(k.join("/")) + ",'Wipe the sink')"); await S.w.flush();
+    return { w: writes(S.w, m).map(x => x.replace(/-P\d+$/, "*")), t: S.actor.run("JSON.stringify(__toast)"), a: S.actor.run("__cf[0]||''"), pen: (S.w.get("routineLog/kid_a/" + k.join("/")) || {}).penalty }; };
+  const zm = await pz(M), zd = await pz(D);
+  ok("paused (by him): his own −100 on kid_a takes nothing — it asks with ⏸ and marks the line, penalty 0, as Mom's does (FLAGWHO)", J(zd.w) === J(zm.w) && zd.w.length === 1 && zd.a === zm.a && /⏸ Star rules are paused for everyone, so no stars come off\./.test(zd.a) && zd.pen === 0 && zd.t === "[]", [zm, zd]);
   same("⏸ Pause Off", "lgRulePause()", SR + "/pause", true);
   same("Stars fall when late, kid_a On again", "lgRuleFall('kid_a')", SR + "/fall/kid_a", true);
   same("Take stars away, kid_b On again (removed)", "lgRuleTake('kid_b')", SR + "/take/kid_b", false);
