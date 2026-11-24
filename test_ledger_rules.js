@@ -37,6 +37,7 @@ const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.ht
   R('  const s=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");\n  return s>=RT_FALL_FROM&&s>=starFallFrom(arguments[2])?n:0;   // STARRULES: [2] = kid\n',
     '  return (d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"))>=RT_FALL_FROM?n:0;\n', "rtFallDays");
   R("rtFallDays(st,n,arguments[2])", "rtFallDays(st,n)", "rtFallPay's kid");
+  R("const from=[RT_DAILY_FROM,starFallFrom(kid)].sort()[1]", "const from=RT_DAILY_FROM", "C5's daily count (CHOREDAILY reads the fall switch too)");
   R("f=rtFallPay(st,n,arguments[2]);", "f=rtFallPay(st,n);", "rtFallPill's kid");
   R("?rtFallPay(_st0,rtLateDays(slot,kid,i),kid):_b0;", "?rtFallPay(_st0,rtLateDays(slot,kid,i)):_b0;", "toggleRtStep's kid");
   R("rtFallPill(st,sd?0:_wait[i],kid)", "rtFallPill(st,sd?0:_wait[i])", "rtSlotHTML's kid");
