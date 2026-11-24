@@ -57475,6 +57475,107 @@ function envFlashGameHtml(){ const kid=(typeof masteryKid!=="undefined")?mastery
 // ⇢ classes.js: CPMOVEBACK
 // ⇢ classes.js: CPDRILLTEACHER
 
+// NBNEEDS_START — 🔁 "Giving trouble this week" on the Notebook tab, for every kid (study step 1 "See it", her yes 2026-11-23:
+// "I really want these notebooks to complement their drills and study sessions, not be redundant, and be very customizable
+// per kid, and to help add extra practice where necessary"). A Mom-only, READ-ONLY card: the drill cards giving this kid
+// trouble, by the ONE rule the notebook already uses to bring cards back (notebooks.js juCurriculumFromMastery, fed by
+// haNbContext): a card is in trouble when it was missed (or "almost") on any of the 6 newest practice days — drill days and
+// study sittings both (scHistoryFor) — or it has dropped a rung (drop_count > 0) and is not back up to a weekly, bi-weekly
+// or monthly tier. Worst first by recentMiss*3 + drop_count*2. Card status is not looked at (the notebook doesn't): a parked
+// card that slipped still counts; a card in introduction counts only once it is missed. By card, not by its text, so a
+// two-direction card stays two cards. Per deck it says whether this kid's notebook can bring the deck to paper today —
+// asked of notebooks.js (HoweNotebooks.reviewDecks), never a list of kid names here. The card writes nothing; the
+// review-slots stepper below it (nbSetReviewCap, its one home) now shows for every kid whose notebook reads reviewCap.
+const NBNEEDS_SLOW={ weekly:1, bi_weekly:1, biweekly:1, monthly:1 };   // = juCurriculumFromMastery's SLOW_TIER
+const NBNEEDS_SHOW_DECKS=6, NBNEEDS_SHOW_PER=3;                        // what shows before "Show all"
+// Recent misses per card id — haNbContext's own count (6 newest day keys of scHistoryFor, "m" or "~"), kept line for line.
+function nbNeedsMissMap(kid){
+  const miss={};
+  try{
+    const kh=(typeof scHistoryFor==="function")?scHistoryFor(masteryData.history,kid):((masteryData.history&&masteryData.history[kid])||{});
+    const recentKeys=Object.keys(kh).sort().reverse().slice(0,6);
+    for(const dk of recentKeys){
+      let its=(kh[dk]&&kh[dk].items)||[];
+      if(!Array.isArray(its)) its=its?Object.values(its):[];
+      for(const it of its){ if(it&&(it.result==="m"||it.result==="~")) miss[it.id]=(miss[it.id]||0)+1; }
+    }
+  }catch(e){ return {}; }
+  return miss;
+}
+// The kid's trouble list, worst first: [{ix, id, deck, prompt, recentMiss, drops, score, status, tier}]. Pure read.
+// recentMiss is joined to the cards exactly as haNbContext joins it — including that a hole (null) in the kid's card list
+// makes that join throw, so the notebook sees no recent misses at all (mastery/<kid> is kept dense, so it shouldn't happen).
+function nbNeedsList(kid){
+  let items=[]; try{ items=(typeof masteryFromApp==="function"?(masteryFromApp()[kid]||[]):[]); }catch(e){ items=[]; }
+  const miss=nbNeedsMissMap(kid), out=[];
+  let rms; try{ rms=items.map(it=>miss[it.id]||0); }catch(e){ rms=items.map(()=>0); }
+  items.forEach((it,ix)=>{
+    if(!it) return;
+    const prompt=String(it.prompt||"").trim(); if(!prompt) return;   // the notebook skips a card with no front
+    const dc=parseInt(it.drop_count,10)||0, rm=parseInt(rms[ix],10)||0;
+    if(rm>0||(dc>0&&!NBNEEDS_SLOW[String(it.tier||"")]))
+      out.push({ ix:ix, id:it.id, deck:String(it.subject||"").trim()||"Cards", prompt:prompt, recentMiss:rm, drops:dc, score:rm*3+dc*2, status:String(it.status||""), tier:String(it.tier||"") });
+  });
+  return out.sort((a,b)=>(b.score-a.score)||(a.ix-b.ix));
+}
+// What this kid's notebook does with drill trouble: {readsCap, decks:[{deck,how,cap}], off?} — null until notebooks.js loads.
+function nbNeedsReach(kid){
+  try{
+    const N=window.HoweNotebooks; if(!N||typeof N.reviewDecks!=="function") return null;
+    return N.reviewDecks(kid,{ notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{} });
+  }catch(e){ return null; }
+}
+function nbNeedsReadsCap(kid){ const r=nbNeedsReach(kid); return !!(r&&r.readsCap); }
+function nbNeedsCardHtml(kid){
+  if(!momHere()) return "";
+  const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
+  const nm=esc(cap(kid));
+  let list=[]; try{ list=nbNeedsList(kid); }catch(e){ list=[]; }
+  const reach=nbNeedsReach(kid);
+  const onPaper={}; ((reach&&reach.decks)||[]).forEach(d=>{ onPaper[String(d.deck).trim().toLowerCase()]=d; });
+  // decks, worst first
+  const byDeck={}, order=[];
+  list.forEach(c=>{ const k=c.deck.toLowerCase(); if(!byDeck[k]){ byDeck[k]={ deck:c.deck, cards:[], score:0 }; order.push(k); } byDeck[k].cards.push(c); byDeck[k].score+=c.score; });
+  order.sort((a,b)=>(byDeck[b].score-byDeck[a].score)||(byDeck[b].cards.length-byDeck[a].cards.length)||(a<b?-1:a>b?1:0));
+  const nPaper=list.filter(c=>onPaper[c.deck.toLowerCase()]).length;
+  const short=s=>s.length>60?s.slice(0,57)+"…":s;
+  const cardRow=c=>'<div style="display:flex;gap:8px;align-items:baseline;padding:3px 0;font-size:12px;line-height:1.35">'+
+    '<span style="flex:1;min-width:0;color:#1f2937;font-weight:700;overflow-wrap:anywhere">'+esc(short(c.prompt))+(c.status==="parked"?' <span style="font-weight:600;color:var(--muted);font-size:10.5px">· parked</span>':'')+'</span>'+
+    '<span style="flex-shrink:0;font-size:10.5px;color:var(--muted);white-space:nowrap">'+[c.recentMiss?'missed lately ×'+c.recentMiss:'',c.drops?'slipped ×'+c.drops:''].filter(Boolean).join(' · ')+'</span></div>';
+  const paperLine=k=>{
+    if(!reach) return '';
+    const d=onPaper[k];
+    return d?'<div style="font-size:10.5px;color:#15803d;font-weight:700;margin:1px 0 3px">📄 Can reach paper — '+esc(d.how)+'</div>'
+      :'<div style="font-size:10.5px;color:var(--muted);margin:1px 0 3px">'+(reach.off?esc(reach.off)+' — not on paper this week':'Not in '+nm+'’s notebook yet')+'</div>';
+  };
+  const deckHead=(g,extra)=>'<div style="display:flex;align-items:baseline;gap:6px;margin-top:9px"><span style="font-size:12px;font-weight:800;color:#9a3412">'+esc(g.deck)+'</span><span style="font-size:10.5px;color:var(--muted)">'+extra+'</span></div>';
+  let body;
+  if(!list.length){
+    body='<div style="font-size:12px;color:#15803d;font-weight:700;line-height:1.45;margin-top:4px">🌟 Nothing is giving '+nm+' trouble right now — no misses on the last 6 practice days and no slipped cards.</div>';
+  } else {
+    let shown='', rest='', restN=0;
+    order.forEach((k,di)=>{
+      const g=byDeck[k], n=g.cards.length;
+      const vis=di<NBNEEDS_SHOW_DECKS?g.cards.slice(0,NBNEEDS_SHOW_PER):[], hid=g.cards.slice(vis.length);
+      if(vis.length) shown+=deckHead(g,n+' card'+(n>1?'s':''))+paperLine(k)+vis.map(cardRow).join('');
+      if(hid.length){ restN+=hid.length; rest+=deckHead(g,(vis.length?hid.length+' more':n+' card'+(n>1?'s':'')))+(vis.length?'':paperLine(k))+hid.map(cardRow).join(''); }
+    });
+    body='<div style="display:flex;align-items:baseline;gap:8px;margin-top:2px">'+
+        '<span style="font-size:22px;font-weight:800;color:#9a3412">'+list.length+'</span>'+
+        '<span style="font-size:12px;font-weight:700;color:#1f2937">card'+(list.length>1?'s':'')+' giving trouble</span>'+
+        (reach?'<span style="margin-left:auto;font-size:11px;color:var(--muted)">'+nPaper+' can reach paper</span>':'')+
+      '</div>'+shown+
+      (restN?'<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11.5px;font-weight:800;color:#9a3412">Show all '+list.length+'</summary>'+rest+'</details>':'');
+  }
+  const capRow=(reach&&reach.readsCap)?'<div style="display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:8px;border-top:1px solid #fed7aa;font-size:11.5px;color:#1f2937">🔁 Review slots: <b>'+nbReviewCap(kid)+'</b> per deck each week'+
+    '<button onclick="(function(){var e=document.getElementById(\'nbrev-card\');if(e)e.scrollIntoView({behavior:\'smooth\',block:\'center\'});})()" style="margin-left:auto;border:none;background:none;padding:0;color:#9a3412;font-size:11.5px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif">Change</button></div>':'';
+  return '<div id="nbneeds-card" style="margin-top:14px;background:#fff;border:1.5px solid #fed7aa;border-radius:12px;padding:12px 14px">'+
+    '<div style="font-size:12px;font-weight:800;color:#9a3412;margin-bottom:2px">🔁 Giving trouble this week <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fed7aa;color:#7c2d12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></div>'+
+    '<div style="font-size:11px;color:var(--muted);line-height:1.45">Drill cards missed on any of the last 6 practice days, or that slipped down a rung and aren’t back on a weekly or monthly review — the same rule the notebook uses to bring cards back. Just a look: nothing here changes the drills.</div>'+
+    body+capRow+
+  '</div>';
+}
+// NBNEEDS_END
 function renderNotebook(el){
   const con=el||document.getElementById("content"); if(!con)return;
   const _fr=(typeof mpSchoolFrame==="function")?mpSchoolFrame("notebook"):'';   // SCHOOLTAB: Mom's Day ▸ School ▸ Notebooks — her banner + menu on top, else ''
@@ -57587,14 +57688,16 @@ function renderNotebook(el){
       '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:2px">Upload your activity PDFs — add <b>several books</b> per type (unicorn, mermaid…) and they <b>alternate each week</b>. <b>Auto</b> picks a fresh one; arrows pin a page. <b>Synced to all your devices</b> (private to your family).</div>'+
       NB_ACT_CATS.map(actSlot).join('')+'</div>';
   }
-  // Julian-only, Mom-gated: how many struggled-with drill items fold back into his week for review.
+  // Mom-gated: how many struggled-with drill items fold back into the kid's week for review. 🔁 NBNEEDS: shown for every kid
+  // whose notebook reads reviewCap (notebooks.js reviewDecks — a Pre-K notebook, Lucy's) — was Julian only.
   let reviewHtml="";
-  if(sel==="julian" && momHere()){
-    const cap=nbReviewCap("julian");
-    const stepBtn=(delta,label,off)=>'<button onclick="nbSetReviewCap(\'julian\','+delta+')" '+(off?'disabled ':'')+'style="width:30px;height:30px;border-radius:8px;border:1.5px solid #fed7aa;background:'+(off?'#fafafa':'#fff')+';color:'+(off?'#d1d5db':'#9a3412')+';font-size:17px;font-weight:800;cursor:'+(off?'default':'pointer')+';font-family:\'DM Sans\',sans-serif;line-height:1">'+label+'</button>';
-    reviewHtml='<div style="margin-top:14px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:12px 14px">'+
+  const revNm=cap(sel);   // the roster name (the block below shadows cap with the slot count)
+  if(nbNeedsReadsCap(sel) && momHere()){
+    const cap=nbReviewCap(sel), revDecks=((nbNeedsReach(sel)||{}).decks||[]).filter(d=>d.cap).map(d=>esc(d.deck)).join(', ');
+    const stepBtn=(delta,label,off)=>'<button onclick="nbSetReviewCap(\''+sel+'\','+delta+')" '+(off?'disabled ':'')+'style="width:30px;height:30px;border-radius:8px;border:1.5px solid #fed7aa;background:'+(off?'#fafafa':'#fff')+';color:'+(off?'#d1d5db':'#9a3412')+';font-size:17px;font-weight:800;cursor:'+(off?'default':'pointer')+';font-family:\'DM Sans\',sans-serif;line-height:1">'+label+'</button>';
+    reviewHtml='<div id="nbrev-card" style="margin-top:14px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:12px 14px">'+
       '<div style="font-size:12px;font-weight:800;color:#9a3412;margin-bottom:2px">🔁 Review folding <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fed7aa;color:#7c2d12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></div>'+
-      '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:10px">Letters &amp; numbers Julian missed in drills fold back into his week for another look (marked 🔁). This sets how many review slots per subject each week.</div>'+
+      '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:10px">Cards '+esc(revNm)+' missed in drills fold back into the week for another look (marked 🔁)'+(revDecks?' — '+revDecks:'')+'. This sets how many review slots per deck each week.</div>'+
       '<div style="display:flex;align-items:center;gap:12px">'+
         '<span style="font-size:12px;font-weight:700;color:#1f2937">Review items per week</span>'+
         '<span style="display:inline-flex;align-items:center;gap:10px;margin-left:auto">'+
@@ -57603,7 +57706,7 @@ function renderNotebook(el){
           stepBtn(1,'+',cap>=5)+
         '</span>'+
       '</div>'+
-      '<div style="font-size:10.5px;color:var(--muted);margin-top:8px">'+(cap===0?'Off — no review folding; letters &amp; numbers run in pure order.':('Up to '+cap+' struggled-with item'+(cap>1?'s':'')+' per subject fold in before new material.'))+'</div>'+
+      '<div style="font-size:10.5px;color:var(--muted);margin-top:8px">'+(cap===0?'Off — no review folding; the notebook runs in its usual order.':('Up to '+cap+' struggled-with card'+(cap>1?'s':'')+' per deck fold in before new material.'))+'</div>'+
     '</div>';
   }
   // Julian-only, Mom-gated: this week's plan — what the engine picked for each day, which items
@@ -57793,6 +57896,7 @@ function renderNotebook(el){
           // her ask 2026-10-04: the page view only prints right from Chrome (Safari ignores @page)
           '<div style="margin-top:3px;color:#9a3412;font-weight:700">⚠️ Printing from Look first only works in Chrome. On Safari (iPad, iPhone, Mac), use 🖨 Print.</div></div>'+
         ((typeof nbtTabHtml==="function")?nbtTabHtml(sel,wkLabel):"")+   // 📱 NBTABLET: Printed / On the tablet switch + Send to tablet
+        ((typeof nbNeedsCardHtml==="function")?nbNeedsCardHtml(sel):"")+   // 🔁 NBNEEDS: what's giving this kid trouble (read-only)
         formHtml+
         lookHtml+
         xpHtml+
