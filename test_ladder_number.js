@@ -15,6 +15,7 @@ const NCH = { prek: 3, k: 3, g1: 4, g2: 4, g3: 5, g5: 5, g7: 5, g8: 5 };
 const KINDS = { prek: ["RP", "BD", "GP", "MF", "MS"], k: ["RP", "BD", "GP", "MF", "MS"], g1: ["NS", "NP", "NA", "NE"], g2: ["NS", "NP", "NA", "NE"],
   g3: ["NS", "NA", "NP"], g5: ["NS", "NA", "NP"], g7: ["NS", "NA", "NP"], g8: ["NS", "NA", "NP"] };
 const PICTURE = ["RP", "BD", "GP", "MF", "MS"];
+const OPTIONAL = { g5: 12, g7: 12, g8: 12 };   // Mom 2026-11-23: "add the stage" — an optional harder stage 6, off unless switched on
 const num = s => Number(String(s).replace(/−/g, "-"));
 
 // the file is exactly what the generator makes (deterministic, seeded)
@@ -27,10 +28,18 @@ ok(fs.existsSync(path.join(__dirname, "ellis_quant_bank.json")) && fs.existsSync
 const seenKey = new Set(), seenId = new Set();
 for (const lv of LEVELS) {
   const L = data.levels[lv], ids = Object.keys(L.items), items = ids.map(k => L.items[k]);
-  ok(items.length === 60, `${lv}: 60 items (got ${items.length})`);
+  const core = items.filter(x => !x.opt), opt = items.filter(x => x.opt), nCore = L.stages.length - (L.optStages || []).length;
+  ok(core.length === 60, `${lv}: 60 core items (got ${core.length})`);
+  ok(opt.length === (OPTIONAL[lv] || 0), `${lv}: ${OPTIONAL[lv] || 0} optional items (got ${opt.length})`);
+  if (OPTIONAL[lv]) {
+    ok(JSON.stringify(L.optStages) === "[6]" && L.stages.length === 6 && /^optional: /.test(L.stages[5]), `${lv}: stage 6 is the one optional stage, named so`);
+    ok(opt.every(x => x.opt === true && x.st === 6) && opt.every((x, i) => x.o === 61 + i), `${lv}: optional items are stage 6, o 61…72, opt:true`);
+    ok(new Set(opt.map(x => x.type)).size === 3, `${lv}: the kinds take turns in the optional stage too`);
+  } else ok(L.optStages === undefined, `${lv}: nothing optional`);
+  ok(core.every(x => x.opt === undefined && x.st <= nCore), `${lv}: core items carry no opt flag`);
   ok(L.choices === NCH[lv], `${lv}: ${NCH[lv]} choices`);
-  ok(L.stages.length >= 4 && L.stages.length <= 5 && L.stages.every(s => typeof s === "string" && s.length > 3), `${lv}: 4–5 named stages`);
-  ok(items.every((x, i) => x.o === i + 1), `${lv}: o runs 1…60 in order`);
+  ok(nCore >= 4 && nCore <= 5 && L.stages.every(s => typeof s === "string" && s.length > 3), `${lv}: 4–5 named core stages`);
+  ok(items.every((x, i) => x.o === i + 1), `${lv}: o runs 1…${items.length} in order`);
   ok(items.every((x, i) => i === 0 || x.st >= items[i - 1].st), `${lv}: stages only go up (easy → hard)`);
   ok(L.stages.every((_, s) => items.some(x => x.st === s + 1)), `${lv}: every stage has items`);
   const perStage = L.stages.map((_, s) => items.filter(x => x.st === s + 1).length);
@@ -59,12 +68,17 @@ for (const lv of LEVELS) {
   }
   if (NCH[lv] === 5) { const used = new Set(items.map(x => x.ans)); ok(used.size === 5, `${lv}: every answer letter is used`); }
   const cnt = {}; items.forEach(x => (cnt[x.ans] = (cnt[x.ans] || 0) + 1));
-  ok(Math.max(...Object.values(cnt)) <= 30, `${lv}: no letter is the answer more than half the time ${JSON.stringify(cnt)}`);
+  ok(Math.max(...Object.values(cnt)) <= items.length / 2, `${lv}: no letter is the answer more than half the time ${JSON.stringify(cnt)}`);
 }
 
+// the 480 core items (and their ids) are frozen as reviewed — the optional stage was added without moving any of them
+{ const core = []; for (const [lv, L] of Object.entries(data.levels)) for (const [id, x] of Object.entries(L.items)) if (!x.opt) core.push([id, x]);
+  const fp = require("crypto").createHash("sha256").update(JSON.stringify(core)).digest("hex").slice(0, 16);
+  ok(core.length === 480 && fp === "8f5520a77296133a", "core items unchanged since review (fingerprint " + fp + ") — if a change is intended, re-review and update this");
+}
 // one right answer, found blind
 const rep = check(data);
-ok(rep.total === 480 && rep.agree === rep.total, `blind checker agrees on ${rep.agree}/${rep.total}` + (rep.problems.length ? "\n  " + rep.problems.slice(0, 5).join("\n  ") : ""));
+ok(rep.total === 516 && rep.agree === rep.total, `blind checker agrees on ${rep.agree}/${rep.total}` + (rep.problems.length ? "\n  " + rep.problems.slice(0, 5).join("\n  ") : ""));
 // the checker is not a copy of the generator: it doesn't load it, and it never reads the key while solving
 const chk = fs.readFileSync(path.join(DIR, "check_number_thinking.js"), "utf8");
 ok(!/gen_number_thinking/.test(chk.replace(/^\/\/.*$/gm, "")), "checker does not load the generator");

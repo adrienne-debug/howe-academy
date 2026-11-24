@@ -579,6 +579,7 @@ const L = {};
   // Mom's rule 2026-11-23: the notebook is "fun not hard, kinda warm up for the day" — so every level STARTS with a
   // confidence builder (one rule) and its last stage is a stretch, not a wall. 5th opens with one-step rules at 5th-grade
   // size; the old "mixed — near the 6th-grade top" stage is dropped (the 6th-grade bank covers it).
+  L.g5.optional = L.g5.stages.slice(4);   // kept as an OPTIONAL stage 6 (Mom 2026-11-23: "add the stage")
   L.g5.stages = [["warm-up — one rule, bigger numbers", [[4, either(NSK.arith({ ...base, d: [6, 7, 8, 9, 11, 12, 15, 25], s: [10, 60], n: [5, 6], max: 250 }), NSK.geo({ ...base, r: [2, 3], s: [1, 2, 3, 5], n: [4, 5], max: 300 }))], [4, either(lin({ ...base, a: [1], b: [15, 18, 21, 25, 35, -15, -18, -25], x: [30, 90] }), lin({ ...base, a: [6, 7, 8, 9], b: [0], x: [2, 12], noSelf: true }))], [4, either(NPK.mulMissing({ ...base, a: [3, 9], v: [3, 12] }), NPK.divMissing({ ...base, a: [3, 9], v: [3, 12] }))]]], ...L.g5.stages.slice(0, 4)];
 }
 // ── 7th: 5 choices — above Lincoln's top: powers, below zero, ratio and percent, growing rules ──
@@ -592,6 +593,7 @@ const L = {};
     ["mixed — signed, woven, proportion", [[4, either(NSK.inter({ ...base, A: [() => op("+", -ri(3, 6))], B: [() => op("×", 2)], sA: [5, 10], sB: [1, 3] }), NSK.alt({ ...base, s: [1, 5], ops: [() => [op("×", -2), op(PLUS, ri(1, 3))]] }))], [4, lin({ ...base, a: [0.5, -0.5], b: [-3, -2, 2, 3, -4], x: [-12, 12], xmul: 2, cmin: -100 })], [4, either(NPK.ratio({ ...base, cmin: 0, pq: [[2, 5], [3, 8], [4, 5]], f: [0.5, 1.5, 2.5], g: [3, 4, 6], int: false }), NPK.percent({ ...base, cmin: 0, p: [110, 120, 150, 125, 15, 35], n: [20, 40, 60, 80, 120, 200] }), NPK.signed({ ...base, forms: ["divNeg", "mulNeg"], a: [3, 9], b: [-9, 9] }))]]]
   ] };
   // warm-up first (Mom's rule 2026-11-23); the old "mixed" last stage is dropped so the top is a stretch, not a wall.
+  L.g7.optional = L.g7.stages.slice(4);   // kept as an OPTIONAL stage 6 (Mom 2026-11-23: "add the stage")
   L.g7.stages = [["warm-up — one rule, big steps, easy percents", [[4, either(NSK.arith({ ...base, d: [11, 12, 15, 20, 25, -11, -12, -15], s: [100, 160], n: [5, 6], min: 0 }), NSK.geo({ ...base, r: [2], s: [3, 5, 7, 9], n: [5, 5], max: 300 }))], [4, either(lin({ ...base, a: [1], b: [24, 36, 45, -24, -36], x: [50, 120], cmin: 0 }), lin({ ...base, a: [6, 7, 8, 9, 11, 12], b: [0], x: [2, 12], cmin: 0, noSelf: true }))], [4, NPK.percent({ ...base, cmin: 0, p: [10, 50], n: [40, 60, 70, 80, 90, 120, 140, 160, 180, 200, 240, 300] })]]], ...L.g7.stages.slice(0, 4)];
 }
 // ── 8th: 5 choices — exponents, signed two-step rules, proportion, unknowns on both sides ──
@@ -605,6 +607,7 @@ const L = {};
     ["test level — mixed", [[4, either(NSK.alt({ ...base, s: [1, 6], ops: [() => [op("×", 2), op(MINUS, ri(3, 5)), op("×", -1)]] }), NSK.poly({ ...base, fns: [{ f: i => i * i * i - 10, i0: [1, 2], name: "cube numbers, each −10" }, { f: i => -(i * i) + 20, i0: [1, 2], name: "20 minus the square numbers (20 − 1, 20 − 4, 20 − 9 …)" }], n: [5, 5] }))], [4, bend({ ...base, fns: [{ f: x => x * x - 5, name: "square it, then −5 (a negative times itself is positive)" }, { f: x => 3 * x * x, name: "square it, then ×3 (a negative times itself is positive)" }], x: [-5, 5], max: 300 })], [4, either(NPK.bracket({ ...base, forms: ["mulBr", "mulBrPlus"], a: [-6, -2], b: [1, 9], v: [-9, 9] }), NPK.system({ ...base, d: [-9, 14], e: [-8, 9], fin: ["+", "−"] }), NPK.bothSides({ ...base, a: [5, 9], c: [2, 4], v: [-6, 12], b: [1, 9] }))]]]
   ] };
   // warm-up first (Mom's rule 2026-11-23): one-step rules below zero; the old "test level — mixed" stage is dropped.
+  L.g8.optional = L.g8.stages.slice(4);   // kept as an OPTIONAL stage 6 (Mom 2026-11-23: "add the stage")
   L.g8.stages = [["warm-up — one rule below zero", [[4, NSK.arith({ ...base, d: [-4, -5, -8, -9, -11], s: [8, 30], n: [6, 6] })], [4, lin({ ...base, a: [1], b: [-7, -8, -9, -12, -15], x: [-10, 10], cmin: -100 })], [4, NPK.signed({ ...base, forms: ["subNeg", "addTo"], a: [2, 9], b: [1, 9] })]]], ...L.g8.stages.slice(0, 4)];
 }
 
@@ -616,40 +619,60 @@ const KINDS = { RP: "repeating pattern — what comes next / what is missing", B
   MF: "more or fewer — which side has more / fewer / the same", MS: "make them the same — how many more dots on the car with fewer", NE: "about how many — estimate, don't count",
   NS: "number series", NA: "number pairs (analogies)", NP: "number puzzles (equations)" };
 
+// One stage at a time: kinds take turns (round-robin), the answer's letter comes from the level's shuffled bag,
+// and a question already made anywhere in the file is never made again.
+function makeStage(lv, spec, slots, st, ctx, opt) {
+  const queues = slots.map(([n, f]) => ({ n, f }));
+  while (queues.some(q => q.n > 0)) for (const q of queues) {
+    if (q.n <= 0) continue;
+    if (!ctx.bag.length) ctx.bag = shuffle(Array.from({ length: spec.choices }, (_, i) => i));
+    TARGET = ctx.bag.pop();
+    let it = null;
+    for (let t = 0; t < 2000 && !it; t++) {
+      const cand = q.f();
+      if (!cand) continue;
+      const key = cand.type + "|" + cand.text;
+      if (ctx.seen.has(key)) continue;
+      if (cand.c.length !== spec.choices) throw new Error(`${lv}: ${cand.c.length} choices for ${cand.text}`);
+      ctx.seen.add(key); it = cand;
+    }
+    if (!it) throw new Error(`${lv} stage ${st}: could not make a new item`);
+    q.n--; ctx.o++;
+    const id = `nt_${lv}_${hash(it.type + "|" + it.text)}`;
+    const rec = { o: ctx.o, type: it.type, st, lv, text: it.text, c: it.c, ans: it.ans, rule: it.rule };
+    if (opt) rec.opt = true;
+    if (it.say) rec.say = it.say;
+    if (it.pic) rec.pic = it.pic;
+    if (ctx.items[id]) throw new Error("id clash " + id);
+    ctx.items[id] = rec;
+  }
+}
+const seedFor = key => mulberry32(SEED ^ hash(key).split("").reduce((a, ch) => a * 31 + ch.charCodeAt(0) | 0, 7));
+
 function build() {
   const seen = new Set(), out = { ladder: "number-thinking", version: 1, made: "2026-11-23", seed: SEED,
     note: "Nothing here is loaded or live yet. Levels 4th (ellis_quant_bank.json) and 6th (lincoln_quant_bank.json) are the boys' banks and are not repeated here.",
     order: ["prek", "k", "g1", "g2", "g3", "g4", "g5", "g6", "g7", "g8"], haveElsewhere: { g4: "ellis_quant_bank.json", g6: "lincoln_quant_bank.json" },
+    optional: "A level's optStages and an item's opt:true mark an OPTIONAL stage: off unless Mom switches it on for a child who is ready (Mom 2026-11-23).",
     kinds: KINDS, levels: {} };
+  // 1) the core stages, every level (unchanged by the optional stages — those are made afterwards with their own seed)
+  const ctxs = {};
   for (const lv of ["prek", "k", "g1", "g2", "g3", "g5", "g7", "g8"]) {
-    R = mulberry32(SEED ^ hash(lv).split("").reduce((a, ch) => a * 31 + ch.charCodeAt(0) | 0, 7));
-    const spec = L[lv], items = {}; let o = 0, bag = [];
-    spec.stages.forEach(([name, slots], si) => {
-      const queues = slots.map(([n, f]) => ({ n, f }));
-      while (queues.some(q => q.n > 0)) for (const q of queues) {
-        if (q.n <= 0) continue;
-        if (!bag.length) bag = shuffle(Array.from({ length: spec.choices }, (_, i) => i));
-        TARGET = bag.pop();
-        let it = null;
-        for (let t = 0; t < 2000 && !it; t++) {
-          const cand = q.f();
-          if (!cand) continue;
-          const key = cand.type + "|" + cand.text;
-          if (seen.has(key)) continue;
-          if (cand.c.length !== spec.choices) throw new Error(`${lv}: ${cand.c.length} choices for ${cand.text}`);
-          seen.add(key); it = cand;
-        }
-        if (!it) throw new Error(`${lv} stage ${si + 1}: could not make a new item`);
-        q.n--; o++;
-        const id = `nt_${lv}_${hash(it.type + "|" + it.text)}`;
-        const rec = { o, type: it.type, st: si + 1, lv, text: it.text, c: it.c, ans: it.ans, rule: it.rule };
-        if (it.say) rec.say = it.say;
-        if (it.pic) rec.pic = it.pic;
-        if (items[id]) throw new Error("id clash " + id);
-        items[id] = rec;
-      }
+    R = seedFor(lv);
+    const spec = L[lv], ctx = ctxs[lv] = { items: {}, o: 0, bag: [], seen };
+    spec.stages.forEach(([name, slots], si) => makeStage(lv, spec, slots, si + 1, ctx, false));
+    out.levels[lv] = { label: spec.label, choices: spec.choices, stages: spec.stages.map(s => s[0]), items: ctx.items };
+  }
+  // 2) OPTIONAL stage 6 on 5th, 7th, 8th — the harder mixed / test-level work, for a child who is ready (off by default)
+  for (const lv of ["g5", "g7", "g8"]) {
+    R = seedFor(lv + "-optional");
+    const spec = L[lv], ctx = ctxs[lv], Lv = out.levels[lv];
+    ctx.bag = []; Lv.optStages = [];
+    spec.optional.forEach(([name, slots]) => {
+      const st = Lv.stages.length + 1;
+      makeStage(lv, spec, slots, st, ctx, true);
+      Lv.stages.push("optional: " + name); Lv.optStages.push(st);
     });
-    out.levels[lv] = { label: spec.label, choices: spec.choices, stages: spec.stages.map(s => s[0]), items };
   }
   return out;
 }

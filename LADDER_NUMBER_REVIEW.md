@@ -2,7 +2,7 @@
 
 Nothing here is loaded or live yet. These are draft questions for you to read first, the way the boys' review sheets worked. No app code was touched; nothing is wired into any notebook, and no family data was read or written.
 
-Built 2026-11-23 for the study's §25 ("fill in the missing link and go higher"). **480 new questions: 60 at each of 8 levels — Pre-K, K, 1st, 2nd, 3rd, 5th, 7th, 8th.** 4th and 6th are the two boys' banks and were not touched. Every answer was worked out by the generator and then **solved again blind** by a separate checker that only sees the question and the choices: **480 / 480 agree**, and for every question exactly one choice is right. ✔ marks the answer; the italic line is the rule for your Teaching Companion; 🔊 is the short spoken prompt the tablet (or you) reads aloud.
+Built 2026-11-23 for the study's §25 ("fill in the missing link and go higher"). **480 new questions: 60 at each of 8 levels — Pre-K, K, 1st, 2nd, 3rd, 5th, 7th, 8th — plus an optional harder stage of 12 on 5th, 7th and 8th (36 more, 516 in all).** 4th and 6th are the two boys' banks and were not touched. Every answer was worked out by the generator and then **solved again blind** by a separate checker that only sees the question and the choices: **516 / 516 agree**, and for every question exactly one choice is right. ✔ marks the answer; the italic line is the rule for your Teaching Companion; 🔊 is the short spoken prompt the tablet (or you) reads aloud.
 
 All questions are new — made by rule from numbers, colours and shapes, not copied from any test or workbook. No names, no brands, no themes.
 
@@ -16,10 +16,10 @@ All questions are new — made by rule from numbers, colours and shapes, not cop
 | **2nd** | 4 | the same four, to 100; ends with "two steps taking turns" | alone — one short line to read | → 3rd stage 1 |
 | **3rd** | 5 | series · pairs · puzzles (the boys' three) | reads alone | stage 5 ≈ the 4th-grade bank's start |
 | 4th | 5 | *the 4th-grade bank (125, already built)* | | |
-| **5th** | 5 | series · pairs · puzzles | reads alone | warm-up, then from the 4th-grade bank's top to about the 6th-grade bank's stage 4 |
+| **5th** | 5 | series · pairs · puzzles + an optional stage 6 | reads alone | warm-up, then from the 4th-grade bank's top to about the 6th-grade bank's stage 4 |
 | 6th | 5 | *the 6th-grade bank (125, already built)* | | |
-| **7th** | 5 | series · pairs · puzzles — powers, below zero, ratio, percent | reads alone | warm-up, then above the 6th-grade bank's top |
-| **8th** | 5 | series · pairs · puzzles — exponents, signed rules, proportion, unknowns on both sides | reads alone | warm-up, then the top of the ladder |
+| **7th** | 5 | series · pairs · puzzles — powers, below zero, ratio, percent + an optional stage 6 | reads alone | warm-up, then above the 6th-grade bank's top |
+| **8th** | 5 | series · pairs · puzzles — exponents, signed rules, proportion, unknowns on both sides + an optional stage 6 | reads alone | warm-up, then the top of the ladder |
 
 Each level climbs **easy → hard** in stages (4 for Pre-K, 5 for the rest), with the kinds taking turns inside every stage. Where the right answer sits (A, B, C …) is spread out evenly, so a child can't learn "it's never A". Choices with numbers are always in order, low to high, like the boys' banks.
 
@@ -29,7 +29,7 @@ Your words (11/23): the notebook is "mostly done by themselves except the little
 
 - **Who does it.** Pre-K and K are the only levels that need a grown-up or the tablet: nothing on them is read; the prompt is spoken and the child taps or points at a picture. From 1st grade up a child can do every question alone — numbers, a few symbols, and at most one short plain line ("What number comes next?", "What number goes in the box?", "Do the same thing to the last number. What do you get?", "About how many dots? Don't count them all.").
 - **Starts easy.** Every level's stage 1 is a confidence builder that uses **one rule only**: AB patterns and "which has more" with a big difference (Pre-K); counting on and patterns of three (K); count on by 1 (1st); skip-count to 100 (2nd); add the same number each time (3rd); one rule with bigger numbers (5th); one rule with big steps and 50% / 10% (7th); one rule past zero (8th). 5th, 7th and 8th used to open at the level below's hardest stage — they now open with a warm-up stage instead.
-- **The top is a stretch, not a wall.** Each level's last stage reaches about where the next level begins (3rd's last stage ≈ the 4th-grade bank's first; 2nd's last stage is 3rd's first two-step idea). The 5th, 7th and 8th "mixed / test level" stages were taken out — that work lives one level up, or in the boys' banks.
+- **The top is a stretch, not a wall.** Each level's last stage reaches about where the next level begins (3rd's last stage ≈ the 4th-grade bank's first; 2nd's last stage is 3rd's first two-step idea). On 5th, 7th and 8th the harder mixed / test-level work sits in an **optional stage 6** that is **off** unless you switch it on for a child who is ready.
 - **Getting ready for the test.** 3rd grade and up use the test's three question kinds in the same box as the boys' banks; 1st and 2nd use the listen-or-read-and-pick format of the early test levels. Every question has one right answer and a rule line for you, so "why?" can be talked over after.
 - **A warm-up, not a lesson.** One number-thinking question a day fits in a couple of minutes; it is practice in spotting a rule, not new teaching. (Reviewing *their own drill trouble* in a new way is the job of the drill side of the notebook — this ladder doesn't read their drills.)
 
@@ -258,6 +258,7 @@ Three kinds, four of each per stage: **series**, **number pairs**, **number puzz
 3. growing steps and three-step repeats
 4. halves and chains
 5. squares and sums
+6. *mixed — near the 6th-grade top* — **optional, off unless switched on**
 
 **Six samples** (first, middle and last stage):
 
@@ -285,6 +286,20 @@ Three kinds, four of each per stage: **series**, **number pairs**, **number puzz
    A 34 · **✔ B 35** · C 36 · D 40 · E 45  
    *the left side is 40, so ? = 40 − 5 = 35*
 
+**Optional stage 6** (12 questions, kinds taking turns). This is the harder mixed / test-level work, there for a child who is ready for it. It is **off** unless you switch it on for that child; with it off the level ends at stage 5. In the data the stage is listed in the level's `optStages` and every one of its questions carries `opt: true`. One of each kind:
+
+61. **Number series** (optional stage 6) — 2  4  7  6  12  15  14  28  ?  
+   A 27 · B 28 · **✔ C 31** · D 32 · E 56  
+   *three steps repeat: ×2, +3, −1; it is +3’s turn*
+
+62. **Number pairs** (optional stage 6) — [10 → 65]  [5 → 30]  [12 → ?]  
+   A 12 · B 37 · C 67 · D 78 · **✔ E 79**  
+   *two steps: ×7, then −5*
+
+63. **Number puzzles** (optional stage 6) — ? = ● × 2 / ● = ◆ − 7 / ◆ + 4 = 14  
+   **✔ A 6** · B 7 · C 8 · D 9 · E 10  
+   *work from the bottom up: ◆ = 10, ● = 3, ? = 6*
+
 ## 7th grade
 
 **What it asks.** Five choices, boys' layout. It **opens with a warm-up** — one rule, big steps (add 25 each time, multiply by 11) and easy percents ("? = 50% of 200") — then goes above the 6th-grade bank's top: **powers and two-symbol puzzles** (×3 each time, cube numbers, "◆ + ● = 10 / ◆ − ● = 4"), **below zero** (series crossing zero, ×(−2), "−6 × ? = 42", "? ÷ (−8) = 11"), **ratio and percent** ("? : 16 = 27 : 36", pairs that multiply by 1.5), and last **growing rules** (the step doubles; ×2 then +1; square it then double).
@@ -295,6 +310,7 @@ Three kinds, four of each per stage: **series**, **number pairs**, **number puzz
 3. below zero
 4. ratio and percent
 5. growing rules
+6. *mixed — signed, woven, proportion* — **optional, off unless switched on**
 
 **Six samples** (first, middle and last stage):
 
@@ -322,6 +338,20 @@ Three kinds, four of each per stage: **series**, **number pairs**, **number puzz
    **✔ A 17** · B 18 · C 19 · D 20 · E 21  
    *60 ÷ 5 = 12, so ? − 5 = 12 → 17*
 
+**Optional stage 6** (12 questions, kinds taking turns). This is the harder mixed / test-level work, there for a child who is ready for it. It is **off** unless you switch it on for that child; with it off the level ends at stage 5. In the data the stage is listed in the level's `optStages` and every one of its questions carries `opt: true`. One of each kind:
+
+61. **Number series** (optional stage 6) — 4  −8  −6  12  14  −28  ?  
+   A −29 · B −28 · C −27 · **✔ D −26** · E 56  
+   *two steps taking turns: ×(−2), then +2*
+
+62. **Number pairs** (optional stage 6) — [24 → 10]  [−16 → −10]  [10 → ?]  
+   A −4 · B 0 · C 1 · D 2 · **✔ E 3**  
+   *two steps: halve it, then −2*
+
+63. **Number puzzles** (optional stage 6) — ? ÷ (−4) = −4  
+   A −16 · **✔ B 16** · C 17 · D 18 · E 19  
+   *−4 × (−4) = 16*
+
 ## 8th grade
 
 **What it asks.** Five choices, boys' layout. It **opens with a warm-up** — one rule below zero (subtract 8 each time past zero, "? + 3 = −9") — then **exponents** ("? = 2⁴ × 2²", "? + 5 = 7²", ×(−3) series), **signed two-step rules** (×(−2) then +3; pairs like ×(−5) then −7 with negative inputs; two-symbol puzzles whose answers can be negative), **proportion** with decimals ("6 : 13.5 = ? : 18", "? = 35% of 280", ×2.5 and ×0.75 pairs), and last **growing and woven** (triangle numbers, ×3 woven with −7, unknown on both sides: "6 × ◆ − 9 = 3 × ◆ + 24").
@@ -332,6 +362,7 @@ Three kinds, four of each per stage: **series**, **number pairs**, **number puzz
 3. signed two-step rules
 4. proportion
 5. growing and woven
+6. *test level — mixed* — **optional, off unless switched on**
 
 **Six samples** (first, middle and last stage):
 
@@ -359,12 +390,26 @@ Three kinds, four of each per stage: **series**, **number pairs**, **number puzz
    A 2 · B 5 · C 6 · D 9 · **✔ E 10**  
    *take 3 × ◆ from both sides: 4 × ◆ = 20, so ◆ = 5 and ? = 10*
 
+**Optional stage 6** (12 questions, kinds taking turns). This is the harder mixed / test-level work, there for a child who is ready for it. It is **off** unless you switch it on for that child; with it off the level ends at stage 5. In the data the stage is listed in the level's `optStages` and every one of its questions carries `opt: true`. One of each kind:
+
+61. **Number series** (optional stage 6) — −2  17  54  115  206  ?  
+   A 297 · B 298 · C 331 · D 332 · **✔ E 333**  
+   *cube numbers, each −10*
+
+62. **Number pairs** (optional stage 6) — [4 → 48]  [−5 → 75]  [−3 → 27]  [5 → ?]  
+   A −165 · **✔ B 75** · C 76 · D 77 · E 108  
+   *square it, then ×3 (a negative times itself is positive)*
+
+63. **Number puzzles** (optional stage 6) — ◆ + ● = 4 / ◆ − ● = 8 / ? = 2 × ◆ + ●  
+   A −2 · B 6 · C 9 · **✔ D 10** · E 32  
+   *add the two clues: 2 × ◆ = 12, so ◆ = 6 and ● = −2; ? = 10*
+
 ## How the answers were checked
 
 - **Made by rule.** `ladders/gen_number_thinking.js` builds every question from a rule (for example "add 3 each time", "×2, then −1", "the part that repeats is red, blue"), so the answer is computed, never typed. It is seeded: running it again makes exactly the same file.
-- **Solved again, blind.** `ladders/check_number_thinking.js` was written separately and never looks at the answer letter or the rule. It reads the question (or the picture recipe) and the choices, and solves it on its own: for patterns it tries each choice in the gap and keeps the ones that make a repeating pattern; for series it tries **every** rule family it knows (steps that repeat in cycles of 1, 2 or 3; steps that grow evenly; two patterns woven together; "sum of the two before"; "×p then +q"; steps that double) and insists they **all** point to the same next number; for pairs it tries straight-line rules and the simple "square it / cube it" bends; for puzzles it solves the lines one unknown at a time. **480 / 480 agree.**
+- **Solved again, blind.** `ladders/check_number_thinking.js` was written separately and never looks at the answer letter or the rule. It reads the question (or the picture recipe) and the choices, and solves it on its own: for patterns it tries each choice in the gap and keeps the ones that make a repeating pattern; for series it tries **every** rule family it knows (steps that repeat in cycles of 1, 2 or 3; steps that grow evenly; two patterns woven together; "sum of the two before"; "×p then +q"; steps that double) and insists they **all** point to the same next number; for pairs it tries straight-line rules and the simple "square it / cube it" bends; for puzzles it solves the lines one unknown at a time. **516 / 516 agree.**
 - **It caught real problems on the way.** The first draft had 4 number-pair questions with two right answers — for example `[2 → 20]  [6 → 60]  [7 → ?]` fits "×10" (70) but also a square-it rule (75). The generator now refuses any two-pair question that a square-it rule could also explain, and the bend questions always show three pairs.
-- **The test.** `test_ladder_number.js` (repo root) checks the shape, 60 per level, the stages only going up, 3 / 4 / 5 choices all different, no duplicate question anywhere, stable ids, no family names, the answer letters spread out, that the generator still makes the same file, and that the blind checker agrees on all 480 (and that it catches a planted wrong answer).
+- **The test.** `test_ladder_number.js` (repo root) checks the shape, 60 per level, the stages only going up, 3 / 4 / 5 choices all different, no duplicate question anywhere, stable ids, no family names, the answer letters spread out, that the generator still makes the same file, that the 480 core questions and their ids have not moved since you reviewed them, that the optional stage is marked on the stage and on every one of its questions, and that the blind checker agrees on all 516 (and that it catches a planted wrong answer).
 
 ## What I was unsure about
 
@@ -376,10 +421,16 @@ Three kinds, four of each per stage: **series**, **number pairs**, **number puzz
 - **The level tag.** In the 4th-grade bank, `lv` holds the test level (10). Here `lv` holds the ladder rung ("g3", "prek" …) so any kid's place can be stored the same way. The 6th-grade bank still has no level tags at all (the study says it needs them before it can be a rung).
 - **Patterns use colours and shapes, not the child's own picture cards.** The study suggests making patterns from a child's own cards; these are the general rung, and a later build could swap a token like "red circle" for one of the child's pictures.
 
-## Questions for you
+## Decided 11/23
 
-1. **3rd grade's top meets the 4th-grade bank's start** (stage 5 here ≈ its first stage). Is that the hand-over you want, or should 3rd stop a step lower so the 4th-grade bank feels new?
-2. **1st and 2nd are done alone, with one short line to read** — and the tablet can read that line aloud. Should it read it aloud by itself for 1st grade (the 1st-grade test form is read aloud), or only when the child taps it?
-3. **Pre-K is 4 stages of 15; every other level is 5 stages of 12.** Fine, or should Pre-K be shorter (say 40) since it would be used a few times a week?
-4. **8th grade includes square roots, powers and unknowns on both sides.** Right for the 7th–8th rung, or hold those back for a later level?
-5. **The mixed "test level" stages were dropped from 5th, 7th and 8th** to keep the top a stretch, not a wall. Do you want a harder optional stage on top for a child who is ready for it?
+Your answers to the five questions on the first draft (your words in quotes):
+
+1. **3rd grade's top meets the 4th-grade bank's start** — "Yes, let them meet". Kept as written.
+2. **1st grade: should the tablet read the line aloud by itself?** — "Only when tapped". No change to the questions (each keeps its short spoken line); **for the later build:** in 1st grade the tablet reads the line aloud only when the child taps it.
+3. **Pre-K length** — "Keep 60". Kept.
+4. **8th grade: square roots, powers, unknowns on both sides** — "Keep as written". Kept.
+5. **An optional harder stage on top of 5th, 7th and 8th** — "add the stage". Added: stage 6, 12 questions on each, off unless switched on. The 480 questions you already had did not change (same questions, same ids).
+
+## New questions
+
+None.
