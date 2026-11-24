@@ -45,8 +45,8 @@ ok(/h\+=kcModeBodyHTML\(k\);[^\n]*\n\s*if\(typeof nbLookPickKcHtml==="function"\
 console.log("notebooks.js: the look's own picture card; builds unchanged");
 const NB = loadNB(nbSrc), NB0 = loadNB(nbBaseSrc);
 const KEYS = Object.keys(NB.themes);
-ok(KEYS.length >= 3 && KEYS.every(k => { const c = NB.lookCard(k); return c && c.key === k && c.emoji && c.row.length >= 3 && c.colors.length === 3 && c.colors.every(x => /^#[0-9a-fA-F]{3,8}$/.test(x)) && c.label === NB.themes[k].chip; }),
-  "every look in NB_THEMES has a card: mascot, picture row, three colours, its picker name (" + KEYS.length + " looks)");
+ok(KEYS.length >= 3 && KEYS.every(k => { const c = NB.lookCard(k); return c && c.key === k && c.emoji && (c.row.length >= 3 || c.row.length === 0) && c.colors.length === 3 && c.colors.every(x => /^#[0-9a-fA-F]{3,8}$/.test(x)) && c.label === NB.themes[k].chip; }),
+  "every look in NB_THEMES has a card: mascot, picture row (none for a look without one, like Plain), three colours, its picker name (" + KEYS.length + " looks)");
 ok(KEYS.every(k => { const c = NB.lookCard(k), T = NB.themes[k].theme({}, {}); return c.emoji === T.emoji && c.row.join(" ") === T.coverRow; }), "…taken from the look's own pieces (its emoji and cover row)");
 ok([undefined, null, "", "nope", "toString", "__proto__", "constructor"].every(k => NB.lookCard(k) === null), "a key that isn't a look → null");
 ok(KEYS.every(k => !/Little |Notebook|'s /.test(JSON.stringify(NB.lookCard(k)))), "no child's name (nor the stand-in name) in a card");
@@ -118,7 +118,7 @@ a.nbSetLook("kida", L3); ok(a.log.writes.length === 0 && nsx.kida.notebookTheme 
 let k1 = NOW({ kcKid: "kida", ns: nsx }).nbLookPickKcHtml("kida");
 ok(kcBtns(k1) === 2 && k1.indexOf("\u{1F3A8} My notebook look") > 0 && count(k1, 'aria-pressed="true"') === 1 && k1.indexOf("nbLookKidSet('kida','" + L1 + "')\" aria-pressed=\"true\"") > 0, "Kids' Corner: one big button per ticked look, the one on is marked");
 ok(k1.indexOf("Your next notebook will be " + chip(L1) + ".") > 0, "…“Your next notebook will be " + chip(L1) + ".”");
-[L1, L2].forEach(k => { const c = NB.lookCard(k); ok(k1.indexOf(c.emoji) > 0 && k1.indexOf(c.row.join(" ")) > 0 && c.colors.every(x => k1.indexOf("background:" + x) > 0), "…" + c.label + ": its mascot, picture row and colour swatch"); });
+[L1, L2].forEach(k => { const c = NB.lookCard(k); ok(k1.indexOf(c.emoji) > 0 && (!c.row.length || k1.indexOf(c.row.join(" ")) > 0) && c.colors.every(x => k1.indexOf("background:" + x) > 0), "…" + c.label + ": its mascot, picture row and colour swatch"); });
 ok(/min-height:120px/.test(k1) && /min-width:120px/.test(k1) && /flex-wrap:wrap/.test(k1) && /flex:1 1 130px/.test(k1) && /max-width:640px/.test(k1), "big buttons (≥120px, well over 44×44), wrapping at phone width");
 ok(/min-height:44px/.test(h), "Mom's ticks are 44px tall");
 // the look that is on is not ticked: it keeps printing until the kid picks
