@@ -33,7 +33,9 @@ const base = (extra, n) => Object.assign({ weekNum: "week12", weekDates: "Nov 16
 const W = ["said", "play", "come", "here", "look", "jump", "where", "little", "funny", "yellow", "three", "down"];
 const deck = (extra, words) => (words || W).map((p, i) => Object.assign({ id: "fx_" + i, subject: "Sight Words", prompt: p, status: "active", tier: "monthly", drop_count: 0, review_mode: "flash", type: "sight words" }, (extra || {})[i] || {}));
 const spell = ["cat", "hat", "ran", "bed", "red", "best"].map((p, i) => ({ id: "sp_" + i, subject: "Spelling", prompt: p, status: (i >= 2 && i < 5) ? "introduction" : "active", tier: "monthly", drop_count: 0 }));
-const other = [{ subject: "Math Facts", prompt: "3 + 4" }, { subject: "Science", prompt: "frog" }].concat(spell);
+// the Math Facts card is "3 × 4": LU_MATH (test_lucy_math.js) turns + and − cards into the daily math block, so a "3 + 4" card
+// would change these pages on purpose; a × card is skipped there, so this stays a "decks other than Sight Words" fixture.
+const other = [{ subject: "Math Facts", prompt: "3 × 4" }, { subject: "Science", prompt: "frog" }].concat(spell);
 const NODATA = {
   plain: base(), emptyMastery: base({ masteryItems: [] }), otherDecks: base({ masteryItems: other }),
   cursorNoDeck: base({ masteryItems: other, wordCursor: { week: 11, idx: 3, adv: 5 } }),
