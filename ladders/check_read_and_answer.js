@@ -10,12 +10,16 @@
  *          node ladders/check_read_and_answer.js --json     (the numbers as JSON)
  *
  * Shape rules checked (each one is from Mom's brief, 2026-11-23):
- *   - ids unique, "ra_<level>_NN", lv matches the id, o = 1..10 inside each level (easier → harder)
+ *   - ids unique, "ra_<level>_NN" (a stable name, not a place), lv matches the id, o = 1..count inside each level
+ *     (the reading order, easier → harder); count is 30 for g1 and g2, 10 for the rest
+ *   - topics: a list of plain slugs ("animals", "north-carolina", "snakes") so a family can leave a topic out
  *   - word count stored = word count counted, and inside the level's range
  *   - 3 questions for g1–g2, 4 from g3; 3 choices g1–g2, 4 for g3–g4, 5 from g5 (matches the boys' banks)
  *   - exactly one answer letter, and it exists; choices unique; no "all/none of the above"
  *   - every question has a one-line "why" for the parent page
  *   - question kinds: find / infer / word / main at every level; purpose and support only from g5, and present there
+ *   - from g3, writeFirst: true/false on every question — true = it still works with the choices hidden (the child
+ *     writes an answer first); false = the stem needs the choices ("Which detail best supports…", "best title")
  *
  * Readability: words, sentences, average sentence length, syllables per word and a Flesch-Kincaid grade estimate.
  * FK is an ESTIMATE (a syllable-counting formula): it runs low on very short texts and on dialogue, and high on
@@ -24,15 +28,18 @@
 "use strict";
 const fs = require("fs"), path = require("path");
 
+// count: g1 and g2 hold 30 (Mom 2026-11-23: "Yes, write more" — Lucy's first test is May/summer 2027); the rest 10 for now.
+// writeFirst: from g3 every question says whether it works with the choices hidden (Mom 11/23: "Write first some days").
 const LEVELS = {
-  g1:  { grade: 1,   label: "1st grade",     words: [15, 45],   sentences: [3, 5], qs: 3, choices: 3 },
-  g2:  { grade: 2,   label: "2nd grade",     words: [40, 70],   qs: 3, choices: 3 },
-  g3:  { grade: 3,   label: "3rd grade",     words: [80, 120],  qs: 4, choices: 4 },
-  g4:  { grade: 4,   label: "4th grade",     words: [120, 160], qs: 4, choices: 4 },
-  g5:  { grade: 5,   label: "5th grade",     words: [150, 200], qs: 4, choices: 5 },
-  g6:  { grade: 6,   label: "6th grade",     words: [180, 240], qs: 4, choices: 5 },
-  g78: { grade: 7.5, label: "7th–8th grade", words: [220, 300], qs: 4, choices: 5 },
+  g1:  { grade: 1,   label: "1st grade",     words: [15, 45],   sentences: [3, 5], qs: 3, choices: 3, count: 30 },
+  g2:  { grade: 2,   label: "2nd grade",     words: [40, 70],   qs: 3, choices: 3, count: 30 },
+  g3:  { grade: 3,   label: "3rd grade",     words: [80, 120],  qs: 4, choices: 4, count: 10, writeFirst: true },
+  g4:  { grade: 4,   label: "4th grade",     words: [120, 160], qs: 4, choices: 4, count: 10, writeFirst: true },
+  g5:  { grade: 5,   label: "5th grade",     words: [150, 200], qs: 4, choices: 5, count: 10, writeFirst: true },
+  g6:  { grade: 6,   label: "6th grade",     words: [180, 240], qs: 4, choices: 5, count: 10, writeFirst: true },
+  g78: { grade: 7.5, label: "7th–8th grade", words: [220, 300], qs: 4, choices: 5, count: 10, writeFirst: true },
 };
+const TOPIC_SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const LEVEL_ORDER = Object.keys(LEVELS);
 const QTYPES = {
   find:    "What the text says (find it)",
@@ -91,7 +98,7 @@ function checkShape(data) {
   for (const lv of LEVEL_ORDER) {
     const L = (data.levels || {})[lv], W = LEVELS[lv];
     if (!L) { err(null, "levels." + lv + " missing"); continue; }
-    if (L.qs !== W.qs || L.choices !== W.choices || String(L.words) !== String(W.words))
+    if (L.qs !== W.qs || L.choices !== W.choices || String(L.words) !== String(W.words) || L.count !== W.count)
       err(null, "levels." + lv + " disagrees with the checker (qs/choices/words)");
   }
   const byLevel = {};
@@ -104,7 +111,9 @@ function checkShape(data) {
     if (p.lv !== lv) err(id, "lv '" + p.lv + "' does not match the id");
     (byLevel[lv] = byLevel[lv] || []).push(p);
     if (!p.title || typeof p.title !== "string") err(id, "no title");
-    if (!p.topic || typeof p.topic !== "string") err(id, "no topic");
+    if (!Array.isArray(p.topics) || !p.topics.length) err(id, "topics must be a non-empty list");
+    else p.topics.forEach(t => { if (typeof t !== "string" || !TOPIC_SLUG.test(t)) err(id, "topic '" + t + "' must be a plain slug like north-carolina"); });
+    if (p.topic !== undefined) err(id, "use topics (a list), not topic");
     if (KINDS.indexOf(p.kind) < 0) err(id, "kind '" + p.kind + "' is not one of " + KINDS.join("/"));
     if (!p.text || typeof p.text !== "string") { err(id, "no text"); continue; }
     const n = countWords(p.text);
@@ -139,15 +148,18 @@ function checkShape(data) {
       });
       if (typeof q.ans !== "string" || !/^[A-E]$/.test(q.ans)) err(qi, "ans must be one letter A–E");
       else if (LETTERS.indexOf(q.ans) >= q.c.length) err(qi, "ans " + q.ans + " has no choice");
+      if (W.writeFirst) { if (typeof q.writeFirst !== "boolean") err(qi, "writeFirst must be true or false from g3"); }
+      else if (q.writeFirst !== undefined) err(qi, "writeFirst belongs to g3 and up");
       if (!q.why || typeof q.why !== "string") err(qi, "no why line for the parent page");
       else if (/\n/.test(q.why) || q.why.length > 240) err(qi, "why must be one short line");
     });
   }
   for (const lv of LEVEL_ORDER) {
     const list = byLevel[lv] || [];
-    if (list.length !== 10) err(lv, list.length + " passages, want 10");
-    const os = list.map(p => p.o).sort((a, b) => a - b);
-    if (os.join() !== "1,2,3,4,5,6,7,8,9,10") err(lv, "o must be 1..10 once each (got " + os.join() + ")");
+    const N = LEVELS[lv].count;
+    if (list.length !== N) err(lv, list.length + " passages, want " + N);
+    const os = list.map(p => p.o).sort((a, b) => a - b), want1N = Array.from({ length: N }, (_, i) => i + 1).join();
+    if (os.join() !== want1N) err(lv, "o must be 1.." + N + " once each (got " + os.join() + ")");
     const types = {};
     list.forEach(p => (p.q || []).forEach(q => { types[q.type] = 1; }));
     const want = ["find", "infer", "word", "main"].concat(LEVEL_ORDER.indexOf(lv) >= LEVEL_ORDER.indexOf("g5") ? LATE_TYPES : []);
@@ -180,7 +192,10 @@ function summary(data) {
       .forEach(id => data.passages[id].q.forEach(q => { ans[q.ans] = (ans[q.ans] || 0) + 1; }));
     s[lv] = { n: L.length, words: avg("words"), asl: avg("asl"), fk: avg("fk"),
       fkMin: Math.min.apply(null, L.map(r => r.fk)), fkMax: Math.max.apply(null, L.map(r => r.fk)),
-      flagged: L.filter(r => r.flag).map(r => r.id), answers: ans };
+      flagged: L.filter(r => r.flag).map(r => r.id), answers: ans,
+      writeFirst: LEVELS[lv].writeFirst ? Object.keys(data.passages).filter(id => data.passages[id].lv === lv)
+        .reduce((a, id) => a + data.passages[id].q.filter(q => q.writeFirst).length, 0) : null,
+      questions: Object.keys(data.passages).filter(id => data.passages[id].lv === lv).reduce((a, id) => a + data.passages[id].q.length, 0) };
   }
   return s;
 }
@@ -193,16 +208,16 @@ function printReport(data) {
     if (r.lv !== last) { console.log("── " + r.lv + " (" + LEVELS[r.lv].label + ", target FK " + LEVELS[r.lv].grade + " ± " + FLAG_AT + ")"); last = r.lv; }
     console.log(pad(r.id, 11) + pad(r.kind, 7) + pad(r.title, 34) + pad(r.words, 6) + pad(r.sentences, 5) + pad(r.asl, 6) + pad(r.spw, 6) + pad(r.fk, 6) + r.flag);
   }
-  console.log("\nLevel  avg words  avg w/sent  avg FK  FK range      flagged  answer letters");
+  console.log("\nLevel  avg words  avg w/sent  avg FK  FK range      flagged  write-first  answer letters");
   const S = summary(data);
   for (const lv of LEVEL_ORDER) if (S[lv]) {
     const x = S[lv];
-    console.log(pad(lv, 7) + pad(x.words, 11) + pad(x.asl, 12) + pad(x.fk, 8) + pad(x.fkMin + " – " + x.fkMax, 14) + pad(x.flagged.length, 9) +
+    console.log(pad(lv, 7) + pad(x.words, 11) + pad(x.asl, 12) + pad(x.fk, 8) + pad(x.fkMin + " – " + x.fkMax, 14) + pad(x.flagged.length, 9) + pad(x.writeFirst == null ? "—" : x.writeFirst + "/" + x.questions, 13) +
       Object.keys(x.answers).sort().map(k => k + x.answers[k]).join(" "));
   }
 }
 
-module.exports = { LEVELS, LEVEL_ORDER, QTYPES, KINDS, countWords, countSentences, syllables, readability, load, checkShape, rows, summary };
+module.exports = { LEVELS, LEVEL_ORDER, TOPIC_SLUG, QTYPES, KINDS, countWords, countSentences, syllables, readability, load, checkShape, rows, summary };
 
 if (require.main === module) {
   const data = load(process.argv.find(a => /\.json$/.test(a)));
