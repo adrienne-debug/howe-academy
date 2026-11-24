@@ -37682,7 +37682,7 @@ function haNbContext(kid){
   let nbRec={}; try{ nbRec=ROSTER_DEF.find(k=>k&&k.id===kid)||{}; }catch(e){}
   const nbNm=v=>(typeof v==="string"&&v.trim())||null;
   const nbLv=nbLevelCtx(kid);   // NBLEVEL: ctx.grade + ctx.gradeBand
-  return { nbKidName:cap(kid), kidName:nbNm((((notebookSettings||{})[kid])||{}).notebookName)||nbNm(nbRec.notebookName)||nbNm(nbRec.name), notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), nbGrade:nbGradeOf(kid), grade:nbLv.grade, gradeBand:nbLv.gradeBand, spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, loe:loe, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, wordCursor:luWordsCursorOf(kid), numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true, ladders:((typeof nbLadderCtx==="function")?nbLadderCtx(kid):null) }; // KIDNAME_ROSTER
+  return { nbKidName:cap(kid), kidName:nbNm((((notebookSettings||{})[kid])||{}).notebookName)||nbNm(nbRec.notebookName)||nbNm(nbRec.name), notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), nbGrade:nbGradeOf(kid), grade:nbLv.grade, gradeBand:nbLv.gradeBand, spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, loe:loe, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, wordCursor:luWordsCursorOf(kid), numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), countPic:((typeof nbCountPicOf==="function")?nbCountPicOf(kid):null), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true, ladders:((typeof nbLadderCtx==="function")?nbLadderCtx(kid):null) }; // KIDNAME_ROSTER
 }
 // LU_WORDS_WIRE_START — 🔤 Lucy's Sight Word of the Day keeps its place week to week (notebooks.js LU_WORDS; her go-ahead
 // 2026-11-21 for slice 1 of PLAN_notebook_lucy_2026-11-10.md). The context reads notebookSettings/<kid>/wordCursor; the builder
@@ -46877,6 +46877,7 @@ function renderKidsCorner(el){
         h+=kcCalToggleHTML(k);
         if(typeof wlTileHTML==="function") h+=wlTileHTML(k); if(typeof skTileHTML==="function") h+=skTileHTML(k);   // 🎁 WISHES: the 🎁 My wish list button · ✨ SEASONKID: the ✨ Our plans button
         h+=kcModeBodyHTML(k);   // KC_LISTS: Today | My Lists | Month
+        if(typeof nbLookPickKcHtml==="function") h+=nbLookPickKcHtml(k);   // NB_LOOKPICK: 🎨 My notebook look (2+ looks ticked by Mom)
       }
     }
   }
@@ -50148,6 +50149,123 @@ function _nbMomLockHtml(){ nbPinOpen=false; return ""; }   // MOMSWITCH (2026-11
 function nbPinLock(){ haMomOff(); nbPinOpen=false; renderAll(); }   // UNIMOM
 // Review-folding cap (struggled-with drill items folded back into the week), per kid. Default 2, clamped 0–5.
 function nbReviewCap(kid){ const v=notebookSettings&&notebookSettings[kid]&&notebookSettings[kid].reviewCap; const n=parseInt(v,10); return isNaN(n)?2:Math.max(0,Math.min(5,n)); }
+// NB_LOOKPICK_START — 🎨 the looks a kid may use + the Kids' Corner look picker (looks plan §13 / step 5; her decisions
+// 2026-11-24: who picks — "Kid picks from mine"; Pre-K kids too — "Yes, with pictures"; where — "it would need to be on their
+// kids corner"). Each control has ONE home, and only one of them can change the look at any moment:
+//   · MOM'S TICK LIST — the Notebook tab's 🎨 look card, Mom only (momHere): "<name> may choose from:" one tick per look the
+//     kid's notebook offers (HoweNotebooks.notebookOptions — never a typed list). Saved one tick at a time:
+//     notebookSettings/<kid>/looksAllowed/<lookKey> = true, or removed. Ticking never changes the look itself.
+//   · 0 or 1 ticked → Mom's picker works exactly as today; Kids' Corner shows nothing new.
+//   · 2 or more ticked → the kid picks in their own Kids' Corner (kcKid) on "🎨 My notebook look"; Mom's picker becomes a
+//     read-only line ("<name> chose <look>") and nbSetLook refuses — Mom changes it by changing the ticks. A look that is on
+//     but not ticked keeps printing until the kid picks (no button selected); unticking down to one brings her picker back
+//     with that look selected. Nothing here ever changes a kid's look on its own.
+//   · THE KID'S TAP (nbLookKidSet) saves only notebookSettings/<kid>/notebookTheme — one targeted write, db && !_dryRun() only,
+//     mirrored to the same local cache nbSetLook uses — and only for the kid whose Kids' Corner it is, only to a ticked look,
+//     only while 2+ are ticked. Anything else is refused. nbSetLook's Mom gate is untouched.
+//   · The buttons come from the look's own pieces (HoweNotebooks.lookCard: mascot, picture row, colour swatch), so no look is
+//     typed in here and a child who can't read yet can choose. A change shapes only the NEXT notebook built: nothing is
+//     rebuilt, re-laid or rescheduled; a week already printed or sent to a tablet is a stored copy and never changes.
+//   · No separate "note to Mom": the games' 👍 note lives in mastery/<kid>_settings/gameLikes/<game> and is read only by the
+//     games grid, so it doesn't fit a look; the kid's pick shows on Mom's look card instead.
+function _nlpOkKey(k){ return typeof k==="string"&&/^[A-Za-z0-9_-]{1,40}$/.test(k); }
+// The looks this kid's notebook offers that have a picture card: [{key,label,card}] in the notebook's own order.
+function nbLookPickOffer(kid,o){
+  const N=window.HoweNotebooks; if(!N||typeof N.lookCard!=="function") return [];
+  o=o||nbLookOpts(kid); if(!o||!Array.isArray(o.looks)) return [];
+  const out=[];
+  o.looks.forEach(l=>{ if(!l||!_nlpOkKey(l.key)) return; let c=null; try{ c=N.lookCard(l.key); }catch(e){ c=null; } if(c) out.push({key:l.key,label:String(l.label||c.label||l.key),card:c}); });
+  return out;
+}
+function _nlpTicks(kid){ const t=(((typeof notebookSettings!=="undefined"&&notebookSettings)||{})[kid]||{}).looksAllowed; return (t&&typeof t==="object")?t:{}; }
+function _nlpRawCount(kid){ const t=_nlpTicks(kid); return Object.keys(t).filter(k=>t[k]===true).length; }
+// The ticked looks this notebook still offers, in the notebook's order (a tick for a look it no longer offers is ignored).
+function nbLooksAllowed(kid,o){ const t=_nlpTicks(kid); return nbLookPickOffer(kid,o).filter(x=>t[x.key]===true).map(x=>x.key); }
+// 2+ ticked = the kid picks (Kids' Corner); otherwise Mom's picker is the live control.
+function nbLookKidPicks(kid,o){ return nbLooksAllowed(kid,o).length>=2; }
+// Mom's tick — one field: set true, or removed.
+function nbLookAllow(kid,key){
+  if(!momHere()) return false;
+  if(!nbLookPickOffer(kid).some(x=>x.key===key)) return false;
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  const ns=notebookSettings[kid]; if(!ns.looksAllowed||typeof ns.looksAllowed!=="object") ns.looksAllowed={};
+  const on=ns.looksAllowed[key]===true;
+  if(on) delete ns.looksAllowed[key]; else ns.looksAllowed[key]=true;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db&&!_dryRun()){ const r=db.ref("notebookSettings/"+kid+"/looksAllowed/"+key); if(on) r.remove(); else r.set(true); } }catch(e){}
+  if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
+  return true;
+}
+// The kid's tap — a separate function with its own three checks (never nbSetLook's Mom gate).
+function nbLookKidSet(kid,key){
+  try{ _kcLoadKid(); }catch(e){}
+  if(!kid||typeof kcKid==="undefined"||kcKid!==kid) return false;   // only on this kid's own Kids' Corner
+  const al=nbLooksAllowed(kid);
+  if(al.length<2) return false;                                     // only while Mom has 2+ ticked
+  if(al.indexOf(key)<0) return false;                               // only a look Mom ticked
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  if(notebookSettings[kid].notebookTheme===key) return true;        // already the next look — nothing to write
+  notebookSettings[kid].notebookTheme=key;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db&&!_dryRun()) db.ref("notebookSettings/"+kid+"/notebookTheme").set(key); }catch(e){}
+  try{ renderAll(); }catch(e){}
+  return true;
+}
+// The Notebook tab's look card: Mom's pills (0–1 ticked) or the kid's pick read-only (2+), then the tick list. A notebook
+// that offers fewer than two looks with pictures gets the pills back untouched.
+function nbLookPickRow(sel,o,pillsHtml){
+  const offer=nbLookPickOffer(sel,o); if(offer.length<2) return pillsHtml;
+  const t=_nlpTicks(sel), al=offer.filter(x=>t[x.key]===true).map(x=>x.key), kidPicks=al.length>=2, name=esc(cap(sel));
+  let top=pillsHtml;
+  if(kidPicks){
+    const cur=(o&&o.current)||"", curL=((o.looks||[]).find(l=>l&&l.key===cur)||{}).label||"";
+    top=al.indexOf(cur)>=0
+      ?'<div id="nblookpick-chose" style="font-size:12.5px;color:#1f2937;line-height:1.45"><b>'+name+' chose '+esc(curL)+'</b> — the next notebook will be '+esc(curL)+'. To change it, change the ticks below.</div>'
+      :'<div id="nblookpick-chose" style="font-size:12.5px;color:#1f2937;line-height:1.45"><b>'+name+' hasn’t picked yet.</b> The next notebook stays '+esc(curL||"as it is")+' until '+name+' picks in Kids’ Corner. To change it, change the ticks below.</div>';
+  }
+  const ticks=offer.map(x=>{ const on=t[x.key]===true;
+    return '<button onclick="nbLookAllow(\''+sel+'\',\''+x.key+'\')" aria-pressed="'+(on?'true':'false')+'" title="'+(on?'Ticked — tap to untick':'Tap to let '+name+' choose this look')+'" style="min-height:44px;padding:6px 11px;border-radius:20px;border:1.5px solid '+(on?'#16a34a':'var(--border)')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#166534':'#1f2937')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(on?'☑ ':'☐ ')+esc(x.label)+'</button>';
+  }).join("");
+  return top+
+    '<div id="nblookpick-ticks" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">'+
+      '<div style="font-size:12px;font-weight:800;color:#9a3412;margin-bottom:5px">'+name+' may choose from:</div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">'+ticks+'</div>'+
+      '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-top:5px">2 or more ticked = '+name+' picks in Kids’ Corner; you’ll see the pick here. None or one ticked = you pick, as now.</div>'+
+    '</div>';
+}
+// Kids' Corner ▸ "🎨 My notebook look" — this kid's own Corner only, only with 2+ looks ticked, not over a game or drill.
+let _nlpLoading=false;
+function nbLookPickKcHtml(k){
+  try{
+    _kcLoadKid();
+    if(!k||kcKid!==k) return "";
+    const m=kcCalGet(k); if(m==="drills"||m==="games"||m==="card") return "";
+    if(_nlpRawCount(k)<2) return "";
+    if(!window.HoweNotebooks){   // the notebook code loads on first use — then draw the card
+      if(!_nlpLoading&&typeof haLoadNotebooksLib==="function"){ _nlpLoading=true; haLoadNotebooksLib().then(()=>{ _nlpLoading=false; if(tab==="kids"&&kcKid===k) renderAll(); }).catch(()=>{ _nlpLoading=false; }); }
+      return "";
+    }
+    const o=nbLookOpts(k), offer=nbLookPickOffer(k,o), t=_nlpTicks(k), al=offer.filter(x=>t[x.key]===true);
+    if(al.length<2) return "";
+    const cur=(o&&o.current)||"", pick=al.find(x=>x.key===cur)||null, col=KID_COLOR[k]||"#2B7A78";
+    const hex=c=>/^#[0-9a-fA-F]{3,8}$/.test(String(c||""));
+    const btns=al.map(x=>{ const c=x.card, on=!!pick&&pick.key===x.key;
+      const sw=(c.colors||[]).filter(hex).map(cc=>'<span style="flex:1;height:14px;background:'+cc+'"></span>').join("");
+      return '<button onclick="nbLookKidSet(\''+k+'\',\''+x.key+'\')" aria-pressed="'+(on?'true':'false')+'" aria-label="'+esc(c.label)+'" style="position:relative;flex:1 1 130px;min-width:120px;min-height:120px;padding:10px 8px;border-radius:18px;border:'+(on?'4px solid '+col:'2px solid #e2ddd6')+';background:'+(on?_kcTint(col,0.88):'#fff')+';cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent;text-align:center">'+
+        (on?'<span style="position:absolute;top:6px;right:8px;width:28px;height:28px;border-radius:50%;background:'+col+';color:#fff;font-size:17px;font-weight:900;line-height:28px">✓</span>':'')+
+        '<div style="font-size:44px;line-height:1.1">'+esc(c.emoji)+'</div>'+
+        '<div style="font-size:19px;line-height:1.3;margin-top:4px;letter-spacing:1px">'+esc((c.row||[]).join(" "))+'</div>'+
+        '<div style="display:flex;border-radius:7px;overflow:hidden;margin:8px 6px 6px;border:1px solid rgba(0,0,0,.08)">'+sw+'</div>'+
+        '<div style="font-size:14px;font-weight:800;color:#374151">'+esc(c.label)+'</div></button>';
+    }).join("");
+    return '<div id="kc-nblook" style="padding:14px 12px 0"><div style="max-width:640px;margin:0 auto;padding:14px;border-radius:18px;background:#f8f7f4;border:2px dashed #e2ddd6;box-sizing:border-box">'+
+      '<div style="font-size:18px;font-weight:800;color:#57534e;margin-bottom:10px">\u{1F3A8} My notebook look</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:10px">'+btns+'</div>'+
+      '<div style="font-size:15px;font-weight:700;color:#57534e;margin-top:10px;text-align:center">'+(pick?'Your next notebook will be '+esc(pick.card.label)+'.':'Tap a picture to pick your next notebook.')+'</div>'+
+    '</div></div>';
+  }catch(e){ return ""; }
+}
+// NB_LOOKPICK_END
 // PREKLEVEL_WIRE_START — the notebook's look + level switches (her ask 2026-11-08: "a setting where they could change between
 // which theme, construction, dinosaurs, or sharks" → "for every kid, there will be a quick theme changer"). Mom's picker saves
 // to notebookSettings/<kid>/notebookTheme and notebookSettings/<kid>/nbLevel/<switch> (targeted writes, synced like reviewCap);
@@ -50164,7 +50282,7 @@ function nbLevelOf(kid){
 }
 function nbGradeOf(kid){ const g=((nbRecOf(kid).notebook||{}).gradeLabel); if(g==="K") return "Kindergarten"; if(typeof g==="string"&&g.trim()) return g.trim(); return isPreK(kid)?"Pre-K":null; }
 function nbLookOpts(kid){ const N=window.HoweNotebooks; return (N&&typeof N.notebookOptions==="function")?N.notebookOptions(kid,{isPreK:isPreK(kid),notebookTheme:nbThemeOf(kid),nbLevel:nbLevelOf(kid)}):null; }
-function nbSetLook(kid,key){ if(!momHere()) return;
+function nbSetLook(kid,key){ if(!momHere()) return; if(typeof nbLookKidPicks==="function"&&nbLookKidPicks(kid)) return;   // NB_LOOKPICK: 2+ ticked = the kid picks in Kids' Corner
   if(!notebookSettings[kid]) notebookSettings[kid]={};
   notebookSettings[kid].notebookTheme=String(key||"");
   try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
@@ -50508,6 +50626,46 @@ function nbClearName(kid){ if(!momHere()) return;
   if(tab==="notebook"){ const c=document.getElementById("content"); if(c) renderNotebook(c); }
 }
 // NBNAME_END
+// NB_COUNTPIC_START — what the Pre-K number card counts, per kid, for any look (looks study §4 row 4; her answer 2026-11-24:
+// "Make it a setting"). notebookSettings/<kid>/countPic = "animal" | "picture"; nothing saved = the look's own rule (construction
+// counts the counting picture, every other look the animal of the day), so nothing prints differently until Mom taps. The answer
+// itself lives in notebooks.js (pkCountPic, via HoweNotebooks.countPicFor) — this card only shows it and saves the choice. One
+// targeted value: set, or remove when the choice is the look's own; mirrored to ha_nb_settings like the other notebook settings.
+// The counting picture is NOT chosen here — its one home is the kid's row in the unit with a Counting deck (mastSetCountEmoji).
+function nbCountPicOf(kid){ const v=(((notebookSettings||{})[kid])||{}).countPic; return (v==="animal"||v==="picture")?v:null; }
+function nbCountPicOwn(kid){ return (((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null; }
+function nbCountPicInfo(kid){
+  try{ const N=window.HoweNotebooks; if(!N||typeof N.countPicFor!=="function") return null;
+    return N.countPicFor(kid,{ notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), countPic:nbCountPicOf(kid), countEmoji:nbCountPicOwn(kid) }); }catch(e){ return null; }
+}
+// Where the counting picture is chosen: Units ▸ <the unit with a Counting deck this kid is on> ▸ the kid's row ▸ "Counts".
+function nbCountPicWhere(kid){
+  let t="";
+  try{ for(const id in (unitStudies||{})){ const u=unitStudies[id]; if(u&&((u.kidStage||{})[kid])&&(u.decks||[]).some(d=>d&&d.key==="Counting")){ t=String(u.title||""); break; } } }catch(e){}
+  return t?('Units ▸ '+esc(t)+' ▸ '+esc(cap(kid))+'’s row ▸ “Counts”'):('Units ▸ the Math Fluency Path ▸ '+esc(cap(kid))+'’s row ▸ “Counts” (once '+esc(cap(kid))+' is on a stage there)');
+}
+function nbCountPicCardHtml(sel){
+  if(!momHere()) return "";
+  const cp=nbCountPicInfo(sel); if(!cp) return "";   // no number card = no control
+  const nm=esc(cap(sel)), pic=nbCountPicOwn(sel)||cp.lookPic||"";
+  const opt=(v,lab)=>{ const on=cp.choice===v; return '<button onclick="nbSetCountPic(\''+sel+'\',\''+v+'\')" title="'+(on?'On':'Tap to count this from the next notebook')+'" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(on?'#ea580c':'var(--border)')+';background:'+(on?'#fff7ed':'#fff')+';color:'+(on?'#9a3412':'#1f2937')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(on?'◉ ':'○ ')+lab+'</button>'; };
+  return '<div id="nbcountpic" style="font-size:12px;font-weight:800;color:#9a3412;margin:12px 0 2px">🔢 Number card counts</div>'+
+    '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:6px">What fills the ten-frames on each day’s Number of the Day card. It changes the next notebook you print.</div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">'+opt("animal","the animal of the day")+opt("picture",nm+'’s counting picture'+(pic?' '+pic:''))+'</div>'+
+    (cp.fallback?'<div style="font-size:11px;color:#9a3412;font-weight:700;line-height:1.45;margin-top:6px">'+nm+' has no counting picture yet, so the number card counts the animal of the day until one is chosen.</div>':'')+
+    '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-top:5px">'+nm+'’s counting picture is chosen on '+nbCountPicWhere(sel)+'.</div>';
+}
+function nbSetCountPic(kid,v){ if(!momHere()) return;
+  if(v!=="animal"&&v!=="picture") return;
+  const cp=nbCountPicInfo(kid); if(!cp) return;
+  const atDef=(v===cp.def);   // the look's own rule = nothing saved
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  if(atDef) delete notebookSettings[kid].countPic; else notebookSettings[kid].countPic=v;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db&&!_dryRun()){ const r=db.ref("notebookSettings/"+kid+"/countPic"); if(atDef) r.remove(); else r.set(v); } }catch(e){}
+  if(tab==="notebook"){ const c=document.getElementById("content"); if(c) renderNotebook(c); }
+}
+// NB_COUNTPIC_END
 // Extra-pages config (Notebook tab) — per-page {on, days:{monday:true,…}}, synced like reviewCap.
 // Missing config = page ON with no day assigned, so defaults match the old always-print behavior.
 function nbXpCfg(kid,key){ const c=(((notebookSettings||{})[kid]||{}).extraPages||{})[key]||{}; return { on:c.on!==false, days:c.days||{} }; }
@@ -51554,6 +51712,7 @@ function wbPageFor(book,label){
   if((m=s.match(/^(?:pgs?|pp?|pages?)\.?\s*(\d+)/i))) return clamp(m[1]);
   if(/^pre-?test/i.test(s)) return clamp(toc.pre);
   if(/^post-?test/i.test(s)) return clamp(toc.post);
+  if(typeof wblSecPage==="function") return wblSecPage(book,s,clamp);   // WBLINK: "Lesson 21 …" / "Review D …" through toc.sec
   return null;
 }
 // ── Answer key (2026-09-05). The book's toc may also carry ans={n:printedPage} — the
@@ -51600,6 +51759,7 @@ function wbOpenCheck(bookId,kid,page,ans,assign){
 // Open from a card: the workbooks listener normally has the book cached; fetch it once if not.
 // 📌 WB_ASSIGN: `assign` = wbAssignFor(card) → the viewer's "Today: Ex. 45–46" banner. Absent → no banner.
 function wbOpenFor(bookId,kid,page,assign){
+  if(typeof wblOpenFor==="function"&&wblOpenFor(bookId,kid,page,assign)) return;   // WBLINK: a reading book opens at its remembered page inside the section
   const opts={assignment:assign||null};
   if(wbBook(bookId)){ wbOpen(bookId,kid,page,opts); return; }
   if(!db){ alert("That workbook isn't loaded yet."); return; }
@@ -52358,6 +52518,7 @@ function wbGoAns(d){
 }
 function wbClose(){
   clearTimeout(_wbAutoT); _wbAutoT=null;   // 💾 the close saves it now
+  if(typeof wblClose==="function") wblClose();   // WBLINK: a reading book remembers its page
   const backKid=(wbView&&wbView.eic&&wbView.eic.back)?wbView.kid:null;   // ↩ EIC_PANELBACK: opened from the Editor in Chief menu → ✕ returns to it (her ask 2026-10-15)
   const go=()=>{ try{ if(_wbRO) _wbRO.disconnect(); }catch(e){} _wbRO=null; const ov=document.getElementById("wb-view"); if(ov) ov.remove(); wbView=null; if(backKid&&window.eicPanel){ try{ window.eicPanel(backKid); }catch(e){} } };
   if(wbView&&wbView.dirty){ wbSave().then(go).catch(go); } else go();
@@ -52390,6 +52551,7 @@ function wbBarRender(){
   // browser gets no gesture; Pencil only → a finger (or resting palm) scrolls the page as before.
   try{ const cv=document.getElementById("wb-ink"); if(cv) cv.style.touchAction=v.penOnly?"pan-x pan-y":"none"; }catch(e){}
   try{ wbAssignRender(); }catch(e){}   // 📌 WB_ASSIGN: the banner is a sibling of the bar — refresh its ↩ with every redraw
+  if(typeof wblRender==="function") try{ wblRender(v,btn); }catch(e){}   // WBLINK: reading-book bar + the linked-books strip
 }
 function wbTool(t){ if(!wbView) return; wbView.tool=t; wbBarRender(); }
 function wbTogglePen(){ if(!wbView) return; wbView.penOnly=!wbView.penOnly; wbBarRender(); }
@@ -52409,7 +52571,7 @@ async function wbLoadPage(){
   v.strokes=[]; v.dirty=false;
   if(!url){ wbPaint(); return; }
   try{
-    if(db){ const s=await db.ref(wbInkPath(v.kid,v.bookId,v.page)).once("value"); const d=s.val();
+    if(db&&!b.read){ const s=await db.ref(wbInkPath(v.kid,v.bookId,v.page)).once("value"); const d=s.val();   // WBLINK: a reading book has no ink
       if(d&&d.s) v.strokes=(Array.isArray(d.s)?d.s:Object.values(d.s)).map(k=>({c:k.c,w:k.w,p:Array.isArray(k.p)?k.p:Object.values(k.p||{})})); }
   }catch(e){}
   const draw=()=>{ wbFit(); wbPaint(); wbWatchFit(); };
@@ -52506,6 +52668,7 @@ function wbAutoSaveSoon(){
 }
 async function wbSave(quiet){
   const v=wbView; if(!v||v.scratch) return;   // WBOARD: a scratch whiteboard never writes
+  if(typeof wblIsRead==="function"&&wblIsRead(v)) return;   // WBLINK: a reading book never writes ink
   if(typeof uascIs==="function"&&uascIs(v.bookId)) return uascSave(v,quiet);   // UACTSCREEN: a 🖨 page saves at its own path, refusals said in the bar
   if(!db||_dryRun()){ v.dirty=false; wbBarRender(); return; }
   const rev=v._rev||0;
@@ -52566,6 +52729,89 @@ function wbBootFromUrl(){
   }catch(e){}
 }
 try{ if(/[?&]workbook=/.test(location.search)) window.addEventListener("load",()=>setTimeout(wbBootFromUrl,600)); }catch(e){}
+// WBLINK_START — linked books (her ask 2026-11-24, for Melanie teaching Zuri Logic of English Foundations A: load the
+// manual, workbook and readers "so she can read what she needs to read to teach Zuri", and where the manual says open the
+// workbook page, "off to the side a little spot she can click and then go back to where her other page is in her teacher
+// workbook"). Book data (all optional; a book with none of them is untouched):
+//   read:true  → a reading book: no pen, no ink layer, never reads or writes workbookWork; its page is remembered at
+//                workbookPlace/<kid>/<bookId> = {p,ts} (one targeted set, dry run inert) + the local mirror "ha_wbplace".
+//   toc.sec    → {"lesson_21": printedPage, "review_d": …}: a card label "Lesson 21 · …" / "Review D · …" opens there
+//                (wbPageFor's last resort, so every older label reads exactly as before).
+//   links      → {"<filePage>": [{b: bookId, p: filePage, t: "label"}]}: chips in a strip at the right (a bar under the
+//                toolbar on a narrow screen). A tap saves the page's ink first, keeps ONE return point on the opened
+//                view (page turns keep it, ✕ drops it with the view), and "↩ Back" saves again and reopens that exact page.
+// Chip text is escaped; the strip and its wrapper exist only while there is a chip to show.
+const WBL_CSS="#wbl-row{flex:1;display:flex;min-height:0}#wb-link{flex:none;display:flex;flex-direction:column;gap:8px;width:170px;padding:8px;overflow-y:auto;background:#f1f5f9;border-left:1px solid #e2e8f0;font-family:'DM Sans',sans-serif}#wb-link button{flex:none;min-height:48px;padding:8px 10px;border-radius:12px;border:1.5px solid #cbd5e1;background:#fff;color:#0f172a;text-align:left;font-size:13px;font-weight:700;line-height:1.25;cursor:pointer;font-family:inherit}#wb-link .wbl-bk{min-height:56px;background:#1d4ed8;border-color:#1d4ed8;color:#fff;font-size:14px}@media(max-width:699px){#wbl-row{flex-direction:column}#wb-link{order:-1;flex-direction:row;width:auto;overflow:auto hidden;border-left:0;border-bottom:1px solid #e2e8f0}#wb-link button{max-width:72vw}}";
+function wblSecKey(s){ const m=String(s||"").trim().match(/^(lesson\s*\d+|review\s*[a-z])\b/i); return m?m[1].toLowerCase().replace(/[^a-z0-9]+/g,"_"):null; }
+function wblSecPage(book,s,clamp){ const k=wblSecKey(s), sec=book.toc.sec; return (k&&sec&&sec[k]!=null)?clamp(sec[k]):null; }
+// The file pages a section covers: its first page up to the page before the next section starts (the book's end if last).
+function wblSpan(b,lbl){
+  const st=wblSecKey(lbl)&&wbPageFor(b,lbl); if(!st) return null;
+  const off=parseInt(b.toc.offset,10)||0; let nx=0;
+  Object.values(b.toc.sec||{}).forEach(x=>{ const f=(parseInt(x,10)||0)+off; if(f>st&&(!nx||f<nx)) nx=f; });
+  return [st,nx?nx-1:(b.pages||st)];
+}
+function wblPr(b,p){ const n=p-(parseInt(((b&&b.toc)||{}).offset,10)||0); return n>=1?n:p; }   // printed page
+function wblLinks(b,pg){ let a=((b&&b.links)||{})[pg]; if(!a) return []; if(!Array.isArray(a)) a=Object.values(a);
+  return a.filter(l=>l&&wbBook(l.b)&&parseInt(l.p,10)>=1).slice(0,4); }
+function wblShort(n,cur){ const a=String(n||"Book").split(" "), c=String(cur||"").split(" "); let i=0; while(i<a.length-1&&a[i]===c[i]) i++;   // drop the words both names start with
+  const s=a.slice(i).join(" "); return s.length>28?s.slice(0,27)+"…":s; }
+function wblKey(kid,id){ return "workbookPlace/"+kid+"/"+id; }
+function wblPlaces(){ try{ return JSON.parse(HA_LS.getItem("ha_wbplace")||"{}")||{}; }catch(e){ return {}; } }
+function wblPlace(v){
+  const b=wbBook(v.bookId); if(!b||!b.read||!v.kid) return;
+  const k=wblKey(v.kid,v.bookId), r={p:v.page,ts:Date.now()};
+  try{ const m=wblPlaces(); m[k]=r; HA_LS.setItem("ha_wbplace",JSON.stringify(m)); }catch(e){}
+  if(db&&!_dryRun()) try{ db.ref(k).set(r).catch(()=>{}); }catch(e){}
+}
+function wblClose(){ if(wbView) wblPlace(wbView); }
+function wblIsRead(v){ return !!(wbBook(v.bookId)||{}).read; }
+// Card chip → a reading book at a section: the remembered page when it lies inside that section, else the section start.
+function wblOpenFor(id,kid,page,assign){
+  const b=wbBook(id); if(!b||!b.read) return false;
+  const s=wblSpan(b,assign&&assign.ref); if(!s) return false;
+  const k=wblKey(kid,id), loc=wblPlaces()[k]; let done=0;
+  const go=d=>{ if(done++) return;
+    const r=[loc,d].filter(x=>x&&x.p).sort((x,y)=>(y.ts||0)-(x.ts||0))[0], p=parseInt(r&&r.p,10);
+    wbOpen(id,kid,(p>=s[0]&&p<=s[1])?p:s[0],{assignment:assign});
+    if(wbView&&wbView.assignment){ wbView.assignment=wbAssignClean(assign,b,s[0]); wbBarRender(); } };
+  if(db){ setTimeout(go,1500); db.ref(k).once("value").then(x=>go(x.val()),()=>go()); } else go();
+  return true;
+}
+// Called at the end of every wbBarRender.
+function wblRender(v,btn){
+  const b=wbBook(v.bookId)||{}, bar=document.getElementById("wb-bar");
+  if(b.read){
+    if(bar) bar.innerHTML=btn("✕","wbClose()")+'<span style="font-weight:800;font-size:13px;color:#0f172a;max-width:46vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(b.name||"Book")+'</span><span style="flex:1"></span>'+
+      btn("◀","wbGo(-1)")+'<span style="font-size:12px;font-weight:700;color:#475569;min-width:64px;text-align:center">p. '+wblPr(b,v.page)+'</span>'+btn("▶","wbGo(1)");
+    const cv=document.getElementById("wb-ink"); if(cv) cv.remove();
+    if(v._wblP!==v.page){ v._wblP=v.page; wblPlace(v); }
+  }
+  const L=wblLinks(b,v.page), r=v.wblRet; let el=document.getElementById("wb-link");
+  if(!L.length&&!r){ if(el) el.style.display="none"; return; }
+  if(!el){ const st=document.getElementById("wb-stage"); if(!st||!st.parentNode) return;
+    const row=document.createElement("div"); row.id="wbl-row"; st.parentNode.insertBefore(row,st); row.appendChild(st);
+    el=document.createElement("div"); el.id="wb-link"; row.appendChild(el);
+    const cs=document.createElement("style"); cs.textContent=WBL_CSS; row.appendChild(cs); }
+  el.style.display="flex";
+  el.innerHTML=(r?'<button class="wbl-bk" onclick="wblBack()">↩ Back to '+esc(wblShort((wbBook(r.b)||{}).name,b.name))+' · p. '+wblPr(wbBook(r.b),r.p)+'</button>':'')+
+    L.map((l,i)=>{ const t=wbBook(l.b), s=String(l.t||""); return '<button onclick="wblGo('+i+')">'+(t.read?"📖":"📓")+' <b>p. '+wblPr(t,parseInt(l.p,10))+'</b> '+esc(s.length>26?s.slice(0,25)+"…":s)+'</button>'; }).join("");
+}
+// Save the page's ink now and stop the pending autosave, so nothing written is lost or saved onto the next page.
+async function wblFlush(v){ clearTimeout(_wbAutoT); _wbAutoT=null; if(v.dirty){ try{ await wbSave(); }catch(e){} } clearTimeout(_wbAutoT); _wbAutoT=null; }
+async function wblGo(i){
+  const v=wbView; if(!v) return; const l=wblLinks(wbBook(v.bookId),v.page)[i]; if(!l) return;
+  const ret=v.wblRet||{b:v.bookId,p:v.page,o:{ans:v.ans,assignment:v.assignment}};   // one return point: a link tapped in the target keeps the first
+  await wblFlush(v); if(wbView!==v) return;
+  wbOpen(l.b,v.kid,parseInt(l.p,10)); if(wbView&&wbView!==v){ wbView.wblRet=ret; wbBarRender(); }
+}
+async function wblBack(){
+  const v=wbView, r=v&&v.wblRet; if(!r) return;
+  await wblFlush(v); if(wbView!==v) return;
+  wbOpen(r.b,v.kid,r.p,r.o); const a=r.o&&r.o.assignment;
+  if(wbView&&wbView!==v&&a){ wbView.assignment=a; wbBarRender(); }   // the card's banner as it was, not re-based on this page
+}
+// WBLINK_END
 // ── UNIT STUDY: British Monarchy "Royal Line" notebook page ───────────────
 // One shared dataset, read from the mastery curriculum bank (all 42 monarchs +
 // house/reign) joined with the kid's live drill items (status/tier → progress)
@@ -58581,7 +58827,8 @@ function nbNeedsList(kid){
 function nbNeedsReach(kid){
   try{
     const N=window.HoweNotebooks; if(!N||typeof N.reviewDecks!=="function") return null;
-    return N.reviewDecks(kid,{ notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{} });
+    return N.reviewDecks(kid,{ notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{},
+      countPic:((typeof nbCountPicOf==="function")?nbCountPicOf(kid):null), countEmoji:((typeof nbCountPicOwn==="function")?nbCountPicOwn(kid):null) });   // NB_COUNTPIC: the Animals deck follows the number card
   }catch(e){ return null; }
 }
 function nbNeedsReadsCap(kid){ const r=nbNeedsReach(kid); return !!(r&&r.readsCap); }
@@ -58905,9 +59152,10 @@ function renderNotebook(el){
     lookHtml='<div id="nblook-card" style="margin-top:14px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:12px 14px">'+
       '<div style="font-size:12px;font-weight:800;color:#9a3412;margin-bottom:2px">🎨 Notebook look <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fed7aa;color:#7c2d12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></div>'+
       '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:7px">'+(lookOpts.looks.length>1?'Pick the pictures and colors. It changes the next notebook you print — nothing already printed changes.':'This notebook has one look for now.')+'</div>'+
-      '<div style="display:flex;gap:6px;flex-wrap:wrap">'+looks+'</div>'+
+      nbLookPickRow(sel,lookOpts,'<div style="display:flex;gap:6px;flex-wrap:wrap">'+looks+'</div>')+   // NB_LOOKPICK: Mom's pills (0–1 ticked) or the kid's pick (2+), then the tick list
       (lvRows?'<div style="font-size:12px;font-weight:800;color:#9a3412;margin:12px 0 2px">📏 Level</div><div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:4px">The same notebook at a different level — turn on what this child is ready for.</div>'+lvRows:'')+
       nbNameCardHtml(sel,lookOpts)+   // NBNAME: ✏️ Name in the notebook (Pre-K notebooks)
+      ((typeof nbCountPicCardHtml==="function")?nbCountPicCardHtml(sel):"")+   // NB_COUNTPIC: 🔢 Number card counts (Pre-K notebooks)
     '</div>';
   }
   // Week switcher — only when a next week is already built and parked (generated ahead on the
