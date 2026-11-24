@@ -2150,6 +2150,39 @@
     return r.plan;
   }
   // CBPLAN_END
+  // NBNEEDS_START — 🔁 "Giving trouble this week" (study step 1 "See it", her yes 2026-11-23: "I really want these notebooks to
+  // complement their drills and study sessions, not be redundant, and be very customizable per kid, and to help add extra
+  // practice where necessary"). The app's Mom card (index.html NBNEEDS) lists each kid's trouble cards and says, per deck,
+  // whether this kid's notebook can bring that deck to paper today. This answers from the code that does it — nothing here
+  // builds or prints, so no notebook output changes:
+  //  • a Pre-K notebook (pkSpec → generatePreK → juCurriculumFromMastery): the daily-page subjects its plan shows
+  //    (pkPlanSubs — animals only when the look counts animals), the Lowercase deck standing in for Letters under the
+  //    little-letters switch; its 🔁 slots are ctx.reviewCap;
+  //  • Lucy's notebook (generateLucy → luWordsWeek): Sight Words come back 🔁 as the word of the day (ctx.reviewCap), and
+  //    Spelling words she has been missing go in the practice box on her My Words page — both only while My Words is on;
+  //  • every other notebook reads no drill trouble today.
+  // opt = the app's view of the kid: { notebookTheme, nbLevel, extraPages }. → { readsCap, decks:[{deck, how, cap}] }.
+  function nbReviewDecks(kid, opt) {
+    opt = opt || {};
+    var sp = pkSpec(kid, opt);
+    if (sp) {
+      var T = sp.T;
+      if (!T) { try { T = NB_THEMES[sp.key].theme(opt, sp.L); } catch (e) { T = null; } }
+      var name = { letters: sp.L.nbLowercase ? "Lowercase" : "Letters", numbers: "Numbers", shapes: "Shapes", colors: "Colors", animals: "Animals" };
+      return { readsCap: true, decks: pkPlanSubs(T).map(function (s) { return { deck: name[s], how: "comes back 🔁 on a daily page", cap: true }; }) };
+    }
+    var g = GENERATORS[kid];
+    if (g && g.build === generateLucy) {
+      var mw = (opt.extraPages || {}).myWords;
+      if (mw && mw.on === false) return { readsCap: false, decks: [], off: "My Words is off" };
+      return { readsCap: true, decks: [
+        { deck: "Sight Words", how: "comes back 🔁 as the sight word of the day", cap: true },
+        { deck: "Spelling", how: "goes in the practice box on the My Words page", cap: false }
+      ] };
+    }
+    return { readsCap: false, decks: [] };
+  }
+  // NBNEEDS_END
 
   /* ============================================================================
    *  LINCOLN  (5th grade — snakes 🐍)
@@ -6701,6 +6734,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     // 🚜 CBPLAN: any Pre-K notebook's planner (opt/ctx = the kid's notebookTheme / nbLevel, so a themed kid has one too)
     hasPlan: pkHasPlan,
     planFor: pkPlanFor,
+    reviewDecks: nbReviewDecks,         // 🔁 NBNEEDS: which drill decks this kid's notebook brings back to paper (Notebook tab card)
     lincolnBuiltinQ3: function (wk, i) { return lnPick(LINCOLN_DATA.banks.conventions, wk, i); },   // the day's built-in conventions item (Mom's answer check)
     convBankPlan: lnConvBankPlan,       // Lincoln's conventions bank: same, for the Q3 slot
     quantBankPlan: lnQuantBankPlan,     // Lincoln's number-reasoning bank: same, for the Q2 math slot
