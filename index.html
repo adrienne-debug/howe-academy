@@ -2984,7 +2984,7 @@ function _rtLogLateMiss(slot,kid,i,cad,label,pts){
 // → "A chore with a wait is still dropped at the end of its wait, and the drop takes 20% of its stars, once"; an empty bank: "Can go below
 // zero". The first slice that ever takes stars by itself. When a turn drops undone (rtSlotHTML → _rtLogLateMiss, the one place a drop is
 // noticed), the "— not done" line it files carries the decision, made ONCE, there: drop = {n: stars taken, bid: the bank line's id, due:
-// its own day, job: its chore} or {n:0, why:"zero"|"off"|"pause"} (0 ⭐ chore · Take stars away off for that kid or the turn was due before
+// its own day, job: its chore} or {n:0, why:"zero"|"away"|"off"|"pause"} (0 ⭐ chore · a day off in its wait · Take stars away off for that kid or the turn was due before
 // it came back on · ⏸ paused or due before the pause ended). n = the chore's stars − rtFallPts(stars,1): 20%, nearest whole star, at least 1.
 // Exactly once: the line is created by a transaction that only writes if NO line is on the server, and only the device whose transaction
 // commits writes the one bank line, bank/<kid>/adjustments/cdrop_<wk>_<due day>_<kid>_<a|c|e>step<i> ("🧹 Vacuum the den · not done",
@@ -2992,15 +2992,30 @@ function _rtLogLateMiss(slot,kid,i,cad,label,pts){
 // reload, a second device, a flip of a switch or a give-back (📒 Ledger, house.js LEDGERDROP: gb on that line) never decide again.
 // A turn due before RT_TAKE_FROM, a plan row (st.house) and every row that never drops (daily, as needed, ✕ / ➖, 🌅, ticked) file
 // exactly as before: no decision, nothing taken. Writes only when db && !_dryRun(); dry-run and no-db keep it on this screen.
-function rtDropTake(kid,st,iso){
+// Days off (hub's rule 2026-11-23, "nothing is ever taken by accident", until Mom says otherwise): {n:0, why:"away"} when, for that kid,
+// its due day or any day of its wait (up to the day before it dropped) was 😷 Kid Off (calendar/kidOverrides/<kid>/<iso>.school ===
+// false) or a family-calendar holiday / vacation that paused this list (calendar/holidays|vacations/<id> .start–.end, .pause "all", or
+// "chores" for the Afternoon and Chores lists). A plain weekend or a school-only break changes nothing. The wait itself is C1's, as before.
+function rtDropAway(kid,slot,st,iso,n){
+  const C=(typeof calendarData!=="undefined"&&calendarData)||{}, o=(C.kidOverrides||{})[kid]||{}, W=rtWaitDays(st), cad=(st&&st.cad)||"daily";
+  for(let k=0;k<n;k++){ const d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+k);
+    const q=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    if(k>0&&(k>W||cadDueOn(cad,DAYS_ALL[(d.getDay()+6)%7])||(st.cycW&&!stepCycleOk(st,q)))) break;   // it dropped that day
+    if(o[q]&&o[q].school===false) return true;
+    let p=""; [C.holidays,C.vacations].forEach(function(c){ Object.values(c||{}).forEach(function(v){ const a=calNormDate(v&&(v.start||v.date)), b=calNormDate(v&&(v.end||v.start||v.date)); if(!p&&a&&q>=a&&q<=b) p=v.pause||"school"; }); });
+    if(p==="all"||(p==="chores"&&slot!=="evening")) return true; }
+  return false;
+}
+function rtDropTake(kid,st,iso,slot,n){
   if(!st||st.house||!(iso>=RT_TAKE_FROM)) return null;
   const s=st.pts||0; if(!(s>0)) return {n:0,why:"zero"};
+  if(slot&&n>0&&rtDropAway(kid,slot,st,iso,n)) return {n:0,why:"away"};
   const no=starTakeAt(kid,iso); if(no) return {n:0,why:no};   // the 📒 ⚙ switches, as they are at the drop
   return {n:s-rtFallPts(s,1)};
 }
 function _rtDropFileC3(kid,slot,i,dueDay,label,pts,wkIn,n){
   const st=(rtStepsFor(slot,kid)||[])[i], t=new Date(), d=new Date(t.getFullYear(),t.getMonth(),t.getDate()-n,12);
-  const iso=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"), tk=n>0&&RT_ABBR[slot]?rtDropTake(kid,st,iso):null;
+  const iso=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"), tk=n>0&&RT_ABBR[slot]?rtDropTake(kid,st,iso,slot,n):null;
   if(!tk) return _rtLogMiss(kid,slot,i,dueDay,label,pts,wkIn);   // as before
   const wk=wkIn||activeWk(), key="miss_"+slot+"_"+i, L=(routineLog[kid]=routineLog[kid]||{}), W=(L[wk]=L[wk]||{}), D=(W[dueDay]=W[dueDay]||{});
   if(D[key]) return;

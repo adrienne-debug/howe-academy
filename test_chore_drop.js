@@ -372,8 +372,52 @@ console.log("\n── E · two devices at once; a device offline; dry-run ──
   await go(w, 30, 8); m = w.mark(); drawAll(P, ["kid_b"]); await w.flush();
   ok("L · a turn whose list nobody draws from its drop to its next day (12/8's, first drawn Wed 12/16): never filed, never costs", !missLines(w, "kid_b", "Sweep the porch").some(r => r.drop && r.drop.due === "2026-12-08") && dropOf(w, "kid_b", "Sweep the porch").length === 1, missLines(w, "kid_b", "Sweep the porch").map(r => r.drop));
 }
+console.log("\n── V · days off take nothing (hub's rule 2026-11-23) ──");
+{ const jobs = { a_vac: FAM().a_vac, b_vac: FAM().b_vac, b_eve: K({ label: "Lay out the mats", emoji: "🧘", who: "kid_b", slot: "evening", cad: "wk:1", pts: 10, order: 1 }),
+    c_vac: K({ label: "Dust the shelf", emoji: "📚", who: "kid_c", slot: "chores", cad: "wk:1", pts: 10, order: 1 }), d_vac: K({ label: "Dust the blinds", emoji: "🪟", who: "kid_d", slot: "chores", cad: "wk:1", pts: 10, order: 1 }),
+    c_toys: FAM().c_toys };
+  const off = (...isos) => { const o = {}; isos.forEach(i => { o[i] = { school: false }; }); return o; };
+  const calendar = { kidOverrides: { kid_a: off("2026-12-01"), kid_c: off("2026-12-03"), kid_d: off("2026-12-04") },
+    holidays: { h1: { name: "Made-up chores holiday", start: "2026-12-16", end: "2026-12-16", pause: "chores" }, h2: { name: "Made-up school holiday", start: "2026-12-17", end: "2026-12-17", pause: "school" } },
+    vacations: { v1: { name: "Made-up trip", start: "2026-12-09", end: "2026-12-09", pause: "all" }, v2: { name: "Made-up long weekend", start: "2026-12-22", end: "2026-12-22", pause: "all" } } };
+  const w = await W.world({ index: IDX, household: { jobs, people: clone(W.PEOPLE), meta: { takeover: 1, engine: { mode: "preview", on: "2026-11-09" } } }, tree: { config: clone(W.FX.db.config), calendar } });
+  const P = w.boot("P", "devP"), Am = w.boot("Am", "devAm", { mom: true }), Dm = w.boot("Dm", "devDm", { mom: true }); [P, Am, Dm].forEach(d => d.run(CAP)); await w.flush();
+  Dm.run("HA_LS.setItem('ha_dryrun','1');1"); Am.run(HJS); Dm.run(HJS);
+  const why = (kid, l, due) => ((missLines(w, kid, l).filter(r => r.drop && r.drop.due === due)[0] || {}).drop || {});
+  const day = async n => { await go(w, n, 8); tick(P, "kid_c", "Toys in the bin"); drawAll(P); await w.flush(); };
+  for (let n = 0; n <= 18; n++) await day(n);
+  ok("V · 😷 Kid Off on its due day (kid_a, Tue 12/1): dropped Fri, {n:0, why:\"away\"}, no bank line", why("kid_a", "Vacuum the den", "2026-12-01").why === "away" && why("kid_a", "Vacuum the den", "2026-12-01").n === 0 && dropOf(w, "kid_a", "Vacuum the den").length === 0, why("kid_a", "Vacuum the den", "2026-12-01"));
+  ok("…Kid Off on a day of its wait (kid_c, Thu 12/3): away, nothing taken", why("kid_c", "Dust the shelf", "2026-12-01").why === "away" && dropOf(w, "kid_c", "Dust the shelf").length === 0);
+  ok("…Kid Off only on the drop day itself (kid_d, Fri 12/4): it costs (−2) — the day it left the list is not in its wait", J(dropOf(w, "kid_d", "Dust the blinds").map(a => a.amount)) === "[-2]");
+  ok("…another kid on the same days (kid_b, no day off): costs −2 on both her lists", J(dropOf(w, "kid_b", "Sweep the porch").map(a => a.amount)) === "[-2]" && J(dropOf(w, "kid_b", "Lay out the mats").map(a => a.amount)) === "[-2]");
+  // decided once: the calendar changes afterwards
+  Am.run("db.ref('calendar/kidOverrides/kid_a/2026-12-01').remove();db.ref('calendar/kidOverrides/kid_b/2026-12-01').set({school:false});1"); await w.flush();
+  let m = w.mark(); drawAll(P); const F = w.boot("F", "devF"); F.run(CAP); await w.flush(); F.run("routineLog={};1"); drawAll(F); await w.flush();
+  ok("…decided once: kid_a's Kid Off taken away and one added for kid_b afterwards — redraws and a fresh device change nothing (kid_a still 0, kid_b still −2)", why("kid_a", "Vacuum the den", "2026-12-01").why === "away" && dropOf(w, "kid_a", "Vacuum the den").length === 0 && dropOf(w, "kid_b", "Sweep the porch").length === 1 && !WS(w, m).some(x => /^set bank\/|✓$/.test(x)), WS(w, m));
+  const pop = LG(Am, "lgGo('kid_a',0,0)");
+  ok("…the 📒 Ledger row: \"… due Tue, not done in time · nothing taken (a day off in its wait)\"", /Vacuum the den due Tue, not done in time · nothing taken \(a day off in its wait\) ➖ Excuse$/.test(txt(goneRow(pop, "Vacuum the den"))), txt(goneRow(pop, "Vacuum the den")));
+  // K2: dry-run — the ledger's four taps on kid_b's porch: the screen moves, nothing is written
+  console.log("\n── K · dry-run: the ledger's taps write nothing ──");
+  const wk = Dm.run("activeWk()"), bl = dropOf(w, "kid_b", "Sweep the porch")[0], bi = /step(\d+)$/.exec(bl.id)[1], args = J("kid_b") + "," + J(wk) + ",'tuesday','chores'," + bi, b0 = bal(Dm, "kid_b");
+  m = w.mark(); const g = Dm.run("lgDropGive(" + args + ")");
+  ok("K · ⭐ Give stars back on a dry run: its screen gives the 2 back and says \"⭐ Mom gave back +2 ⭐\"; zero writes", g === true && bal(Dm, "kid_b") === b0 + 2 && /Mom gave back \+2 ⭐ Undo/.test(txt(goneRow(LG(Dm, "lgGo('kid_b',0,0)"), "Sweep the porch"))) && w.since(m).length === 0, w.since(m));
+  const u = Dm.run("lgDropUndo(" + args + ")");
+  ok("…its Undo: the line back on that screen; zero writes", u === true && bal(Dm, "kid_b") === b0 && w.since(m).length === 0, w.since(m));
+  const e = Dm.run("lgExcuse(" + args + "," + J(isoN(18)) + ",1)");
+  ok("…➖ Excuse on the dropped row: the 2 back on that screen, the row excused; zero writes", e === true && bal(Dm, "kid_b") === b0 + 2 && w.since(m).length === 0, w.since(m));
+  const eu = Dm.run("lgExcuseUndo(" + args + ")");
+  ok("…Excuse's Undo: the line and the −2 back on that screen; zero writes, and the database's lines as they were", eu === true && bal(Dm, "kid_b") === b0 && w.since(m).length === 0 && dropOf(w, "kid_b", "Sweep the porch").length === 1 && !!w.get("routineLog/kid_b/" + wk + "/tuesday/miss_chores_" + bi), w.since(m));
+  w.devs.splice(w.devs.indexOf(Dm), 1);   // the dry-run device leaves (a dry-run Mom device can hold the week-building lock and, rightly, write nothing)
+  for (let n = 19; n <= 39; n++) await day(n);
+  const cost = (kid, l, due) => why(kid, l, due).n === 2 && dropOf(w, kid, l).some(a => missLines(w, kid, l).some(r => r.drop && r.drop.due === due && r.drop.bid === a.id));
+  ok("V · a vacation pausing \"all\" on a wait day (Wed 12/9): every kid's Tuesday turn takes nothing — kid_a, kid_b (both lists), kid_c, kid_d", ["kid_a|Vacuum the den", "kid_b|Sweep the porch", "kid_b|Lay out the mats", "kid_c|Dust the shelf", "kid_d|Dust the blinds"].every(x => why(x.split("|")[0], x.split("|")[1], "2026-12-08").why === "away"), ["kid_a|Vacuum the den", "kid_b|Lay out the mats"].map(x => why(x.split("|")[0], x.split("|")[1], "2026-12-08")));
+  ok("…a holiday pausing \"chores\" on a wait day (Wed 12/16): the 🧹 Chores rows take nothing (kid_a, kid_b, kid_c, kid_d)", ["kid_a|Vacuum the den", "kid_b|Sweep the porch", "kid_c|Dust the shelf", "kid_d|Dust the blinds"].every(x => why(x.split("|")[0], x.split("|")[1], "2026-12-15").why === "away"));
+  ok("…kid_b's 🌙 Evening row, whose wait had that \"chores\" holiday (Wed) and a school-only holiday (Thu 12/17), neither pausing it: costs −2", cost("kid_b", "Lay out the mats", "2026-12-15"), why("kid_b", "Lay out the mats", "2026-12-15"));
+  ok("…a vacation pausing \"all\" ON the due day (Tue 12/22): no turn due that day drops at all (C1: a holiday or vacation day is not in the week's dates, so the late rule never sees it as passed) — nothing filed, nothing taken", ["kid_a|Vacuum the den", "kid_b|Sweep the porch", "kid_b|Lay out the mats", "kid_c|Dust the shelf"].every(x => !missLines(w, x.split("|")[0], x.split("|")[1]).some(r => r.drop && r.drop.due === "2026-12-22")) && !drops(w, "kid_a").some(a => /^cdrop_week\d+_tuesday/.test(a.id) && a.ts && /Dec 2[3-6]$/.test(a.ts)), P.run("JSON.stringify(DAY_DT)"));
+  ok("…the wait is unchanged by days off: those rows left their lists on their Friday (12/4, 12/11, 12/18), as without them (C1)", ["2026-12-01", "2026-12-08", "2026-12-15"].every(due => missLines(w, "kid_a", "Vacuum the den").some(r => r.drop && r.drop.due === due && /Dec (4|11|18)$/.test(r.ts))), missLines(w, "kid_a", "Vacuum the den").map(r => r.ts));
+}
 console.log("\n── P · the plan ON: its own rows never cost here ──");
-{ const V = await W.world({ mode: "on" }), A2 = V.boot("A", "devA", { mom: true }), B2 = V.boot("B", "devB"); await V.flush();
+{ const V = await W.world({ mode: "on", index: IDX }), A2 = V.boot("A", "devA", { mom: true }), B2 = V.boot("B", "devB"); await V.flush();
   for (let n = 14; n <= 22; n++) { await go(V, n, 8); drawAll(B2); await V.flush(); await go(V, n, 20); drawAll(B2); await V.flush(); }
   const all = Object.values(V.db.tree.root.bank || {}).flatMap(b => Object.keys((b && b.adjustments) || {})).filter(id => /^cdrop_/.test(id));
   const marked = []; Object.values(V.db.tree.root.routineLog || {}).forEach(K1 => Object.values(K1 || {}).forEach(W1 => Object.values(W1 || {}).forEach(D1 => Object.values(D1 || {}).forEach(r => { if (r && r.drop) marked.push(r.label); }))));

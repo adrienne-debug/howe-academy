@@ -1828,7 +1828,7 @@ function lgDropUp(u){ if(typeof db!=="undefined"&&db&&!_dryRun()) db.ref().updat
 function lgDropGones(G,g0,slot,kid,D,steps){ let q=g0; steps.forEach(function(st,i){ if(q>=G.length||!st||st.house||!/^wk:/.test(st.cad||"")||G[q].nm!==(st.emoji?st.emoji+" ":"")+(st.label||"Chore")) return; const E=lgDueBefore(st,D); if(E) lgDropGone(G[q],slot,kid,E,i); q++; }); }
 function lgDropGone(g,slot,kid,E,i){
   const x=g.ic==="✖"?lgDropOf(kid,E,slot,i):null; if(!x) return; const t=x.t, ok=lgDropOk(), js="('"+kid+"','"+E.wk+"','"+E.dn+"','"+slot+"',"+i+")";
-  if(!t.n){ if(t.why!=="zero") g.note+=" · nothing taken ("+(t.why==="pause"?"⏸ paused":"Take stars away was off")+")"; return; }
+  if(!t.n){ if(t.why!=="zero") g.note+=" · nothing taken ("+(t.why==="away"?"a day off in its wait":t.why==="pause"?"⏸ paused":"Take stars away was off")+")"; return; }
   g.note+=" · "+lgStar(t.n)+" taken";
   if(t.gb){ g.gbH='<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="font-size:11.5px;font-weight:800;color:#b45309">⭐ '+(t.gb.by==="dad"?"Dad":"Mom")+' gave back +'+lgStar(t.n)+'</span>'+(ok?'<button onclick="lgDropUndo'+js+'" style="border:1.5px solid var(--border);background:#fff;color:#374151;border-radius:8px;padding:2px 9px;font-size:11.5px;font-weight:700;cursor:pointer">Undo</button>':'')+'</span>'; return; }
   if(!x.line){ g.note+=", not in the Star Bank now"; return; }
