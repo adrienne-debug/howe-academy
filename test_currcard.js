@@ -562,6 +562,7 @@ console.log("\n(h) no new Firebase write path in the curriculum region");
   "lrPath(kid,sk,key,part)",
   "nbtInkPath(v.kid,v.wk,pg)",
   "nbtInkPath(v.kid,v.wk,v.page)",
+  "nbtInkPath(v.kid,v.wk,p)+\"/s/0\"",   // NBT_TODAY 2026-11-23: the tablet Today list's ✓ — ONE once-read of a listed page's first stroke (not a write; outside the curriculum)
   "nk",
   "p",
   "path",
