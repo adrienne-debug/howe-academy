@@ -1741,7 +1741,7 @@ function lgExcuseUndo(kid,wk,dn,slot,i){
 // LEDGERRULES_START — ⚙ the star rules in the 📒 Ledger pop-up (DESIGN_chore_ledger_2026-11-21 §4, slice L4; her "Yes, start it"
 // 2026-11-23). Her words: "have a setting for each kid where, okay, we're not actually doing deductions from them right now"; "Stars fall
 // when late" = "Yes, per kid"; "⏸ Pause for everyone" = "Yes, one switch"; the star rules live here and nowhere else; the panel is Mom's
-// (Dad uses the row buttons: his link gets no ⚙, only the ⏸ banner). index.html STARRULES reads them on every device, kid tablets too
+// (and, since DADCTL below, Dad's with his code in; a locked Dad's link gets no ⚙, only the ⏸ banner). index.html STARRULES reads them on every device, kid tablets too
 // (household/ is already listened to at boot): starFallFrom → rtFallDays; starTakeOk → the 🔎 Spot check's extra stars, the Click-off
 // Log's ⚠️ −100 and 🧾 Today's check-offs' −100 (each refuses and says why). "A flip never reaches back":
 //   Stars fall when late OFF → fall/<kid> = {on:false}: from now a late chore pays its full stars for that kid (rows already waiting too).
@@ -1753,8 +1753,14 @@ function lgExcuseUndo(kid,wk,dn,slot,i){
 // The two settings that stay where they are ("Leave them until I say") are lines here, not switches: the penalty (settings/spotCheck/
 // penalty, the Spot check card's ⚙) and Mom checks before pay (config/choreVerify, Chores & Stars ▸ Points); each "›" goes there.
 // One small path per tap under household/meta/starRules, through db only when db && !_dryRun(), Mom only (momHere).
+// DADCTL (her words 2026-11-23: "dad will need to be able to deduct and check off etc too"): Dad on his own link WITH his code in
+// (_kioskD() && dadAwardOk(), the ➖ Excuse / ✕ today gate) gets the same ⚙ and the same switches, the same one write per tap; a fall or
+// pause object he writes carries by:"dad" (take/<kid> stays a bare false, the shape every device reads). Locked Dad, a kid: as before.
+// The two "›" lines stay Mom's (their homes are Mom's pages): for Dad they are plain text.
 let lgRulesOpen=false;
-function lgRulesOk(){ return typeof momHere==="function"&&momHere(); }
+function lgRulesMom(){ return typeof momHere==="function"&&momHere(); }
+function lgRulesOk(){ return lgRulesMom()||(typeof _kioskD==="function"&&_kioskD()&&typeof dadAwardOk==="function"&&dadAwardOk()); }
+function lgRBy(v){ if(!lgRulesMom()) v.by="dad"; return v; }
 function lgRToday(){ const t=new Date(); return t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0"); }
 function lgRFallOn(kid){ return ((starRules().fall||{})[kid]||{}).on!==false; }
 function lgRTakeOn(kid){ return (starRules().take||{})[kid]!==false; }
@@ -1766,14 +1772,14 @@ function lgRWrite(rel,v){
   if(typeof db!=="undefined"&&db&&!_dryRun()){ const r=db.ref("household/meta/starRules/"+rel); if(v==null) r.remove(); else r.set(v); }
   if(typeof renderAll==="function"){ try{ renderAll(); }catch(e){} } if(document.getElementById("lg-pop")) lgDraw(); return true; }
 function lgRKid(kid){ return SL_KIDS.indexOf(kid)>=0; }
-function lgRuleFall(kid){ if(!lgRulesOk()||!lgRKid(kid)) return false; return lgRWrite("fall/"+kid,lgRFallOn(kid)?{on:false}:{from:lgRToday()}); }
+function lgRuleFall(kid){ if(!lgRulesOk()||!lgRKid(kid)) return false; return lgRWrite("fall/"+kid,lgRBy(lgRFallOn(kid)?{on:false}:{from:lgRToday()})); }
 function lgRuleTake(kid){ if(!lgRulesOk()||!lgRKid(kid)) return false; return lgRWrite("take/"+kid,lgRTakeOn(kid)?false:null); }
-function lgRulePause(){ if(!lgRulesOk()) return false; return lgRWrite("pause",lgRPaused()?{from:lgRToday()}:{on:true}); }
+function lgRulePause(){ if(!lgRulesOk()) return false; return lgRWrite("pause",lgRBy(lgRPaused()?{from:lgRToday()}:{on:true})); }
 function lgRulesToggle(){ if(!lgRulesOk()) return; lgRulesOpen=!lgRulesOpen; lgDraw(); }
 // ── drawing ──
 function lgRSw(on,js,lab){ return '<button onclick="'+js+'" role="switch" aria-checked="'+on+'" aria-label="'+esc(lab)+'" style="display:inline-flex;align-items:center;gap:6px;border:none;background:none;padding:2px 0;cursor:pointer;font-size:12px;font-weight:800;color:'+(on?'#166534':'#6b7280')+'">'
   +'<span style="width:34px;height:20px;border-radius:10px;background:'+(on?'#16a34a':'#cbd5e1')+';position:relative;flex-shrink:0"><span style="position:absolute;top:2px;left:'+(on?16:2)+'px;width:16px;height:16px;border-radius:50%;background:#fff"></span></span>'+(on?'On':'Off')+'</button>'; }
-function lgRLine(t,where,js){ return '<div onclick="'+js+'" style="cursor:pointer;padding:4px 0"><b>'+esc(t)+' ›</b><span style="display:block;color:#6b7280;font-size:11px">'+esc(where)+'</span></div>'; }
+function lgRLine(t,where,js){ const m=lgRulesMom(); return '<div'+(m?' onclick="'+js+'" style="cursor:pointer;padding:4px 0"':' style="padding:4px 0"')+'><b>'+esc(t)+(m?' ›':'')+'</b><span style="display:block;color:#6b7280;font-size:11px">'+esc(where)+'</span></div>'; }
 function lgRulesHTML(){
   const P=lgRPaused(), pen=(typeof spPenalty==="function")?spPenalty():{on:false}, cv=((typeof ROSTER!=="undefined"&&ROSTER)||SL_KIDS).filter(function(k){ return typeof choreVerifyOn==="function"&&choreVerifyOn(k); }).map(lgName);
   const sub='color:#6b7280;font-size:11.5px', sep='border-top:1px solid #e2e8f0;padding:7px 0';
@@ -1796,8 +1802,8 @@ function lgRulesBtn(){ return lgRulesOk()?'<button onclick="lgRulesToggle()" tit
 function lgRulesTop(){ const ok=lgRulesOk(); return (ok&&lgRulesOpen?lgRulesHTML():'')+(lgRPaused()?'<div style="margin:0 0 8px;padding:8px 12px;background:#fef3c7;border:1.5px solid #fcd34d;border-radius:10px;font-size:12.5px;font-weight:700;color:#92400e">⏸ Star rules are paused for everyone: no stars fall and none are taken.'+(ok&&!lgRulesOpen?' Tap ⚙ to change.':'')+'</div>':''); }
 function lgRulesHello(){ return lgRulesOk()?' To change the star rules, tap ⚙.':''; }
 // each "›" goes to where that setting is changed today
-function lgRulesGoSpot(){ if(!lgRulesOk()) return false; lgClose(); lgRulesOpen=false; spSetOpen=true; if(typeof _cuRe==="function") _cuRe(); if(typeof _spScroll==="function") _spScroll(); return true; }
-function lgRulesGoPoints(){ if(!lgRulesOk()) return false; lgClose(); lgRulesOpen=false; cpTab="points"; if(cpSlot==="grabs") cpSlot="chores"; setAdminSub("chores"); return true; }
+function lgRulesGoSpot(){ if(!lgRulesMom()) return false; lgClose(); lgRulesOpen=false; spSetOpen=true; if(typeof _cuRe==="function") _cuRe(); if(typeof _spScroll==="function") _spScroll(); return true; }
+function lgRulesGoPoints(){ if(!lgRulesMom()) return false; lgClose(); lgRulesOpen=false; cpTab="points"; if(cpSlot==="grabs") cpSlot="chores"; setAdminSub("chores"); return true; }
 // LEDGERRULES_END
 // HOUSESWITCH_START — 🚪 the real switch and today's stored plan on 👤 By person (Household by room, step 4; DESIGN §4.3 doors, §5 last
 // bullet, her yes 2026-11-17). Mom only. ON first PROVES a houseDay save works (houseDay/<today>/hello) and only then writes
