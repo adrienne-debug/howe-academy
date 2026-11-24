@@ -298,7 +298,7 @@ console.log("\n── I · Dad's link and a kid's device ──");
   const r = [Dd.run("lgRuleFall('kid_a')"), Dd.run("lgRuleTake('kid_a')"), Dd.run("lgRulePause()"), Dd.run("lgRulesGoSpot()"), Dd.run("lgRulesGoPoints()")]; Dd.run("lgRulesToggle()");
   ok("Dad's link: the ledger with no ⚙ and no panel; every switch refuses; nothing written", !/⚙|lgRules/.test(h) && r.every(x => x === false) && Dd.run("lgRulesOpen") === false && w.since(m).length === 0, r);
   Dd.run("dadUnlocked=true;1");
-  ok("…the same with his Dad code in (the panel is Mom's): no ⚙, refused", Dd.run("dadAwardOk()") === true && !/lgRules/.test(LG(Dd, "lgShow()")) && Dd.run("lgRuleFall('kid_a')") === false && w.since(m).length === 0); Dd.run("dadUnlocked=false;1");
+  ok("…with his Dad code in (DADCTL, her words 2026-11-23): the ⚙ is drawn; opening it writes nothing (his flips: test_dad_controls.js)", Dd.run("dadAwardOk()") === true && /onclick="lgRulesToggle\(\)"[^>]*>⚙</.test(LG(Dd, "lgShow()")) && Dd.run("lgRulesOk()") === true && w.since(m).length === 0); Dd.run("dadUnlocked=false;1");
   loadH(Kk, HJS); Kk.run("__pop='';ledgerOpen();1");
   ok("a kid's device: the ledger never opens, and every switch refuses even with house.js loaded; nothing written", Kk.run("__pop") === "" && [Kk.run("lgRuleFall('kid_a')"), Kk.run("lgRuleTake('kid_a')"), Kk.run("lgRulePause()")].every(x => x === false) && w.since(m).length === 0);
 }
