@@ -10,7 +10,8 @@
  *          (Wed 10; 11/25 ⏳ Thu Fri, gone Sat) · Wipe the baseboards (Mon 10; 11/23 gone Thu) · Empty the trash (Mon Wed Fri 5, 3+ a week:
  *          11/23 ticked Tue, 11/27 ⏳ Sat Sun, gone Mon) · Feed the fish (Thu 3; 11/26 ✕ today) · Rake the leaves (Thu 8; 11/26 🌅 sent,
  *          ticked Fri morning) · ☀️ Water the plants (daily 3; 11/26 held: Mom checks before pay) · Pick up the den · 🌙 Lay out clothes
- *   plus the kinds that get NO line: Mom's and Dad's chores, an Up for Grabs chore, a 🔄 pair that takes turns (kid_a / kid_b), a
+ *   plus the kinds that get NO line: Mom's and Dad's chores, an Up for Grabs chore, a 🔄 pair that takes turns (kid_a / kid_b), a 🔁
+ *   rotation with one kid in it, a chore in a HOUSETURNS turns wheel (on kid_a's list every day with the plan in preview), a
  *   brand-new chore (starts after the replay), a chore above kid_a's level (on nobody's list); kid_b 🧹 Sweep the porch; kid_c, kid_d.
  * Checks, on every day from Mon 11/23 to Mon 11/30:
  *   A the card's marks = the ledger's own rows for the same turns (one mark per day the chore was due; a ✖ row's own words say what
@@ -25,6 +26,8 @@
  *   D no line (and the tap opens nothing) for the kinds above, and for every chore with Take over off
  *   E the card = the app before's card byte for byte, but the one line, right under 📊; the ordinary ledger = the app before's
  *   F a kid's device, a kitchen kiosk, Dad's own link and Mom's device out of Mom mode: no line, no jump, no chore view
+ *   G a Mom device without last week · H each guard in ltOk on its own: the layer beside it widened in memory on one device (hcGoOk
+ *     letting everyone through; ltStepOk taking 🔁 rows; Mom, Dad and Up for Grabs given a list), the guard still refuses
  * "The app before" = THIS tree's house.js with LASTTURNS taken out (the block, the card's hook, lgHTML's first line; each must match
  * exactly once or the test stops), loaded on a second Mom device in the same world. No git, no pinned commit.
  * LT_INDEX / LT_HJS = other copies of index.html / house.js (the mutation checks). LT_DUMP = a file for the preview page.
@@ -68,6 +71,8 @@ const FAM = () => ({
   a_den: K({ label: "Pick up the den", emoji: "🧸", who: "kid_a", slot: "afternoon", cad: "daily", pts: 5, area: "pickup", order: 1 }),
   a_clothes: K({ label: "Lay out clothes", emoji: "👕", who: "kid_a", slot: "evening", cad: "daily", area: "health", order: 0 }),
   a_pick: K({ label: "Pickup the hall", emoji: "🧦", who: "kid_a", slot: "evening", cad: "daily", area: "pickup", rot: "pick", pts: 4, order: 1 }),   // 🔄 takes turns
+  a_solo: K({ label: "Feed the hamster", emoji: "🐹", who: "kid_a", slot: "afternoon", cad: "daily", area: "animals", rot: "solo", pts: 2, order: 2 }),   // 🔁 a rotation with one kid in it (its row keeps its id)
+  t_sweep: K({ label: "Sweep the kitchen", emoji: "🧹", who: "kid_a", slot: "chores", cad: "daily", pts: 3, order: 11, can: ["kid_a", "kid_b"] }),   // HOUSETURNS: in a turns wheel (household/rotations)
   b_porch: K({ label: "Sweep the porch", emoji: "🧺", who: "kid_b", slot: "chores", cad: "daily", pts: 6, order: 0 }),
   b_pick: K({ label: "Pickup the stairs", emoji: "🧤", who: "kid_b", slot: "evening", cad: "daily", area: "pickup", rot: "pick", pts: 4, order: 1 }),
   c_toys: K({ label: "Toys in the bin", emoji: "🧩", who: "kid_c", slot: "chores", cad: "daily", pts: 3, order: 0 }),
@@ -76,7 +81,7 @@ const FAM = () => ({
   d_trash: K({ label: "Trash to the curb", who: "dad", slot: "", cad: "daily", area: "pickup", src: { kind: "dadChore", id: "trash" }, order: 0 })
 });
 const KIDS_A = ["a_teeth", "a_rabbit", "a_bed", "a_table", "a_vac", "a_dust", "a_base", "a_trash", "a_fish", "a_rake", "a_plants", "a_den", "a_clothes"];
-const NONE = ["a_new", "a_high", "a_pick", "b_pick", "g_win", "m_fridge", "d_trash"];
+const NONE = ["a_new", "a_high", "a_pick", "b_pick", "a_solo", "t_sweep", "g_win", "m_fridge", "d_trash"];
 const CFG = () => ({ routineBonus: { afternoon: { kid_a: 4 }, chores: { kid_c: 2 }, day: { kid_c: 3 } }, choreVerify: { kid_b: true } });
 const LINE = { caps: { "0": 0, "1": 0, "2": 0, "3": 1, "4": 0, "5": 0, "6": 0 }, asOf: "2026-11-23", homeFrom: "2026-11-23" };
 const dOf = n => new Date(2026, 10, 16 + n);
@@ -120,7 +125,7 @@ function ledgerTurns(d, id, cad, kid) {
   return out; }
 
 async function mkWorld(index) {
-  const w = await W.world({ index, household: { jobs: FAM(), people: clone(W.PEOPLE), meta: { takeover: 1, engine: { mode: "preview", on: "2026-11-09" } } }, tree: { config: Object.assign(clone(W.FX.db.config), CFG()), laundryLine: clone(LINE) } });
+  const w = await W.world({ index, household: { jobs: FAM(), people: clone(W.PEOPLE), meta: { takeover: 1, engine: { mode: "preview", on: "2026-11-09" } }, rotations: { t_t_sweep: { v: { "2026-11-09": { people: ["kid_a", "kid_b"], period: "daily", chores: { t_sweep: 0 } } } } } }, tree: { config: Object.assign(clone(W.FX.db.config), CFG()), laundryLine: clone(LINE) } });
   const A = w.boot("A", "devA", { mom: true }), E = w.boot("E", "devE", { mom: true }), B = w.boot("B", "devB"), Dd = w.boot("D", "devD"), Kk = w.boot("Kk", "devK"), Mo = w.boot("Mo", "devMo");
   Dd.run("HA_LS.setItem('ha_kiosk','dad');1"); Kk.run("HA_LS.setItem('ha_kiosk','routines');1");
   for (const d of [A, E, B, Dd, Kk, Mo]) d.run("globalThis.__pop='';document.body.insertAdjacentHTML=function(p,h){ globalThis.__pop=h; };tab='moms-plan';1");
@@ -227,11 +232,11 @@ each("the chore view left by a name tap: the next 📒 from Kids today is the or
 each("how far back, in one line: \"This week and last week, from <Sun>. Older days are not kept on this device.\" (or this week only, last week not on the device yet)", S.b.filter(x => x[1] === "reach"));
 
 console.log("\n── C · nothing written ──");
-each("drawing the card and its line, the chore view, a redraw, Show everything and ✕, for all 20 chores: no database ref (read or write), no local key, the database and the app's state as they were", S.c.filter(x => x[1] === "draw"));
+each("drawing the card and its line, the chore view, a redraw, Show everything and ✕, for all 22 chores: no database ref (read or write), no local key, the database and the app's state as they were", S.c.filter(x => x[1] === "draw"));
 each("tapping the line: exactly what the card's own ✕ does (hcClose draws Mom's Day again, which re-saves the kitchen flags on the device) and nothing more; no line, nothing at all; the database as it was", S.c.filter(x => x[1] === "tap"));
 
 console.log("\n── D · no line where there is nothing to show ──");
-each("Mom's chore, Dad's chore, Up for Grabs, the 🔄 pair that takes turns, a brand-new chore, one above the level (on nobody's list): no line, and ltGo opens nothing", S.d.filter(x => x[1] !== "Take over off"));
+each("Mom's chore, Dad's chore, Up for Grabs, the 🔄 pair that takes turns, a 🔁 rotation of one, a chore in a turns wheel, a brand-new chore, one above the level (on nobody's list): no line, and ltGo opens nothing", S.d.filter(x => x[1] !== "Take over off"));
 each("Take over off (the lists are not the table's): no line on any chore, no jump", S.d.filter(x => x[1] === "Take over off"));
 
 console.log("\n── E · the app before, but the one line ──");
@@ -249,6 +254,25 @@ console.log("\n── G · a Mom device that does not have last week yet ──"
   ok("…and the pop-up says so in one line: \"This week, from Sun, Nov 29. Last week's check-offs are not on this device yet. Open a kid's list and come back.\"", pop.indexOf("This week, from Sun, Nov 29. Last week's check-offs are not on this device yet. Open a kid's list and come back.") > 0, txt(pop).slice(0, 400)); }
 { const p = S.dump["10_a_vac"].pop;
   ok("the chore view's words (Thu 11/26, the vacuum): \"🧹 Vacuum the den · Kid A\", \"Show everything ›\", the four days it had a row: its two Tuesdays (✖ … done Thu, late) and the two Thursdays it was ticked", /🧹 Vacuum the den · Kid A Show everything › This week and last week, from Sun, Nov 15\. Older days are not kept on this device\. Tue, Nov 17 ✖ 🧹 Vacuum the den not done · done Thu, late \(see that day\) 10 ⭐ Thu, Nov 19 ✅ 🧹 Vacuum the den done late · due Tue \+10 ⭐ [\d:]+ [AP]M Tue, Nov 24 ✖ 🧹 Vacuum the den not done · done Thu, late \(see that day\) 10 ⭐ Today ✅ 🧹 Vacuum the den paid 6 of 10 ⭐ · due Tue \+6 ⭐ [\d:]+ [AP]M ⭐ Give stars back$/.test(txt(p).replace(/^📒 Ledger ⚙ ✕ /, "")), txt(p)); }
+
+
+console.log("\n── H · each guard in ltOk holds on its own (the layer beside it widened, in memory, on one device, then put back) ──");
+const none = (d, id) => d.run("ltCardHTML(" + J(id) + ")") === "" && POP(d, "ltGo(" + J(id) + ")") === "" && d.run("ltSel=" + J(id) + ";lgKid=" + J(d.run("(hhJobs()[" + J(id) + "]||{}).who||''")) + ";lgWeek=null;(function(){ const h=ltHTML(); ltSel='';lgWeek=false; return h; })()") === "";
+{ const bad = [], db0 = J(w.db.tree.root);
+  for (const [nm, d] of [["a kid's device", B], ["a kitchen kiosk", Kk], ["Dad's own link", Dd], ["Mom's device out of Mom mode", Mo]]) {
+    watch(d); d.run("globalThis.__hg=hcGoOk;hcGoOk=function(){ return true; };1");
+    const turns = d.run("ltTurns('a_trash').length"), r = KIDS_A.filter(id => !none(d, id)); d.run("hcGoOk=__hg;1"); const s = seen(d);
+    if (!(turns > 0 && r.length === 0 && s.refs.length === 0 && s.ls.length === 0)) bad.push([nm, turns, r, s]); }
+  ok("not Mom: with hcGoOk letting everyone through (so only ltOk's own momHere() is left), a kid's device, a kiosk, Dad's link and Mom's device out of Mom mode still get no line, no jump and no chore view, though the turns are there; nothing read or written", bad.length === 0 && J(w.db.tree.root) === db0, bad); }
+{ const t = A.run("ltTurns('t_sweep').length"), rows = A.run("(function(){ day=_todayDay; return rtStepsFor('chores','kid_a',false,day).some(function(s){ return s&&s._hh==='t_sweep'&&!s.rot; }); })()");
+  ok("a chore in a HOUSETURNS turns wheel: its row is on kid_a's list with its own id and no 🔁 tag (" + t + " turns found), and only ltOk's htOf keeps it out: no line, ltGo refuses", rows && t > 0 && A.run("!!htOf('t_sweep')") && none(A, "t_sweep"), [rows, t]); }
+{ A.run("globalThis.__so=ltStepOk;ltStepOk=function(st,id){ return !!st&&(st.house||st._hh)===id; };1");
+  const t = A.run("ltTurns('a_solo').length"), r = none(A, "a_solo") && none(A, "a_pick"); A.run("ltStepOk=__so;1");
+  ok("a 🔁 rotation: with ltStepOk taking 🔁 rows (so only ltOk's !j.rot is left), the one-kid rotation's " + t + " turns are found, and still no line and no jump (and none for the 🔄 pair)", t > 0 && r, t); }
+{ A.run("globalThis.__rcc=routineCfg2.chores;routineCfg2.chores=Object.assign({},routineCfg2.chores,{mom:[{label:'Wipe the fridge',cad:'daily',_hh:'m_fridge'}],dad:[{label:'Trash to the curb',cad:'daily',_hh:'d_trash'}],grab:[{label:'Wipe the windows',cad:'daily',pts:4,_hh:'g_win'}]});1");
+  const t = JSON.parse(A.run("JSON.stringify(['m_fridge','d_trash','g_win'].map(function(id){ return ltTurns(id).length; }))")), r = ["m_fridge", "d_trash", "g_win"].filter(id => !none(A, id));
+  A.run("routineCfg2.chores=__rcc;1");
+  ok("a grown-up's and an Up for Grabs chore: with Mom, Dad and Up for Grabs given a list of their own (so only ltOk's hhIsKid / SL_KIDS is left), their turns are found (" + t.join(" · ") + "), and still no line and no jump", t.every(n => n > 0) && r.length === 0, [t, r]); }
 
 if (process.env.LT_DUMP) { fs.writeFileSync(process.env.LT_DUMP, J(S.dump)); console.log("(dump: " + process.env.LT_DUMP + ")"); }
 console.log("\n" + pass + " passed, " + fail + " failed");
