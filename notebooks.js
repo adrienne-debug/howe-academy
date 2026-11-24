@@ -2554,20 +2554,22 @@
         return '<div class="' + (big ? "lp-big" : "") + '">' + (parts.length > 1 ? '<div class="lp-part">Part ' + (idx + 1) + (LAD_GROWN[x.lv] ? ' — a grown-up reads each one aloud' : '') + '</div>' : '') +
           x.qs.map(function (q) {
             qn++;
+            var pq = (typeof ladPicQ === "function") ? ladPicQ(q, qn, x.lv) : null;   // 🎨 NBLADPIC: the picture, when the question has one
+            if (pq) return pq;
             var lines = String(q.text || "").split(" / ").map(function (s) { return '<div class="lp-nline">' + ladEsc(s) + '</div>'; }).join("");
             return '<div class="lp-q"><div class="lp-stem">' + qn + '.</div>' + lines +
               (LAD_GROWN[x.lv] && q.say ? '<div class="lp-say">Read aloud: “' + ladEsc(q.say) + '”</div>' : '') + ladChoices(q.c, !!LAD_GROWN[x.lv]) + '</div>';
           }).join("") + '</div>';
       }).join("");
       child.push('<div class="page lp-child">' + ladHead("Number check", kidName, grown) + nameLine +
-        '<div class="lp-how">' + (grown ? "A grown-up reads each question aloud. Circle the letter of the answer." : "Find what comes next or what is missing. Circle the letter of the answer.") + '</div>' + body + '</div>');
+        '<div class="lp-how">' + (grown ? ((typeof LADPIC_HOW === "string" && body.indexOf("lp-pq") >= 0) ? LADPIC_HOW : "A grown-up reads each question aloud. Circle the letter of the answer.") : "Find what comes next or what is missing. Circle the letter of the answer.") + '</div>' + body + '</div>');
       qn = 0;
       parent.push(parentTop("Number check") +
         ladPairNote(track, pr).map(function (s) { return '<p class="lp-rule">' + ladEsc(s) + '</p>'; }).join("") +
         '<div class="lp-part">How to choose</div>' + ladRuleLines(track, pr, "Part").map(function (s) { return '<p class="lp-rule">' + ladEsc(s) + '</p>'; }).join("") +
         parts.map(function (x, idx) {
           return '<div class="lp-part">Part ' + (idx + 1) + ' — ' + ladEsc(track.levels[x.lv].label) + '</div>' +
-            x.qs.map(function (q) { qn++; return '<div class="lp-key"><b>' + qn + '. ' + ladEsc(q.ans) + '</b> ' + ladEsc(ladAnsText(q.c, q.ans, !!LAD_GROWN[x.lv])) + ' — <span class="lp-why">' + ladEsc(q.rule || "") + '</span></div>'; }).join("");
+            x.qs.map(function (q) { qn++; return '<div class="lp-key"><b>' + qn + '. ' + ladEsc(q.ans) + '</b> ' + ladEsc(ladAnsText(q.c, q.ans, !!LAD_GROWN[x.lv])) + ' — <span class="lp-why">' + ladEsc(q.rule || "") + '</span>' + ((typeof ladPicKeyNote === "function") ? ladPicKeyNote(q, x.lv) : "") + '</div>'; }).join("");
         }).join("") + tail + '</div>');
     }
     return { child: child, parent: parent, pair: pr };
@@ -2585,6 +2587,316 @@
   var NB_LADDERS = { kinds: LADDER_KINDS, perWeek: LADDER_PER_WEEK, defaultLevel: ladderDefaultLevel, word: ladWord, track: ladTrack,
     levels: ladderLevels, where: ladderWhere, next: ladderNext, placementPair: ladderPlacementPair, placementPages: ladderPlacementPages,
     placementDoc: ladderPlacementDoc };
+  // NBLADPIC_START — 🎨 the number ladder's pictures, drawn (notebooks study; her words 2026-11-24 "Build it"). Every Pre-K and K
+  // question in ladders/number_thinking.json is a picture RECIPE (item.pic), and a few 1st/2nd-grade ones carry one too; this
+  // block draws them as the app's own SVG (no DOM, no emoji, no brand) and puts them on the placement printout. No weekly
+  // notebook page uses them yet (a later slice does — see ladders.picture below).
+  //  • ladders.picture(item, opts) → { kind, pic, choices:[svg…], w, h, cw } or null. pic = the picture, choices = one picture
+  //    per choice, in the item's own order (A, B, C …), every one the same size. opts (all px) = { w, h: the most the picture
+  //    may take; choice: each choice's square; tokMax: the biggest a pattern token gets; cellMax: the biggest a counted mark's
+  //    cell gets } — small in a notebook box, big on a tablet. A kind or token it doesn't know → null, and the caller prints the
+  //    plain-words line as before (never a broken picture).
+  //  • Black-and-white safe: each of the six colours has its OWN fill style as well as its colour — red solid, blue stripes,
+  //    yellow dots, green slanted stripes, purple cross-hatch, orange checks — on a pale tint of the colour, with a dark outline
+  //    in the colour's own dark shade. The same token draws the same markup in a picture and in a choice. Shapes differ by
+  //    outline already (circle, square, triangle, star, heart; beads round, cube, tube).
+  //  • Count-safe: counted things (dots, blocks, stars, hearts, circles) sit in rows of at most five, evenly spaced, never
+  //    overlapping, the second row starting under the first (a ten-frame's way). The "about how many" dots are scattered on
+  //    purpose (seeded from the recipe, so the same question draws the same dots). A missing spot is an empty dashed box the
+  //    same size as its neighbours.
+  //  • Nothing marks the answer: no answer text, no attribute, no alt text; choices are drawn in the item's order, all the same
+  //    size and stroke. Box sizes come from the numbers the child can see (never from the hidden one).
+  var LP_COL = {   // mark = the fill style's colour, bg = the tint under it, line = the outline
+    red: { fill: "solid", mark: "#dc2626", bg: "", line: "#7f1d1d" },
+    blue: { fill: "stripes", mark: "#1d4ed8", bg: "#dbeafe", line: "#1e3a8a" },
+    yellow: { fill: "dots", mark: "#a16207", bg: "#fde047", line: "#713f12" },
+    green: { fill: "slant", mark: "#15803d", bg: "#dcfce7", line: "#14532d" },
+    purple: { fill: "hatch", mark: "#7e22ce", bg: "#f3e8ff", line: "#3b0764" },
+    orange: { fill: "checks", mark: "#ea580c", bg: "#ffedd5", line: "#7c2d12" }
+  };
+  var LP_COL_ORDER = ["red", "blue", "yellow", "green", "purple", "orange"];
+  // 80×80 glyphs — the Pre-K notebook's own shapes (juSvgShape), the triangle set level so a row of tokens lines up.
+  var LP_SHAPE = {
+    circle: '<circle cx="40" cy="40" r="33"',
+    square: '<rect x="9" y="9" width="62" height="62" rx="7"',
+    triangle: '<polygon points="40,9 74,68 6,68"',
+    star: '<polygon points="40,6 48,29 72,30 53,44 60,68 40,54 20,68 27,44 8,30 32,29"',
+    heart: '<path d="M40 70 C8 48 12 22 30 22 C38 22 40 30 40 30 C40 30 42 22 50 22 C68 22 72 48 40 70 Z"'
+  };
+  var LP_BEAD = {
+    round: '<circle cx="40" cy="40" r="28"',
+    cube: '<rect x="13" y="13" width="54" height="54" rx="6"',
+    tube: '<rect x="2" y="23" width="76" height="34" rx="15"'
+  };
+  var LP_INK = "#374151", LP_SOFT = "#9ca3af", LP_FONT = "'DM Sans', system-ui, sans-serif";
+  var LP_DEF = { w: 380, h: 80, choice: 80, tokMax: 60, cellMax: 22 };
+  function lpHas(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+  function lpF(x) { return String(Math.round(x * 100) / 100); }
+  function lpInt(v, lo, hi) { var n = typeof v === "number" ? v : (/^\d+$/.test(String(v)) ? parseInt(v, 10) : NaN); return (n === Math.floor(n) && n >= lo && n <= hi) ? n : null; }
+  function lpPattern(c) {
+    var k = LP_COL[c], m = ' fill="' + k.mark + '"', body, size = 16, tr = "";
+    if (k.fill === "stripes") body = '<rect width="16" height="7"' + m + '/>';
+    else if (k.fill === "dots") body = '<circle cx="4" cy="4" r="4.2"' + m + '/><circle cx="12" cy="12" r="4.2"' + m + '/>';
+    else if (k.fill === "slant") { body = '<rect width="7" height="16"' + m + '/>'; tr = ' patternTransform="rotate(45)"'; }
+    else if (k.fill === "hatch") { size = 14; body = '<rect width="14" height="3.2"' + m + '/><rect width="3.2" height="14"' + m + '/>'; tr = ' patternTransform="rotate(45)"'; }
+    else { size = 20; body = '<rect width="10" height="10"' + m + '/><rect x="10" y="10" width="10" height="10"' + m + '/>'; }
+    return '<pattern id="nblp-' + c + '" patternUnits="userSpaceOnUse" width="' + size + '" height="' + size + '"' + tr + '>' +
+      '<rect width="' + size + '" height="' + size + '" fill="' + k.bg + '"/>' + body + '</pattern>';
+  }
+  // A token ("green-star", "red-tube") → its 80×80 glyph markup, or null.
+  function lpGlyph(t) {
+    var m = /^([a-z]+)-([a-z]+)$/.exec(String(t == null ? "" : t));
+    if (!m || !lpHas(LP_COL, m[1])) return null;
+    var bead = lpHas(LP_BEAD, m[2]), sh = bead ? LP_BEAD[m[2]] : lpHas(LP_SHAPE, m[2]) ? LP_SHAPE[m[2]] : null;
+    if (!sh) return null;
+    var k = LP_COL[m[1]], fill = k.fill === "solid" ? k.mark : "url(#nblp-" + m[1] + ")";
+    return '<g class="nbl-tok">' + sh + ' fill="' + fill + '" stroke="' + k.line + '" stroke-width="3.5" stroke-linejoin="round"/>' +
+      (bead ? '<circle cx="40" cy="40" r="5" fill="#fff" stroke="' + k.line + '" stroke-width="2.5"/>' : '') + '</g>';
+  }
+  function lpPut(glyph, x, y, px) { return '<g transform="translate(' + lpF(x) + ' ' + lpF(y) + ') scale(' + Math.round(px / 80 * 1e4) / 1e4 + ')">' + glyph + '</g>'; }
+  function lpSvg(w, h, inner) {
+    var used = {}, defs = "";
+    inner.replace(/url\(#nblp-([a-z]+)\)/g, function (s, c) { used[c] = 1; return s; });
+    LP_COL_ORDER.forEach(function (c) { if (used[c]) defs += lpPattern(c); });
+    w = Math.ceil(w - 0.01); h = Math.ceil(h - 0.01);
+    return '<svg xmlns="http://www.w3.org/2000/svg" class="nbl-svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" aria-hidden="true">' +
+      (defs ? '<defs>' + defs + '</defs>' : '') + inner + '</svg>';
+  }
+  function lpBlank(x, y, w, h) {
+    var sw = Math.max(1.6, Math.min(w, h) * 0.045);
+    return '<rect class="nbl-blank" x="' + lpF(x + sw) + '" y="' + lpF(y + sw) + '" width="' + lpF(w - 2 * sw) + '" height="' + lpF(h - 2 * sw) + '" rx="' + lpF(Math.min(w, h) * 0.14) +
+      '" fill="#fff" stroke="#4b5563" stroke-width="' + lpF(sw) + '" stroke-dasharray="' + lpF(sw * 2.6) + ' ' + lpF(sw * 1.8) + '"/>';
+  }
+  function lpFrame(x, y, w, h) {
+    return '<rect x="' + lpF(x + 1) + '" y="' + lpF(y + 1) + '" width="' + lpF(w - 2) + '" height="' + lpF(h - 2) + '" rx="' + lpF(Math.min(w, h) * 0.14) + '" fill="#fff" stroke="' + LP_SOFT + '" stroke-width="1.6"/>';
+  }
+  // One counted mark centred at (cx, cy) in a cell of `cell` px — dots, blocks, stars, hearts, circles.
+  var LP_MARKS = { dots: 1, blocks: 1, stars: 1, hearts: 1, circles: 1 };
+  function lpMark(kind, cx, cy, cell) {
+    var s = cell * 0.8 / 80;
+    if (kind === "dots") return '<circle class="nbl-m" cx="' + lpF(cx) + '" cy="' + lpF(cy) + '" r="' + lpF(cell * 0.34) + '" fill="' + LP_INK + '"/>';
+    if (kind === "circles") return '<circle class="nbl-m" cx="' + lpF(cx) + '" cy="' + lpF(cy) + '" r="' + lpF(cell * 0.3) + '" fill="#fff" stroke="' + LP_INK + '" stroke-width="' + lpF(cell * 0.1) + '"/>';
+    if (kind === "blocks") return '<rect class="nbl-m" x="' + lpF(cx - cell * 0.4) + '" y="' + lpF(cy - cell * 0.4) + '" width="' + lpF(cell * 0.8) + '" height="' + lpF(cell * 0.8) + '" rx="' + lpF(cell * 0.1) +
+      '" fill="#d1d5db" stroke="' + LP_INK + '" stroke-width="' + lpF(Math.max(1, cell * 0.09)) + '"/>';
+    var dy = kind === "hearts" ? -6 : -2;
+    return '<g class="nbl-m" transform="translate(' + lpF(cx - 40 * s) + ' ' + lpF(cy + (dy - 40) * s) + ') scale(' + lpF(s) + ')">' + (kind === "stars" ? LP_SHAPE.star : LP_SHAPE.heart) + ' fill="' + LP_INK + '"/></g>';
+  }
+  // n marks in rows of at most five, top-left first; sp = spacing in cells (1 = packed, more = spread out). → markup.
+  function lpGridDims(n) { return { c: Math.max(1, Math.min(5, n)), r: Math.max(1, Math.ceil(n / 5)) }; }
+  function lpGrid(n, kind, x, y, cell, sp) {
+    sp = sp || 1;
+    var out = "";
+    for (var i = 0; i < n; i++) out += lpMark(kind, x + ((i % 5) * sp + 0.5) * cell, y + (Math.floor(i / 5) * sp + 0.5) * cell, cell);
+    return '<g class="nbl-grp">' + out + '</g>';
+  }
+  // A group centred in a box (bx, by, bw, bh).
+  function lpGridIn(n, kind, bx, by, bw, bh, cell, sp) {
+    sp = sp || 1;
+    var d = lpGridDims(n), gw = ((d.c - 1) * sp + 1) * cell, gh = ((d.r - 1) * sp + 1) * cell;
+    return lpGrid(n, kind, bx + (bw - gw) / 2, by + (bh - gh) / 2, cell, sp);
+  }
+  function lpSlot(s) { return '<g class="nbl-slot">' + s + '</g>'; }
+  // ── the picture kinds ──
+  // pattern / beads: a row of tokens, the missing one(s) an empty box; beads sit on a string.
+  function lpSeqPic(p, o, beads) {
+    if (!Array.isArray(p.seq) || p.seq.length < 2 || p.seq.length > 24) return null;
+    var gl = p.seq.map(function (t) { return t == null ? "" : lpGlyph(t); });
+    if (gl.some(function (g, i) { return p.seq[i] != null && !g; })) return null;
+    var n = p.seq.length, gap = beads ? 0.12 : 0.18;
+    var tok = Math.min(o.h, o.tokMax, o.w / (n + (n - 1) * gap)), W = n * tok + (n - 1) * gap * tok, out = "";
+    if (beads) out += '<line x1="0" y1="' + lpF(tok / 2) + '" x2="' + lpF(W) + '" y2="' + lpF(tok / 2) + '" stroke="#6b7280" stroke-width="' + lpF(Math.max(1.5, tok * 0.06)) + '" stroke-linecap="round"/>';
+    gl.forEach(function (g, i) { var x = i * tok * (1 + gap); out += lpSlot(g ? lpPut(g, x, 0, tok) : lpBlank(x, 0, tok, tok)); });
+    return { w: W, h: tok, svg: lpSvg(W, tok, out) };
+  }
+  // grow: frames of dots or blocks, one more (or fewer) each time; the missing frame empty.
+  function lpGrowPic(p, o) {
+    if (!lpHas(LP_MARKS, p.unit) || (p.unit !== "dots" && p.unit !== "blocks") || !Array.isArray(p.seq) || p.seq.length < 2 || p.seq.length > 8) return null;
+    var vals = p.seq.map(function (v) { return v == null ? null : lpInt(v, 0, 20); });
+    if (vals.some(function (v, i) { return p.seq[i] != null && v == null; })) return null;
+    var known = vals.filter(function (v) { return v != null; }), d = lpGridDims(Math.max.apply(null, known.concat([1]))), k = vals.length, pad = 0.35, gapF = 0.6;
+    var cell = Math.min(o.cellMax, o.w / (k * (d.c + 2 * pad) + (k - 1) * gapF), o.h / (d.r + 2 * pad));
+    var fw = (d.c + 2 * pad) * cell, fh = (d.r + 2 * pad) * cell, out = "";
+    vals.forEach(function (v, i) {
+      var x = i * (fw + gapF * cell);
+      out += lpSlot(v == null ? lpBlank(x, 0, fw, fh) : lpFrame(x, 0, fw, fh) + lpGrid(v, p.unit, x + pad * cell, pad * cell, cell));
+    });
+    var W = k * fw + (k - 1) * gapF * cell;
+    return { w: W, h: fh, svg: lpSvg(W, fh, out) };
+  }
+  // compare: two boxes, left and right; "tricky" spreads the smaller group out wider (count, don't look).
+  function lpComparePic(p, o) {
+    var L = p.left || {}, R = p.right || {}, l = lpInt(L.n, 0, 20), r = lpInt(R.n, 0, 20);
+    if (l == null || r == null || !lpHas(LP_MARKS, L.item) || !lpHas(LP_MARKS, R.item)) return null;
+    var big = lpGridDims(Math.max(l, r, 1)), tricky = p.layout === "tricky" && l !== r, sm = Math.min(l, r), sd = lpGridDims(Math.max(sm, 1));
+    var sp = tricky ? Math.max(1.7, sd.c > 1 ? (big.c + 1) / sd.c * 1.15 : 1) : 1;
+    var bwC = Math.max(big.c, tricky ? (sd.c - 1) * sp + 1 : 0) + 0.8, bhC = Math.max(big.r, tricky ? (sd.r - 1) * sp + 1 : 0) + 0.8, gapC = 1.2;
+    var cell = Math.min(o.cellMax, o.w / (2 * bwC + gapC), o.h / bhC), bw = bwC * cell, bh = bhC * cell, out = "";
+    [[l, L.item, 0], [r, R.item, bw + gapC * cell]].forEach(function (s) {
+      out += lpSlot(lpFrame(s[2], 0, bw, bh) + lpGridIn(s[0], s[1], s[2], 0, bw, bh, cell, (tricky && s[0] === sm) ? sp : 1));
+    });
+    var W = 2 * bw + gapC * cell;
+    return { w: W, h: bh, svg: lpSvg(W, bh, out) };
+  }
+  // trains: two train cars of dots, the same size, joined.
+  function lpTrainsPic(p, o) {
+    if (!Array.isArray(p.cars) || p.cars.length !== 2) return null;
+    var a = lpInt(p.cars[0], 0, 20), b = lpInt(p.cars[1], 0, 20);
+    if (a == null || b == null) return null;
+    var d = lpGridDims(Math.max(a, b, 1)), cwC = d.c + 0.8, chC = d.r + 0.8, gapC = 1.1, wheelC = 0.8;
+    var cell = Math.min(o.cellMax, o.w / (2 * cwC + gapC), o.h / (chC + wheelC)), cw = cwC * cell, ch = chC * cell, out = "";
+    var x2 = cw + gapC * cell, wr = cell * 0.34;
+    out += '<line x1="' + lpF(cw - 2) + '" y1="' + lpF(ch * 0.72) + '" x2="' + lpF(x2 + 2) + '" y2="' + lpF(ch * 0.72) + '" stroke="' + LP_INK + '" stroke-width="' + lpF(Math.max(2, cell * 0.16)) + '" stroke-linecap="round"/>';
+    [[a, 0], [b, x2]].forEach(function (s) {
+      var x = s[1];
+      out += lpSlot('<rect x="' + lpF(x + 1) + '" y="1" width="' + lpF(cw - 2) + '" height="' + lpF(ch - 2) + '" rx="' + lpF(cell * 0.3) + '" fill="#fff" stroke="' + LP_INK + '" stroke-width="2"/>' +
+        '<circle cx="' + lpF(x + cw * 0.25) + '" cy="' + lpF(ch + wr) + '" r="' + lpF(wr) + '" fill="' + LP_INK + '"/><circle cx="' + lpF(x + cw * 0.75) + '" cy="' + lpF(ch + wr) + '" r="' + lpF(wr) + '" fill="' + LP_INK + '"/>' +
+        lpGridIn(s[0], "dots", x, 0, cw, ch, cell));
+    });
+    var W = 2 * cw + gapC * cell, H = ch + 2 * wr + 1;
+    return { w: W, h: H, svg: lpSvg(W, H, out) };
+  }
+  // estimate: n dots scattered on purpose (seeded — the same question draws the same dots), none touching.
+  function lpRand(seed) { var a = seed | 0; return function () { a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  function lpEstimatePic(p, o) {
+    var n = lpInt(p.n, 1, 200);
+    if (n == null || (p.as != null && p.as !== "dots")) return null;
+    var W = Math.min(o.w, o.h * 4.2), H = o.h, m = 5, r = Math.min(o.cellMax * 0.3, Math.sqrt((W - 2 * m) * (H - 2 * m) / n) * 0.24), pts = null;
+    for (var tryN = 0; tryN < 12 && !pts; tryN++) {
+      var rnd = lpRand(lpInt(p.seed, 0, 1e9) || 1), got = [], gap = r * 2.7;
+      for (var i = 0; i < n && got; i++) {
+        var placed = false;
+        for (var t = 0; t < 3000 && !placed; t++) {
+          var x = m + r + rnd() * (W - 2 * m - 2 * r), y = m + r + rnd() * (H - 2 * m - 2 * r);
+          if (got.every(function (q) { return (q[0] - x) * (q[0] - x) + (q[1] - y) * (q[1] - y) >= gap * gap; })) { got.push([x, y]); placed = true; }
+        }
+        if (!placed) got = null;
+      }
+      if (got) pts = got; else r *= 0.88;
+    }
+    if (!pts) return null;
+    var out = lpFrame(0, 0, W, H) + '<g class="nbl-grp">' + pts.map(function (q) { return '<circle class="nbl-m" cx="' + lpF(q[0]) + '" cy="' + lpF(q[1]) + '" r="' + lpF(r) + '" fill="' + LP_INK + '"/>'; }).join("") + '</g>';
+    return { w: W, h: H, svg: lpSvg(W, H, out) };
+  }
+  // parts: the whole on top, its two parts under it — the known part's dots and an empty box (on the side the "?" is on).
+  function lpPartsPic(p, o, text) {
+    var b = lpInt(p.whole, 0, 20), a = lpInt(p.part, 0, 20);
+    if (b == null || a == null || a > b || (p.as != null && p.as !== "dots")) return null;
+    var d = lpGridDims(Math.max(b, 1)), pwC = d.c + 0.8, phC = d.r + 0.8, gapC = 0.6, vC = 0.5;
+    var cell = Math.min(o.cellMax, o.w / (2 * pwC + gapC), o.h / (2 * phC + vC)), pw = pwC * cell, ph = phC * cell, W = 2 * pw + gapC * cell, y2 = ph + vC * cell;
+    var left = /^\s*\?/.test(String(text || "")), kx = left ? pw + gapC * cell : 0, bx = left ? 0 : pw + gapC * cell;
+    var out = lpSlot(lpFrame(0, 0, W, ph) + lpGridIn(b, "dots", 0, 0, W, ph, cell));
+    var known = lpSlot(lpFrame(kx, y2, pw, ph) + lpGridIn(a, "dots", kx, y2, pw, ph, cell)), blank = lpSlot(lpBlank(bx, y2, pw, ph));
+    out += left ? blank + known : known + blank;
+    return { w: W, h: y2 + ph, svg: lpSvg(W, y2 + ph, out) };
+  }
+  // pairs: [x dots] → [y dots] for each pair; the last one's answer an empty box.
+  function lpPairsPic(p, o) {
+    if (!Array.isArray(p.pairs) || p.pairs.length < 2 || p.pairs.length > 4 || (p.as != null && p.as !== "dots")) return null;
+    var vals = [], bad = false;
+    p.pairs.forEach(function (pr) {
+      if (!Array.isArray(pr) || pr.length !== 2) { bad = true; return; }
+      var x = lpInt(pr[0], 0, 20), y = pr[1] == null ? null : lpInt(pr[1], 0, 20);
+      if (x == null || (pr[1] != null && y == null)) bad = true;
+      vals.push([x, y]);
+    });
+    if (bad) return null;
+    var known = [];
+    vals.forEach(function (v) { known.push(v[0]); if (v[1] != null) known.push(v[1]); });
+    var d = lpGridDims(Math.max.apply(null, known.concat([1]))), bwC = d.c + 0.6, bhC = d.r + 0.6, arC = 1.4, gapC = 1.3, P = vals.length;
+    var cell = Math.min(o.cellMax, o.w / (P * (2 * bwC + arC) + (P - 1) * gapC), o.h / bhC), bw = bwC * cell, bh = bhC * cell, out = "", x = 0;
+    var box = function (v, at) { return lpSlot(v == null ? lpBlank(at, 0, bw, bh) : lpFrame(at, 0, bw, bh) + lpGridIn(v, "dots", at, 0, bw, bh, cell)); };
+    vals.forEach(function (v) {
+      var ax = x + bw + cell * 0.25, ae = x + bw + arC * cell - cell * 0.25, ay = bh / 2, hd = cell * 0.35;
+      out += box(v[0], x) + '<path d="M' + lpF(ax) + ' ' + lpF(ay) + ' H' + lpF(ae) + ' M' + lpF(ae - hd) + ' ' + lpF(ay - hd) + ' L' + lpF(ae) + ' ' + lpF(ay) + ' L' + lpF(ae - hd) + ' ' + lpF(ay + hd) +
+        '" fill="none" stroke="#6b7280" stroke-width="' + lpF(Math.max(1.6, cell * 0.14)) + '" stroke-linecap="round" stroke-linejoin="round"/>' + box(v[1], x + bw + arC * cell);
+      x += 2 * bw + arC * cell + gapC * cell;
+    });
+    var W = x - gapC * cell;
+    return { w: W, h: bh, svg: lpSvg(W, bh, out) };
+  }
+  var LP_KINDS = { pattern: function (p, o) { return lpSeqPic(p, o, false); }, beads: function (p, o) { return lpSeqPic(p, o, true); },
+    grow: lpGrowPic, compare: lpComparePic, trains: lpTrainsPic, estimate: lpEstimatePic, parts: lpPartsPic, pairs: lpPairsPic };
+  // ── the choices ──  as = the recipe's choicesAs: tokens, sides (left / right / same), dots or blocks (that many), numbers.
+  var LP_SIDES = { left: "this side", right: "this side", same: "the same" };
+  function lpChoice(c, as, px, mx) {
+    var s = String(c == null ? "" : c), out;
+    if (as === "tokens") {
+      var g = lpGlyph(s);
+      if (!g) return null;
+      var tp = px * 0.8, bead = lpHas(LP_BEAD, s.split("-")[1]);
+      out = (bead ? '<line x1="' + lpF(px * 0.04) + '" y1="' + lpF(px / 2) + '" x2="' + lpF(px * 0.96) + '" y2="' + lpF(px / 2) + '" stroke="#6b7280" stroke-width="' + lpF(Math.max(1.5, tp * 0.06)) + '" stroke-linecap="round"/>' : '') +
+        lpPut(g, (px - tp) / 2, (px - tp) / 2, tp);
+    } else if (as === "sides") {
+      if (!lpHas(LP_SIDES, s)) return null;
+      var bw = px * 0.3, bh = px * 0.42, by = px * 0.1, lx = px * 0.08, rx = px * 0.62, sw = lpF(Math.max(1.5, px * 0.03));
+      var on = function (x) { return '<rect x="' + lpF(x) + '" y="' + lpF(by) + '" width="' + lpF(bw) + '" height="' + lpF(bh) + '" rx="' + lpF(px * 0.05) + '" fill="#4b5563" stroke="' + LP_INK + '" stroke-width="' + sw + '"/>'; };
+      var off = function (x) { return '<rect x="' + lpF(x) + '" y="' + lpF(by) + '" width="' + lpF(bw) + '" height="' + lpF(bh) + '" rx="' + lpF(px * 0.05) + '" fill="#fff" stroke="' + LP_SOFT + '" stroke-width="' + sw + '" stroke-dasharray="' + lpF(px * 0.04) + ' ' + lpF(px * 0.03) + '"/>'; };
+      var half = function (x) { return '<rect x="' + lpF(x) + '" y="' + lpF(by) + '" width="' + lpF(bw) + '" height="' + lpF(bh) + '" rx="' + lpF(px * 0.05) + '" fill="#d1d5db" stroke="' + LP_INK + '" stroke-width="' + sw + '"/>'; };
+      out = s === "left" ? on(lx) + off(rx) : s === "right" ? off(lx) + on(rx) :
+        half(lx) + half(rx) + '<path d="M' + lpF(px * 0.42) + ' ' + lpF(by + bh * 0.38) + ' H' + lpF(px * 0.58) + ' M' + lpF(px * 0.42) + ' ' + lpF(by + bh * 0.62) + ' H' + lpF(px * 0.58) + '" stroke="' + LP_INK + '" stroke-width="' + lpF(px * 0.045) + '" stroke-linecap="round"/>';
+      out += '<text x="' + lpF(px / 2) + '" y="' + lpF(px * 0.82) + '" text-anchor="middle" font-family="' + LP_FONT + '" font-size="' + lpF(px * 0.15) + '" font-weight="700" fill="#4b5563">' + LP_SIDES[s] + '</text>';
+    } else if (as === "dots" || as === "blocks") {
+      var n = lpInt(s, 0, 20);
+      if (n == null) return null;
+      var d = lpGridDims(Math.max(mx || n, 1)), cell = Math.min(px * 0.86 / d.c, px * 0.86 / d.r, px * 0.3);
+      out = lpGridIn(n, as, 0, 0, px, px, cell);
+    } else if (as === "numbers") {
+      if (!/^[−-]?\d{1,4}$/.test(s)) return null;
+      out = '<text x="' + lpF(px / 2) + '" y="' + lpF(px * 0.5) + '" dy="0.35em" text-anchor="middle" font-family="' + LP_FONT + '" font-size="' + lpF(px * (s.length >= 3 ? 0.4 : 0.54)) + '" font-weight="700" fill="#1f2937">' + s.replace("-", "−") + '</text>';
+    } else return null;
+    return lpSvg(px, px, out);
+  }
+  // The question's picture + its choices, or null (an unknown kind or token: the caller keeps the plain-words line).
+  function ladPicture(item, opts) {
+    var p = item && item.pic, o = {};
+    if (!p || typeof p !== "object" || !lpHas(LP_KINDS, p.kind) || !Array.isArray(item.c) || !item.c.length) return null;
+    Object.keys(LP_DEF).forEach(function (k) { o[k] = (opts && opts[k] > 0) ? +opts[k] : LP_DEF[k]; });
+    var pic = LP_KINDS[p.kind](p, o, item.text);
+    if (!pic) return null;
+    var as = p.choicesAs === "blocks" || p.choicesAs === "dots" || p.choicesAs === "sides" || p.choicesAs === "tokens" || p.choicesAs === "numbers" ? p.choicesAs : null;
+    if (!as) return null;
+    var mx = 0;
+    if (as === "dots" || as === "blocks") item.c.forEach(function (c) { var n = lpInt(c, 0, 20); if (n != null && n > mx) mx = n; });
+    var ch = item.c.map(function (c) { return lpChoice(c, as, o.choice, mx); });
+    if (ch.some(function (s) { return !s; })) return null;
+    return { kind: p.kind, pic: pic.svg, choices: ch, w: Math.ceil(pic.w - 0.01), h: Math.ceil(pic.h - 0.01), cw: Math.ceil(o.choice - 0.01) };
+  }
+  // ── on the placement printout ──  A question with a picture: the picture and its choices, big; for Pre-K / K the say line is
+  // printed small for the grown-up to read aloud. The plain-words line goes to the parent sheet next to the answer and the rule
+  // — except 1st/2nd grade's number puzzles and pairs (LADPIC_OWN_TEXT), whose numbers ARE the question: the picture sits beside
+  // them as a helper. Sizes: 6 questions (Pre-K + K) fit one page; measured in test_nb_ladpic.js.
+  var LADPIC_SIZE = { grown: { w: 380, h: 80, choice: 80 }, alone: { w: 380, h: 72, choice: 54 } };
+  var LADPIC_OWN_TEXT = { parts: 1, pairs: 1 };
+  function ladPicMoved(q, lv) { return !!(q && q.pic && (LAD_GROWN[lv] || !lpHas(LADPIC_OWN_TEXT, q.pic.kind))); }
+  function ladPicQ(q, qn, lv) {
+    var grown = !!LAD_GROWN[lv], P = ladPicture(q, grown ? LADPIC_SIZE.grown : LADPIC_SIZE.alone);
+    if (!P) return null;
+    var head;
+    if (grown) head = '<div class="lp-pqh"><span class="lp-stem">' + qn + '.</span>' + (q.say ? '<span class="lp-say">Read aloud: “' + ladEsc(q.say) + '”</span>' : '') + '</div>';
+    else if (ladPicMoved(q, lv)) head = '<div class="lp-pqh"><span class="lp-stem">' + qn + '. ' + ladEsc(q.say || "") + '</span></div>';
+    else head = '<div class="lp-stem">' + qn + '.</div>' + String(q.text || "").split(" / ").map(function (s) { return '<div class="lp-nline">' + ladEsc(s) + '</div>'; }).join("");
+    return '<div class="lp-q lp-pq">' + head + '<div class="lp-pqrow"><div class="lp-pic">' + P.pic + '</div><div class="lp-pcs">' +
+      P.choices.map(function (s, i) { return '<span class="lp-pc"><span class="lp-l">' + LAD_LETTERS.charAt(i) + '</span>' + s + '</span>'; }).join("") + '</div></div></div>';
+  }
+  // The parent sheet's extra line for a question whose plain words left the child's sheet.
+  function ladPicKeyNote(q, lv) {
+    return (ladPicMoved(q, lv) && ladPicture(q, LAD_GROWN[lv] ? LADPIC_SIZE.grown : LADPIC_SIZE.alone)) ? '<div class="lp-ptx">the picture: ' + ladEsc(q.text || "") + '</div>' : '';
+  }
+  var LADPIC_HOW = "A grown-up reads each question aloud. Circle the answer — the picture or its letter.";
+  var LADPIC_CSS =
+    ".lp-pq { margin-top: 8px; }\n" +
+    ".lp-pqh { display: flex; align-items: baseline; gap: 8px; }\n" +
+    ".lp-pqh .lp-say { margin-top: 0; }\n" +
+    ".lp-pqrow { display: flex; align-items: center; gap: 16px; margin-top: 4px; }\n" +
+    ".lp-pic { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; }\n" +
+    ".lp-pcs { flex: none; display: flex; gap: 12px; }\n" +
+    ".lp-pc { position: relative; display: block; border: 2px solid #9ca3af; border-radius: 12px; padding: 3px; line-height: 0; background: #fff; }\n" +
+    ".lp-pc .lp-l { position: absolute; top: -8px; left: -8px; margin: 0; background: #fff; line-height: 16px; }\n" +
+    ".nbl-svg { display: block; }\n" +
+    ".lp-ptx { font-size: 11.5px; color: #6b7280; margin: 1px 0 0 26px; }\n";
+  LADDER_CSS += LADPIC_CSS;   // always in the placement stylesheet (a sheet with no picture just doesn't use it)
+  NB_LADDERS.picture = ladPicture;
+  // NBLADPIC_END
   // NBLADDER_END
 
   /* ============================================================================
