@@ -6,6 +6,8 @@
 // BIGMEAL slice 2: a dish can rest after cooking and need minutes to get ready first; "Heat the oven" steps; plain warnings when
 // the oven needs two temperatures at once, holds more than fits, or an appliance is wanted twice — warnings NEVER block anything;
 // "Your kitchen" (how many ovens, dishes at once, burners, slow cookers…) on <idea>/meal/n.
+// BIGMEAL slice 3: before the day — a dish made ahead (N days before), a dish a guest brings, who makes each dish, and when to move
+// a frozen one to the fridge to thaw; each with a tick-off kept under the meal's day. Guests are just typed names: nothing is sent.
 //
 // WHERE IT LIVES: a big meal is a planner idea that has an eat time. Its food lines are its dishes; its day is the idea's day.
 // This file is lazy: seasons.js loads it (bmLoad) only when Mom taps ⏱ Cooking timeline. It never runs at app start and
@@ -18,6 +20,10 @@
 //                      cook:<minutes it cooks, 1–2880>       temp:"325" | "low" (≤12, shown as typed)
 //                      (slice 2) rest:<minutes it sits after, 1–240>  prep:<minutes to get it ready, 1–600>  big:true (fills the oven)
 //                      note:"Baste every 45 min" (≤120)
+//                      (slice 3) how:"ahead"|"bring" (absent = cooked that day)  days:<made this many days before, 1–14> (with ahead)
+//                      who:"mom"|"dad"|<kid id>  or  whoTxt:"Grandma" (≤40, a guest) — never both    thaw:{days:1–10, lb?:1–60}
+//                      A made-ahead or brought dish may still have where + cook: that is "warm it up" on the day.
+//   <idea>/meal/tick/<meal day>/<foodId>_<k>  <ms>   her tick-offs (a made ahead · t moved to the fridge · h a guest brought it)
 //   <idea>/meal/n      {oven, spots, stove, slow, air, pot, grill, micro} — what this kitchen has (absent = the defaults, or the
 //                      numbers of the family's latest other meal, shown until she changes one)
 //   <idea> = seasons/ideas/<sid>/<iid> or seasonSecret/<sid>/<iid> (the planner's base()). An old food line (name only) is a dish
@@ -69,8 +75,17 @@ function dishOf(L){
   return {id:L.id,L,name:String(r.name||"").trim()||"(no name)",mid:r.mid?String(r.mid):"",where:w,
     whereTxt:w==="x"?String(r.whereTxt||"").trim().slice(0,20):"",cook:cooks?num(r.cook,1,COOK_MAX):null,
     temp:cooks?String(r.temp==null?"":r.temp).trim().slice(0,12):"",rest:cooks?(num(r.rest,1,240)||0):0,prep:num(r.prep,1,600)||0,
-    big:w==="oven"&&r.big===true,note:String(r.note==null?"":r.note).trim().slice(0,120),ts:+r.ts||0};
+    big:w==="oven"&&r.big===true,note:String(r.note==null?"":r.note).trim().slice(0,120),ts:+r.ts||0,
+    how:HOWS.indexOf(r.how)>=0?r.how:"",days:r.how==="ahead"?(num(r.days,1,14)||1):0,
+    who:whoOk(r.who)?String(r.who):"",whoTxt:whoOk(r.who)?"":String(r.whoTxt==null?"":r.whoTxt).trim().slice(0,40),
+    thaw:(r.thaw&&typeof r.thaw==="object"&&r.how!=="bring"&&num(r.thaw.days,1,10))?{days:num(r.thaw.days,1,10),lb:num(r.thaw.lb,1,60)||0}:null};
 }
+const HOWS=["ahead","bring"];
+function whoOk(w){try{return !!w&&A().people().some(p=>p.id===w);}catch(e){return false;}}
+function whoName(d){try{return d.who?A().who(d.who).name:d.whoTxt;}catch(e){return d.whoTxt;}}
+function thawDays(lb){const n=num(lb,1,60);return n?Math.min(10,Math.max(1,Math.ceil(n/4))):null;}   // the usual fridge rule: a day for every 4 pounds
+// On the table with no cooking on the day: a no-cooking dish, or a made-ahead / brought one with no warm-up.
+function putOut(d){return d.where==="none"||(!!d.how&&!timed(d));}
 function timed(d){return !!d.where&&d.where!=="none"&&d.cook>0;}
 function laneKey(d){return d.where==="x"?"x:"+(d.whereTxt.toLowerCase()||"?"):d.where;}
 function laneIx(d){const i=BM_WHERE.findIndex(x=>x[0]===d.where);return i<0?99:i;}
@@ -92,13 +107,13 @@ function steps(eat,P){
     if(d.in!=null){S.push({at:d.in,k:"i",d,key:d.id+"_i"});if(d.rest)S.push({at:d.out,k:"o",d,key:d.id+"_o"});}});
   S.forEach(x=>{x.fid=x.d.id;});
   S.sort((a,b)=>a.at-b.at||RANK[a.k]-RANK[b.k]||laneIx(a.d)-laneIx(b.d)||a.d.name.localeCompare(b.d.name));
-  S.push({at:eat,k:"eat",key:"eat",out:P.filter(d=>d.in!=null&&!d.rest).map(d=>d.name),put:P.filter(d=>d.where==="none").map(d=>d.name)});
+  S.push({at:eat,k:"eat",key:"eat",out:P.filter(d=>d.in!=null&&!d.rest).map(d=>d.name),put:P.filter(putOut).map(d=>d.name)});
   return S;
 }
 // By place: one group per appliance in use (her own "something else" names each get one), then "No cooking".
 function lanes(P){
   const G={},order=[];
-  P.filter(d=>timed(d)||d.where==="none").forEach(d=>{const k=laneKey(d);if(!G[k]){G[k]={key:k,where:d.where,name:d.where==="x"?d.whereTxt||"Something else":whereRow(d.where)[2],dishes:[]};order.push(k);}G[k].dishes.push(d);});
+  P.filter(d=>timed(d)||putOut(d)).forEach(d=>{const t=timed(d),k=t?laneKey(d):"none",w=t?d.where:"none";if(!G[k]){G[k]={key:k,where:w,name:w==="x"?d.whereTxt||"Something else":whereRow(w)[2],dishes:[]};order.push(k);}G[k].dishes.push(d);});
   const L=order.map(k=>G[k]).sort((a,b)=>BM_WHERE.findIndex(x=>x[0]===a.where)-BM_WHERE.findIndex(x=>x[0]===b.where)||a.name.localeCompare(b.name));
   L.forEach(g=>g.dishes.sort((a,b)=>(a.in==null?1e9:a.in)-(b.in==null?1e9:b.in)||a.name.localeCompare(b.name)));
   return L;
@@ -145,7 +160,23 @@ function warnText(c,n,day){
   if(c.k==="stove")return when+", "+D.length+" dishes are on the stove: "+nm+". You have "+n.stove+" burner"+(n.stove===1?"":"s")+".";
   return when+", "+D.length+" dishes want "+theTxt(D[0])+": "+nm+".";
 }
-function notTimed(P){return P.filter(d=>!timed(d)&&d.where!=="none");}
+function notTimed(P){return P.filter(d=>!timed(d)&&!putOut(d));}
+// ── before the day (slice 3) ──────────────────────────────────────────────────
+// thaw: move it to the fridge thaw.days before · ahead: make it days before · bring: grouped by who brings it. Dates come from
+// the meal's day each time (nothing stored as a date), so they move when the day moves.
+function before(D,day){
+  const a=A(),at=n=>day&&a?a.addDays(day,-n):"",list=[];
+  D.forEach(d=>{if(d.thaw)list.push({k:"t",d,n:d.thaw.days,day:at(d.thaw.days),key:d.id+"_t"});if(d.how==="ahead")list.push({k:"a",d,n:d.days,day:at(d.days),key:d.id+"_a"});});
+  list.sort((x,y)=>y.n-x.n||(x.k===y.k?0:(x.k==="t"?-1:1))||x.d.name.localeCompare(y.d.name));
+  const by={},order=[];D.filter(d=>d.how==="bring").forEach(d=>{const n=whoName(d)||"",k=n.toLowerCase();if(!by[k]){by[k]={name:n,dishes:[]};order.push(k);}by[k].dishes.push(d);});
+  const bring=order.map(k=>by[k]).sort((x,y)=>(!x.name)-(!y.name)||x.name.localeCompare(y.name));
+  return {list,bring};
+}
+function names(sid){   // guest names typed before in this season — chips to tap
+  const a=A(),m={};try{a.ideasOf(sid).forEach(it=>a.ideaLines(it,"food").forEach(L=>{const d=dishOf(L);if(d.whoTxt&&!m[d.whoTxt.toLowerCase()])m[d.whoTxt.toLowerCase()]=d.whoTxt;}));}catch(e){}
+  return Object.keys(m).sort().map(k=>m[k]).slice(0,12);
+}
+function ticksOf(it,day){const t=it&&it.meal&&it.meal.tick;return (day&&t&&typeof t==="object"&&t[day]&&typeof t[day]==="object")?t[day]:{};}
 function stepWhen(at,day){
   const s=dayShift(at),c=fmtClock(at),a=A();if(!s)return c;
   const why=s===-1?((((at%DAY)+DAY)%DAY)>=17*60?"the night before":"the day before"):(-s)+" days before";
@@ -173,7 +204,7 @@ function stepTxt(s){
   if(s.k==="heat")return "Heat the oven"+(tempN(d.temp)!=null?" to "+nw(esc(tempTxt(d.temp))):"");
   if(s.k==="r")return "Start <em>"+esc(d.name)+"</em> ("+nw(dur(d.prep))+" to get it ready)";
   if(s.k==="o")return "<em>"+esc(d.name)+"</em> comes out · rests "+nw(dur(d.rest));
-  return "<em>"+esc(d.name)+"</em> — "+esc(intoTxt(d))+(d.temp?" · "+nw(esc(tempTxt(d.temp))):"")+" · "+nw(dur(d.cook));
+  return "<em>"+esc(d.name)+"</em> — "+esc(d.how?"warm it up "+(d.where==="stove"||d.where==="grill"?"on ":"in ")+theTxt(d):intoTxt(d))+(d.temp?" · "+nw(esc(tempTxt(d.temp))):"")+" · "+nw(dur(d.cook));
 }
 function stepsHTML(eat,P,day){
   if(eat==null)return '<div class="bm-empty">Put in when you eat. Then each dish’s start time shows here.</div>';
@@ -199,11 +230,25 @@ function dishRow(d,eat,day){
   if(d.prep)bits.push(dur(d.prep)+" to get ready");if(d.rest)bits.push("rests "+dur(d.rest));if(d.big)bits.push("fills the oven");
   if(d.where==="oven"&&d.cook&&!d.temp)bits.push('<span class="bm-chip">no temperature</span>');
   if(d.in!=null)bits.push("in at "+esc(stepWhen(d.in,day))+(d.rest?" · out "+esc(stepWhen(d.out,day)):""));
+  if(d.how==="ahead")bits.push("📦 made "+d.days+" day"+(d.days===1?"":"s")+" before"+(whoName(d)?" by "+esc(whoName(d)):""));
+  else if(d.how==="bring")bits.push("🚗 "+(whoName(d)?esc(whoName(d))+" brings it":"someone brings it — who?"));
+  else if(whoName(d))bits.push("👩‍🍳 "+esc(whoName(d))+" makes it");
+  if(d.thaw)bits.push("🧊 thaws "+d.thaw.days+" day"+(d.thaw.days===1?"":"s")+" in the fridge");
   if(d.note)bits.push("📝 "+esc(d.note));
-  if(!d.where)bits.push("where does it cook?");else if(d.where!=="none"&&!d.cook)bits.push("how long does it cook?");
+  if(!d.where&&!d.how)bits.push("where does it cook?");else if(d.where!=="none"&&!d.cook)bits.push("how long does it cook?");
   if(d.mid&&!rec)bits.push("📖 recipe gone from the Kitchen");
-  const shop=rec?'<button class="bm-tool" onclick="bmShop(\''+q(d.id)+'\')">🛒 Ingredients</button>':(d.mid?"":'<button class="bm-tool" onclick="bmBuy()">🧺 What to buy</button>');
+  const shop=d.how==="bring"?"":rec?'<button class="bm-tool" onclick="bmShop(\''+q(d.id)+'\')">🛒 Ingredients</button>':(d.mid?"":'<button class="bm-tool" onclick="bmBuy()">🧺 What to buy</button>');
   return '<div class="bm-dish"><button class="bm-dt" onclick="bmDish(\''+q(d.id)+'\')">'+esc(d.name)+(bits.length?'<small>'+bits.join(" · ")+'</small>':"")+'</button>'+shop+'</div>';
+}
+function beforeHTML(it,D,day){
+  const B=before(D,day);if(!B.list.length&&!B.bring.length)return "";
+  const a=A(),T=ticksOf(it,day),t=a.today(),tk=key=>day?'<button class="bm-tk'+(T[key]?" on":"")+'" onclick="bmTick(\''+q(key)+'\')" aria-label="Done">'+(T[key]?"✅":"☐")+'</button>':"";
+  let h='<div class="bm-card"><div class="bm-h">🧊 Before the day</div>'+(day?"":'<div class="bm-hint">📅 Give it a day to get dates and reminders.</div>');
+  B.list.forEach(x=>{const d=x.d,late=day&&x.day<t&&!T[x.key],w=whoName(d);
+    const what=x.k==="t"?"Move "+d.name+" to the fridge to thaw"+(d.thaw.lb?" ("+d.thaw.lb+" lb)":""):"Make "+d.name+(w?" — "+w:"");
+    h+='<div class="bm-row'+(T[x.key]?" done":"")+'">'+tk(x.key)+'<span><b>'+esc(day?a.fmtDay(x.day):"")+'</b>'+(day?" — ":"")+esc(what)+' <small>('+x.n+" day"+(x.n===1?"":"s")+' before)</small>'+(late?' <i class="bm-late">late</i>':"")+'</span></div>';});
+  if(B.bring.length)h+='<div class="bm-lab">🚗 Who brings what</div>'+B.bring.map(g=>g.dishes.map(d=>'<div class="bm-row'+(T[d.id+"_h"]?" done":"")+'">'+tk(d.id+"_h")+'<span><b>'+esc(g.name||"Nobody yet")+':</b> '+esc(d.name)+(T[d.id+"_h"]?" <small>— it’s here</small>":"")+'</span></div>').join("")).join("");
+  return h+'</div>';
 }
 function lanesHTML(P,eat,day){
   const L=lanes(P);if(!L.length)return '<div class="bm-empty">No dish has a place and a cook time yet.</div>';
@@ -225,6 +270,7 @@ function pageHTML(){
   else if(eat!=null&&P.some(d=>d.in!=null))h+='<div class="bm-ok">✓ Nothing clashes.</div>';
   h+='<div class="bm-cols"><div class="bm-card"><div class="bm-h">⏱ When to start</div>'+stepsHTML(eat,P,day)+'</div>'
     +'<div class="bm-card"><div class="bm-h">🔥 Where it cooks</div>'+lanesHTML(P,eat,day)+'</div></div>';
+  h+=beforeHTML(it,D,day);
   if(NT.length)h+='<div class="bm-card"><div class="bm-h">📝 Not timed yet</div><div class="bm-hint">Tap a dish to add where it cooks and how long.</div>'+NT.map(d=>dishRow(d,eat,day)).join("")+'</div>';
   if(!D.length)h+='<div class="bm-empty">No dishes yet. Tap ＋ Add a dish.</div>';
   h+='<div class="bm-acts"><button class="bm-go" onclick="bmDish(\'\')">＋ Add a dish</button></div>'+kitHTML(K);
@@ -238,7 +284,13 @@ function sheetHTML(){
   if(ids.length)h+='<label class="bm-fl wide"><span>A recipe from the Kitchen (optional)</span><select onchange="bmDishMid(this.value)"><option value="">— no recipe, just words —</option>'
     +ids.map(k=>'<option value="'+esc(k)+'"'+(f.mid===k?" selected":"")+'>'+esc((R[k].emoji?R[k].emoji+" ":"")+R[k].name)+'</option>').join("")+'</select></label>';
   h+='<div class="bm-form">'+field("name","Dish","Turkey","","wide")+'</div>';
-  h+='<div class="bm-lab">Where does it cook?</div><div class="bm-chips">'+BM_WHERE.map(w=>'<button class="bm-f'+(f.where===w[0]?" on":"")+'" onclick="bmWhere(\''+w[0]+'\')">'+w[1]+" "+w[2]+'</button>').join("")+'</div>';
+  h+='<div class="bm-lab">How does it get made?</div><div class="bm-chips">'+[["","🍳 Cooked that day"],["ahead","📦 Made before the day"],["bring","🚗 Someone brings it"]].map(x=>'<button class="bm-f'+(f.how===x[0]?" on":"")+'" onclick="bmHow(\''+x[0]+'\')">'+x[1]+'</button>').join("")+'</div>';
+  if(f.how==="ahead")h+='<div class="bm-form">'+field("days","How many days before?","1","number")+'</div>';
+  const P=a.people(),G=names(e.sid);
+  h+='<div class="bm-lab">'+(f.how==="bring"?"Who brings it?":"Who makes it? (optional)")+'</div><div class="bm-chips">'+P.map(x=>'<button class="bm-f'+(f.who===x.id&&!f.whoTxt.trim()?" on":"")+'" onclick="bmWho(\''+q(x.id)+'\')">'+esc(x.name)+'</button>').join("")
+    +G.map(g=>'<button class="bm-f'+(f.whoTxt.trim().toLowerCase()===g.toLowerCase()?" on":"")+'" onclick="bmGuest(\''+q(g)+'\')">'+esc(g)+'</button>').join("")+'</div>'
+    +'<div class="bm-form">'+field("whoTxt","Or someone else (a guest)","Grandma","","wide")+'</div>';
+  h+='<div class="bm-lab">'+(f.how?"Warm it up on the day? (optional)":"Where does it cook?")+'</div><div class="bm-chips">'+BM_WHERE.map(w=>'<button class="bm-f'+(f.where===w[0]?" on":"")+'" onclick="bmWhere(\''+w[0]+'\')">'+w[1]+" "+w[2]+'</button>').join("")+'</div>';
   if(f.where==="x")h+='<div class="bm-form">'+field("whereTxt","What is it called?","Roaster","","wide")+'</div>';
   if(cooks)h+='<div class="bm-lab">How long does it cook?</div><div class="bm-form">'+field("h","Hours","0","number")+field("m","Minutes","45","number")+field("temp","Temperature (optional)","325 or low")+'</div>'
     +'<div class="bm-form">'+field("prep","Minutes to get it ready first (optional)","20","number")+field("rest","Minutes it rests after (optional)","45","number")+'</div>'
@@ -246,6 +298,8 @@ function sheetHTML(){
   if(f.where==="none")h+='<div class="bm-form">'+field("prep","Minutes to get it ready (optional)","15","number")+'</div>';
   h+='<div class="bm-form">'+field("note","Note (optional)","Baste every 45 minutes","","wide")+'</div>';
   if(f.where==="none")h+='<div class="bm-hint">It goes on the table when you eat.</div>';
+  if(f.how!=="bring")h+='<div class="bm-lab">🧊 Frozen? (optional)</div><div class="bm-form">'+field("thawD","Move to the fridge — days before","4","number")+field("thawLb","…or its weight in pounds","16","number")+'</div>'
+    +'<div class="bm-hint">Usual rule: 1 day in the fridge for every 4 pounds. Check your package.</div>';
   h+='<div class="bm-acts bm-foot"><button class="bm-go" onclick="bmDishSave()">'+(e.fid?"Save":"Add")+'</button><button class="bm-tool" onclick="bmDishCancel()">Cancel</button>'
     +(e.fid?'<button class="bm-tool bm-del" onclick="bmDishDel()">'+(e.ask?"Tap again to delete":"Delete")+'</button>':"")+'</div>';
   return '<div class="bm-sheet" onclick="if(event.target===this)bmDishCancel()"><div class="bm-sh"><button class="bm-x" onclick="bmDishCancel()">✕</button>'+h+(e.msg?'<div class="bm-msg">'+esc(e.msg)+'</div>':"")+'</div></div>';
@@ -274,6 +328,11 @@ const BM_CSS=`
 .bm-ok{background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:14px;font-weight:800;color:#166534}
 .bm-kit{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:14px}.bm-kit span{flex:1}.bm-kit b{min-width:22px;text-align:center;font-size:16px}
 .bm-tool:disabled{opacity:.4}
+.bm-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9;font-size:14px;line-height:1.35}.bm-row span{flex:1;min-width:0}
+.bm-row small{color:#64748b;font-weight:600}.bm-row.done span{color:#64748b;text-decoration:line-through}
+.bm-tk{flex:none;width:44px;height:44px;border:1.5px solid #cbd5e1;border-radius:10px;background:#fff;font-size:20px;cursor:pointer;line-height:1}
+.bm-tk.on{border-color:#86efac;background:#f0fdf4}
+.bm-late{font-style:normal;font-size:11px;font-weight:800;color:#fff;background:#d97706;border-radius:99px;padding:1px 7px}
 .bm-check{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;margin-top:10px}
 .bm-lane{border-top:1px solid #f1f5f9;padding:6px 0}
 .bm-lh{font-size:14px;font-weight:800;padding:2px 0}.bm-lh small{display:block;font-size:12px;font-weight:600;color:#64748b}
@@ -326,14 +385,17 @@ function bmEat(v){
   put(up);bmDraw();
 }
 function bmDish(fid){
-  const it=cur();if(!it)return;let f={name:"",mid:"",where:"",whereTxt:"",h:"",m:"",temp:"",prep:"",rest:"",big:"",note:""};
+  const it=cur();if(!it)return;let f={name:"",mid:"",where:"",whereTxt:"",h:"",m:"",temp:"",prep:"",rest:"",big:"",note:"",how:"",days:"",who:"",whoTxt:"",thawD:"",thawLb:""};
   if(fid){const d=dishesOf(it).find(x=>x.id===fid);if(!d)return;const r=d.L.r||{};
-    f={name:String(r.name||""),mid:d.mid,where:d.where,whereTxt:d.whereTxt,h:d.cook?String(Math.floor(d.cook/60)):"",m:d.cook?String(d.cook%60):"",temp:d.temp,prep:d.prep?String(d.prep):"",rest:d.rest?String(d.rest):"",big:d.big?"1":"",note:d.note};}
-  bmEd={fid:fid||null,form:f,msg:"",ask:false};bmDraw();
+    f={name:String(r.name||""),mid:d.mid,where:d.where,whereTxt:d.whereTxt,h:d.cook?String(Math.floor(d.cook/60)):"",m:d.cook?String(d.cook%60):"",temp:d.temp,prep:d.prep?String(d.prep):"",rest:d.rest?String(d.rest):"",big:d.big?"1":"",note:d.note,how:d.how,days:d.how==="ahead"?String(d.days):"",who:d.who,whoTxt:d.whoTxt,thawD:d.thaw?String(d.thaw.days):"",thawLb:d.thaw&&d.thaw.lb?String(d.thaw.lb):""};}
+  bmEd={fid:fid||null,sid:it.sid,form:f,msg:"",ask:false};bmDraw();
 }
 function bmDishSet(k,v){if(bmEd&&k in bmEd.form)bmEd.form[k]=String(v==null?"":v);}
 function bmWhere(w){if(!bmEd||!whereRow(w))return;bmEd.form.where=bmEd.form.where===w?"":w;bmEd.msg="";bmDraw();}
 function bmDishMid(v){if(!bmEd)return;const R=A().recipes(),m=R[v];bmEd.form.mid=m?v:"";if(m&&!bmEd.form.name.trim())bmEd.form.name=String(m.name||"").slice(0,80);bmEd.msg="";bmDraw();}
+function bmHow(v){if(!bmEd||(v&&HOWS.indexOf(v)<0))return;bmEd.form.how=bmEd.form.how===v?"":v;bmEd.msg="";bmDraw();}
+function bmWho(id){if(!bmEd||!whoOk(id))return;const f=bmEd.form;f.who=(f.who===id&&!f.whoTxt.trim())?"":id;f.whoTxt="";bmDraw();}
+function bmGuest(n){if(!bmEd)return;bmEd.form.whoTxt=String(n||"").slice(0,40);bmEd.form.who="";bmDraw();}
 function bmDishCancel(){bmEd=null;bmDraw();}
 function bmDishSave(){
   const e=bmEd,it=cur();if(!e||!it){bmEd=null;bmDraw();return false;}
@@ -352,9 +414,18 @@ function bmDishSave(){
   const prep=(cooks||w==="none")?mins(f.prep,600):0,rest=cooks?mins(f.rest,240):0;
   if(isNaN(prep)){e.msg="Getting it ready must be 0 to 600 minutes.";bmDraw();return false;}
   if(isNaN(rest)){e.msg="Resting must be 0 to 240 minutes.";bmDraw();return false;}
-  const want={name,mid:mid||null,where:w||null,whereTxt:wt||null,cook,temp:temp||null,prep:prep||null,rest:rest||null,big:(w==="oven"&&f.big)?true:null,note:f.note.trim().slice(0,120)||null},up={};
+  const how=HOWS.indexOf(f.how)>=0?f.how:"",dS=String(f.days||"").trim(),days=how==="ahead"?(dS===""?1:num(dS,1,14)):null;
+  if(how==="ahead"&&days==null){e.msg="Made before the day must be 1 to 14 days.";bmDraw();return false;}
+  const whoTxt=f.whoTxt.trim().slice(0,40),who=whoTxt?"":(whoOk(f.who)?f.who:"");
+  let thaw=null;const tD=String(f.thawD||"").trim(),tL=String(f.thawLb||"").trim();
+  if(how!=="bring"&&(tD!==""||tL!=="")){
+    const lb=tL===""?0:num(tL,1,60);if(lb==null){e.msg="Pounds must be 1 to 60.";bmDraw();return false;}
+    const dd=tD===""?thawDays(lb):num(tD,1,10);if(dd==null){e.msg="Thawing must be 1 to 10 days.";bmDraw();return false;}
+    thaw={days:dd};if(lb)thaw.lb=lb;
+  }
+  const want={how:how||null,days,who:who||null,whoTxt:whoTxt||null,thaw,name,mid:mid||null,where:w||null,whereTxt:wt||null,cook,temp:temp||null,prep:prep||null,rest:rest||null,big:(w==="oven"&&f.big)?true:null,note:f.note.trim().slice(0,120)||null},up={};
   if(!L){const rec={name,ts:Date.now()};Object.keys(want).forEach(k=>{if(want[k]!=null&&k!=="name")rec[k]=want[k];});up[baseOf(it)+"/food/"+a.rid("f")]=rec;}
-  else{const r=L.r,p=a.lineBase(L,"food")+"/";Object.keys(want).forEach(k=>{const was=r[k]==null||r[k]===""?null:r[k];if(String(was)!==String(want[k]))up[p+k]=want[k];});}
+  else{const r=L.r,p=a.lineBase(L,"food")+"/";Object.keys(want).forEach(k=>{const was=r[k]==null||r[k]===""?null:r[k];if(JSON.stringify(was)!==JSON.stringify(want[k]))up[p+k]=want[k];});}
   if(Object.keys(up).length)put(up);
   bmEd=null;bmDraw();return true;
 }
@@ -373,10 +444,15 @@ function bmHave(key,val){
   if(Object.keys(up).length)put(up);bmDraw();
 }
 function bmKit(key,delta){const it=cur();if(it&&BM_KIT[key])bmHave(key,kitchenOf(it).n[key]+delta);}
+// ☐ / ✅ a before-the-day line (made it · in the fridge · it's here) — kept under the meal's day, so a moved day starts clean.
+function bmTick(key){
+  const it=cur(),a=A();if(!it||!/^[A-Za-z0-9_-]{1,60}$/.test(String(key||"")))return;const day=a.ideaDay(it);if(!day)return;
+  const on=!!ticksOf(it,day)[key],up={};up[baseOf(it)+"/meal/tick/"+day+"/"+key]=on?null:Date.now();put(up);bmDraw();
+}
 function bmShop(fid){const a=A(),it=cur();if(it&&a.foodShop)a.foodShop(it.sid,it.id,fid);}
 function bmBuy(){const a=A(),it=cur();if(it&&a.lineOpen)a.lineOpen("sup",it.id,"");}   // the planner's own supply pop-up (it sits above this page)
 
-Object.assign(window,{bmHave,bmKit,bmOpen,bmClose,bmRefresh,bmEat,bmDish,bmDishSet,bmWhere,bmDishMid,bmDishCancel,bmDishSave,bmDishDel,bmShop,bmBuy});
-window._bmTest={tempN,clashes,kitchenOf,kitN,warnText,HEAT,NEAR,KIT:BM_KIT,clockMin,fmtClock,hhmm,dayShift,dur,dishOf,timed,plan,steps,lanes,notTimed,stepWhen,put,eatOf,OK:BM_OK,WHERE:BM_WHERE,draw:bmDraw,
+Object.assign(window,{bmHow,bmWho,bmGuest,bmTick,bmHave,bmKit,bmOpen,bmClose,bmRefresh,bmEat,bmDish,bmDishSet,bmWhere,bmDishMid,bmDishCancel,bmDishSave,bmDishDel,bmShop,bmBuy});
+window._bmTest={before,names,thawDays,putOut,ticksOf,whoName,tempN,clashes,kitchenOf,kitN,warnText,HEAT,NEAR,KIT:BM_KIT,clockMin,fmtClock,hhmm,dayShift,dur,dishOf,timed,plan,steps,lanes,notTimed,stepWhen,put,eatOf,OK:BM_OK,WHERE:BM_WHERE,draw:bmDraw,
   state:()=>({sid:bmSid,iid:bmIid,ed:bmEd,el:bmEl,msg:bmMsg})};
 })();
