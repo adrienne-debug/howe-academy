@@ -28,6 +28,7 @@ const fs = require("fs"), path = require("path"), os = require("os"), cp = requi
 const W = require(path.join(__dirname, "test_fixtures", "house_world.js")), S = require(path.join(__dirname, "test_fixtures", "demo_week_sandbox.js"));
 let pass = 0, fail = 0; const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + JSON.stringify(x).slice(0, 600) + ")" : "")); } };
 const J = x => JSON.stringify(x), clone = x => JSON.parse(J(x));
+const unLS = s => String(s).replace(/ <span class=\\*"ls-fire\\*"[^>]*>🔥 \d+<\/span>/g, "").replace(/<div class=\\*"ls-four\\*"[^>]*>.*?<\/div>/g, "");   // LISTSTREAK (P2): the 🔥 streak's own markup, left out of the comparisons with older copies (test_list_streak.js checks it)
 const BASE_SHA = "2faffd06";
 let BASE = null; try { const t = path.join(os.tmpdir(), "chore_wait_base_" + process.pid + ".html"); fs.writeFileSync(t, cp.execSync("git show " + BASE_SHA + ":index.html", { cwd: __dirname, maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] })); BASE = t; } catch (e) { BASE = null; }
 console.log("(the app before: " + (BASE ? BASE_SHA : "none — git show " + BASE_SHA + " failed; the checks against it are skipped") + ")");
@@ -209,7 +210,7 @@ if (BASE) { const run = async index => { let { w, A, B } = await mkWorld("previe
       snaps.push(J([s0, draw(B, "chores", "kid_a"), draw(B, "chores", "kid_b"), pop(A, "kid_a", "chores"), pop(A, "kid_b", "chores"), J(W.lists(B, { days: [DN[dOf(n).getDay()]] }))])); }
     return { snaps, writes: writes(w, 0).join("\n"), tree: treeJ(w), miss: misses(w) }; };
   const N = await run(undefined), O = await run(BASE);
-  const bad = N.snaps.map((s, i) => s === O.snaps[i] ? null : isoN(i)).filter(Boolean);
+  const bad = N.snaps.map((s, i) => unLS(s) === O.snaps[i] ? null : isoN(i)).filter(Boolean);
   ok("every kid list (morning and evening draw), Mom's pop-ups and every list's rows: the app before on all 14 days", bad.length === 0, bad);
   ok("every write in 14 days is the app before's, in order (" + N.writes.split("\n").length + " writes)", N.writes === O.writes, (() => { const x = N.writes.split("\n"), y = O.writes.split("\n"); const i = x.findIndex((l, j) => l !== y[j]); return [i, x[i], y[i]]; })());
   ok("the whole database after 14 days (the log, the bank) is the app before's, byte for byte", N.tree === O.tree);
@@ -228,7 +229,7 @@ if (BASE) { const run = async index => { const { w, A, B } = await mkWorld("prev
       out.vacOn = (out.vacOn || []).concat(onList(a, "a_vac") ? [n] : []); out.bikesOn = (out.bikesOn || []).concat(onList(b, "b_bikes") ? [n] : []); await w.flush(); }
     out.miss = misses(w); out.am = J(w.get("amCarry")); out.waved = J(w.get("waved")); return out; };
   const N = await run(undefined), O = await run(BASE);
-  const bad = N.day.map((s, i) => s === O.day[i] ? null : isoN(i)).filter(Boolean);
+  const bad = N.day.map((s, i) => unLS(s) === O.day[i] ? null : isoN(i)).filter(Boolean);
   ok("the daily rows (Wipe the table, Rinse the sink), the turn wheel's rows (Pickup the den / porch), the 3-a-week row on its late days (tag and all), the waved row, the 🌅 morning list: the app before on all 10 days", bad.length === 0, bad);
   ok("✕ today on Vacuum the den (Tuesday): the same writes as before (the wave record + its log line)", J(N.wave) === J(O.wave) && N.waved === O.waved, [N.wave, O.wave]);
   ok("…it does not wait: off the list from Tuesday, back next Tuesday (and then waits as usual)", J(N.vacOn) === J([8, 9]), N.vacOn);

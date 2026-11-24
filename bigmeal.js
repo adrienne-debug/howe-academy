@@ -8,6 +8,12 @@
 // "Your kitchen" (how many ovens, dishes at once, burners, slow cookers…) on <idea>/meal/n.
 // BIGMEAL slice 3: before the day — a dish made ahead (N days before), a dish a guest brings, who makes each dish, and when to move
 // a frozen one to the fridge to thaw; each with a tick-off kept under the meal's day. Guests are just typed names: nothing is sent.
+// BIGMEAL slice 4: 👩‍🍳 the COOK VIEW for the kitchen tablet on the day — the tablet's clock, what's next, what's in each appliance
+// now, every step with a big tick-off (kept under the meal's day: <idea>/meal/tick/<day>/<step key>), late ones in amber, what's
+// still open from before the day, and who's bringing what. It redraws on a tick, on any planner change, when the screen wakes and
+// once a minute — ONE setTimeout to the next minute, re-armed each time, cleared on close (never a setInterval). It asks the
+// browser to keep the screen on while it's open. While it's open the layer carries class dlg-overlay + inline display:flex, so a
+// deploy's reload waits (the app's haBusyReason, up to 30 min). No sound, nothing printed, nothing sent.
 //
 // WHERE IT LIVES: a big meal is a planner idea that has an eat time. Its food lines are its dishes; its day is the idea's day.
 // This file is lazy: seasons.js loads it (bmLoad) only when Mom taps ⏱ Cooking timeline. It never runs at app start and
@@ -43,7 +49,7 @@ const BM_OK=/^(seasons\/ideas|seasonSecret)\/[^\/]+\/[^\/]+\/(meal|food\/[^\/]+)
 const COOK_MAX=2880, DAY=1440, HEAT=15, NEAR=25;   // an oven heats 15 min before a dish goes in · 25° apart can share an oven
 // what a kitchen has: [default, lowest, highest, one, many]
 const BM_KIT={oven:[1,1,4,"oven","ovens"],spots:[2,1,6,"dish at once","dishes at once"],stove:[4,1,12,"burner","burners"],slow:[1,1,9],air:[1,1,9],pot:[1,1,9],grill:[1,1,9],micro:[1,1,9]};
-let bmSid=null, bmIid=null, bmEd=null, bmEl=null, bmMsg="";
+let bmSid=null, bmIid=null, bmEd=null, bmEl=null, bmMsg="", bmView="plan", bmTimer=null, bmWake=null, bmVisOn=false;
 
 function A(){try{return window._snApi||null;}catch(e){return null;}}
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
@@ -102,7 +108,7 @@ function tempN(t){const m=/(\d{2,3})/.exec(String(t==null?"":t));return m?+m[1]:
 function steps(eat,P){
   if(eat==null)return [];
   const S=[],ov=P.filter(d=>d.in!=null&&d.where==="oven").sort((a,b)=>a.in-b.in);
-  ov.forEach(d=>{const hot=ov.some(o=>o!==d&&o.in<d.in&&o.out>d.in-HEAT);if(!hot&&!S.some(x=>x.k==="heat"&&x.at===d.in-HEAT))S.push({at:d.in-HEAT,k:"heat",d,key:"heat"+(d.in-HEAT)});});
+  ov.forEach(d=>{const hot=ov.some(o=>o!==d&&o.in<d.in&&o.out>d.in-HEAT);if(!hot&&!S.some(x=>x.k==="heat"&&x.at===d.in-HEAT))S.push({at:d.in-HEAT,k:"heat",d,key:d.id+"_heat"});});   // keyed by the dish, so a tick survives a changed eat time
   P.forEach(d=>{if(d.ready!=null)S.push({at:d.ready,k:"r",d,key:d.id+"_r"});
     if(d.in!=null){S.push({at:d.in,k:"i",d,key:d.id+"_i"});if(d.rest)S.push({at:d.out,k:"o",d,key:d.id+"_o"});}});
   S.forEach(x=>{x.fid=x.d.id;});
@@ -261,7 +267,7 @@ function pageHTML(){
   if(!it)return top+'</div><div class="bm-empty">That meal is gone.</div>';
   const day=a.ideaDay(it),eat=eatOf(it),D=dishesOf(it),P=plan(eat,D),NT=notTimed(P),days=Object.keys(a.whens(it).reduce((m,w)=>{m[w.d]=1;return m;},{})).length;
   const ct=day?calTime(it,day):null,K=kitchenOf(it),C=eat!=null?clashes(P,K.n):[];
-  let h=top+'<div class="bm-title">'+esc(it.emoji||"🍽")+" "+esc(it.t||"")+'</div></div>';
+  let h=top+'<div class="bm-title">'+esc(it.emoji||"🍽")+" "+esc(it.t||"")+'</div>'+(eat!=null?'<button class="bm-go bm-cookbtn" onclick="bmCook()">👩‍🍳 Cook view</button>':"")+'</div>';
   h+='<div class="bm-sub">'+(day?a.fmtDay(day)+(days>1?" · It is on "+days+" days. This is for the next one.":""):"📅 No day yet — the times still work. Give it a day with 📅 Schedule.")+(a.hideOf(it)?" · 🤫 a surprise — only you see this":"")+'</div>';
   h+='<div class="bm-card bm-eat"><label>🍽 We eat at <input type="time" id="bm-eat" value="'+(eat!=null?hhmm(eat):"")+'" onchange="bmEat(this.value)"></label>'
     +(eat==null&&ct!=null?'<button class="bm-go" onclick="bmEat(\''+hhmm(ct)+'\')">Use '+fmtClock(ct)+' (the calendar time)</button>':"")
@@ -304,17 +310,64 @@ function sheetHTML(){
     +(e.fid?'<button class="bm-tool bm-del" onclick="bmDishDel()">'+(e.ask?"Tap again to delete":"Delete")+'</button>':"")+'</div>';
   return '<div class="bm-sheet" onclick="if(event.target===this)bmDishCancel()"><div class="bm-sh"><button class="bm-x" onclick="bmDishCancel()">✕</button>'+h+(e.msg?'<div class="bm-msg">'+esc(e.msg)+'</div>':"")+'</div></div>';
 }
+// ── 👩‍🍳 the cook view (slice 4) ─────────────────────────────────────────────────
+// now = minutes from midnight of the meal's day by the TABLET's clock (the day before is negative). _mlNowMin (the app's clock
+// helper, tests set it) when there, else the device clock.
+function clockNow(){try{if(typeof _mlNowMin==="function"){const m=_mlNowMin();if(typeof m==="number"&&m>=0&&m<DAY)return m;}}catch(e){}const d=new Date();return d.getHours()*60+d.getMinutes();}
+function nowAbs(day){const a=A();return (day&&a?a.daysTo(day,a.today()):0)*DAY+clockNow();}
+// next = the first step not ticked · late = not ticked and its time went by (never after the meal's day) · inNow per appliance:
+// ticked in and not yet out ("in"), or not ticked but the plan says it should be in by now ("should").
+function stateAt(S,P,T,now,after){
+  const open=S.filter(s=>!T[s.key]),late=after?[]:open.filter(s=>now>s.at),inNow=[];
+  P.filter(d=>d.in!=null).forEach(d=>{const i=!!T[d.id+"_i"],out=d.rest?!!T[d.id+"_o"]:!!T.eat;
+    if(i&&!out)inNow.push({d,how:"in"});else if(!i&&!out&&!after&&d.in<=now&&now<d.out)inNow.push({d,how:"should"});});
+  return {next:open[0]||null,late,inNow};
+}
+function untilTxt(n){if(n<=0)return "now";return dur(n);}
+function cookStepHTML(s,T,now,after,day){
+  const done=!!T[s.key],lateBy=(!done&&!after&&now>s.at)?now-s.at:0,a=A(),mid=s.d&&s.d.mid,rec=mid&&a.recipes()[mid];
+  const txt=s.k==="eat"?"Everything out. Eat!"+(s.put.length?"<small>Put out: "+esc(s.put.join(", "))+"</small>":""):stepTxt(s);
+  const pop=(s.k==="i"&&rec&&typeof grMealPop==="function")?'<button class="bm-tool" onclick="bmRecipe(\''+q(mid)+'\')">📖</button>':"";
+  return '<div class="bm-cs'+(done?" done":"")+(lateBy?" late":"")+(s.k==="eat"?" eat":"")+'"><button class="bm-ctk'+(done?" on":"")+'" onclick="bmTick(\''+q(s.key)+'\')" aria-label="Done">'+(done?"✅":"☐")+'</button>'
+    +'<b>'+esc(stepWhen(s.at,day))+'</b><span>'+txt+(lateBy?' <i class="bm-late">late '+dur(lateBy)+'</i>':"")+'</span>'+pop+'</div>';
+}
+function cookHTML(){
+  const a=A(),it=cur();if(!it)return '<div class="bm-top"><button class="bm-back" onclick="bmClose()">← Back</button></div><div class="bm-empty">That meal is gone.</div>';
+  const day=a.ideaDay(it),eat=eatOf(it),D=dishesOf(it),P=plan(eat,D),S=steps(eat,P),T=ticksOf(it,day),dd=day?a.daysTo(a.today(),day):0,after=dd<0,now=nowAbs(day),st=stateAt(S,P,T,now,after);
+  let h='<div class="bm-top"><button class="bm-back" onclick="bmCookClose()">✕ Close</button><div class="bm-title">👩‍🍳 '+esc(it.t||"")+'</div></div>';
+  h+='<div class="bm-clock"><div class="bm-now">It is '+fmtClock(clockNow())+'</div><div class="bm-sub">'
+    +(dd>0?"This is for "+esc(a.fmtDay(day))+" (in "+dd+" day"+(dd===1?"":"s")+").":(after?"This was "+esc(a.fmtDay(day))+".":(eat!=null?"We eat at "+fmtClock(eat)+(now<eat?" · "+untilTxt(eat-now)+" to go":(now===eat?" · now!":"")):"No eat time yet.")))+'</div>'
+    +(momOk()?'<label class="bm-small">Change the eat time <input type="time" value="'+(eat!=null?hhmm(eat):"")+'" onchange="bmEat(this.value)"></label>':"")+(bmMsg?'<div class="bm-msg">'+esc(bmMsg)+'</div>':"")+'</div>';
+  if(eat==null)return h+'<div class="bm-empty">Put in when you eat first. Then every step shows here.</div>';
+  const nx=st.next;
+  let left='<div class="bm-card bm-next"><div class="bm-h">⏭ Next</div>'+(nx?'<div class="bm-nx"><b>'+esc(stepWhen(nx.at,day))+'</b> — '+(nx.k==="eat"?"Everything out. Eat!":stepTxt(nx))+'<small>'+(dd>0||after?"":(now<nx.at?"in "+dur(nx.at-now):(now===nx.at?"now":"late "+dur(now-nx.at))))+'</small></div>':'<div class="bm-nx">✅ All done. Enjoy!</div>')+'</div>';
+  const byLane={};st.inNow.forEach(x=>{const k=laneKey(x.d);(byLane[k]=byLane[k]||{d:x.d,L:[]}).L.push(x);});
+  left+='<div class="bm-card"><div class="bm-h">🔥 Cooking now</div>'+(Object.keys(byLane).length?Object.keys(byLane).map(k=>{const g=byLane[k],w=whereRow(g.d.where);
+      return '<div class="bm-in"><b>'+w[1]+" "+esc(g.d.where==="x"?g.d.whereTxt:w[2])+'</b>'+g.L.map(x=>'<div class="'+(x.how==="should"?"bm-should":"")+'">'+esc(x.d.name)+' <small>'+fmtClock(x.d.in)+"–"+fmtClock(x.d.out)+(x.how==="should"?" · should be in — tick it":"")+'</small></div>').join("")+'</div>';}).join(""):'<div class="bm-empty">Nothing is cooking.</div>')+'</div>';
+  const B=before(D,day),open=B.list.filter(x=>!T[x.key]);
+  let right=open.length?'<div class="bm-card bm-open"><div class="bm-h">🧊 Still open from before the day</div>'+open.map(x=>'<div class="bm-row"><button class="bm-tk" onclick="bmTick(\''+q(x.key)+'\')">☐</button><span>'+esc((x.k==="t"?"Move "+x.d.name+" to the fridge":"Make "+x.d.name))+' <small>('+esc(day?a.fmtDay(x.day):x.n+" days before")+')</small></span></div>').join("")+'</div>':"";
+  right+='<div class="bm-card"><div class="bm-h">⏱ Every step</div>'+S.map(x=>cookStepHTML(x,T,now,after,day)).join("")+'</div>';
+  if(B.bring.length)right+='<div class="bm-card"><div class="bm-h">🚗 Coming with guests</div>'+B.bring.map(g=>g.dishes.map(d=>'<div class="bm-row'+(T[d.id+"_h"]?" done":"")+'"><button class="bm-tk'+(T[d.id+"_h"]?" on":"")+'" onclick="bmTick(\''+q(d.id+"_h")+'\')">'+(T[d.id+"_h"]?"✅":"☐")+'</button><span>'+esc(d.name)+' — '+esc(g.name||"nobody yet")+'</span></div>').join("")).join("")+'</div>';
+  return h+'<div class="bm-cook"><div class="bm-cl">'+left+'</div><div class="bm-cr">'+right+'</div></div>';
+}
+function armMinute(){disarm();if(bmView!=="cook"||!bmSid||typeof setTimeout!=="function")return;const ms=60000-(Date.now()%60000)+50;bmTimer=setTimeout(()=>{bmTimer=null;if(bmView==="cook"&&bmSid)bmDraw();},ms);}
+function disarm(){if(bmTimer!=null){try{clearTimeout(bmTimer);}catch(e){}bmTimer=null;}}
+function wakeOn(){try{if(typeof navigator!=="undefined"&&navigator.wakeLock&&navigator.wakeLock.request&&!bmWake)navigator.wakeLock.request("screen").then(l=>{if(bmView==="cook"&&bmSid)bmWake=l;else{try{l.release();}catch(e){}}}).catch(()=>{});}catch(e){}}
+function wakeOff(){try{if(bmWake&&bmWake.release)bmWake.release();}catch(e){}bmWake=null;}
+function bmVis(){try{if(document.visibilityState==="visible"&&bmView==="cook"&&bmSid){bmWake=null;wakeOn();bmDraw();}}catch(e){}}   // the screen woke: catch up, keep it on
+function visOn(on){try{if(typeof document.addEventListener!=="function"||on===bmVisOn)return;if(on)document.addEventListener("visibilitychange",bmVis);else document.removeEventListener("visibilitychange",bmVis);bmVisOn=on;}catch(e){}}
+function cookOff(){disarm();wakeOff();visOn(false);}
 const BM_CSS=`
 #bm-layer{position:fixed;inset:0;z-index:250;background:#f6f7f5;overflow-y:auto;-webkit-overflow-scrolling:touch;font-family:'DM Sans',sans-serif;color:#0f172a}
 .bm-wrap{max-width:960px;margin:0 auto;padding:10px 16px 60px;box-sizing:border-box}
 .bm-top{display:flex;align-items:center;gap:10px;margin:4px 0 2px}
 .bm-back,.bm-tool{border:1.5px solid #cbd5e1;background:#fff;border-radius:10px;padding:8px 12px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;color:#0f172a;white-space:nowrap}
-.bm-title{font-family:'Fraunces',serif;font-size:22px;font-weight:700;min-width:0}
+.bm-title{font-family:'Fraunces',serif;font-size:22px;font-weight:700;min-width:0;flex:1}.bm-cookbtn{flex:none}
 .bm-sub{font-size:13px;color:#64748b;margin:2px 0 10px;line-height:1.4}
 .bm-card{background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,.13);padding:10px 14px;margin-bottom:10px;min-width:0}
 .bm-eat label{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:800;flex-wrap:wrap}
 .bm-eat input{font:inherit;font-size:18px;padding:7px 10px;border:2px solid #2B7A78;border-radius:10px;background:#fff;min-width:130px}
-.bm-cols{display:grid;gap:0 10px}
+.bm-cols{display:grid;gap:0 10px;grid-template-columns:minmax(0,1fr)}
 @media(min-width:700px){.bm-cols{grid-template-columns:1fr 1fr}}
 .bm-h{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#2B7A78;margin:2px 0 8px}
 .bm-step{display:flex;gap:10px;padding:8px 0;border-top:1px solid #f1f5f9;font-size:15px;line-height:1.35}
@@ -332,7 +385,19 @@ const BM_CSS=`
 .bm-row small{color:#64748b;font-weight:600}.bm-row.done span{color:#64748b;text-decoration:line-through}
 .bm-tk{flex:none;width:44px;height:44px;border:1.5px solid #cbd5e1;border-radius:10px;background:#fff;font-size:20px;cursor:pointer;line-height:1}
 .bm-tk.on{border-color:#86efac;background:#f0fdf4}
-.bm-late{font-style:normal;font-size:11px;font-weight:800;color:#fff;background:#d97706;border-radius:99px;padding:1px 7px}
+.bm-late{font-style:normal;font-size:11px;font-weight:800;color:#fff;background:#d97706;border-radius:99px;padding:1px 7px;margin-left:2px;white-space:nowrap;display:inline-block}
+.bm-clock{background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,.13);padding:10px 14px;margin:6px 0 10px}
+.bm-now{font-size:30px;font-weight:800;line-height:1.1}.bm-clock .bm-sub{font-size:17px;color:#334155;font-weight:700;margin:4px 0}
+.bm-small{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#64748b;flex-wrap:wrap}.bm-small input{font:inherit;padding:5px 8px;border:1.5px solid #cbd5e1;border-radius:8px}
+.bm-cook{display:grid;gap:0 12px;grid-template-columns:minmax(0,1fr)}@media(min-width:700px){.bm-cook{grid-template-columns:minmax(0,5fr) minmax(0,7fr);align-items:start}.bm-cl{position:sticky;top:8px}}
+.bm-nx{font-size:22px;line-height:1.3}.bm-nx small{display:block;font-size:16px;font-weight:800;color:#b45309;margin-top:4px}
+.bm-in{padding:6px 0;border-top:1px solid #f1f5f9;font-size:18px}.bm-in div{font-size:17px;margin:2px 0 2px 6px}.bm-in small{color:#64748b;font-weight:600}
+.bm-should{color:#94a3b8}.bm-open{border:2px solid #fcd34d}
+.bm-cs{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #f1f5f9;font-size:19px;line-height:1.3}
+.bm-cs b{flex:0 0 92px;font-size:17px}.bm-cs span{flex:1;min-width:0}.bm-cs small{display:block;font-size:15px;color:#64748b}
+.bm-cs.done span,.bm-cs.done b{color:#94a3b8;text-decoration:line-through}.bm-cs.late b{color:#b45309}.bm-cs.eat{color:#166534;font-weight:800}
+.bm-ctk{flex:none;width:58px;height:58px;border:2px solid #cbd5e1;border-radius:12px;background:#fff;font-size:28px;cursor:pointer;line-height:1}.bm-ctk.on{border-color:#86efac;background:#f0fdf4}
+#bm-layer{flex-direction:column;align-items:stretch}.bm-wrap{flex:none;width:100%}
 .bm-check{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;margin-top:10px}
 .bm-lane{border-top:1px solid #f1f5f9;padding:6px 0}
 .bm-lh{font-size:14px;font-weight:800;padding:2px 0}.bm-lh small{display:block;font-size:12px;font-weight:600;color:#64748b}
@@ -360,8 +425,11 @@ const BM_CSS=`
 `;
 function bmDraw(){
   if(!bmEl)return;
-  if(!momOk()||!A()){bmEl.innerHTML="";bmEl.style.display="none";bmSid=bmIid=null;bmEd=null;bmMsg="";return;}   // 🤫 the switch went off: close
-  bmEl.style.display="block";bmEl.innerHTML='<div class="bm-wrap">'+pageHTML()+'</div>';
+  if(!momOk()||!A()){cookOff();bmEl.innerHTML="";bmEl.className="";bmEl.style.display="none";bmSid=bmIid=null;bmEd=null;bmMsg="";bmView="plan";return;}   // 🤫 the switch went off: close
+  const cook=bmView==="cook";
+  bmEl.className=cook?"dlg-overlay":"";bmEl.style.display=cook?"flex":"block";   // the cook view holds back a deploy's reload (haBusyReason)
+  bmEl.innerHTML='<div class="bm-wrap">'+(cook?cookHTML():pageHTML())+'</div>';
+  if(cook)armMinute();
 }
 
 // ── taps ─────────────────────────────────────────────────────────────────────
@@ -370,10 +438,13 @@ function bmOpen(sid,iid){
   if(!document.getElementById("bm-style")){const s=document.createElement("style");s.id="bm-style";s.textContent=BM_CSS;document.head.appendChild(s);}
   bmEl=document.getElementById("bm-layer");
   if(!bmEl||!bmEl.parentNode){bmEl=document.createElement("div");bmEl.id="bm-layer";(document.body||document.documentElement).appendChild(bmEl);}
-  bmSid=sid;bmIid=iid;bmEd=null;bmMsg="";bmDraw();
+  cookOff();bmSid=sid;bmIid=iid;bmEd=null;bmMsg="";bmView="plan";bmDraw();
   try{if(bmEl.scrollTo)bmEl.scrollTo(0,0);}catch(e){}
 }
-function bmClose(){bmSid=bmIid=null;bmEd=null;bmMsg="";if(bmEl){bmEl.innerHTML="";bmEl.style.display="none";}const a=A();if(a&&a.repaint)a.repaint();}
+function bmClose(){cookOff();bmSid=bmIid=null;bmEd=null;bmMsg="";bmView="plan";if(bmEl){bmEl.innerHTML="";bmEl.className="";bmEl.style.display="none";}const a=A();if(a&&a.repaint)a.repaint();}
+function bmCook(){if(!cur())return;bmEd=null;bmMsg="";bmView="cook";wakeOn();visOn(true);bmDraw();try{if(bmEl.scrollTo)bmEl.scrollTo(0,0);}catch(e){}}
+function bmCookClose(){cookOff();bmView="plan";bmMsg="";bmDraw();}
+function bmRecipe(mid){try{if(typeof grMealPop==="function"&&A().recipes()[mid])grMealPop(mid);}catch(e){}}   // read-only recipe pop-up, writes nothing
 function bmRefresh(){if(bmEl&&bmSid&&(!bmEd||!momOk()))bmDraw();}   // the planner's data changed (another device too)
 function bmEat(v){
   const it=cur();if(!it)return;const m=clockMin(v);
@@ -452,7 +523,7 @@ function bmTick(key){
 function bmShop(fid){const a=A(),it=cur();if(it&&a.foodShop)a.foodShop(it.sid,it.id,fid);}
 function bmBuy(){const a=A(),it=cur();if(it&&a.lineOpen)a.lineOpen("sup",it.id,"");}   // the planner's own supply pop-up (it sits above this page)
 
-Object.assign(window,{bmHow,bmWho,bmGuest,bmTick,bmHave,bmKit,bmOpen,bmClose,bmRefresh,bmEat,bmDish,bmDishSet,bmWhere,bmDishMid,bmDishCancel,bmDishSave,bmDishDel,bmShop,bmBuy});
-window._bmTest={before,names,thawDays,putOut,ticksOf,whoName,tempN,clashes,kitchenOf,kitN,warnText,HEAT,NEAR,KIT:BM_KIT,clockMin,fmtClock,hhmm,dayShift,dur,dishOf,timed,plan,steps,lanes,notTimed,stepWhen,put,eatOf,OK:BM_OK,WHERE:BM_WHERE,draw:bmDraw,
+Object.assign(window,{bmCook,bmCookClose,bmRecipe,bmHow,bmWho,bmGuest,bmTick,bmHave,bmKit,bmOpen,bmClose,bmRefresh,bmEat,bmDish,bmDishSet,bmWhere,bmDishMid,bmDishCancel,bmDishSave,bmDishDel,bmShop,bmBuy});
+window._bmTest={nowAbs,stateAt,clockNow,cook:()=>({view:bmView,timer:bmTimer!=null,wake:!!bmWake,vis:bmVisOn}),before,names,thawDays,putOut,ticksOf,whoName,tempN,clashes,kitchenOf,kitN,warnText,HEAT,NEAR,KIT:BM_KIT,clockMin,fmtClock,hhmm,dayShift,dur,dishOf,timed,plan,steps,lanes,notTimed,stepWhen,put,eatOf,OK:BM_OK,WHERE:BM_WHERE,draw:bmDraw,
   state:()=>({sid:bmSid,iid:bmIid,ed:bmEd,el:bmEl,msg:bmMsg})};
 })();
