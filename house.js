@@ -526,7 +526,7 @@ function hcCardHTML(){
   if(!add) h+=sec(4,'How long')+lbl('Minutes',hcCtl(id,"minutes"));
   if(!add){ const st=hhStats(j); let last=st.last, by=j.who==="grab"?"":j.who; if(j.lastDone&&/^\d{4}-\d{2}-\d{2}$/.test(j.lastDone)&&(!last||j.lastDone>last)){ last=j.lastDone; by=j.lastBy||""; }
     h+=sec(5,'History')+'<div style="font-size:12.5px;font-weight:700;margin-top:8px">'+(last?'Last done '+(+last.slice(5,7))+'/'+(+last.slice(8))+(by?' by '+esc(hhWhoName(by)):''):'Not done in the last 8 weeks')+'</div>'
-      +'<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">'+_hhChip('on time 4 wk '+st.done4+'/'+st.due4+' ('+hhPct(st.done4,st.due4)+')','#f3f4f6','#1f2937')+_hhChip('8 wk '+st.done8+'/'+st.due8+' ('+hhPct(st.done8,st.due8)+')','#f3f4f6','#1f2937')+_hhChip('late '+st.late8,st.late8?'#fef3c7':'#f3f4f6',st.late8?'#92400e':'#64748b')+(st.miss8?_hhChip('missed '+st.miss8,'#fee2e2','#991b1b'):'')+hhNeedChip(j)+'</div>'+(typeof hoHistHTML==="function"?hoHistHTML(id):'')+lbl('Note',hcCtl(id,"note")); }   // HOWOFTEN: this chore's line
+      +'<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">'+_hhChip('on time 4 wk '+st.done4+'/'+st.due4+' ('+hhPct(st.done4,st.due4)+')','#f3f4f6','#1f2937')+_hhChip('8 wk '+st.done8+'/'+st.due8+' ('+hhPct(st.done8,st.due8)+')','#f3f4f6','#1f2937')+_hhChip('late '+st.late8,st.late8?'#fef3c7':'#f3f4f6',st.late8?'#92400e':'#64748b')+(st.miss8?_hhChip('missed '+st.miss8,'#fee2e2','#991b1b'):'')+hhNeedChip(j)+'</div>'+(typeof hoHistHTML==="function"?hoHistHTML(id):'')+(typeof ltCardHTML==="function"?ltCardHTML(id):'')+lbl('Note',hcCtl(id,"note")); }   // HOWOFTEN: this chore's line · 📒 LASTTURNS (L7): its last turns, a jump to the ledger
   h+=sec(add?4:6,add?'Save':'Actions')+'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
   if(add) h+='<span style="flex:1;font-size:11px;color:var(--muted)">One row in the table; on the list right away under Take over.</span>'+_hhBtn("hcClose()",'Cancel',false,'#94a3b8')+_hhBtn("hcAddSave()",'Save',true,'#2B7A78');
   else if(j.status==="retired") h+=_hhBtn("hhSet('"+id+"','verdict','keep')",'↩ Bring back',false,'#2B7A78')+_hhBtn("hhDeleteForGood('"+id+"')",'🗑 Delete for good',false,'#b91c1c');
@@ -1126,6 +1126,66 @@ function hoHistHTML(id){ const j=hhJobs()[id]; if(!j) return ''; const X=hoX(), 
   return '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:12px;font-weight:700">📊 '+(r?hoMarksHTML(r)+'<span style="color:#475569">'+hoText(r)+'</span>':'<span style="color:#475569">a one-time job</span>')+'</div>'
     +'<div style="font-size:12px;font-weight:700;margin-top:4px">'+(last?'Last checked off '+(+last.iso.slice(5,7))+'/'+(+last.iso.slice(8))+(last.by?' by '+esc(hhWhoName(last.by)):''):'Not checked off in the last 8 weeks')+'</div>'; }
 // HOWOFTEN_END
+// LASTTURNS_START — 📒 Last turns on the chore card, and the 📒 Ledger on that one chore (DESIGN_chore_ledger_2026-11-21 §5 "Quick jumps,
+// never second copies": "the card's '📒 Last turns: ✅ ✅ ✅ ✖ ›' → the ledger on that chore"; §8 "Each links to the other"; §9 row L7;
+// the hub's brief 2026-11-24). The ledger's chore name opens the card (hcGo); this line on the card's History opens the ledger. A JUMP:
+// it writes nothing (no database, no bank, no log line, no local flag) and adds no button — the rows in the pop-up carry the ledger's
+// own buttons, drawn by the ledger.
+// The marks are the ledger's own, read with the ledger's own readers, so the line and the rows it opens can never disagree:
+// one mark per TURN (a day the chore was due on its kid's list, lgDue) = the icon of that day's ledger row (lgRow: ✅ done · ⏸ waiting
+// for your ✓ · ➖ excused · 🌅 sent to the next morning · ○ not done yet), and for a past ✖ what became of it by the ledger's wait rule
+// (lgFate): ticked later → ✅ (⏸ while held), still on the list today → ⏳, gone or never carried → ✖. The last LT_N (6), newest last.
+// How far back: what the ledger can reach on this device — this week, and last week once the lists' own read of it has landed
+// (lgDay / lgMap). Nothing older is kept on a device and nothing new is read. The design's "last 4 weeks" would need two more weekly
+// reads (the report says what it would take); 📊 How often (8 weeks, from the room grid's squares) stays the long view.
+// Which chores: a kid's own chore on its kid's list (rows from the household table: Take over on, hcGoOk — the same rule as the
+// ledger's names opening the card), with at least one turn in reach. No line for a grown-up's chore, Up for Grabs, a chore that takes
+// turns (🔁 rot or HOUSETURNS: its row on a kid's list can carry another kid's job), a chore with no turn in reach (brand-new, every
+// 4 weeks, on nobody's list). Mom only, as the card is; nothing on Dad's link or a kid's device.
+// The pop-up: the ledger's third view, lgWeek===null (false = a day, true = This week). Every ordinary way in sets lgWeek true or false
+// (lgShow from 🧒 Kids today, the Today · Yesterday · This week chips), so the ledger's own opening is byte for byte as before.
+let ltSel="";   // the chore the pop-up shows (memory only)
+const LT_N=6;
+function ltStepOk(st,id){ return !!st&&!st.rot&&(st.house||st._hh)===id; }
+function ltOk(id){ const j=hhJobs()[id]; return !!j&&typeof momHere==="function"&&momHere()&&typeof hcGoOk==="function"&&hcGoOk(id)&&hhIsKid(j.who)&&SL_KIDS.indexOf(j.who)>=0&&!j.rot&&!(typeof htOf==="function"&&htOf(id)); }
+function ltFirst(){ return -(lgNow()+8); }   // last week's first day: the oldest the ledger reaches
+function ltSteps(slot,kid,D){ return D.prev?lgPrevSteps(slot,kid,D):(rtStepsFor(slot,kid,false,D.dn)||[]); }
+// Every turn in reach, oldest first: [{D, m}] — the global `day` pinned to the day read, as lgDayData does
+function ltTurns(id){ const j=hhJobs()[id], kid=j&&j.who, out=[]; if(!kid) return out;
+  for(let k=ltFirst();k<=0;k++){ const D=lgDay(k); if(!D||!lgMap(D)) continue; const pd=day, pw=_prevSlWk; day=D.dn;
+    try{ if(typeof _prevWkKey==="function") _prevSlWk=_prevWkKey();
+      ((typeof activeSlots==="function")?activeSlots():SL_SLOTS).forEach(function(slot){ ltSteps(slot,kid,D).forEach(function(st,i){
+        if(!ltStepOk(st,id)||(D.prev&&st.house)||!lgDue(st,D)) return; const r=lgRow(slot,kid,D,i,st); if(!r) return; let m=r.ic;
+        if(m==="✖"){ const f=lgFate(slot,kid,i,st,D); if(f&&f.wait) m="⏳"; else if(f&&f.done){ const x=lgRec(slot,kid,f.done,i); m=(x&&!x.am&&lgHeld(kid,x.bid))?"⏸":"✅"; } }
+        out.push({D:D,m:m}); }); });
+    } finally { day=pd; _prevSlWk=pw; } }
+  return out; }
+// The card's line (HH_CARD ▸ History, under 📊), or "" — Mom only, a kid's own chore with a turn in reach
+function ltCardHTML(id){ if(!ltOk(id)) return ""; const T=ltTurns(id).slice(-LT_N); if(!T.length) return "";
+  return '<div onclick="ltGo(\''+id+'\')" title="Open the 📒 Ledger on this chore" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;font-size:12px;font-weight:700;cursor:pointer">📒 Last turns: '
+    +T.map(function(t){ return '<span title="'+esc(lgDate(t.D.iso))+'">'+t.m+'</span>'; }).join(' ')+' <span style="color:#2B7A78;font-weight:800">›</span></div>'; }
+// The tap: the card closes, the ledger opens on the chore's kid, showing that chore (no line, no jump)
+function ltGo(id){ if(!ltOk(id)||!ltTurns(id).length) return; const kid=hhJobs()[id].who; if(typeof hcClose==="function") hcClose(); lgKid=kid; lgOff=0; lgWeek=null; ltSel=id; lgDraw(); }
+// "Show everything ›": the ordinary ledger on that kid, today
+function ltAll(){ ltSel=""; lgOff=0; lgWeek=false; lgDraw(); }
+// The pop-up in the chore view (lgHTML's first line), or "" (the ordinary ledger)
+function ltHTML(){ if(lgWeek!==null||!ltSel) return ""; const j=hhJobs()[ltSel], kid=lgKid; if(!j||!ltOk(ltSel)||kid!==j.who) return "";
+  const id=ltSel, a=lgDay(ltFirst()), last=!!(a&&lgMap(a)), from=last?a:lgDay(-(lgNow()+1)), days=[];
+  for(let k=ltFirst();k<=0;k++){ const x=lgDayData(kid,k); if(!x.lists) continue; const rows=[];
+    x.lists.forEach(function(L){ L.rows.forEach(function(r){ if(r.id===id) rows.push(r); }); });
+    const g=x.gone.filter(function(r){ return r.id===id; }); if(rows.length||g.length) days.push({x:x,rows:rows,g:g}); }
+  let h='<div id="lg-pop" onclick="lgClose()" style="position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:9000;display:flex;align-items:center;justify-content:center;padding:12px">'
+    +'<div onclick="event.stopPropagation()" style="background:#fff;border-radius:16px;max-width:560px;width:100%;max-height:88vh;overflow:auto;padding:14px 14px 16px;box-shadow:0 20px 50px rgba(0,0,0,0.3)">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="font-family:\'Fraunces\',serif;font-weight:700;font-size:17px;flex:1">📒 Ledger</div>'+(typeof lgRulesBtn==="function"?lgRulesBtn():'')+'<button onclick="lgClose()" style="border:none;background:#f3f4f6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer">✕</button></div>'+(typeof lgRulesTop==="function"?lgRulesTop():'')
+    +'<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-bottom:2px"><b style="flex:1;font-size:14px">'+esc((j.emoji?j.emoji+' ':'')+(j.label||'Chore'))+' · <span style="color:'+(SL_KCOL[kid]||'#666')+'">'+esc(lgName(kid))+'</span></b>'
+    +'<span onclick="ltAll()" style="cursor:pointer;font-size:12.5px;font-weight:800;color:#2B7A78;white-space:nowrap">Show everything ›</span></div>'
+    +'<div style="font-size:12px;color:#6b7280;margin-bottom:2px">'+(last?'This week and last week, from '+esc(lgDate(from.iso))+'. Older days are not kept on this device.':'This week, from '+esc(from?lgDate(from.iso):'Sunday')+'. '+LG_NOTYET)+'</div>';
+  h+=days.length?days.map(function(d){ const x=d.x;
+      return '<div style="margin-top:12px;padding:5px 8px;background:#f8fafc;border-radius:8px;font-size:12.5px"><b>'+(x.D.k===0?'Today':lgDate(x.D.iso))+'</b></div>'+d.rows.map(lgRowHTML).join('')
+        +(d.g.length?'<div style="margin-top:6px;font-size:12px;font-weight:800;color:#374151">Gone from '+esc(lgName(kid))+'\'s list '+(x.D.k===0?'this morning':'that morning')+'</div>'+d.g.map(lgRowHTML).join(''):''); }).join('')
+    :lgFar('No turns of this chore on '+esc(lgName(kid))+'\'s lists in that time.');
+  return h+'</div></div>'; }
+// LASTTURNS_END
 // CARDRULES_START — the chore card's four settings for a missed chore (DESIGN_missed_chores_2026-11-19 §1.1–1.5, §7, §8 row D; her
 // words 11/19: "customizeable also have a fixed day option versus move 7 days after last done option then if fixed and done within how
 // may days is the next skipped"). On the card (section 2 · When, "If it is missed") and as pills in a room's ⚙ Rules: ONE control per
@@ -1768,6 +1828,7 @@ function lgWeekHTML(kid){
   return '<div style="font-size:13.5px;padding:6px 2px 2px"><b>'+(last?'Last week':'This week')+':</b> '+lgSum(tot,!last)+'</div>'
     +days.map(function(x){ return '<div style="margin-top:12px;padding:5px 8px;background:#f8fafc;border-radius:8px;font-size:12.5px"><b>'+(x.D.k===0?'Today':lgDate(x.D.iso))+'</b> <span style="color:#6b7280">'+lgSum(x,x.D.k===0)+'</span></div>'+lgListsHTML(x,kid); }).join(''); }
 function lgHTML(){
+  const _lt=(typeof ltHTML==="function")?ltHTML():""; if(_lt) return _lt;   // 📒 LASTTURNS (L7): the ledger on one chore (lgWeek===null)
   const kid=lgKid, D=lgDay(lgOff), chip=function(on,lab,js){ return '<span onclick="'+js+'" style="cursor:pointer;font-size:12px;font-weight:'+(on?'800':'600')+';padding:3px 10px;border-radius:12px;border:1.5px solid '+(on?'#2B7A78':'var(--border)')+';background:'+(on?'#e6f4f3':'#fff')+';color:'+(on?'#2B7A78':'#6b7280')+'">'+lab+'</span>'; };
   const arrow=function(lab,to,off){ return '<button '+(off?'disabled ':'onclick="lgGo(\'\','+to+')" ')+'style="border:1.5px solid var(--border);background:#fff;border-radius:8px;padding:2px 10px;font-size:14px;font-weight:800;cursor:'+(off?'default;opacity:.35':'pointer')+'">'+lab+'</button>'; };
   const lo=lgMin(), t=lgNow(), last=!!(D&&D.prev), when=lgWeek?((D&&D.prev)?'Last week':'This week'):(D?lgDate(D.iso):'Earlier');
