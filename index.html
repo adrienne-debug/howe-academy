@@ -14817,12 +14817,13 @@ function momSchedHouse(dayName,dayTasks){
       if(x.done) out.push({m:x.at,o:3,html:_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ 🧽 '+lbl+'</span>')});
       else out.push({m:x.at,o:2,html:_lbBox('#f0fdf4','#16a34a','<span style="flex:1;font-size:13px">🧽 '+lbl+' · '+x.mins+' min'+_kpCd(x.at,x.at+x.mins)+'</span>'+_kpBtn('✓ Done',"hhPlanCheck('"+mwTodayIso()+"','"+x.id+"')",true))}); }); return out.sort(function(a,b2){ return (a.m-b2.m)||(a.o-b2.o); }); }
   const list=hhHouseToday(); if(!list.length) return out;
-  const next=(typeof momSchedNextMom==="function")?momSchedNextMom(dayTasks||[]):null, def=hhHouseDefaultMin(), iso=mwTodayIso();
+  const next=(typeof momSchedNextMom==="function")?momSchedNextMom(dayTasks||[]):null, def=hhHouseDefaultMin(), iso=mwTodayIso(), P=(typeof hmixPlaced==="function")?hmixPlaced(dayName,dayTasks||[],list):null;   // 🏡 HOUSEMIX
   list.forEach(function(x){ const r=x.r, b=x.rec, key=hhHouseKey(r.id), lbl='<b>'+esc(r.label)+'</b> <span style="color:#6b6560">· '+esc(hhRoomName(hhRoomOf(r.job)))+'</span>';
     const doneBtn=_kpBtn('✓ Done',r.on,true), skipBtn=_kpBtn('Not now',"hhHouseBlockSet('"+_lbQ(r.id)+"','skip')",false), laterBtn=_kpBtn('⏰ 30 min later',"hhHouseBlockSet('"+_lbQ(r.id)+"','later')",false);
     if(r.done){ const ts=(((momdayData||{})[iso]||{}).chores||{})[(r.job.src&&r.job.src.id)||r.id]; const dm=(typeof ts==="number")?_lbMin(ts):def;
       out.push({m:(dm>=0&&dm<24*60)?dm:def,o:3,html:_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ 🏡 '+lbl+'</span>')}); return; }
     if(b&&b.at==="skip"){ out.push({m:def,o:1,html:_lbBox('#f0fdf4','#86efac','<span style="flex:1;font-size:13px">🏡 '+lbl+'</span>'+doneBtn)}); return; }
+    if(!b&&P&&P[r.id]){ out.push(hmixRow(r,lbl,P[r.id],doneBtn,skipBtn)); return; }   // 🏡 HOUSEMIX: placed in a gap
     if(!b){ out.push({m:def,o:1,html:_lbBox('#f0fdf4','#16a34a','<span style="flex:1 1 100%;font-size:13px">🏡 '+lbl+' — block out time?</span>'
         +'<label style="font-size:12px;color:#334155;font-weight:700">How long? <input id="hb-min-'+key+'" type="number" min="1" max="240" value="'+r.mins+'" style="width:54px;padding:4px 6px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px;font-family:\'DM Sans\',sans-serif"> min</label>'
         +_lbQBtn('Now',"hhHouseBlockSet('"+_lbQ(r.id)+"','now')",true)+(next?_lbQBtn('After '+esc(_lbCardName(next)),"hhHouseBlockSet('"+_lbQ(r.id)+"','after','"+_lbQ(next.id)+"')",false):'')+_lbQBtn('Later',"hhHouseBlockSet('"+_lbQ(r.id)+"','later')",false)+_lbQBtn('Not now',"hhHouseBlockSet('"+_lbQ(r.id)+"','skip')",false))}); return; }
@@ -14868,6 +14869,23 @@ function hgapLay(o){ o=o||{}; const win={start:Math.max(+o.now||0,+o.start||0),e
   const busy=hgapBusy(o.cards,o), gaps=hgapGaps(busy,win,o.cushion);
   return {busy:busy,gaps:gaps,placed:hgapPlace(o.chores,gaps,win)}; }
 // HOUSEGAP_END
+// HOUSEMIX_START — step 7 slice 2 (PLAN_house_step7 §5 row 2): once Mom taps "Mixed in" on 👤 By person (household/people/mom/fit
+// stored "mixed"; the unset default is not her tap — her answer 2026-11-20 "When I tap Mixed in"), momSchedHouse draws each unanswered
+// chore where hgapLay places it in her laid day as drawn, with ✓ Done · Now · ⏰ Later · Not now (today's taps, today's writes).
+// Worked out on each draw, kept nowhere, never handed to the Mom loop: no lesson moves for it. Not placed: no gap → after school, as
+// today. No school or her Mom-off day → by time of day (Morning 7:00 · Afternoon 12:00 · Night 5:00 PM, as Dad's); any time → as today.
+function hmixOn(){ return hhPeopleOf("mom").fit==="mixed"; }
+function hmixNoSchool(iso){ const d=new Date(iso+"T12:00:00").getDay(); if(d===0||d===6||scheduleBreakToday()) return true; return ROSTER.length>0&&ROSTER.every(function(k){ return !!smapIsKidOff(k,iso); }); }
+function hmixPlaced(dn,cards,list){ try{ if(!hmixOn()) return null; const P={};
+  const ch=list.filter(function(x){ return !x.r.done&&!x.rec; }).map(function(x){ return {id:x.r.id,mins:x.r.mins,slot:mcSlotOf(x.r.job),score:1}; });
+  if(mlMomOff()||hmixNoSchool(mwTodayIso())){ ch.forEach(function(c){ const m=DAD_SLOT_MIN[c.slot]; if(m!=null) P[c.id]={at:m,end:m+c.mins,how:"slot",slot:c.slot}; }); return P; }
+  const blocks=momBlockOpen().concat(hhHouseBlocksOpen(),kitPrepBlocksOpen()).filter(function(b){ return _mlBlkLaid[b.key]!=null; }).map(function(b){ return [_mlBlkLaid[b.key],_mlBlkLaid[b.key]+b.mins]; });
+  hgapLay({cards:cards,chores:ch,blocks:blocks,now:_mlNowMin(),start:gateStartMin(dn),end:coSchoolEnd(),lunch:_mlLunchWin(),done:function(t){ return !!_mlFinished(t.id,t); },lead:famIsMomCard,helper:helperHolds,span:mlMomSpan})
+    .placed.forEach(function(p){ if(p.how==="gap") P[p.id]=p; }); return P; }catch(e){ return null; } }
+function hmixRow(r,lbl,p,doneBtn,skipBtn){ const S=MC_SLOTS[p.slot];
+  return {m:p.at,o:1,html:_lbBox('#f0fdf4','#16a34a','<span style="flex:1 1 100%;font-size:13px">🏡 '+lbl+' · '+r.mins+' min · '+(S?S.ic+' '+S.nm:fromMin(p.at)+'–'+fromMin(p.end)+' · in a gap')+'</span>'
+    +doneBtn+_kpBtn('Now',"hhHouseBlockSet('"+_lbQ(r.id)+"','now')",false)+_kpBtn('⏰ Later',"hhHouseBlockSet('"+_lbQ(r.id)+"','later')",false)+skipBtn)}; }
+// HOUSEMIX_END
 // HH_SETTINGS_METER_START — PR A of the distributing cleaning day (her 2026-10-11: "settings per card on how often they should be
 // done and which kids can do … percentage wise farthest from being done … a cleaning day's start etc needs to be settings much
 // like a school day"). Three things, no behaviour change on any list:
@@ -37708,7 +37726,7 @@ function haNbContext(kid){
   let nbRec={}; try{ nbRec=ROSTER_DEF.find(k=>k&&k.id===kid)||{}; }catch(e){}
   const nbNm=v=>(typeof v==="string"&&v.trim())||null;
   const nbLv=nbLevelCtx(kid);   // NBLEVEL: ctx.grade + ctx.gradeBand
-  return { nbKidName:cap(kid), kidName:nbNm((((notebookSettings||{})[kid])||{}).notebookName)||nbNm(nbRec.notebookName)||nbNm(nbRec.name), notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), nbGrade:nbGradeOf(kid), grade:nbLv.grade, gradeBand:nbLv.gradeBand, spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, loe:loe, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, wordCursor:luWordsCursorOf(kid), numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true, ladders:((typeof nbLadderCtx==="function")?nbLadderCtx(kid):null) }; // KIDNAME_ROSTER
+  return { nbKidName:cap(kid), kidName:nbNm((((notebookSettings||{})[kid])||{}).notebookName)||nbNm(nbRec.notebookName)||nbNm(nbRec.name), notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), nbGrade:nbGradeOf(kid), grade:nbLv.grade, gradeBand:nbLv.gradeBand, spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, loe:loe, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, wordCursor:luWordsCursorOf(kid), numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), countPic:((typeof nbCountPicOf==="function")?nbCountPicOf(kid):null), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true, ladders:((typeof nbLadderCtx==="function")?nbLadderCtx(kid):null) }; // KIDNAME_ROSTER
 }
 // LU_WORDS_WIRE_START — 🔤 Lucy's Sight Word of the Day keeps its place week to week (notebooks.js LU_WORDS; her go-ahead
 // 2026-11-21 for slice 1 of PLAN_notebook_lucy_2026-11-10.md). The context reads notebookSettings/<kid>/wordCursor; the builder
@@ -44587,15 +44605,16 @@ function wbdFit(){
   const c=(w/WBD_GRID).toFixed(2)+"px";
   hold.style.backgroundImage=v.bg==="grid"?"linear-gradient(#bfdbfe 1px,transparent 1px),linear-gradient(90deg,#bfdbfe 1px,transparent 1px)":"none";
   hold.style.backgroundSize=v.bg==="grid"?c+" "+c:"auto";
+  if(v.bg==="lines"&&typeof wbdLinesCss==="function") wbdLinesCss(hold.style,Math.round(w));   // WBDLINES: ▤ Lines
   if(typeof wbFit==="function") wbFit(); if(typeof wbPaint==="function") wbPaint();
   return true;
 }
-function wbdBg(k){ const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!v.scratch) return; v.bg=_wbdBg=(k==="grid"?"grid":"blank"); wbdFit(); wbBarRender(); }
+function wbdBg(k){ const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!v.scratch) return; v.bg=_wbdBg=(k==="grid"||k==="lines"?k:"blank"); wbdFit(); wbBarRender(); }   // WBDLINES: + lines
 // wbBarRender's hook: the board's bar, drawn with the viewer's own button
 function wbdBarHTML(v,btn){
   return btn("\u2715","wbClose()")+'<span style="font-weight:800;font-size:13px;color:#0f172a">\u270D\uFE0F Whiteboard</span>'+
     '<span style="font-size:11px;color:#64748b">scratch \u00B7 \u2715 wipes it</span><span style="flex:1"></span>'+
-    btn("\u25A2 Blank","wbdBg(\'blank\')",v.bg!=="grid")+btn("\u25A6 Grid","wbdBg(\'grid\')",v.bg==="grid")+
+    btn("\u25A2 Blank","wbdBg(\'blank\')",v.bg!=="grid"&&v.bg!=="lines")+btn("\u25A6 Grid","wbdBg(\'grid\')",v.bg==="grid")+btn("\u25A4 Lines","wbdBg(\'lines\')",v.bg==="lines")+   // WBDLINES
     btn("\u270F\uFE0F","wbTool(\'pen\')",v.tool==="pen")+btn("\u{1FA79} Erase","wbTool(\'erase\')",v.tool==="erase")+
     btn("\u21A9\uFE0E Undo","wbUndo()")+btn("\u{1F9FD} Clear","wbClear()")+btn(v.penOnly?"\u270D\uFE0F Pencil only":"\u{1F446} Finger too","wbTogglePen()",v.penOnly)+
     ((typeof wbdSaveBtnHTML==="function")?wbdSaveBtnHTML(v,btn):"");   // WBDSAVE: 💾 Save — Mom, from Today's card on a unit day
@@ -44607,6 +44626,28 @@ function wbdDoorHTML(g){
 }
 try{ window.addEventListener("resize",function(){ if(typeof wbView!=="undefined"&&wbView&&wbView.scratch) wbdFit(); }); }catch(e){}   // a device with no ResizeObserver (the LG) still re-fits on a turn
 // WBOARD_END
+// WBDLINES_START — ▤ Lines on the whiteboard (Adrienne's yes 2026-11-24): handwriting rows for a beta family starting Logic of
+//   English Foundations A — Lesson 1 teaches the top line, the dotted midline and the baseline, and Mom writes big on a lined
+//   board for the child to trace; they have no physical board. Each row: a solid top line, a dashed midline, a darker, heavier
+//   baseline (where letters sit). Top→base = 1/8 of the board's width, half that again between rows (room for tails). Every size
+//   is a share of the width, so a turned iPad shows the same rows under the same ink. Drawn as the board's CSS (wbdFit) and on
+//   the 💾 Save picture (wbdJpeg). Stores nothing: the pick lives in _wbdBg for the sitting, like ▦ Grid. Blank stays the default.
+const WBD_LC="#94a3b8", WBD_BC="#475569";   // top + midline · baseline
+function wbdLn(w){ const x=w/8, lw=Math.max(1,w/600); return {x:x,p:x*1.5,t:x/4,lw:lw,bw:lw*2,d:w/96}; }
+function wbdLinesCss(s,w){
+  const L=wbdLn(w), f=n=>n.toFixed(2)+"px", P=f(L.p), ln=(y,h,c)=>"linear-gradient(transparent "+f(y-h/2)+","+c+" "+f(y-h/2)+","+c+" "+f(y+h/2)+",transparent "+f(y+h/2)+")";
+  s.backgroundImage=[ln(L.t,L.lw,WBD_LC),ln(L.t+L.x,L.bw,WBD_BC),"linear-gradient(90deg,transparent 50%,#fff 50%)",ln(L.t+L.x/2,L.lw,WBD_LC)].join(",");   // white gaps over the midline make its dashes
+  s.backgroundSize="100% "+P+",100% "+P+","+f(2*L.d)+" "+P+",100% "+P;
+}
+function wbdLinesDraw(g,W,H){
+  const L=wbdLn(W);
+  g.strokeStyle=WBD_LC; g.lineWidth=L.lw; g.beginPath();
+  for(let y=L.t;y<H;y+=L.p){ g.moveTo(0,y); g.lineTo(W,y); const m=y+L.x/2; if(m<H) for(let a=0;a<W-1;a+=2*L.d){ g.moveTo(a,m); g.lineTo(Math.min(W,a+L.d),m); } }
+  g.stroke(); g.strokeStyle=WBD_BC; g.lineWidth=L.bw; g.beginPath();
+  for(let y=L.t+L.x;y<H;y+=L.p){ g.moveTo(0,y); g.lineTo(W,y); }
+  g.stroke();
+}
+// WBDLINES_END
 // WBDSAVE_START — 💾 Save on the whiteboard (Sara's answer 2026-11-20: a board is kept only "when someone taps Save"; PLAN §7.2;
 //   Adrienne's "go with her answers and build" 2026-11-22). Scratch stays the default — nothing is written until Save is tapped.
 //   · WHO: Mom (momHere()), on a board opened from Today's card with a unit day (wbdOpen({uid, dayId})). Not on a board opened
@@ -44635,6 +44676,7 @@ function wbdJpeg(v){
   g.fillStyle="#fff"; g.fillRect(0,0,W,H);
   if(v.bg==="grid"){ const st=W/WBD_GRID; g.strokeStyle="#bfdbfe"; g.lineWidth=Math.max(1,W/800); g.beginPath();
     for(let x=st;x<W-1;x+=st){ g.moveTo(x,0); g.lineTo(x,H); } for(let y=st;y<H-1;y+=st){ g.moveTo(0,y); g.lineTo(W,y); } g.stroke(); }
+  if(v.bg==="lines"&&typeof wbdLinesDraw==="function") wbdLinesDraw(g,W,H);   // WBDLINES
   g.drawImage(ink,0,0,W,H);
   return c.toDataURL("image/jpeg",0.85);
 }
@@ -50510,6 +50552,46 @@ function nbClearName(kid){ if(!momHere()) return;
   if(tab==="notebook"){ const c=document.getElementById("content"); if(c) renderNotebook(c); }
 }
 // NBNAME_END
+// NB_COUNTPIC_START — what the Pre-K number card counts, per kid, for any look (looks study §4 row 4; her answer 2026-11-24:
+// "Make it a setting"). notebookSettings/<kid>/countPic = "animal" | "picture"; nothing saved = the look's own rule (construction
+// counts the counting picture, every other look the animal of the day), so nothing prints differently until Mom taps. The answer
+// itself lives in notebooks.js (pkCountPic, via HoweNotebooks.countPicFor) — this card only shows it and saves the choice. One
+// targeted value: set, or remove when the choice is the look's own; mirrored to ha_nb_settings like the other notebook settings.
+// The counting picture is NOT chosen here — its one home is the kid's row in the unit with a Counting deck (mastSetCountEmoji).
+function nbCountPicOf(kid){ const v=(((notebookSettings||{})[kid])||{}).countPic; return (v==="animal"||v==="picture")?v:null; }
+function nbCountPicOwn(kid){ return (((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null; }
+function nbCountPicInfo(kid){
+  try{ const N=window.HoweNotebooks; if(!N||typeof N.countPicFor!=="function") return null;
+    return N.countPicFor(kid,{ notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), countPic:nbCountPicOf(kid), countEmoji:nbCountPicOwn(kid) }); }catch(e){ return null; }
+}
+// Where the counting picture is chosen: Units ▸ <the unit with a Counting deck this kid is on> ▸ the kid's row ▸ "Counts".
+function nbCountPicWhere(kid){
+  let t="";
+  try{ for(const id in (unitStudies||{})){ const u=unitStudies[id]; if(u&&((u.kidStage||{})[kid])&&(u.decks||[]).some(d=>d&&d.key==="Counting")){ t=String(u.title||""); break; } } }catch(e){}
+  return t?('Units ▸ '+esc(t)+' ▸ '+esc(cap(kid))+'’s row ▸ “Counts”'):('Units ▸ the Math Fluency Path ▸ '+esc(cap(kid))+'’s row ▸ “Counts” (once '+esc(cap(kid))+' is on a stage there)');
+}
+function nbCountPicCardHtml(sel){
+  if(!momHere()) return "";
+  const cp=nbCountPicInfo(sel); if(!cp) return "";   // no number card = no control
+  const nm=esc(cap(sel)), pic=nbCountPicOwn(sel)||cp.lookPic||"";
+  const opt=(v,lab)=>{ const on=cp.choice===v; return '<button onclick="nbSetCountPic(\''+sel+'\',\''+v+'\')" title="'+(on?'On':'Tap to count this from the next notebook')+'" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(on?'#ea580c':'var(--border)')+';background:'+(on?'#fff7ed':'#fff')+';color:'+(on?'#9a3412':'#1f2937')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(on?'◉ ':'○ ')+lab+'</button>'; };
+  return '<div id="nbcountpic" style="font-size:12px;font-weight:800;color:#9a3412;margin:12px 0 2px">🔢 Number card counts</div>'+
+    '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:6px">What fills the ten-frames on each day’s Number of the Day card. It changes the next notebook you print.</div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">'+opt("animal","the animal of the day")+opt("picture",nm+'’s counting picture'+(pic?' '+pic:''))+'</div>'+
+    (cp.fallback?'<div style="font-size:11px;color:#9a3412;font-weight:700;line-height:1.45;margin-top:6px">'+nm+' has no counting picture yet, so the number card counts the animal of the day until one is chosen.</div>':'')+
+    '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-top:5px">'+nm+'’s counting picture is chosen on '+nbCountPicWhere(sel)+'.</div>';
+}
+function nbSetCountPic(kid,v){ if(!momHere()) return;
+  if(v!=="animal"&&v!=="picture") return;
+  const cp=nbCountPicInfo(kid); if(!cp) return;
+  const atDef=(v===cp.def);   // the look's own rule = nothing saved
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  if(atDef) delete notebookSettings[kid].countPic; else notebookSettings[kid].countPic=v;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db&&!_dryRun()){ const r=db.ref("notebookSettings/"+kid+"/countPic"); if(atDef) r.remove(); else r.set(v); } }catch(e){}
+  if(tab==="notebook"){ const c=document.getElementById("content"); if(c) renderNotebook(c); }
+}
+// NB_COUNTPIC_END
 // Extra-pages config (Notebook tab) — per-page {on, days:{monday:true,…}}, synced like reviewCap.
 // Missing config = page ON with no day assigned, so defaults match the old always-print behavior.
 function nbXpCfg(kid,key){ const c=(((notebookSettings||{})[kid]||{}).extraPages||{})[key]||{}; return { on:c.on!==false, days:c.days||{} }; }
@@ -51556,6 +51638,7 @@ function wbPageFor(book,label){
   if((m=s.match(/^(?:pgs?|pp?|pages?)\.?\s*(\d+)/i))) return clamp(m[1]);
   if(/^pre-?test/i.test(s)) return clamp(toc.pre);
   if(/^post-?test/i.test(s)) return clamp(toc.post);
+  if(typeof wblSecPage==="function") return wblSecPage(book,s,clamp);   // WBLINK: "Lesson 21 …" / "Review D …" through toc.sec
   return null;
 }
 // ── Answer key (2026-09-05). The book's toc may also carry ans={n:printedPage} — the
@@ -51602,6 +51685,7 @@ function wbOpenCheck(bookId,kid,page,ans,assign){
 // Open from a card: the workbooks listener normally has the book cached; fetch it once if not.
 // 📌 WB_ASSIGN: `assign` = wbAssignFor(card) → the viewer's "Today: Ex. 45–46" banner. Absent → no banner.
 function wbOpenFor(bookId,kid,page,assign){
+  if(typeof wblOpenFor==="function"&&wblOpenFor(bookId,kid,page,assign)) return;   // WBLINK: a reading book opens at its remembered page inside the section
   const opts={assignment:assign||null};
   if(wbBook(bookId)){ wbOpen(bookId,kid,page,opts); return; }
   if(!db){ alert("That workbook isn't loaded yet."); return; }
@@ -52360,6 +52444,7 @@ function wbGoAns(d){
 }
 function wbClose(){
   clearTimeout(_wbAutoT); _wbAutoT=null;   // 💾 the close saves it now
+  if(typeof wblClose==="function") wblClose();   // WBLINK: a reading book remembers its page
   const backKid=(wbView&&wbView.eic&&wbView.eic.back)?wbView.kid:null;   // ↩ EIC_PANELBACK: opened from the Editor in Chief menu → ✕ returns to it (her ask 2026-10-15)
   const go=()=>{ try{ if(_wbRO) _wbRO.disconnect(); }catch(e){} _wbRO=null; const ov=document.getElementById("wb-view"); if(ov) ov.remove(); wbView=null; if(backKid&&window.eicPanel){ try{ window.eicPanel(backKid); }catch(e){} } };
   if(wbView&&wbView.dirty){ wbSave().then(go).catch(go); } else go();
@@ -52392,6 +52477,7 @@ function wbBarRender(){
   // browser gets no gesture; Pencil only → a finger (or resting palm) scrolls the page as before.
   try{ const cv=document.getElementById("wb-ink"); if(cv) cv.style.touchAction=v.penOnly?"pan-x pan-y":"none"; }catch(e){}
   try{ wbAssignRender(); }catch(e){}   // 📌 WB_ASSIGN: the banner is a sibling of the bar — refresh its ↩ with every redraw
+  if(typeof wblRender==="function") try{ wblRender(v,btn); }catch(e){}   // WBLINK: reading-book bar + the linked-books strip
 }
 function wbTool(t){ if(!wbView) return; wbView.tool=t; wbBarRender(); }
 function wbTogglePen(){ if(!wbView) return; wbView.penOnly=!wbView.penOnly; wbBarRender(); }
@@ -52411,7 +52497,7 @@ async function wbLoadPage(){
   v.strokes=[]; v.dirty=false;
   if(!url){ wbPaint(); return; }
   try{
-    if(db){ const s=await db.ref(wbInkPath(v.kid,v.bookId,v.page)).once("value"); const d=s.val();
+    if(db&&!b.read){ const s=await db.ref(wbInkPath(v.kid,v.bookId,v.page)).once("value"); const d=s.val();   // WBLINK: a reading book has no ink
       if(d&&d.s) v.strokes=(Array.isArray(d.s)?d.s:Object.values(d.s)).map(k=>({c:k.c,w:k.w,p:Array.isArray(k.p)?k.p:Object.values(k.p||{})})); }
   }catch(e){}
   const draw=()=>{ wbFit(); wbPaint(); wbWatchFit(); };
@@ -52508,6 +52594,7 @@ function wbAutoSaveSoon(){
 }
 async function wbSave(quiet){
   const v=wbView; if(!v||v.scratch) return;   // WBOARD: a scratch whiteboard never writes
+  if(typeof wblIsRead==="function"&&wblIsRead(v)) return;   // WBLINK: a reading book never writes ink
   if(typeof uascIs==="function"&&uascIs(v.bookId)) return uascSave(v,quiet);   // UACTSCREEN: a 🖨 page saves at its own path, refusals said in the bar
   if(!db||_dryRun()){ v.dirty=false; wbBarRender(); return; }
   const rev=v._rev||0;
@@ -52568,6 +52655,89 @@ function wbBootFromUrl(){
   }catch(e){}
 }
 try{ if(/[?&]workbook=/.test(location.search)) window.addEventListener("load",()=>setTimeout(wbBootFromUrl,600)); }catch(e){}
+// WBLINK_START — linked books (her ask 2026-11-24, for Melanie teaching Zuri Logic of English Foundations A: load the
+// manual, workbook and readers "so she can read what she needs to read to teach Zuri", and where the manual says open the
+// workbook page, "off to the side a little spot she can click and then go back to where her other page is in her teacher
+// workbook"). Book data (all optional; a book with none of them is untouched):
+//   read:true  → a reading book: no pen, no ink layer, never reads or writes workbookWork; its page is remembered at
+//                workbookPlace/<kid>/<bookId> = {p,ts} (one targeted set, dry run inert) + the local mirror "ha_wbplace".
+//   toc.sec    → {"lesson_21": printedPage, "review_d": …}: a card label "Lesson 21 · …" / "Review D · …" opens there
+//                (wbPageFor's last resort, so every older label reads exactly as before).
+//   links      → {"<filePage>": [{b: bookId, p: filePage, t: "label"}]}: chips in a strip at the right (a bar under the
+//                toolbar on a narrow screen). A tap saves the page's ink first, keeps ONE return point on the opened
+//                view (page turns keep it, ✕ drops it with the view), and "↩ Back" saves again and reopens that exact page.
+// Chip text is escaped; the strip and its wrapper exist only while there is a chip to show.
+const WBL_CSS="#wbl-row{flex:1;display:flex;min-height:0}#wb-link{flex:none;display:flex;flex-direction:column;gap:8px;width:170px;padding:8px;overflow-y:auto;background:#f1f5f9;border-left:1px solid #e2e8f0;font-family:'DM Sans',sans-serif}#wb-link button{flex:none;min-height:48px;padding:8px 10px;border-radius:12px;border:1.5px solid #cbd5e1;background:#fff;color:#0f172a;text-align:left;font-size:13px;font-weight:700;line-height:1.25;cursor:pointer;font-family:inherit}#wb-link .wbl-bk{min-height:56px;background:#1d4ed8;border-color:#1d4ed8;color:#fff;font-size:14px}@media(max-width:699px){#wbl-row{flex-direction:column}#wb-link{order:-1;flex-direction:row;width:auto;overflow:auto hidden;border-left:0;border-bottom:1px solid #e2e8f0}#wb-link button{max-width:72vw}}";
+function wblSecKey(s){ const m=String(s||"").trim().match(/^(lesson\s*\d+|review\s*[a-z])\b/i); return m?m[1].toLowerCase().replace(/[^a-z0-9]+/g,"_"):null; }
+function wblSecPage(book,s,clamp){ const k=wblSecKey(s), sec=book.toc.sec; return (k&&sec&&sec[k]!=null)?clamp(sec[k]):null; }
+// The file pages a section covers: its first page up to the page before the next section starts (the book's end if last).
+function wblSpan(b,lbl){
+  const st=wblSecKey(lbl)&&wbPageFor(b,lbl); if(!st) return null;
+  const off=parseInt(b.toc.offset,10)||0; let nx=0;
+  Object.values(b.toc.sec||{}).forEach(x=>{ const f=(parseInt(x,10)||0)+off; if(f>st&&(!nx||f<nx)) nx=f; });
+  return [st,nx?nx-1:(b.pages||st)];
+}
+function wblPr(b,p){ const n=p-(parseInt(((b&&b.toc)||{}).offset,10)||0); return n>=1?n:p; }   // printed page
+function wblLinks(b,pg){ let a=((b&&b.links)||{})[pg]; if(!a) return []; if(!Array.isArray(a)) a=Object.values(a);
+  return a.filter(l=>l&&wbBook(l.b)&&parseInt(l.p,10)>=1).slice(0,4); }
+function wblShort(n,cur){ const a=String(n||"Book").split(" "), c=String(cur||"").split(" "); let i=0; while(i<a.length-1&&a[i]===c[i]) i++;   // drop the words both names start with
+  const s=a.slice(i).join(" "); return s.length>28?s.slice(0,27)+"…":s; }
+function wblKey(kid,id){ return "workbookPlace/"+kid+"/"+id; }
+function wblPlaces(){ try{ return JSON.parse(HA_LS.getItem("ha_wbplace")||"{}")||{}; }catch(e){ return {}; } }
+function wblPlace(v){
+  const b=wbBook(v.bookId); if(!b||!b.read||!v.kid) return;
+  const k=wblKey(v.kid,v.bookId), r={p:v.page,ts:Date.now()};
+  try{ const m=wblPlaces(); m[k]=r; HA_LS.setItem("ha_wbplace",JSON.stringify(m)); }catch(e){}
+  if(db&&!_dryRun()) try{ db.ref(k).set(r).catch(()=>{}); }catch(e){}
+}
+function wblClose(){ if(wbView) wblPlace(wbView); }
+function wblIsRead(v){ return !!(wbBook(v.bookId)||{}).read; }
+// Card chip → a reading book at a section: the remembered page when it lies inside that section, else the section start.
+function wblOpenFor(id,kid,page,assign){
+  const b=wbBook(id); if(!b||!b.read) return false;
+  const s=wblSpan(b,assign&&assign.ref); if(!s) return false;
+  const k=wblKey(kid,id), loc=wblPlaces()[k]; let done=0;
+  const go=d=>{ if(done++) return;
+    const r=[loc,d].filter(x=>x&&x.p).sort((x,y)=>(y.ts||0)-(x.ts||0))[0], p=parseInt(r&&r.p,10);
+    wbOpen(id,kid,(p>=s[0]&&p<=s[1])?p:s[0],{assignment:assign});
+    if(wbView&&wbView.assignment){ wbView.assignment=wbAssignClean(assign,b,s[0]); wbBarRender(); } };
+  if(db){ setTimeout(go,1500); db.ref(k).once("value").then(x=>go(x.val()),()=>go()); } else go();
+  return true;
+}
+// Called at the end of every wbBarRender.
+function wblRender(v,btn){
+  const b=wbBook(v.bookId)||{}, bar=document.getElementById("wb-bar");
+  if(b.read){
+    if(bar) bar.innerHTML=btn("✕","wbClose()")+'<span style="font-weight:800;font-size:13px;color:#0f172a;max-width:46vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(b.name||"Book")+'</span><span style="flex:1"></span>'+
+      btn("◀","wbGo(-1)")+'<span style="font-size:12px;font-weight:700;color:#475569;min-width:64px;text-align:center">p. '+wblPr(b,v.page)+'</span>'+btn("▶","wbGo(1)");
+    const cv=document.getElementById("wb-ink"); if(cv) cv.remove();
+    if(v._wblP!==v.page){ v._wblP=v.page; wblPlace(v); }
+  }
+  const L=wblLinks(b,v.page), r=v.wblRet; let el=document.getElementById("wb-link");
+  if(!L.length&&!r){ if(el) el.style.display="none"; return; }
+  if(!el){ const st=document.getElementById("wb-stage"); if(!st||!st.parentNode) return;
+    const row=document.createElement("div"); row.id="wbl-row"; st.parentNode.insertBefore(row,st); row.appendChild(st);
+    el=document.createElement("div"); el.id="wb-link"; row.appendChild(el);
+    const cs=document.createElement("style"); cs.textContent=WBL_CSS; row.appendChild(cs); }
+  el.style.display="flex";
+  el.innerHTML=(r?'<button class="wbl-bk" onclick="wblBack()">↩ Back to '+esc(wblShort((wbBook(r.b)||{}).name,b.name))+' · p. '+wblPr(wbBook(r.b),r.p)+'</button>':'')+
+    L.map((l,i)=>{ const t=wbBook(l.b), s=String(l.t||""); return '<button onclick="wblGo('+i+')">'+(t.read?"📖":"📓")+' <b>p. '+wblPr(t,parseInt(l.p,10))+'</b> '+esc(s.length>26?s.slice(0,25)+"…":s)+'</button>'; }).join("");
+}
+// Save the page's ink now and stop the pending autosave, so nothing written is lost or saved onto the next page.
+async function wblFlush(v){ clearTimeout(_wbAutoT); _wbAutoT=null; if(v.dirty){ try{ await wbSave(); }catch(e){} } clearTimeout(_wbAutoT); _wbAutoT=null; }
+async function wblGo(i){
+  const v=wbView; if(!v) return; const l=wblLinks(wbBook(v.bookId),v.page)[i]; if(!l) return;
+  const ret=v.wblRet||{b:v.bookId,p:v.page,o:{ans:v.ans,assignment:v.assignment}};   // one return point: a link tapped in the target keeps the first
+  await wblFlush(v); if(wbView!==v) return;
+  wbOpen(l.b,v.kid,parseInt(l.p,10)); if(wbView&&wbView!==v){ wbView.wblRet=ret; wbBarRender(); }
+}
+async function wblBack(){
+  const v=wbView, r=v&&v.wblRet; if(!r) return;
+  await wblFlush(v); if(wbView!==v) return;
+  wbOpen(r.b,v.kid,r.p,r.o); const a=r.o&&r.o.assignment;
+  if(wbView&&wbView!==v&&a){ wbView.assignment=a; wbBarRender(); }   // the card's banner as it was, not re-based on this page
+}
+// WBLINK_END
 // ── UNIT STUDY: British Monarchy "Royal Line" notebook page ───────────────
 // One shared dataset, read from the mastery curriculum bank (all 42 monarchs +
 // house/reign) joined with the kid's live drill items (status/tier → progress)
@@ -58583,7 +58753,8 @@ function nbNeedsList(kid){
 function nbNeedsReach(kid){
   try{
     const N=window.HoweNotebooks; if(!N||typeof N.reviewDecks!=="function") return null;
-    return N.reviewDecks(kid,{ notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{} });
+    return N.reviewDecks(kid,{ notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{},
+      countPic:((typeof nbCountPicOf==="function")?nbCountPicOf(kid):null), countEmoji:((typeof nbCountPicOwn==="function")?nbCountPicOwn(kid):null) });   // NB_COUNTPIC: the Animals deck follows the number card
   }catch(e){ return null; }
 }
 function nbNeedsReadsCap(kid){ const r=nbNeedsReach(kid); return !!(r&&r.readsCap); }
@@ -58910,6 +59081,7 @@ function renderNotebook(el){
       '<div style="display:flex;gap:6px;flex-wrap:wrap">'+looks+'</div>'+
       (lvRows?'<div style="font-size:12px;font-weight:800;color:#9a3412;margin:12px 0 2px">📏 Level</div><div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:4px">The same notebook at a different level — turn on what this child is ready for.</div>'+lvRows:'')+
       nbNameCardHtml(sel,lookOpts)+   // NBNAME: ✏️ Name in the notebook (Pre-K notebooks)
+      ((typeof nbCountPicCardHtml==="function")?nbCountPicCardHtml(sel):"")+   // NB_COUNTPIC: 🔢 Number card counts (Pre-K notebooks)
     '</div>';
   }
   // Week switcher — only when a next week is already built and parked (generated ahead on the

@@ -134,7 +134,7 @@ for (const [sname, make] of STATES) {
   else for (const [sname, make] of STATES) for (const noMom of [false, true]) {
     // HOUSEQUIET (slice B of the missed-chores design, 2026-11-23) changes on purpose what the Household pages draw (test_house_quiet.js);
     // every caller asks typeof first, so the branch side here is house.js with that block cut out, set up exactly as main's side.
-    const a0 = make(), a = mk({ house: false }), b = mk({ house: false }), noQ = s => { const i = s.indexOf("// HOUSEQUIET_START"); return i < 0 ? s : s.slice(0, i) + s.slice(s.indexOf("\n", s.indexOf("// HOUSEQUIET_END")) + 1); };
+    const a0 = make(), a = mk({ house: false }), b = mk({ house: false }), noQ = s0 => ["HOUSEQUIET", "HOUSEMIXSET"].reduce((s, k) => { const i = s.indexOf("// " + k + "_START"); return i < 0 ? s : s.slice(0, i) + s.slice(s.indexOf("\n", s.indexOf("// " + k + "_END")) + 1); }, s0);   // + HOUSEMIXSET (step 7 slice 2): Mom's "Mixed in" line on 👤 By person
     a.event = { stopPropagation: () => {} }; vm.runInContext(noQ(V.HJS), a, { filename: "house.js" }); a.householdOnValue(JSON.parse(J(a0.get("householdData")))); a.writes.length = 0;
     b.event = { stopPropagation: () => {} }; vm.runInContext(MAIN, b, { filename: "house_main.js" }); b.householdOnValue(JSON.parse(J(a0.get("householdData")))); b.writes.length = 0;
     if (noMom) { a.isMom = false; b.isMom = false; }
