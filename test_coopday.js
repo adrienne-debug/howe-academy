@@ -87,7 +87,8 @@ console.log("\nMom's one-date flip ('Mom's available') doesn't undo a skip — t
 
 console.log("\nwiring");
 ok("both card builders trim minutes through _coopMin", (src.match(/dur:_coopMin\((kid|mm\.kid),s,_lsd\?_lsd\.dur:\(s\.minutes\|\|20\)\)/g) || []).length === 2);
-ok("⚙ Rules shows a 'Co-op day' column only for a kid in a timed co-op", /\.concat\(_coopCol\?\["Co-op day"\]:\[\]\)/.test(src) && /const _coopCol=\(function\(\)\{/.test(src));
+// CURRSIMPLE (slice 6): in Simple the column also folds away (&&!_csmS) — test_curr_simple.js checks both views
+ok("⚙ Rules shows a 'Co-op day' column only for a kid in a timed co-op", /\.concat\(_coopCol(&&!_csmS)?\?\["Co-op day"\]:\[\]\)/.test(src) && /const _coopCol=\(function\(\)\{/.test(src));
 ok("the cell cycles keep → shorten → skip and writes subject.coopDay via rlSet (re-lay on)", /\\'coopDay\\','\+\(_nx==null\?'null'/.test(src) && /'keep':\(_cr==="skip"\?'skip':'shorten'\)/.test(src));
 ok("grid views label through coopBlockName", (src.match(/\?coopBlockName\(/g) || []).length === 3);
 

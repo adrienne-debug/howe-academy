@@ -132,6 +132,10 @@ function flow(form, o, src) {
 const subjWrites = w => w.writes.filter(x => /^curriculum\/subjects\//.test(x[1]));
 const buildWrites = w => w.writes.filter(x => x[1] === "curriculum" && x[0] === "update");
 
+// CURRSIMPLE (slice 6): test_curr_simple.js walks this world in the Simple and Everything views
+module.exports = { world, BOOK };
+if (require.main !== module) return;   // required (test_curr_simple.js reuses this harness): the definitions only, no checks
+
 ok("the pinned 'today' fixture holds abb03281's ceOpenAdd, ceRenderAddSheet and ceAddSave", TODAY.commit === "abb03281" && ["ceOpenAdd", "ceRenderAddSheet", "ceAddSave"].every(n => typeof TODAY[n] === "string" && TODAY[n].indexOf("function " + n + "(") === 0) && !/afSaved|afStep|afReset/.test(TODAY.ceAddSave + TODAY.ceRenderAddSheet + TODAY.ceOpenAdd));
 
 console.log("── 0. the block and its hooks ──");
