@@ -34,9 +34,9 @@ const baseIdx = src => { let s = src; const R = (a, b, l) => { s = once(s, "inde
   R(/^ {2}const _q=\(typeof amAsks[^\n]*\n/m, "", "the chip's question"); R("stopPropagation();'+_q+'(", "stopPropagation();amSend(", "the chip's call"); R("+(_ig?' \\u{1F648}':'')", "", "the chip's 🙈");
   R("'+((typeof amAsks===\"function\"&&amAsks())?'amAskAll(\\''+kid+'\\',\\''+d+'\\',\\''+slot+'\\')':'amSendRest(\\''+kid+'\\',\\''+d+'\\')')+';boardStatPop(", "amSendRest(\\''+kid+'\\',\\''+d+'\\');boardStatPop(", "Send all's call");
   R("(it.pts?(typeof amPay===\"function\"&&amPay(kid,it,_ai)!==it.pts?\" \"+it.pts+\" → \"+amPay(kid,it,_ai)+\" ⭐\":\" +\"+it.pts+\" ⭐\"):\"\")", "(it.pts?\" +\"+it.pts+\" ⭐\":\"\")", "Mom's pop-up 🌅 row");
-  R(", _ac=amGet(kid,slot,i,amIso(day)), _f=(_ac&&typeof amWhyIg===\"function\"&&amWhyIg(_ac))?amPay(kid,_ac,amIso(_todayDay)):_dl?", ", _f=_dl?", "Mom's pop-up sent row"); R("   // CHOREAMWHY: an ignored 🌅 row", "", "…its comment");
+  R(/^ {4}if\(typeof amPopRows===[^\n]*\n/m, "", "Mom's pop-up sent row");
   R("left+=(typeof amPay===\"function\"?amPay(k,it,_ai):(it.pts||0)); });   // SENDAM · CHOREAMWHY", "left+=(it.pts||0); });   // SENDAM", "Kids' Corner's left");
-  R(/^ {4}const _ac=\(now&&typeof amWhyIg[^\n]*\n/m, "", "toggleRtStep's carry"); R("(_bx + zoneBonusFor(_st0&&_st0.zone,_bx))", "(_bd + zoneBonusFor(_st0&&_st0.zone,_bd))", "toggleRtStep's pay");
+  R(/, _ao=\(now&&typeof amOrigPay[^\n]*/, ", _b0=_st0?(_st0.pts||0):0;", "toggleRtStep's carry");
   R("&&!(typeof amWhyIg===\"function\"&&amWhyIg(am[iso+\"_\"+RT_ABBR[slot]+\"step\"+i])))) continue;   // CHOREAMWHY: an ignored 🌅 breaks it", ")) continue;", "the streak");
   R(/\+\(\(e\.amz&&e\.amz\.n\)\?[^\n]*?\/\* CHOREAMWHY \*\//, "", "the Click-off Log's line");
   if (/CHOREAMWHY|\bamWhy|\bamPay|\bamAsk|\bamCost|\bamz|RT_AMWHY_FROM/.test(s)) throw new Error("test_morning_why: the app before still mentions C4");
@@ -65,6 +65,7 @@ const FAM = () => ({
   c_tub: K({ label: "Scrub the tub", emoji: "🛁", who: "kid_c", slot: "chores", cad: "wk:1", pts: 22, order: 1 }),
   c_sink: K({ label: "Wipe the sink", emoji: "🧽", who: "kid_c", slot: "chores", cad: "wk:0", pts: 3, order: 2 }),
   c_car: K({ label: "Wash the car", emoji: "🚗", who: "kid_c", slot: "chores", cad: "wk:1", pts: 10, order: 3 }),
+  c_mat: K({ label: "Shake the mat", emoji: "🧺", who: "kid_c", slot: "chores", cad: "wk:3", pts: 5, order: 4 }),
   d_blind: K({ label: "Dust the blinds", emoji: "🪟", who: "kid_d", slot: "chores", cad: "wk:1", pts: 10, order: 1 })
 });
 const dOf = n => new Date(2026, 10, 30 + n), isoN = n => { const d = dOf(n); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
@@ -184,6 +185,7 @@ for (let n = 7; n <= 19; n++) {
         ANS(vA, "amAsk('chores','kid_d','tuesday'," + ix("kid_d", "Dust the blinds") + ")", "ignored");
         S.dump.popTue = pop(vA, "kid_a", "chores", "tuesday"); }
       else { vA.run("amSendRest('kid_a','tuesday')"); vA.run("amSend('chores','kid_b','tuesday'," + ix("kid_b", "Sweep the porch") + ")"); ["Scrub the tub", "Wash the car"].forEach(l => vA.run("amSend('chores','kid_c','tuesday'," + ix("kid_c", l) + ")")); vA.run("amSend('chores','kid_d','tuesday'," + ix("kid_d", "Dust the blinds") + ")"); } }
+    if (n === 11) { await go(vw, n, 19); const i = ix("kid_c", "Shake the mat"); if (X) ANS(vA, "amAsk('chores','kid_c','friday'," + i + ")", "ignored"); else vA.run("amSend('chores','kid_c','friday'," + i + ")"); }   // Thursday's mat, sent Friday while it waits
     await vw.flush();
   }
   const I = sentIds(), list = k => kidList(B, k), a = list("kid_a");
@@ -225,6 +227,7 @@ for (let n = 7; n <= 19; n++) {
   }
   if (n === 9 || n === 10 || n === 11) { const dm = V => V.A.run("(function(){ const L=rtStepsFor('chores','kid_a'), i=L.findIndex(s=>s&&s.label==='Make the bed'); return rtDailyMissed('chores','kid_a',i,L[i]); })()"); (S.dly = S.dly || []).push([dm(Q), dm(QB)]); }
   if (n === 11) ok("C · Fri 12/11: kid_d's Stars fall On again ({from: today}): the blinds (own day Tue) stay \"+10 ⭐\" — only turns from that day fall; kid_a's Vacuum \"10 → 4 ⭐\"", amRow(list("kid_d"), "Dust the blinds") === "+10 ⭐" && amRow(a, "Vacuum the den") === "<s style=\"opacity:.6\">10</s> → 4 ⭐");
+  if (n === 12) ok("C · a row sent while it waited (Thursday's 5 ⭐ mat, sent Friday as ignored) counts from its own day: Sat \"5 → 3 ⭐\" (2 days), not 4", amRow(list("kid_c"), "Shake the mat") === "<s style=\"opacity:.6\">5</s> → 3 ⭐", amRow(list("kid_c"), "Shake the mat"));
   if (n === 12) {
     const L0 = amzLines(w, "kid_c"); ex.sinkLines = L0;
     ok("C · after zero, a 3 ⭐ chore (sent Mon as ignored: 2 · 1 · 0 Tue–Thu): Fri −1, Sat −1 — 20% of 3, at least 1", L0.length === 2 && L0.every(l => l.amz.n === 1 && /^Wipe the sink — not done$/.test(l.label)) && J(L0.map(l => l.amz.day)) === J(["2026-12-11", "2026-12-12"]) && amzBank(w, "kid_c").filter(x => /Wipe the sink/.test(x.note)).length === 2, L0.map(l => [l.amz.day, l.amz.n]));
@@ -303,6 +306,9 @@ for (let n = 7; n <= 19; n++) {
     ok("…the 📒 Ledger's This week adds it up: the 🌅 rows' 8 ⭐ (Tue–Fri; Monday's given back) are in its \"taken\" with C3's drops (" + wk[1] + " ⭐ in all)", wk[0] === 8 && new RegExp("taken " + wk[1] + " ⭐").test(top(S.dump.ledgerWeek)), [wk, top(S.dump.ledgerWeek)]);
     A.run("lgRulePause()"); await w.flush(); const pz = amRow(kidList(B, "kid_a"), "Vacuum the den"); A.run("lgRulePause()"); await w.flush(); const pz2 = amRow(kidList(B, "kid_a"), "Vacuum the den");
     ok("F · ⏸ Pause on: the Vacuum row \"+10 ⭐\" (full stars); off again ({from: today}): still \"+10 ⭐\" — only from that day", pz === "+10 ⭐" && pz2 === "+10 ⭐", [pz, pz2]);
+    const cid = I["kid_c|Wash the car"], m9 = w.mark(); A.run("amTakeBack('kid_c'," + J(cid) + ")"); await w.flush();
+    const lost = lgRowOf(LG(A, "lgGo('kid_c',-1,0)"), "Wash the car");
+    ok("…✕ take off on kid_c's ignored car (it cost Mon, Wed–Fri): the carry goes as before, its lines and bank lines stay (decided); the 📒 Ledger keeps a row for Friday's: \"✖ 🌅 Wash the car taken off the list · 2 ⭐ taken that morning ⭐ Give stars back\" (no ➖ Excuse)", w.get("amCarry/kid_c/" + cid) == null && amzLines(w, "kid_c").filter(l => /car/.test(l.label)).length === 5 && amzBank(w, "kid_c").filter(x => /car/.test(x.note)).length === 4 && /^✖ 🌅 Wash the car taken off the list · 2 ⭐ taken that morning ⭐ Give stars back$/.test(lost), [lost, WS(w, m9)]);
     const Cl = A.run("(function(){ return chSettingsClickoffLogHTML(); })()");
     ok("…the Click-off Log shows each line: \"↩ Vacuum the den — not done −2 ⭐\"", /Vacuum the den — not done\s*<\/span>\s*<span style="color:#b91c1c;font-weight:800">−2 ⭐<\/span>/.test(Cl) || /Vacuum the den — not done −2 ⭐/.test(txt(Cl)), (txt(Cl).match(/.{0,30}Vacuum the den — not done.{0,30}/) || [""])[0]);
   }

@@ -50,6 +50,7 @@ const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.ht
   R("+starTakeWhy(kid)+", "+", "FLAGWHO's words");
   R(', off=typeof starTakeOk==="function"&&!starTakeOk(kid);   // FLAGWHO', ", off=false;   // FLAGWHO", "🧾's gate (FLAGWHO: Take off marks with no stars)");
   R("  const no=starTakeAt(kid,iso); if(no) return {n:0,why:no};   // the 📒 ⚙ switches, as they are at the drop\n", "", "C3's drop (CHOREDROP): its read of the switches");   // C3 reads L4's switches; without L4 a drop takes as if they were on
+  R(/^\/\/ CHOREAMWHY_START[^\n]*\n[\s\S]*?^\/\/ CHOREAMWHY_END\n/m, "", "C4's block (CHOREAMWHY reads the switches too; its hooks are typeof-guarded)");
   if (/STARRULES|starTake|starFallFrom|starRules|arguments\[2\]\)/.test(s)) throw new Error("test_ledger_rules: the app before still mentions STARRULES");
   const t = path.join(os.tmpdir(), "ledger_rules_before_" + process.pid + ".html"); fs.writeFileSync(t, s); return t; })();
 const BASE_HJS = (() => { let s = fs.readFileSync(path.join(__dirname, "house.js"), "utf8");

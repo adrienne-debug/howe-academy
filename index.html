@@ -2664,15 +2664,14 @@ function toggleRtStep(slot,kid,i){
     if(_mk&&_mk.done&&_mk.hd&&typeof hdUnmark==="function"&&hdUnmark(slot,kid,i,_mk)) return; }   // …and an old row the plan marked done un-checks through the plan (no double pay across OFF / ON)
   const wk=activeWk(), sk=wk+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i, cur=slState[sk], now=!(cur&&cur.done), _slB=slBefore();   // SLTARGET
   const _obPrev={}; _obPrev[sk]=cur||null; _obPrev[wk+"_"+day+"_"+kid+"_"+slot]=slState[wk+"_"+day+"_"+kid+"_"+slot]||null;   // 📮
-  { const _st0=rtStepsFor(slot,kid)[i], _b0=_st0?(_st0.pts||0):0;
+  { const _st0=rtStepsFor(slot,kid)[i], _ao=(now&&typeof amOrigPay==="function")?amOrigPay(slot,kid,i):null, _b0=_st0?(_ao!=null?_ao:(_st0.pts||0)):0;   // CHOREAMWHY: sent as ignored, ticked here on a later day → what its 🌅 row pays
     // CHOREFALL: a row in its wait pays what it is worth today (the base a bonus room doubles); on its own day it is never late
     const _bf=(now&&_b0>0&&typeof rtFallPay==="function"&&day===_todayDay&&!cadDueOn(_st0.cad||"daily",day)&&stepWindowOk(_st0,day))?rtFallPay(_st0,rtLateDays(slot,kid,i),kid):_b0;
     const _bd=(now&&_b0>0&&typeof rtDailyPay==="function"&&day===_todayDay&&rtDailyRow(_st0))?rtDailyPay(slot,kid,i,_st0):_bf;   // CHOREDAILY: a daily missed 2+ days in a row
     // Pay base + any focus-zone bonus, and RECORD the total on the check-off. Unchecking reverses
     // that stored number rather than recomputing — the zone or bonus may have changed since, and
     // recomputing would reverse a different amount than was paid.
-    const _ac=(now&&typeof amWhyIg==="function")?amGet(kid,slot,i,amIso(day)):null, _bx=(_ac&&amWhyIg(_ac))?amPay(kid,_ac,amIso(_todayDay)):_bd;   // CHOREAMWHY: sent as ignored → what its 🌅 row pays today
-    const _paid = now ? (_bx + zoneBonusFor(_st0&&_st0.zone,_bx)) : ((cur&&cur.pts!=null)?cur.pts:_b0);
+    const _paid = now ? (_bd + zoneBonusFor(_st0&&_st0.zone,_bd)) : ((cur&&cur.pts!=null)?cur.pts:_b0);
     var _p=_paid;
     const _st=_st0;
     // ⭐ WAGES, not winnings: routine stars bank the moment the step is checked — straight
@@ -3218,7 +3217,9 @@ function amPay(kid,it,iso){ return amWhyIg(it)?rtFallPts(it.pts||0,amFallN(kid,i
 function amPayTxt(kid,it,iso){ const p=it.pts||0, f=amPay(kid,it,iso); return f===p?"+"+p:'<s style="opacity:.6">'+p+'</s> → '+f; }
 // After 0: what day iso costs — {n} or {n:0, why:"away"|"off"|"pause"} — or null (not after 0, or past its 5 days)
 function amCostN(kid,it,iso){ const p=it.pts||0, n=amFallN(kid,it,iso); let z=1; if(!(p>0)||!n) return null; while(rtFallPts(p,z)>0) z++; if(n<=z||n>z+5) return null;
-  const o=((calendarData&&calendarData.kidOverrides||{})[kid]||{})[iso]; if((o&&o.school===false)||rtDailyCalOff("morning",iso)) return {n:0,why:"away"};
+  const C=calendarData||{}, o=((C.kidOverrides||{})[kid]||{})[iso]; let off=o&&o.school===false;   // days off: 😷 Kid Off, or a break that paused every list
+  [C.holidays,C.vacations].forEach(function(c){ Object.values(c||{}).forEach(function(v){ const a=calNormDate(v&&(v.start||v.date)), b=calNormDate(v&&(v.end||v.start||v.date)); if(a&&iso>=a&&iso<=b&&v.pause==="all") off=true; }); });
+  if(off) return {n:0,why:"away"};
   const no=starTakeAt(kid,amOwn(kid,it)); return no?{n:0,why:no}:{n:p-rtFallPts(p,1)}; }
 function amCostSee(kid,it){
   const iso=amIso(_todayDay), tk=(iso&&!it.done)?amCostN(kid,it,iso):null; if(!tk) return;
@@ -3230,6 +3231,10 @@ function amCostSee(kid,it){
   D[key]=rec; if(!db||_dryRun()){ put(); return; }
   try{ db.ref("routineLog/"+kid+"/"+wk+"/"+dn+"/"+key).transaction(function(cur){ return cur?undefined:rec; },function(err,ok){ if(err||!ok||!ln) return; put(); db.ref("bank/"+kid+"/adjustments/"+bid).set(ln); },false); }catch(e){}
 }
+// The ORIGINAL row of a carry sent as ignored, ticked (or shown) on a later day: what the 🌅 row pays today, or null (as before)
+function amOrigPay(slot,kid,i){ const c=amGet(kid,slot,i,amIso(day)), t=amIso(_todayDay); return (c&&amWhyIg(c)&&amFallN(kid,c,t)>0)?amPay(kid,c,t):null; }
+function amPopRows(rows,slot,kid){ rows.forEach(function(r){ const f=(r.i!=null&&!r.done&&r.hs)?amOrigPay(slot,kid,r.i):null, st=r.hs; if(f==null) return;
+  r.pay=f; r.lab=(st.emoji?st.emoji+" ":"")+st.label+(st.pts?(f!==st.pts?" "+st.pts+" → "+f+" ⭐":" +"+st.pts+" ⭐"):""); }); }
 // A sent row's answer: one targeted write. Refused for a carry from before RT_AMWHY_FROM, a done or plan row, or the same answer.
 function amWhySet(kid,id,v){ const it=_amGrown()&&amCarry[kid]&&amCarry[kid][id]; if(!it||it.done||!amWhyOn(it)||(v!=="ignored"&&v!=="notfault")||it.why===v) return false;
   it.why=v; if(_amWrite()) db.ref("amCarry/"+kid+"/"+id+"/why").set(v); amOnValue(Object.assign({},amCarry)); return true; }
@@ -9881,8 +9886,9 @@ function boardStatPop(kid,slot,d){
     const steps=rtStepsFor(slot,kid,false,day);
     steps.forEach((st,i)=>{ const _ln=(typeof mdLateDays==="function")?mdLateDays(slot,kid,day,i,st):0;   // KIDSLATE: carried-over rows too, as Kids' Corner lists them
       if(!cadDueOn(st.cad||"daily",day)&&!(_ln>0)) return; const rec=((typeof hdSlRec==="function")?hdSlRec(slot,kid,day,i):slState[activeWk()+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i])||{};   /* 🚪 HOUSEDAY */
-      const _dl=typeof rtDailyRow==="function"&&day===_todayDay&&rtDailyRow(st), _ac=amGet(kid,slot,i,amIso(day)), _f=(_ac&&typeof amWhyIg==="function"&&amWhyIg(_ac))?amPay(kid,_ac,amIso(_todayDay)):_dl?rtDailyPay(slot,kid,i,st):(typeof rtFallPay==="function")?rtFallPay(st,_ln,kid):(st.pts||0);   // CHOREAMWHY: an ignored 🌅 row   // CHOREFALL: a falling row shows both numbers, as on the kid's row; CHOREDAILY: a daily too
+      const _dl=typeof rtDailyRow==="function"&&day===_todayDay&&rtDailyRow(st), _f=_dl?rtDailyPay(slot,kid,i,st):(typeof rtFallPay==="function")?rtFallPay(st,_ln,kid):(st.pts||0);   // CHOREFALL: a falling row shows both numbers, as on the kid's row; CHOREDAILY: a daily too
       rows.push({lab:(st.emoji?st.emoji+" ":"")+st.label+(st.pts?(_f!==st.pts?" "+st.pts+" → "+_f+" ⭐":" +"+st.pts+" ⭐"):""),done:rtDoneOn(slot,kid,day,i),ts:rec.ts||"",i:i,wv:(typeof rtWaved==="function")&&rtWaved(slot,kid,day,i),late:_ln,hs:st,pay:_f,dly:_dl?rtDailyNote(slot,kid,i,st):""}); });   // LISTS_TAP; KIDROWS2: wv
+    if(typeof amPopRows==="function") amPopRows(rows,slot,kid);   // CHOREAMWHY: a row sent as ignored shows what its 🌅 row pays today
   }
   // LISTS_TAP (her ask 2026-10-21: "make on both mom and dads day all the lists clickable but do not change the look or size on any" —
   // "each individual list you can open for each kid like morning etc"): the ○/✅ on a morning / afternoon / chores / evening row is the

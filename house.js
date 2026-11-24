@@ -2133,7 +2133,7 @@ function lgAmzTk(r,kid,D,id,t,x){ const ok=lgDropOk(), js="('"+kid+"','"+D.wk+"'
   r.atk=t.n; if(ok) r.gbH=(x?lgXBtn("lgAmzExcuse","'"+kid+"','"+id+"'","➖ Excuse","Not their fault after all: every star this took goes back, and it pays full stars from now on"):'')+' <button onclick="lgAmzGive'+js+'" style="border:1.5px solid #f59e0b;background:#fffbeb;color:#92400e;border-radius:8px;padding:2px 9px;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap">⭐ Give stars back</button>'; }
 // the lines of a carry no longer on the list (✕ take off) that day: a row each
 function lgAmzLost(rows,kid,D){ const L=((routineLog[kid]||{})[D.wk]||{})[D.dn]||{}, m=(amCarry||{})[kid]||{};
-  Object.keys(L).forEach(function(k){ const x=L[k], t=x&&x.amz; if(!t||!/^amz_/.test(k)||m[t.id]) return; const r={ic:"🌅",nm:"🌅 "+String(x.label||"").replace(/ — not done$/,""),note:"taken off the list"}; lgAmzTk(r,kid,D,t.id,t,0); rows.push(r); }); }
+  Object.keys(L).forEach(function(k){ const x=L[k], t=x&&x.amz; if(!t||!/^amz_/.test(k)||m[t.id]) return; const r={ic:"✖",nm:"🌅 "+String(x.label||"").replace(/ — not done$/,""),note:"taken off the list"}; lgAmzTk(r,kid,D,t.id,t,0); rows.push(r); }); }
 function lgAmzP(kid,wk,dn,id){ return "routineLog/"+kid+"/"+wk+"/"+dn+"/amz_"+id+"/amz/gb"; }
 function lgAmzGive(kid,wk,dn,id){ const L=lgDropOk()&&lgAmzLog(kid,wk,dn,id), t=L&&L.amz, ln=t&&lgDropLine(kid,t.bid);
   if(!ln||!(t.n>0)||t.gb){ lgDropDone(); return false; } const u={}; t.gb={by:momHere()?"mom":"dad",ts:nowTs(),at:Date.now(),line:ln}; delete bank[kid].adjustments[t.bid];
