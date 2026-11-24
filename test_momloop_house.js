@@ -15,6 +15,7 @@
  *   6 · slice 2 (§5 row 2, "Your schedule shows them"): with "Mixed in" not tapped every screen = this tree minus HOUSEMIX; tapped, each
  *       unanswered chore is drawn at hgapLay's time (= the first fit) with ✓ Done · Now · ⏰ Later · Not now, each tap writes what
  *       today's row writes, the day moving moves chores and never a card, Mom-off / no school → by time of day, the switch's one write
+ *       · a chore ticked ✓ but never answered holds no gap · anything inside throws → today's rows
  *   7 · slice 2 mutation checks (the plan's: placed chores fed to the Mom loop → the identical-lay check fails)
  *
  *   run:  node test_momloop_house.js
@@ -326,7 +327,7 @@ async function slice2(o) {
   const IDX = o.index || MINE, B6 = BASE6, HJ = o.hjs || HJS;
   const TIMES6 = [[9, 30], [10, 30], [11, 40], [13, 10], [15, 0]];
   const day = (fn5) => TIMES6.map((t, i) => [2026, 11, 16, t[0], t[1], fn5 ? (A, w) => fn5(i, A, w) : null]);
-  const only = o.only || "ABCDEFGH";
+  const only = o.only || "ABCDEFGHIJ";
 
   // A · switch not tapped (and "School first"): every screen byte-identical to the base, plan off / preview / ON, at five times.
   if (only.includes("A")) for (const [mode, fit] of [["off", null], ["preview", null], ["on", null], ["off", "school"]]) {
@@ -416,6 +417,30 @@ async function slice2(o) {
 
   // G · not today: her schedule on another day is the base's (in A, B: "another day's"); the 🧽 cleaning-day plan is HH_CLEANPLAN's
   // own branch, which returns before HOUSEMIX (source check).
+
+  // I · a chore ticked ✓ without ever being answered (the hub's review 2026-11-24): it holds no gap — the others are placed exactly as the
+  // first fit gives WITHOUT it. Wipe the fridge is first in room order; ticked at 10:30, the oven must take its 1:05 gap.
+  if (only.includes("I")) {
+    const tick = A => A.run("(function(){ const x=hhHouseToday().find(function(y){ return y.r.id==='m_fridge'; }); new Function(x.r.on)(); return x.r.done; })()");
+    const m = await world6({ mode: "off", fit: "mixed", index: IDX, steps: [[2026, 11, 16, 10, 30, tick]], call: true }), r = m.out[0], c = r.call;
+    const exp = expect6(c), withDone = oracle(Object.assign({}, c.inp, { done: t => c.done.includes(t.id), lead: t => c.lead.includes(t.id), chores: [{ id: "m_fridge", mins: 10, slot: "", score: 1 }].concat(c.inp.chores) })).filter(p => p.id !== "m_fridge");
+    const bad = []; exp.forEach(p => { const row = rowOf(r.shown.sched, LBL[p.id]); if (p.how === "gap" ? (!row || row.min !== p.at || !row.html.includes(T12(p.at) + "–" + T12(p.end) + " · in a gap")) : (!row || /in a gap/.test(row.html))) bad.push([p.id, row && row.min, p.at]); });
+    const fr = rowOf(r.shown.sched, LBL.m_fridge);
+    ck("I a chore ticked ✓ but never answered: drawn ✓ as today, and it takes no gap", c.inp.chores.every(x => x.id !== "m_fridge") && !!fr && /✓ 🏡/.test(fr.html) && !/in a gap/.test(fr.html), fr && fr.html.slice(0, 120));
+    ck("I …the other chores sit exactly where the first fit WITHOUT it puts them (" + exp.filter(p => p.how === "gap").map(p => p.id + " " + hm(p.at)).join(", ") + ")", bad.length === 0 && exp.some(p => p.how === "gap"), bad);
+    ck("I …and that differs from a fit that still counted it (the case really tells them apart)", JSON.stringify(exp.filter(p => p.how === "gap")) !== JSON.stringify(withDone.filter(p => p.how === "gap")), withDone);
+  }
+
+  // J · anything inside HOUSEMIX throws → today's rows: switch on, hgapLay made to throw on that device → her schedule byte-identical to
+  // the switch-off schedule, Mom's Day still draws, nothing written.
+  if (only.includes("J")) {
+    const W = require(path.join(__dirname, "test_fixtures", "house_world.js")), go = async fit => { const w = await W.world({ household: hh7("off", fit), index: IDX }); await w.at(2026, 11, 16, 10, 30);
+      const A = w.boot("J", "devJ", { mom: true }); await w.flush(); if (fit) A.run("hgapLay=function(){ throw new Error('planted'); };"); const mk = w.mark(); let shown = null, err = null;
+      try { shown = JSON.parse(A.run(SHOW6)); } catch (e) { err = String(e && e.message || e); } await w.flush(); return { shown, err, writes: w.since(mk).length }; };
+    const off = await go(null), on = await go("mixed");
+    ck("J switch on but the placement throws: her schedule still draws, byte-identical to the switch-off schedule", !on.err && !!on.shown && on.shown.sched === off.shown.sched && /block out time\?/.test(on.shown.sched), on.err);
+    ck("J …Mom's Day, Dad's Day and every kid's screen still draw, = switch off; nothing written", !on.err && !!on.shown && SAME6.every(k => JSON.stringify(on.shown[k]) === JSON.stringify(off.shown[k])) && on.shown.momDay.length > 0 && on.writes === 0, [on.err, on.writes]);
+  }
 
   // H · the switch on 👤 By person: "not on yet" until her tap; her tap = one write; School first = one write and today's schedule back.
   if (only.includes("H")) {
@@ -510,6 +535,8 @@ const SHOT = {};
       ["X6 Now on a placed chore writes Later", "C", "_kpBtn('Now',\"hhHouseBlockSet('\"+_lbQ(r.id)+\"','now')\",false)", "_kpBtn('Now',\"hhHouseBlockSet('\"+_lbQ(r.id)+\"','later')\",false)", /Now/],
       ["X7 a placed chore drawn at school end instead of its time", "B", "return {m:p.at,o:1,", "return {m:hhHouseDefaultMin(),o:1,", /hgapLay gives|time order/],
     ];
+    MM.push(["X9 a done (never answered) chore still handed to hgapLay", "I", "list.filter(function(x){ return !x.r.done&&!x.rec; })", "list.filter(function(x){ return !x.rec; })", /first fit WITHOUT/],
+      ["X10 a throw inside is not caught", "J", "}catch(e){ return null; } }", "}catch(e){ throw e; } }", /placement throws/]);   // the hub's review 2026-11-24
     for (const [name, only, a, b, rx] of MM) {
       const n = MIX.split(a).length - 1; if (n !== 1) { ok("(" + name + ": its text occurs once in HOUSEMIX)", false, n); continue; }
       const f = await slice2({ index: tmpFile("mut" + name.slice(0, 2), SRC.replace(MIX, MIX.replace(a, b))), only }).then(R => R.filter(r => !r[1]));
