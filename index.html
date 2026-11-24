@@ -44838,21 +44838,22 @@ function ubLines(text){ return String(text||"").split(/\n+/).map(ubLine).filter(
 // a line with no | splits at its first tab, spaced dash (– — -), colon or = : "word – meaning", "word: meaning"
 function ubSplitLoose(l){ const m=/\t+|\s+[\u2013\u2014-]+\s+|\s*[:=]\s+/.exec(l); return m?[l.slice(0,m.index).trim(),l.slice(m.index+m[0].length).trim()]:[l]; }
 // does this paste need Claude? a list of two or more lines with one not clean `a | b` (a single typed line stays here); videos never
-function ubMessy(kind,text){ const L=ubLines(text); if(L.length<2||kind==="videos") return false; return L.some(l=>l.indexOf("|")<0); }
+function ubMessy(kind,text){ const L=ubLines(text); if(L.length<2||kind==="videos") return false; if(kind==="acts"&&typeof ubkAny==="function"&&ubkAny(L)) return false; return L.some(l=>l.indexOf("|")<0); }   // UBKIND: a line with an address is the app's to read
 function ubParse(kind,text){
   const out=[]; ubLines(text).forEach(l=>{ const piped=l.indexOf("|")>=0; let b=piped?l.split("|").map(s=>s.trim()):(kind==="videos"?[l]:ubSplitLoose(l));
     if(!piped&&kind==="books"){ const by=/^(.+?)\s+by\s+(.+)$/i.exec(l); if(by) b=[by[1],by[2]]; }
     if(kind==="cards"){ if(b[0]) out.push({id:ubId(),front:ubStr(b[0],120),back:ubStr(b[1]||"",400)}); }
     else if(kind==="books"){ if(b[0]) out.push({id:ubId(),title:ubStr(b[0],120),by:ubStr(b[1]||"",80),url:ubUrl(b[2]||"")}); }
     else if(kind==="videos"){ let u=piped?ubUrl(b[0]):"", lab=b[1]||""; if(!piped){ const m=/https:\/\/\S+/i.exec(l); if(m){ u=ubUrl(m[0].replace(/[).,]+$/,"")); lab=l.replace(m[0],"").replace(/[()]/g,"").replace(/^[\s:\u2013\u2014-]+|[\s:\u2013\u2014-]+$/g,""); } } if(u) out.push({id:ubId(),url:u,label:ubStr(lab,60)}); }
-    else if(kind==="acts"){ if(b[0]){ const p=parseInt(b[1],10), num=isFinite(p)&&p>0; out.push({id:ubId(),title:ubStr(b[0],120),points:num?p:5,desc:ubStr((piped||num)?(b[2]||""):(b[1]||""),240)}); } } });
+    else if(kind==="acts"){ if(b[0]){ const k=(typeof ubkLine==="function")?ubkLine(b,piped):""; if(k==="hold"){ ubkHeld(out,l); return; }   // UBKIND
+      const p=parseInt(b[1],10), num=isFinite(p)&&p>0, it={id:ubId(),title:ubStr(b[0],120),points:num?p:5,desc:ubStr((piped||num)?(b[2]||""):(b[1]||""),240)}; if(k){ it.type="link"; it.url=k; } out.push(it); } } });
   return out;
 }
 function ubDi(di){ if(di===null||di===undefined||di==="null"||di==="") return null; const n=parseInt(di,10); return isFinite(n)?n:null; }   // the HTML hands the day index over as text
 function ubList(di,kind){ const f=ubForm; if(!f) return null; di=ubDi(di); if(di==null||di<0){ return (f.mode==="boxes"&&!f.spread)?f.boxes[kind]:(di==null&&f.mode==="boxes"?f.boxes[kind]:null); } return f.days[di]?f.days[di][kind]:null; }
 function ubAddLines(di,kind){
   if(!ubForm) return 0; const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById("ub-in-"+kind+"-"+(di==null?"all":di)):null; const text=el?el.value:"";
-  if(!ubList(di,kind)) return 0;
+  if(!ubList(di,kind)) return 0; if(typeof ubkHold==="function") ubkHold(di,kind,null);   // UBKIND: each + Add starts the box's held lines afresh
   if(kind==="cards"&&typeof cardSplit==="function"){   // CARDSPLIT: the cards box reads a list by the same rules as ＋ Add cards FIRST; Claude only when they find nothing (prose) and a key exists
     const cs=cardSplit(text);
     if(!cs.found&&cs.lines>=2&&ubCanAsk()){ if(el) el.value=""; return ubAsk(di,kind,[{type:"text",text:"Pasted text:\n"+String(text).slice(0,60000)}],{kind:"pasted",text:text}); }
@@ -44864,7 +44865,7 @@ function ubAddLines(di,kind){
   }
   if(ubMessy(kind,text)&&ubCanAsk()){ if(el) el.value=""; return ubAsk(di,kind,[{type:"text",text:"Pasted text:\n"+String(text).slice(0,60000)}],{kind:"pasted",text:text}); }   // UBANYPASTE
   const items=ubParse(kind,text); const L=ubList(di,kind); items.forEach(x=>L.push(x)); if(items.length) ubForm.sources.push({kind:"typed",box:kind,n:items.length,ts:Date.now()});
-  if(el) el.value=""; ubRe(); return items.length;
+  if(el) el.value=""; if(typeof ubkHold==="function") ubkHold(di,kind,items); ubRe(); return items.length;   // UBKIND
 }
 function ubRemove(di,kind,id){ const L=ubList(di,kind); if(!L) return; const i=L.findIndex(x=>x.id===id); if(i>=0) L.splice(i,1); ubRe(); }
 function ubEdit(di,kind,id,field,val){ const L=ubList(di,kind); const x=L&&L.find(x=>x.id===id); if(!x) return; if(field==="points"){ const p=parseInt(val,10); x.points=(isFinite(p)&&p>0)?p:5; } else if(field==="url") x.url=ubUrl(val); else x[field]=ubStr(val,field==="back"?400:field==="desc"?240:120); }
@@ -44964,7 +44965,7 @@ function ubRecord(f){
     d.videos.forEach(v=>{ res.links.push({url:v.url,label:v.label||"Video",kind:"video"}); });
     d.books.forEach(b=>{ const o={title:b.title}; if(b.by) o.by=b.by; res.books.push(o); if(b.url) res.links.push({url:b.url,label:b.title,kind:"site"}); });
     let nb=null;
-    d.acts.forEach(a=>{ let key=ubSlug(a.title)||"activity"; let k=2; const base=key; while(actKeys[key]) key=base+"_"+(k++); actKeys[key]=1; const act={key:key,title:a.title,emoji:"\u{1F3A8}",kind:"sheet",points:a.points||5,day:n}; if(a.desc) act.desc=a.desc; acts.push(act); if(!nb) nb={activity:key}; });
+    d.acts.forEach(a=>{ let key=ubSlug(a.title)||"activity"; let k=2; const base=key; while(actKeys[key]) key=base+"_"+(k++); actKeys[key]=1; const act={key:key,title:a.title,emoji:"\u{1F3A8}",kind:"sheet",points:a.points||5,day:n}; if(a.desc) act.desc=a.desc; if(typeof ubkRecord==="function") ubkRecord(a,act); acts.push(act); if(!nb) nb={activity:key}; });
     const day={id:"d"+n,n:n,t:d.t||ubAutoTitle(d)||("Day "+n),res:res}; if(names.length) day.cards=[{deck:deck,names:names}]; if(nb) day.nb=nb;
     const craft=ubCraftOf(d); if(craft) day.craft=craft;   // CRAFT (B3)
     days.push((typeof utClean==="function")?utClean(day):day);
@@ -45029,9 +45030,10 @@ function ubBoxHTML(di,kind){
     else if(kind==="books") h+='<input value="'+ubEsc(x.title)+'" placeholder="title" oninput="ubEdit('+a+','+id+',\'title\',this.value)" style="'+UB_INP+';flex:2 1 140px;width:auto"><input value="'+ubEsc(x.by)+'" placeholder="by" oninput="ubEdit('+a+','+id+',\'by\',this.value)" style="'+UB_INP+';flex:1 1 100px;width:auto"><input value="'+ubEsc(x.url)+'" placeholder="https:// link (optional)" oninput="ubEdit('+a+','+id+',\'url\',this.value)" style="'+UB_INP+';flex:2 1 140px;width:auto">';
     else if(kind==="videos") h+='<input value="'+ubEsc(x.url)+'" placeholder="https:// link" oninput="ubEdit('+a+','+id+',\'url\',this.value)" style="'+UB_INP+';flex:2 1 160px;width:auto"><input value="'+ubEsc(x.label)+'" placeholder="label" oninput="ubEdit('+a+','+id+',\'label\',this.value)" style="'+UB_INP+';flex:1 1 100px;width:auto">';
     else h+='<input value="'+ubEsc(x.title)+'" placeholder="title" oninput="ubEdit('+a+','+id+',\'title\',this.value)" style="'+UB_INP+';flex:2 1 140px;width:auto"><input type="number" min="1" max="100" value="'+ubEsc(x.points)+'" title="points" oninput="ubEdit('+a+','+id+',\'points\',this.value)" style="'+UB_INP+';flex:0 0 58px;width:auto"><input value="'+ubEsc(x.desc)+'" placeholder="a line about it" oninput="ubEdit('+a+','+id+',\'desc\',this.value)" style="'+UB_INP+';flex:2 1 140px;width:auto">';
+    if(kind==="acts"&&typeof ubkRowHTML==="function") h+=ubkRowHTML(x);   // UBKIND: 🔗 chip + the address
     if(x.draft) h+='<span title="drafted from a photo" style="font-size:9.5px;font-weight:800;color:#b45309;background:#fffbeb;border-radius:6px;padding:1px 6px">drafted</span>';
     h+='<button onclick="ubRemove('+a+','+id+')" title="Remove" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:0 4px">\u2715</button></div>'; });
-  h+='<div style="display:flex;gap:6px;align-items:flex-end;margin-top:6px"><textarea id="ub-in-'+kind+'-'+tag+'" rows="2" placeholder="'+ubEsc(meta[2])+'" style="'+UB_INP+';flex:1;resize:vertical"></textarea>'+ubBtn(false,"\uFF0B Add","ubAddLines("+(di==null?"null":di)+",'"+kind+"')")+'</div>';
+  h+='<div style="display:flex;gap:6px;align-items:flex-end;margin-top:6px"><textarea id="ub-in-'+kind+'-'+tag+'" rows="2" placeholder="'+ubEsc((kind==="acts"&&typeof ubkHint==="function")?ubkHint(meta[2]):meta[2])+'" style="'+UB_INP+';flex:1;resize:vertical">'+((typeof ubkLeftText==="function")?ubkLeftText(tag,kind):"")+'</textarea>'+ubBtn(false,"\uFF0B Add","ubAddLines("+(di==null?"null":di)+",'"+kind+"')")+'</div>';
   return h+'</div>';
 }
 function ubNameHTML(f){
@@ -45067,7 +45069,7 @@ function ubDaysHTML(f){
   f.days.forEach((d,di)=>{ h+='<div data-ub-day="'+(di+1)+'" style="border:1px solid #eef0f3;border-radius:10px;padding:8px 10px;margin-top:8px;background:#fff">';
     h+='<div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;font-weight:800;color:#1f2937;white-space:nowrap">Day '+(di+1)+'</span><input value="'+ubEsc(d.t)+'" oninput="ubDayTitleEdit('+di+',this.value)" style="'+UB_INP+';flex:1;width:auto;padding:5px 8px;font-size:12px"></div>';
     const row=(icon,txt,kind,id)=>'<div style="display:flex;gap:6px;align-items:center;font-size:12px;padding:3px 0"><span>'+icon+'</span><span style="flex:1;overflow-wrap:anywhere">'+ubEsc(txt)+'</span>'+sel(kind,id,di)+'</div>';
-    d.books.forEach(b=>{ h+=row("\u{1F4DA}",b.title,"books",b.id); }); d.videos.forEach(v=>{ h+=row("\u25B6",v.label||v.url,"videos",v.id); }); d.acts.forEach(a=>{ h+=row("\u{1F3A8}",a.title,"acts",a.id); }); d.cards.forEach(c=>{ h+=row("\u{1F0CF}",c.front,"cards",c.id); });
+    d.books.forEach(b=>{ h+=row("\u{1F4DA}",b.title,"books",b.id); }); d.videos.forEach(v=>{ h+=row("\u25B6",v.label||v.url,"videos",v.id); }); d.acts.forEach(a=>{ h+=row((typeof ubkIcon==="function")?ubkIcon(a):"\u{1F3A8}",a.title,"acts",a.id); }); d.cards.forEach(c=>{ h+=row("\u{1F0CF}",c.front,"cards",c.id); });
     if(!d.books.length&&!d.videos.length&&!d.acts.length&&!d.cards.length) h+='<div style="font-size:11px;color:#cbd5e1">nothing yet</div>';
     h+='</div>'; });
   h+='<div style="display:flex;gap:8px;margin-top:14px">'+ubBtn(false,"\u2039 Back to the boxes","ubGo('fill')")+ubBtn(false,"Spread again","ubSpreadNow();ubRe()")+ubBtn(false,"Check the cards \u203A","ubGo('check')",true)+'</div>';
@@ -45100,6 +45102,55 @@ function ubPageHTML(){
   return h+'</div>';
 }
 // UNITBUILD_END
+// UBKIND_START — 🔗 the ✚ Builder's activities box learns the kind (slice 8 of PLAN_unit_activity_types_2026-11-19, §4 row 8: "the
+//   four-box Builder's 📓 Notebook activities & field trips box accepts the type and a link per line (title | points | a line |
+//   https://…)"; Adrienne 2026-11-22/23: "go with her answers and build").
+//   · A LINE with an https address in the 4th place — "Farm tour | 3 | what a farm grows | https://…" — makes a 🔗 Web link
+//     activity. On Save (ubRecord) it is the after-Save record exactly (UTADDACT + UACTKIND + UACTLINK, key order too):
+//     {key, title, emoji:"🎨", kind:"sheet", points, day, desc?, url, type:"link"}. The address is checked by UACTLINK's own uakUrl
+//     (https only, one rule). kidOpen is never set here — Mom ticks "Kids may open it alone" on the day after Save (§3.2).
+//   · NO ADDRESS in the 4th place → the line is read exactly as before: the same item, the same record, byte for byte.
+//   · A BAD ADDRESS is never dropped: http://, www.…, a bare site (pbs.org), javascript:/data: in the 4th place, or a whole address
+//     standing in the title / points / line place (the wrong column) → the line is NOT added; it stays in the box and the box says
+//     why, as the day editor's 🔗 box refuses with a toast. Plain words in the 4th place stay ignored, as before.
+//   · A paste of two or more lines that carries an address is read here, line by line, never sent to Claude (Claude's drafts carry
+//     no address, so it would be lost).
+//   · Only 🔗 and 📓: the plan gives no way to name 📱 / 🖨 / 🧪 on a line — those are picked on the day after Save.
+//   · Pure: no db, no listener, nothing written until the Builder's one Save. No kid's or family's name.
+function ubkWhole(s){ return /^(?:[a-z][a-z0-9+.\-]*:\/\/|www\.)\S+$/i.test(String(s||"").trim()); }   // a cell that is an address and nothing else
+// the 4th place holds an address that will not do: one word that starts like one (http…, www., a scheme, //) or is a bare site
+function ubkAddr(s){ s=String(s||"").trim(); if(!s||/\s/.test(s)) return false; return ubkWhole(s)||/^(?:https?|www\.|javascript:|data:|vbscript:|file:|ftp:|mailto:)/i.test(s)||s.indexOf("//")>=0||/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:[\/?#:]\S*)?$/i.test(s); }
+// one line's cells (as ubParse split them) → "" (read as before) | the https address (a 🔗) | "hold" (stays in the box)
+function ubkLine(b,piped){
+  if(typeof uakUrl!=="function") return "";
+  const c=(b||[]).map(x=>String(x==null?"":x).trim());
+  if(c.some((x,i)=>!(piped&&i===3)&&ubkWhole(x))) return "hold";   // an address in the wrong place
+  if(!piped||!c[3]) return "";
+  const u=uakUrl(c[3]); if(u) return u;
+  return ubkAddr(c[3])?"hold":"";
+}
+function ubkAny(L){ return (L||[]).some(l=>{ const piped=l.indexOf("|")>=0, b=piped?l.split("|").map(s=>s.trim()):ubSplitLoose(l); return !!b[0]&&ubkLine(b,piped)!==""; }); }
+function ubkHeld(out,l){ if(!out.ubkHeld) Object.defineProperty(out,"ubkHeld",{value:[],enumerable:false}); out.ubkHeld.push(l); }
+// after + Add: the held lines wait in the same box (drawn by ubkLeftText) with one plain line why
+function ubkHold(di,kind,items){
+  const f=ubForm; if(!f||kind!=="acts") return; const tag=(di==null||di==="null")?"all":String(di), left=(items&&items.ubkHeld)||[];
+  if(!f.ubkLeft) f.ubkLeft={};
+  if(!left.length){ delete f.ubkLeft[tag]; if(f.ubkMsg&&f.msg===f.ubkMsg) f.msg=""; return; }   // fixed → the why goes too
+  f.ubkLeft[tag]=left.join("\n");
+  f.msg=f.ubkMsg="\u{1F517} "+left.length+" line"+(left.length===1?"":"s")+" kept in the box: a web address starts with https:// and goes last — title | points | a line | https://…";
+}
+function ubkLeftText(tag,kind){ const f=ubForm; const t=(kind==="acts"&&f&&f.ubkLeft)?f.ubkLeft[String(tag)]:""; return t?ubEsc(t):""; }
+function ubkHint(p){ return p+" | https:// link (optional)"; }
+// Save: a 🔗 item → url then type, as uakKindAdd then uakAddFields put them; an address that no longer checks → 📓 as before
+function ubkRecord(a,act){ if(!a||a.type!=="link") return; const u=(typeof uakUrl==="function")?uakUrl(a.url):""; if(!u) return; act.url=u; act.type="link"; }
+function ubkIcon(a){ return (a&&a.type==="link")?"\u{1F517}":"\u{1F3A8}"; }
+// the box's row: the Units page's own kind chip, then the address (read-only — ✕ and type the line again to change it)
+function ubkRowHTML(x){
+  if(!x||x.type!=="link"||!x.url) return "";
+  const chip=(typeof uakChipHTML==="function")?uakChipHTML({type:"link"}):'<span data-uak-chip="link">\u{1F517} Web link</span>';
+  return '<span data-ubk-link="1" style="display:flex;gap:6px;align-items:center;flex:1 1 100%;min-width:0">'+chip+'<span style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">'+ubEsc(x.url)+'</span></span>';
+}
+// UBKIND_END
 function fxOpenClassScreen(kid,sk,taskId){
   const s=((gwGetSubjects(kid)||{})[sk])||null;
   if(!s) return;
