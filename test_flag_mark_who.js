@@ -21,6 +21,16 @@ const IDX = process.env.FW_INDEX || path.join(__dirname, "index.html"), HJS = fs
 // ── the app before: this tree, FLAGWHO taken out ──
 const PIECES = [
   [/^\/\/ FLAGWHO_START[^\n]*\n[\s\S]*?^\/\/ FLAGWHO_END\n/m, "", "the FLAGWHO block"],
+  [String.raw`  if(!ckLogCanDock()) return;
+  const who=(typeof momHere==="function"&&momHere())?"mom":"dad", off=typeof starTakeOk==="function"&&!starTakeOk(kid);   // FLAGWHO: Take stars away off → the 🚩 mark, no stars (as the Click-off Log's ⚠️)`, String.raw`  if(!ckLogCanDock()||(typeof starTakeNo==="function"&&starTakeNo(kid))) return;   // STARRULES
+  const who=(typeof momHere==="function"&&momHere())?"mom":"dad";`, "🧾's gate"],
+  ['    if(!confirm(off?flagOffAsk(kid,rec.label||label||""):"Dock 100', '    if(!confirm("Dock 100', "🧾's step ask"],
+  ['    if(!off) bankDirect(kid,-100,"🚩 false check-off dock — "+(rec.label||label||"")', '    bankDirect(kid,-100,"🚩 false check-off dock — "+(rec.label||label||"")', "🧾's step take"],
+  ["penalty:off?0:-100,flagTs:nowTs(),flagBy:who}; Object.assign(rec,patch);", "penalty:-100,flagTs:nowTs(),flagBy:who}; Object.assign(rec,patch);", "🧾's step mark"],
+  [String.raw`    if(!confirm((off?flagOffAsk(kid,label||""):"Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(label||"")+"\"")+"\n\n(The card`, String.raw`    if(!confirm("Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(label||"")+"\"\n\n(The card`, "🧾's card ask"],
+  ['    if(!off) bankDirect(kid,-100,"🚩 false check-off dock — "+(label||"")', '    bankDirect(kid,-100,"🚩 false check-off dock — "+(label||"")', "🧾's card take"],
+  ["penalty:off?0:-100,flagTs:nowTs(),flagBy:who}; Object.assign(h,patch);", "penalty:-100,flagTs:nowTs(),flagBy:who}; Object.assign(h,patch);", "🧾's card mark"],
+  ['  dbg("🚩 "+(off?"mark, no stars,":"dock −100")+" "+kid', '  dbg("🚩 dock −100 "+kid', "🧾's debug line"],
   [",ref:t.id,flagged:!!h.flagged,flagBy:h.flagBy,penalty:h.penalty,pts:0});   // FLAGWHO", ",ref:t.id,flagged:!!h.flagged,pts:0});", "🧾's card line"],
   [",flagged:!!r.flagged,flagBy:r.flagBy,penalty:r.penalty,pts:r.pts||0}); });   // WAVE lines ride along · FLAGWHO", ",flagged:!!r.flagged,pts:r.pts||0}); });   // WAVE lines ride along", "🧾's step line"],
   [",flagged:!!r.flagged,flagBy:r.flagBy,penalty:r.penalty,pts:r.pts||0}); }); }); }); }   // FLAGWHO", ",flagged:!!r.flagged,pts:r.pts||0}); }); }); }); }", "🧾's 🌅 line"],
@@ -154,6 +164,7 @@ console.log("\n── D · an old mark (no flagBy) draws as before ──");
 { const put = S => S.A.run("(function(){ const wk=activeWk(), dn=_todayDay; routineLog.kid_c[wk][dn].old1={label:'Old chore',slot:'chores',act:'on',ts:'9:00 AM',at:1,pts:3,flagged:true,penalty:-100,flagTs:'9:30 AM'}; weekData.tasks.push({id:'t_old',who:'kid_c',day:_todayDay,title:'Old card'}); checked.t_old=nowTs().replace(/^\\S+ \\S+/,'09:05 AM'); histState.t_old={title:'Old card',flagged:true,penalty:-100,flagTs:'9:31 AM'}; })()");
   put(N); put(O);
   const a = [logRow(logHTML(N.A), "Old chore"), ckRow(ckHTML(N.A), "Old chore"), ckRow(ckHTML(N.A), "Old card")], b = [logRow(logHTML(O.A), "Old chore"), ckRow(ckHTML(O.A), "Old chore"), ckRow(ckHTML(O.A), "Old card")];
+  DUMP.oldLog = a[0]; DUMP.oldCk = a[1];
   ok("an old marked chore line (Click-off Log and 🧾) and an old marked school card (🧾): byte for byte the app before (\"−100\", \"🚩 −100\")", a.every(x => x !== "") && J(a) === J(b) && />🚩 −100<\/span>/.test(a[1]) && />−100<\/span>/.test(a[0]), a.map((x, i) => x === b[i] ? "same" : [x.slice(-160), b[i].slice(-160)]));
   ok("…and ckLogToday's lines for check-offs unmarked in both read the same as before (no new fields)", (() => { const f = S => JSON.parse(S.A.run("JSON.stringify(ckLogToday())")); const x = f(N), y = f(O), id = i => i.kid + "|" + i.label, un = new Set(x.filter(i => !i.flagged).map(id).filter(r => y.some(q => id(q) === r && !q.flagged)));
     const g = L => J(L.filter(i => un.has(id(i))).map(i => Object.assign({}, i, { ref: "" }))); return un.size >= 1 && g(x) === g(y); })());   // the push keys differ between the two worlds
@@ -170,6 +181,40 @@ console.log("\n── E · dryrun writes nothing ──");
   tick(N.Kk, "kid_c", "Toys in the bin"); tick(N.Kk, "kid_c", "Toys in the bin"); await w.flush(); const k2 = logKey(Dr, "kid_c", "Toys in the bin"), m2 = w.mark();
   Dr.run("rlogFlag('kid_c','" + k2.join("','") + "')"); await w.flush();
   ok("?dryrun=1, Take on (with the app's own boot-time dry-run patch): nothing reaches the database", w.since(m2).length === 0 && k2[2] !== k[2]);
+}
+
+// ── F ──
+console.log("\n── F · 🧾's −100 follows the same rule (step lines and school cards; Mom and Dad) ──");
+{ const { w, A, Dd, Kk } = N; A.run("lgRuleTake('kid_c')"); await w.flush();
+  tick(Kk, "kid_c", "Toys in the bin"); tick(Kk, "kid_c", "Toys in the bin"); await w.flush();   // a fresh line (E's dry-run mark never left its device)
+  const k = logKey(A, "kid_c", "Toys in the bin"); A.run("__cf.length=0;__say=false;1"); let m = w.mark();
+  A.run("ckLogDock('step','kid_c'," + J(k.join("/")) + ",'Toys in the bin')"); await w.flush();
+  ok("Cancel: nothing written, no mark", w.since(m).length === 0 && !recOf(w, "kid_c", k).flagged);
+  A.run("__cf.length=0;__say=true;1"); const b0 = notes(w, "kid_c").length; m = w.mark(); A.run("ckLogDock('step','kid_c'," + J(k.join("/")) + ",'Toys in the bin')"); await w.flush();
+  const r = recOf(w, "kid_c", k);
+  ok("Take off, a chore line (Mom): the same ask as the Log's; ONE write on the line; flagged, penalty 0, by Mom; no bank line", A.run("__cf[0]") === "Mark a false check-off for Kid C?\n\n\"Toys in the bin\"\n\nTaking stars away is off for Kid C, so no stars come off. The line just gets its 🚩 mark." && J(writes(w, m)) === J(["update routineLog/kid_c/" + k.join("/")]) && r.flagged === true && r.penalty === 0 && r.flagBy === "mom" && notes(w, "kid_c").length === b0, [A.run("__cf[0]"), writes(w, m), r]);
+  ok("…drawn on 🧾 and in the Click-off Log: \"🚩 by Mom · no stars taken\"", /title="marked, no stars taken"[^>]*>🚩 by Mom · no stars taken<\/span>/.test(ckRow(ckHTML(A), "Toys in the bin")) && /✓ Toys in the bin<\/span> <span style="color:#b91c1c;font-weight:800">🚩 by Mom · no stars taken<\/span>/.test(logHTML(A)), [ckRow(ckHTML(A), "Toys in the bin").slice(-220), logRow(logHTML(A), "Toys in the bin").slice(-300)]);
+  // a school card, by Dad on his link
+  Dd.run("(function(){ weekData.tasks.push({id:'t_fw2',who:'kid_c',day:_todayDay,title:'Spelling list'}); checked.t_fw2=nowTs(); histState.t_fw2={title:'Spelling list'}; })()");
+  Dd.run("__cf.length=0;1"); m = w.mark(); Dd.run("ckLogDock('task','kid_c','t_fw2','Spelling list')"); await w.flush();
+  const h = w.get(Dd.run("WK") + "/history/t_fw2") || {}, cr = ckRow(ckHTML(Dd), "Spelling list");
+  ok("Take off, a school card (Dad, his link, code in): the ask adds the card's own line; ONE write on its history entry; penalty 0, by Dad; no bank line", Dd.run("__cf[0]") === "Mark a false check-off for Kid C?\n\n\"Spelling list\"\n\nTaking stars away is off for Kid C, so no stars come off. The line just gets its 🚩 mark.\n\n(The card stays checked — use “" + Dd.run("cw('fixFalse')") + "” in the subject sheet to undo the record.)" && J(writes(w, m)) === J(["update " + Dd.run("WK") + "/history/t_fw2"]) && h.flagged === true && h.penalty === 0 && h.flagBy === "dad" && notes(w, "kid_c").length === b0, [Dd.run("__cf[0]"), writes(w, m), h]);
+  ok("…drawn on his 🧾: \"🚩 by Dad · no stars taken\"", /title="marked, no stars taken"[^>]*>🚩 by Dad · no stars taken<\/span>/.test(cr), cr.slice(-200));
+  DUMP.dadOffCk = cr; DUMP.momOffCk = ckRow(ckHTML(A), "Toys in the bin");
+  // the switch back on: neither line can be docked
+  A.run("lgRuleTake('kid_c')"); await w.flush(); A.run("__cf.length=0;1"); Dd.run("__cf.length=0;1"); m = w.mark();
+  A.run("ckLogDock('step','kid_c'," + J(k.join("/")) + ",'Toys in the bin')"); A.run("rlogFlag('kid_c','" + k.join("','") + "')"); Dd.run("ckLogDock('task','kid_c','t_fw2','Spelling list')"); await w.flush();
+  ok("Take stars away On again: neither marked line can be docked by any button (no ask, nothing written, no bank line)", w.since(m).length === 0 && A.run("__cf.length") === 0 && Dd.run("__cf.length") === 0 && notes(w, "kid_c").length === b0);
+  // ⏸ Pause, by Dad's 🧾 on a fresh line
+  A.run("lgRulePause()"); await w.flush(); tick(Kk, "kid_a", "Make the bed"); tick(Kk, "kid_a", "Make the bed"); await w.flush();
+  const k2 = logKey(A, "kid_a", "Make the bed"), n0 = notes(w, "kid_a").length; Dd.run("__cf.length=0;1"); m = w.mark(); Dd.run("ckLogDock('step','kid_a'," + J(k2.join("/")) + ",'Make the bed')"); await w.flush();
+  ok("⏸ paused: Dad's 🧾 −100 asks \"…⏸ Star rules are paused for everyone, so no stars come off.\", marks (penalty 0, by Dad), takes nothing", /⏸ Star rules are paused for everyone, so no stars come off\./.test(Dd.run("__cf[0]")) && J(writes(w, m)) === J(["update routineLog/kid_a/" + k2.join("/")]) && recOf(w, "kid_a", k2).penalty === 0 && recOf(w, "kid_a", k2).flagBy === "dad" && notes(w, "kid_a").length === n0);
+  A.run("lgRulePause()"); await w.flush();
+  // dryrun
+  const Dr = w.boot("Dr2", "devDr2", { mom: true }); await w.flush(); Dr.run(CAP); Dr.run("HA_LS.setItem('ha_dryrun','1');1"); Dr.run(HJS); Dr.run("lgRuleTake('kid_b')");
+  tick(Kk, "kid_b", "Feed the dog"); tick(Kk, "kid_b", "Feed the dog"); await w.flush(); const k3 = logKey(Dr, "kid_b", "Feed the dog"); m = w.mark();
+  Dr.run("ckLogDock('step','kid_b'," + J(k3.join("/")) + ",'Feed the dog')"); await w.flush();
+  ok("?dryrun=1, Take off: 🧾's mark shows on that screen and nothing reaches the database", w.since(m).length === 0 && Dr.run("routineLog.kid_b[" + J(k3[0]) + "][" + J(k3[1]) + "][" + J(k3[2]) + "].penalty") === 0 && !recOf(w, "kid_b", k3).flagged);
 }
 
 if (process.env.FW_DUMP) fs.writeFileSync(process.env.FW_DUMP, J(DUMP));

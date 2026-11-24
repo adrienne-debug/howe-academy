@@ -47,7 +47,7 @@ const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.ht
   R('+(_nt?"\\n\\n"+starTakeWhy(kid)+", so nothing more comes off.":"")', "", "the spot check's words");
   R('const off=typeof starTakeOk==="function"&&!starTakeOk(kid), who=', "const off=false, who=", "the Click-off Log's gate (FLAGWHO: Take off marks with no stars)");
   R("+starTakeWhy(kid)+", "+", "FLAGWHO's words");
-  R('if(!ckLogCanDock()||(typeof starTakeNo==="function"&&starTakeNo(kid))) return;   // STARRULES', "if(!ckLogCanDock()) return;", "🧾's gate");
+  R(', off=typeof starTakeOk==="function"&&!starTakeOk(kid);   // FLAGWHO', ", off=false;   // FLAGWHO", "🧾's gate (FLAGWHO: Take off marks with no stars)");
   if (/STARRULES|starTake|starFallFrom|starRules|arguments\[2\]\)/.test(s)) throw new Error("test_ledger_rules: the app before still mentions STARRULES");
   const t = path.join(os.tmpdir(), "ledger_rules_before_" + process.pid + ".html"); fs.writeFileSync(t, s); return t; })();
 const BASE_HJS = (() => { let s = fs.readFileSync(path.join(__dirname, "house.js"), "utf8");
@@ -231,10 +231,10 @@ console.log("\n── F · ⏸ Pause for everyone, and un-pause the same day ─
   // nothing is taken, for anyone
   const dog0 = lines(w, "kid_b", "Feed the dog").reduce((s, a) => s + a, 0);
   tick(Kk, "kid_b", "Feed the dog"); await w.flush(); const k2 = logKey(A, "kid_b", "Feed the dog"), m = w.mark(); A.run("__toast.length=0;__cf.length=0;1");
-  A.run("rlogFlag('kid_b','" + k2.join("','") + "')"); Dd.run("__toast.length=0;1"); Dd.run("ckLogDock('step','kid_b'," + J(k2.join("/")) + ",'Feed the dog')");
+  A.run("rlogFlag('kid_b','" + k2.join("','") + "')"); await w.flush(); Dd.run("__toast.length=0;1");   // FLAGWHO: Dad's device hears the mark first Dd.run("ckLogDock('step','kid_b'," + J(k2.join("/")) + ",'Feed the dog')");
   spotPick(A, "kid_b", "Feed the dog", 2); A.run("spResolve('kid_b',0,'no')"); await w.flush();
   ok("…paused: the Click-off Log's −100 (Mom), 🧾's −100 (Dad's link) and the spot check's extra stars take nothing from kid_b; the Log's ⚠️ still marks the line: 🚩, penalty 0, by Mom (FLAGWHO 2026-11-23)", lines(w, "kid_b", "false check-off").length === 0 && lines(w, "kid_b", "Spot check").length === 0 && (r => r.flagged === true && r.penalty === 0 && r.flagBy === "mom")(w.get("routineLog/kid_b/" + k2.join("/")) || {}), writes(w, m));
-  ok("…and each says why where she tapped: the Log's ask \"…⏸ Star rules are paused for everyone, so no stars come off.\" (FLAGWHO) / the spot check's ask", A.run("__toast.length") === 0 && /^Mark a false check-off for Kid B\?[\s\S]*⏸ Star rules are paused for everyone, so no stars come off\./.test(A.run("__cf[0]")) && /⏸ Star rules are paused for everyone, so nothing more comes off\./.test(A.run("__cf[1]")) && !/The rule: −100/.test(A.run("__cf[1]")), [A.run("JSON.stringify(__toast)"), A.run("JSON.stringify(__cf)")]);
+  ok("…and each says why where she tapped: the Log's ask \"…⏸ Star rules are paused for everyone, so no stars come off.\" (FLAGWHO) / the spot check's ask", A.run("__toast.length") === 0 && /^Mark a false check-off for Kid B\?[\s\S]*⏸ Star rules are paused for everyone, so no stars come off\./.test(A.run("__cf[0]")) && Dd.run("__toast.length") === 0 && /⏸ Star rules are paused for everyone, so nothing more comes off\./.test(A.run("__cf[1]")) && !/The rule: −100/.test(A.run("__cf[1]")), [A.run("JSON.stringify(__toast)"), A.run("JSON.stringify(__cf)")]);
   ok("…the spot check's ✗ still did its own part: the dog back to not done, its own 2 ⭐ back off (an un-tick, not a take)", A.run("rtDoneOn('chores','kid_b',_todayDay," + idxOf(A, "kid_b", "Feed the dog") + ")") === false && lines(w, "kid_b", "Feed the dog").reduce((s, a) => s + a, 0) === dog0, [dog0, lines(w, "kid_b", "Feed the dog")]);
   A.run("lgRulePause()"); await w.flush();   // un-pause, the same day
   ok("Un-paused the same day (Fri): it starts clean — the rugs and leaves (due Thu) pay +10; pause = {from:Fri}", J(w.get(SR + "/pause")) === J({ from: isoN(11) }) && pill(draw(Kk, "kid_a"), "Shake the rugs") === "+10 ⭐" && pill(draw(Kk, "kid_b"), "Rake the leaves") === "+10 ⭐");
@@ -254,7 +254,7 @@ console.log("\n── G · Take stars away OFF for kid_a only: every penalty pat
   m = w.mark(); A.run("rlogFlag('kid_b','" + kb.join("','") + "')"); await w.flush();
   ok("…on kid_b it works as before: −100 and the 🚩 mark", J(lines(w, "kid_b", "false check-off")) === J([-100]) && w.get("routineLog/kid_b/" + kb.join("/") + "/flagged") === true);
   m = w.mark(); A.run("__toast.length=0;1"); A.run("ckLogDock('step','kid_a'," + J(ka.join("/")) + ",'Make the bed')"); await w.flush();
-  ok("🧾 Today's check-offs' −100 on kid_a: nothing taken or marked, the same words", writes(w, m).length === 0 && A.run("__toast[0]") === "Taking stars away is off for Kid A, so nothing was taken. 📒 Ledger ⚙ changes it.");
+  ok("🧾 Today's check-offs' −100 on kid_a's line the Log just marked: nothing taken, nothing written, no ask (a line is marked once; FLAGWHO)", writes(w, m).length === 0 && A.run("__toast.length") === 0 && A.run("__cf.length") === 2, [writes(w, m), A.run("JSON.stringify(__cf)"), A.run("JSON.stringify(__toast)")]);
   ok("…the line shows the shared mark in 🧾 too: \"🚩 by Mom · no stars taken\" (FLAGWHO; before: the button stayed)", /🚩 by Mom · no stars taken/.test(A.run("(function(){ ckLogOpen=true; return mdCardCheckLog(); })()")));
   // the school-card kind of 🧾's −100 is refused the same way (it takes from the same bank)
   m = w.mark(); A.run("ckLogDock('task','kid_a','t_x','Math')");
