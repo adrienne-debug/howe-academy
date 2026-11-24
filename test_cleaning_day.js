@@ -25,7 +25,7 @@ console.log("1. The day type: a cleaning day pauses like a vacation; the generat
   ok("smapIsOff (the generator's off-day) never sees a cleaning day", !offSeen&&run(cln,"2026-10-14").off===null);
   const r=run(cln,"2026-10-14"); ok("the break is typed 'cleaning', named, one day", r.brk.type==="cleaning"&&r.brk.name==="Cleaning day"&&r.brk.start==="2026-10-14"&&r.brk.end==="2026-10-14");
   const both={holidays:{h1:{name:"Columbus",start:"2026-10-14"}},vacations:{},cleaningDays:{"2026-10-14":{at:1}}}; ok("a holiday on the same date wins", run(both,"2026-10-14").brk.type==="holiday");
-  ok("smapIsOff and _lmDayKind sources carry no cleaning reference", !/clean/i.test(fn("smapIsOff"))&&!/clean/i.test(fn("_lmDayKind")));
+  ok("smapIsOff's source carries no cleaning reference", !/clean/i.test(fn("smapIsOff")));   // (_lmDayKind, never called, went in LMCLEANUP slice 3b)
 }
 console.log("2. The switches");
 const BLOCK=cut("// HOUSEHOLD_START","// CLEANINGDAY_END");

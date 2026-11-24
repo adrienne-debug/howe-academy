@@ -107,7 +107,7 @@ function renderTable(S, fx) {
   const env = {
     currData: { subjects: { kid: fx.subjects }, dayCap: {} }, rulesData: {}, DEFAULT_DAY_CAP: 2, KID_COLOR: { kid: "#123456" },
     CURR_DEV_EMOJI: { paper: "📄", computer: "💻", "ipad/phone": "📱", book: "📖", keyboard: "🎹" }, CURR_DEV_LABEL: { paper: "Paper", computer: "Computer", "ipad/phone": "iPad/Phone", book: "Book", keyboard: "Keyboard" },
-    cbKid: "kid", cbRulesOpen: true, cbFamilyRulesOpen: false, cbDayPinScroll: 0, cbGroupEdit: null,
+    cbKid: "kid", cbRulesOpen: true, cbDayPinScroll: 0, cbGroupEdit: null,
     planBacked: (k, sk) => !!(fx.subjects[sk] || {}).planId, lidsFor: () => ["L0001"], cbDayCap: () => 180, cbOverCapDays: () => 0, lnRenderSection: () => "", lnMemberInfo: (k, sk) => (fx.lane || {})[sk] || null,
     coopsMap: () => fx.coops || {}, coopDayRule: s => { if (!s || s.coopDay == null) return null; if (s.coopDay === "skip") return "skip"; const n = parseInt(s.coopDay, 10); return n > 0 ? n : null; },
     noCoopDaysOf: s => { const a = s && s.noCoopDays; return Array.isArray(a) && a.length ? a : null; }, lessonDaySpan: s => (fx.span || {})[s.display] || 0, lessonDayList: s => Array.isArray(s.momDays) ? s.momDays.slice() : [],
@@ -254,7 +254,8 @@ console.log("the block, the pill function, the card's helpers");
   ok("cbPreviewCardHTML is the Builder's preview card, drawn by the form and the card", /function cbPreviewCardHTML\(col,s\)/.test(src) && /h\+=cbPreviewCardHTML\(col,s\);/.test(fn("cbRenderForm")) && /cbPreviewCardHTML\(col,s\)/.test(CARD));
   ok("rlPillHTML writes nothing itself (no db., no ref()", !/\bdb\.|\.ref\(/.test(PILL));
   ok("the Builder form is no longer drawn on the card (cbRenderForm / ceOpenBuild / _ceMaybeBuilder / 🧱 gone from its code)", !/cbRenderForm|ceOpenBuild|_ceMaybeBuilder|🧱/.test(CODE_ONLY(CARD)));
-  ok("the Builder form itself still exists (the guided Add's form; the Builder tab until slice 3b)", fn("cbRenderForm").length > 1000 && /h\+=cbRenderForm\(col\);/.test(fn("renderCurrBuilder")));
+  // LMCLEANUP (slice 3b, 2026-11-23) removed the Builder tab that drew the form (renderCurrBuilder); the form function is kept.
+  ok("the Builder form itself still exists; the Builder tab that drew it is gone (slice 3b)", fn("cbRenderForm").length > 1000 && fn("renderCurrBuilder") === "");
   const cwKeys = (block(src, "var CW={", "\n};").match(/^\s{2}(\w+):/gm) || []).map(x => x.trim().replace(":", ""));
   ["secBasics", "secWhen", "secLessons", "secLane", "secChecking", "secLinks", "secRewards", "secFixups", "saveChapters", "editLane", "stackAfter", "handCounts"].forEach(k => ok("CW has " + k + " and the page uses it", cwKeys.indexOf(k) >= 0 && new RegExp('cw\\("' + k + '"').test(src)));
 }
@@ -401,7 +402,7 @@ console.log("\n(g) RULESCROLL and _viewSig untouched");
 
 console.log("\n(h) no new Firebase write path in the curriculum region");
 {
-  function refs(S) { const a = S.indexOf("function ceOpenEdit("), b = S.indexOf("function renderCurrBuilder("); const reg = S.slice(a, b); const o = new Set(); const re = /\bref\(((?:[^()]|\([^()]*\))*)\)/g; let m; while ((m = re.exec(reg))) o.add(m[1].replace(/\s+/g, "")); return [...o].sort(); }
+  function refs(S) { const a = S.indexOf("function ceOpenEdit("), b = S.indexOf("function cbRenderForm("); const reg = S.slice(a, b); const o = new Set(); const re = /\bref\(((?:[^()]|\([^()]*\))*)\)/g; let m; while ((m = re.exec(reg))) o.add(m[1].replace(/\s+/g, "")); return [...o].sort(); }
   const WAS = [
   "",
   "\"act_favs\"",
@@ -563,6 +564,7 @@ console.log("\n(h) no new Firebase write path in the curriculum region");
   "lrPath(kid,sk,key,part)",
   "nbtInkPath(v.kid,v.wk,pg)",
   "nbtInkPath(v.kid,v.wk,v.page)",
+  "nbtInkPath(v.kid,v.wk,p)+\"/s/0\"",   // NBT_TODAY 2026-11-23: the tablet Today list's ✓ — ONE once-read of a listed page's first stroke (not a write; outside the curriculum)
   "nk",
   "p",
   "path",
@@ -577,9 +579,15 @@ console.log("\n(h) no new Firebase write path in the curriculum region");
   "wk+\"/supplies/\"+id",
   "x"
 ];
+  // LMCLEANUP (slice 3b, 2026-11-23): the region now ends at cbRenderForm (renderCurrBuilder, the old end, is gone — it held no
+  // ref()). Three patterns went with ceQuickPause, the quick ⏸ on the retired Subjects card (her call 2026-11-23: "Remove it");
+  // the card's own ⏸ (ceTogglePause) writes the same fields through ceSaveField.
+  const GONE_3B = ["\"curriculum/subjects/\"+kid+\"/\"+key+\"/paused\"", "\"curriculum/subjects/\"+kid+\"/\"+key+\"/pausedSince\"", "\"curriculum/subjects/\"+kid+\"/\"+key+\"/planAnchor\""];
+  const WANT = WAS.filter(x => GONE_3B.indexOf(x) < 0);
+  ok("slice 3b's three quick-⏸ patterns were on the list", WANT.length === WAS.length - 3);
   const now = refs(src);
-  const added = now.filter(x => WAS.indexOf(x) < 0), gone = WAS.filter(x => now.indexOf(x) < 0);
-  ok("the same " + WAS.length + " ref() path patterns as main 6a36a97 — none added, none gone", added.length === 0 && gone.length === 0 && now.length === WAS.length, { added, gone });
+  const added = now.filter(x => WANT.indexOf(x) < 0), gone = WANT.filter(x => now.indexOf(x) < 0);
+  ok("the same " + WANT.length + " ref() path patterns as main 6a36a97 less slice 3b's quick ⏸ — none added, none gone", added.length === 0 && gone.length === 0 && now.length === WANT.length, { added, gone });
   if (OLD_SRC) ok("  …and the old file agrees with the embedded list", JSON.stringify(refs(OLD_SRC)) === JSON.stringify(WAS));
   ok("no whole-node set of a subject / tasks / checked anywhere in the block or the card", !/\.set\(\s*(s|subj|currData|tasks|checked)\s*\)/.test(BLOCK + CARD));
 }
