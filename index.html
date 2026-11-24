@@ -2664,7 +2664,7 @@ function toggleRtStep(slot,kid,i){
   const _obPrev={}; _obPrev[sk]=cur||null; _obPrev[wk+"_"+day+"_"+kid+"_"+slot]=slState[wk+"_"+day+"_"+kid+"_"+slot]||null;   // 📮
   { const _st0=rtStepsFor(slot,kid)[i], _b0=_st0?(_st0.pts||0):0;
     // CHOREFALL: a row in its wait pays what it is worth today (the base a bonus room doubles); on its own day it is never late
-    const _bf=(now&&_b0>0&&typeof rtFallPay==="function"&&day===_todayDay&&!cadDueOn(_st0.cad||"daily",day)&&stepWindowOk(_st0,day))?rtFallPay(_st0,rtLateDays(slot,kid,i)):_b0;
+    const _bf=(now&&_b0>0&&typeof rtFallPay==="function"&&day===_todayDay&&!cadDueOn(_st0.cad||"daily",day)&&stepWindowOk(_st0,day))?rtFallPay(_st0,rtLateDays(slot,kid,i),kid):_b0;
     // Pay base + any focus-zone bonus, and RECORD the total on the check-off. Unchecking reverses
     // that stored number rather than recomputing — the zone or bonus may have changed since, and
     // recomputing would reverse a different amount than was paid.
@@ -2886,12 +2886,21 @@ function rtFallPts(pts,n){ pts=pts||0; if(!(n>0)||!(pts>0)) return pts; return M
 function rtFallDays(st,n){
   if(!(n>0)||!st||st.house) return 0;
   const t=new Date(), d=new Date(t.getFullYear(),t.getMonth(),t.getDate()-n,12);
-  return (d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"))>=RT_FALL_FROM?n:0;
+  const s=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  return s>=RT_FALL_FROM&&s>=starFallFrom(arguments[2])?n:0;   // STARRULES: [2] = kid
 }
-function rtFallPay(st,n){ return rtFallPts((st&&st.pts)||0,rtFallDays(st,n)); }
+function rtFallPay(st,n){ return rtFallPts((st&&st.pts)||0,rtFallDays(st,n,arguments[2])); }
 // The star pill on a kid's row: "+10 \u2b50" as before; a falling row shows the original struck through, then what it pays: "10 \u2192 6 \u2b50".
-function rtFallPill(st,n){ const p=(st&&st.pts)||0, f=rtFallPay(st,n); return f===p?'<span class="mr-pts">+'+p+' \u2b50</span>':'<span class="mr-pts"><s style="opacity:.6">'+p+'</s> \u2192 '+f+' \u2b50</span>'; }
+function rtFallPill(st,n){ const p=(st&&st.pts)||0, f=rtFallPay(st,n,arguments[2]); return f===p?'<span class="mr-pts">+'+p+' \u2b50</span>':'<span class="mr-pts"><s style="opacity:.6">'+p+'</s> \u2192 '+f+' \u2b50</span>'; }
 // CHOREFALL_END
+// STARRULES_START — 📒 Ledger ⚙ star rules (chore ledger design §4, L4, her yes 11/23), written by house.js LEDGERRULES at household/meta/
+// starRules {fall:{kid:{on:false}|{from}},take:{kid:false},pause:{on:true}|{from}}; missing = as before. A flip never reaches back.
+function starRules(){ try{ return householdData.meta.starRules||{}; }catch(e){ return {}; } }
+function starFallFrom(kid){ const R=starRules(), f=(R.fall||{})[kid]||{}, p=R.pause||{}; return p.on||f.on===false?"~":[f.from||"",p.from||""].sort()[1]; }
+function starTakeOk(kid){ const R=starRules(); return !(R.pause||{}).on&&(R.take||{})[kid]!==false; }
+function starTakeWhy(kid){ return (starRules().pause||{}).on?"⏸ Star rules are paused for everyone":"Taking stars away is off for "+cap(kid); }
+function starTakeNo(kid){ if(starTakeOk(kid)) return false; if(typeof gwShowToast==="function") gwShowToast(starTakeWhy(kid)+", so nothing was taken. 📒 Ledger ⚙ changes it."); return true; }
+// STARRULES_END
 function rtLateDays(slot,kid,i,raw){   // raw (CHOREWAIT): the days since it was missed, wait or not — rtSlotHTML's drop check
   const steps=rtStepsFor(slot,kid), st=steps[i]; if(!st) return 0;
   if(st.house) return st.hdLate||0;                 // 🚪 HOUSEDAY: the plan's own late (carried chores, overdue every-N)
@@ -3026,7 +3035,7 @@ function rtSlotHTML(slot,kid){
       h+='<div class="mr-step'+(sd?" done":"")+(_lateTag?" is-late":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+(_ok?'':' style="opacity:.5"')+'>'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
          '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+_lateTag+cadTag+winTag+timeTag+rotTag+amTag+'</div>'+
-         (pts>0?((typeof rtFallPill==="function")?rtFallPill(st,sd?0:_wait[i]):'<span class="mr-pts">+'+pts+' ⭐</span>'):'')+'</div>'; });   // CHOREFALL: "10 → 6 ⭐" on a falling row
+         (pts>0?((typeof rtFallPill==="function")?rtFallPill(st,sd?0:_wait[i],kid):'<span class="mr-pts">+'+pts+' ⭐</span>'):'')+'</div>'; });   // CHOREFALL: "10 → 6 ⭐" on a falling row
     optIdx.forEach(i=>{ const st=steps[i], sd=rtDoneOn(slot,kid,day,i), pts=st.pts||0;
       h+='<div class="mr-step'+(sd?" done":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+' style="opacity:'+(sd?'1':'.75')+'">'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
@@ -9555,7 +9564,7 @@ function boardStatPop(kid,slot,d){
     const steps=rtStepsFor(slot,kid,false,day);
     steps.forEach((st,i)=>{ const _ln=(typeof mdLateDays==="function")?mdLateDays(slot,kid,day,i,st):0;   // KIDSLATE: carried-over rows too, as Kids' Corner lists them
       if(!cadDueOn(st.cad||"daily",day)&&!(_ln>0)) return; const rec=((typeof hdSlRec==="function")?hdSlRec(slot,kid,day,i):slState[activeWk()+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i])||{};   /* 🚪 HOUSEDAY */
-      const _f=(typeof rtFallPay==="function")?rtFallPay(st,_ln):(st.pts||0);   // CHOREFALL: a falling row shows both numbers, as on the kid's row
+      const _f=(typeof rtFallPay==="function")?rtFallPay(st,_ln,kid):(st.pts||0);   // CHOREFALL: a falling row shows both numbers, as on the kid's row
       rows.push({lab:(st.emoji?st.emoji+" ":"")+st.label+(st.pts?(_f!==st.pts?" "+st.pts+" → "+_f+" ⭐":" +"+st.pts+" ⭐"):""),done:rtDoneOn(slot,kid,day,i),ts:rec.ts||"",i:i,wv:(typeof rtWaved==="function")&&rtWaved(slot,kid,day,i),late:_ln,hs:st,pay:_f}); });   // LISTS_TAP; KIDROWS2: wv
   }
   // LISTS_TAP (her ask 2026-10-21: "make on both mom and dads day all the lists clickable but do not change the look or size on any" —
@@ -14327,7 +14336,7 @@ function hhCleanRows(who,iso,dn){
       const due=(typeof stepWindowOk!=="function"||stepWindowOk(st,dn))&&cadDueOn(st.cad||"daily",dn); const late=(dn===today&&typeof rtLateDays==="function")?(rtLateDays(slot,who,idx)>0):false;
       if(!due&&!late) return;
       const row={id:id,job:j,label:st.label||j.label,emoji:st.emoji||j.emoji||"",pts:st.pts||0,mins:hhMinutesOf(j),done:(typeof rtDoneOn==="function")?rtDoneOn(slot,who,dn,idx):false,late:late&&!due,on:"toggleRtStep('"+slot+"','"+who+"',"+idx+")"};
-      if(late&&!due&&!row.done&&typeof rtFallPay==="function"){ const f=rtFallPay(st,rtLateDays(slot,who,idx)); if(f!==row.pts) row.fall=f; }   // CHOREFALL: what it pays today, when that is less
+      if(late&&!due&&!row.done&&typeof rtFallPay==="function"){ const f=rtFallPay(st,rtLateDays(slot,who,idx),who); if(f!==row.pts) row.fall=f; }   // CHOREFALL: what it pays today, when that is less
       out.push(row);
     } else { const key=(j.src&&j.src.id)||id; const list=(who==="dad")?((typeof dcAll==="function")?dcAll():{}):((typeof mcAll==="function")?mcAll():{}); if(!list[key]) return;
       if(!cadDueOn(j.cad||"daily",dn)) return; const doneOn=(who==="dad")?(typeof dcDoneOn==="function"?dcDoneOn:null):(typeof mcDoneOn==="function"?mcDoneOn:null);
@@ -17998,10 +18007,10 @@ function spResolve(kid,j,r){
   if(!_spMomOk()||(r!=="ok"&&r!=="no")) return false;
   const iso=_spIso(), rec=spDay(kid,iso); if(!rec||!rec.picks||!rec.picks[j]) return false;
   if(rec.results&&rec.results[j]) return false;
-  const p=rec.picks[j], pen=spPenalty();
+  const p=rec.picks[j], pen=spPenalty(), _nt=pen.on&&typeof starTakeOk==="function"&&!starTakeOk(kid); if(_nt) pen.on=false;   // STARRULES
   if(r==="no"){
     if(typeof confirm==="function"&&!confirm("Not done?\n\n“"+(p.label||"")+"” goes back to not done for "+((typeof KID_NAME!=="undefined"&&KID_NAME[kid])||cap(kid))+(p.pts>0?", and its "+p.pts+" ⭐ come back off":"")+"."
-      +(pen.on?"\n\nThe rule: −"+pen.pts+" ⭐ more for not doing it.":""))) return false;
+      +(pen.on?"\n\nThe rule: −"+pen.pts+" ⭐ more for not doing it.":"")+(_nt?"\n\n"+starTakeWhy(kid)+", so nothing more comes off.":""))) return false;
     if(p.kind==="step"){
       let i=p.i; const steps=(p.slot==="morning"&&typeof morningStepsFor==="function")?morningStepsFor(kid):(rtStepsFor(p.slot,kid,false,p.d)||[]);
       if(!steps[i]||(steps[i].label||"")!==p.label){ const f=steps.findIndex(function(s){ return s&&(s.label||"")===p.label; }); if(f>=0) i=f; }   // the list was edited since the draw
@@ -19227,7 +19236,7 @@ function ckLogToday(){
   return out.sort((a,b)=>(b.at||0)-(a.at||0));
 }
 function ckLogDock(kind,kid,ref,label){
-  if(!ckLogCanDock()) return;
+  if(!ckLogCanDock()||(typeof starTakeNo==="function"&&starTakeNo(kid))) return;   // STARRULES
   const who=(typeof momHere==="function"&&momHere())?"mom":"dad";
   if(kind==="step"){
     const p=ref.split("/"); const rec=(((routineLog[kid]||{})[p[0]]||{})[p[1]]||{})[p[2]]; if(!rec||rec.flagged) return;
@@ -46526,7 +46535,7 @@ function kcPointsHTML(k){
       if(!due.length&&!_am.length) return;
       const isDone=function(i){ return isM?(typeof mStepDoneOn==="function"&&mStepDoneOn(k,dn,i)):rtDoneOn(slot,k,dn,i); };
       const done=due.filter(isDone);
-      let left=0; due.forEach(function(i){ if(!isDone(i)) left+=((!isM&&typeof rtFallPay==="function"&&!cadDueOn((steps[i]||{}).cad||"daily",dn))?rtFallPay(steps[i],rtLateDays(slot,k,i)):((steps[i]||{}).pts||0)); });   // CHOREFALL: a falling row counts what it pays today
+      let left=0; due.forEach(function(i){ if(!isDone(i)) left+=((!isM&&typeof rtFallPay==="function"&&!cadDueOn((steps[i]||{}).cad||"daily",dn))?rtFallPay(steps[i],rtLateDays(slot,k,i),k):((steps[i]||{}).pts||0)); });   // CHOREFALL: a falling row counts what it pays today
       _am.forEach(function(it){ if(!amDoneBy(it,_ai)) left+=(it.pts||0); });   // SENDAM
       const allDone=done.length===due.length&&_amD===_am.length;
       const bonus=(typeof rtBonusFor==="function")?rtBonusFor(slot,k):0;
@@ -87849,7 +87858,7 @@ function rlogAppend(kid,slot,label,act,pts,extra){
 function rlogFlag(kid,wk,d,key){
   if(!momHere()) return;   // Mom-only; the Log card lives behind the Admin PIN too
   const rec=routineLog[kid]&&routineLog[kid][wk]&&routineLog[kid][wk][d]&&routineLog[kid][wk][d][key];
-  if(!rec||rec.flagged) return;
+  if(!rec||rec.flagged||(typeof starTakeNo==="function"&&starTakeNo(kid))) return;   // STARRULES
   if(!confirm("Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||"")+"\"")) return;
   bankDirect(kid,-100,"🚩 false check-off dock");
   const patch={flagged:true,penalty:-100,flagTs:nowTs()};
