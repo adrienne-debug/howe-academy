@@ -20,6 +20,7 @@ ok("paused, daily and first/last subjects are left alone", R("paused") === false
 const all = slice("cbRebuildAll");
 ok("the run uses the same definition", /const list=Object\.keys\(subs\)\.filter\(sk=>cbRebuildable\(kid,sk\)\);/.test(all));
 ok("plan-backed subjects skip the keep/dismiss gate", /if\(\(typeof planBacked==="function"\)&&planBacked\(kid,sk\)\) continue;\s*try\{ const info=cbBacklogInfo/.test(all));
-ok("both Rebuild-all buttons count with the same definition", (src.match(/filter\(sk=>\(typeof cbRebuildable==="function"\)\?cbRebuildable\((cbKid|gvKid),sk\):false\)\.length/g) || []).length === 2);
+// (the Builder tab's own Rebuild-all button went with the tab in LMCLEANUP slice 3b; the grid's is the one left)
+ok("the grid's Rebuild-all button counts with the same definition", (src.match(/filter\(sk=>\(typeof cbRebuildable==="function"\)\?cbRebuildable\((cbKid|gvKid),sk\):false\)\.length/g) || []).length === 1 && /cbRebuildable\(gvKid,sk\):false\)\.length/.test(src));
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
