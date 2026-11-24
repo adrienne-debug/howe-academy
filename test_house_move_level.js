@@ -26,6 +26,7 @@ const O = require(path.join(__dirname, "test_fixtures", "house_overflow_world.js
 const HJS = fs.readFileSync(path.join(__dirname, "house.js"), "utf8"), IDX = path.join(__dirname, "index.html"), SRC = fs.readFileSync(IDX, "utf8");
 let pass = 0, fail = 0; const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + JSON.stringify(x).slice(0, 700) + ")" : "")); } };
 const J = o => JSON.stringify(o), clone = o => o == null ? o : JSON.parse(J(o));
+const unLS = s => String(s).replace(/ <span class=\\*"ls-fire\\*"[^>]*>🔥 \d+<\/span>/g, "").replace(/<div class=\\*"ls-four\\*"[^>]*>.*?<\/div>/g, "");   // LISTSTREAK (P2): the 🔥 streak's own markup, left out of the comparisons with older copies (test_list_streak.js checks it)
 const BEFORE = "3d275fac", WAS = "the app before this change (" + BEFORE + ")";
 const show = f => { try { return cp.execSync("git show " + BEFORE + ":" + f, { cwd: __dirname, maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { return null; } };
 let BASE = process.env.BASE_HTML, BHJS = process.env.BASE_HOUSE ? fs.readFileSync(process.env.BASE_HOUSE, "utf8") : null;
@@ -193,7 +194,7 @@ console.log("\n── 4 · the whole app, everyone at one level, chores at mixed
 if (HAVE_BASE) for (const mode of ["off", "preview", "on"]) for (const L of [1, 2, 3]) {
   if (mode !== "on" && L === 3) continue;   // off / preview never read the plan for lists; levels 1 and 2 cover them
   const N = await replay(mode, L, 14, undefined, HJS), B0 = await replay(mode, L, 14, BASE, BHJS), lab = mode + " · everyone at Level " + L;
-  const badDay = N.shots.map((s, i) => s === B0.shots[i] ? null : isoN(i >> 1) + (i & 1 ? " 18:00" : " 07:00")).filter(Boolean);
+  const badDay = N.shots.map((s, i) => unLS(s) === B0.shots[i] ? null : isoN(i >> 1) + (i & 1 ? " 18:00" : " 07:00")).filter(Boolean);
   ok(lab + " · every kid's lists, Mom's and Dad's, Mom's 👤 By person, twice a day for 14 days = " + WAS, badDay.length === 0, badDay.slice(0, 3));
   ok(lab + " · every write, in order (" + N.writes.split("\n").length + ") = " + WAS, N.writes === B0.writes, (() => { const x = N.writes.split("\n"), y = B0.writes.split("\n"); const i = x.findIndex((l, j) => l !== y[j]); return [i, x[i], y[i]]; })());
   ok(lab + " · the whole database = " + WAS + ", byte for byte", N.tree === B0.tree);

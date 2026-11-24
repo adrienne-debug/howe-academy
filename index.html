@@ -2767,7 +2767,7 @@ function rtDoneOnWk(wk,slot,kid,d,i){
 // Not breaking it: ✕ today / ➖ Excuse (waved), 😷 Kid Off, 🌅 sent to the next morning, a break that hid the list. A day with nothing
 // due (or all of it excused) is passed over. Today joins once its list is fully ticked; until then the count runs to yesterday.
 // It reaches back as far as the device holds ticks: this week (slState) and last week (prevSlState, once its read has landed) — no
-// earlier, so it can show at most 13 days (a Saturday with both weeks full). Last week not loaded → it counts this week only.
+// earlier: at most 8 days on a Sunday up to 14 on a Saturday (today counted). Last week not loaded (yet) → it counts this week only.
 // Not counted: the plan's own rows (st.house), the laundry line's rows (they follow today's laundry, not the day's), as-needed, ☑️ once.
 // Shown from 2 (at 0 or 1 nothing), on today's tab only. Writes nothing, saves nothing, pays nothing. The days before today are cached
 // per list and kid for 15 s or until the ticks / waves / carries / calendar / lists are replaced; today is worked out on each draw.
@@ -2799,14 +2799,14 @@ function _lsDay(slot,kid,wk,dn,iso,prev){
     return -1; }
   return ok?1:0;
 }
-// The days before today, newest first, until a miss or the edge of the ticks this device holds.
+// The days before today, newest first, until a miss or the edge of the ticks this device holds. [n, ran into the edge unbroken].
 function _lsPast(slot,kid,wk,ti){
   let n=0;
-  for(let p=_rtPos(ti)-1;p>=-1;p--){ const dn=DAYS_ALL[_rtIdx(p)], iso=amIso(dn); if(!iso) return n; const r=_lsDay(slot,kid,wk,dn,iso,false); if(r<0) return n; n+=r; }
+  for(let p=_rtPos(ti)-1;p>=-1;p--){ const dn=DAYS_ALL[_rtIdx(p)], iso=amIso(dn); if(!iso) return [n,1]; const r=_lsDay(slot,kid,wk,dn,iso,false); if(r<0) return [n,0]; n+=r; }
   if(typeof _loadPrevSl==="function") _loadPrevSl();
-  const pw=_prevWkKey(); if(!pw||!prevSlState||_prevSlWk!==pw) return n;   // last week not here (yet): this week only
-  for(let p=5;p>=-1;p--){ const dn=DAYS_ALL[_rtIdx(p)], iso=amIso(dn,true); if(!iso) return n; const r=_lsDay(slot,kid,pw,dn,iso,true); if(r<0) return n; n+=r; }
-  return n;
+  const pw=_prevWkKey(); if(!pw||!prevSlState||_prevSlWk!==pw) return [n,1];   // last week not here (yet): this week only
+  for(let p=5;p>=-1;p--){ const dn=DAYS_ALL[_rtIdx(p)], iso=amIso(dn,true); if(!iso) return [n,1]; const r=_lsDay(slot,kid,pw,dn,iso,true); if(r<0) return [n,0]; n+=r; }
+  return [n,1];
 }
 function lsStreak(slot,kid){
   const ti=DAYS_ALL.indexOf(_todayDay), wk=activeWk(), today=(ti>=0)?amIso(_todayDay):null; if(!today||!wk||SL_SLOTS.indexOf(slot)<0) return 0;
@@ -2814,15 +2814,17 @@ function lsStreak(slot,kid){
   let past;
   if(m&&t-m.t<15000&&m.d===today&&m.wk===wk&&m.s===slState&&m.p===prevSlState&&m.w===wavedData&&m.a===amCarry&&m.c===C&&m.r===routineCfg2) past=m.v;
   else { past=_lsPast(slot,kid,wk,ti); _lsM[k]={t:t,d:today,wk:wk,s:slState,p:prevSlState,w:wavedData,a:amCarry,c:C,r:routineCfg2,v:past}; }
-  return past+(_lsDay(slot,kid,wk,_todayDay,today,false)===1?1:0);
+  return past[0]+(_lsDay(slot,kid,wk,_todayDay,today,false)===1?1:0);
 }
+function lsAtEdge(slot,kid){ const m=_lsM[slot+"|"+kid]; return !!(m&&m.v[1]); }   // the count reached the oldest tick this device holds
 // The kid's list title: " 🔥 6" after "Chores 2/4", from 2 days up, on today's tab. Anything else: "" (the title as before, byte for byte).
 function lsBadgeHTML(slot,kid){ if(typeof day==="undefined"||day!==_todayDay) return ""; let n=0; try{ n=lsStreak(slot,kid); }catch(e){ return ""; }
   return n>=2?' <span class="ls-fire" style="color:#ea580c;font-weight:800;white-space:nowrap">\u{1F525} '+n+'</span>':''; }
-// Mom's and Dad's line (Kids today pop-up, 👤 By person): all four numbers, 0 and 1 too. "" for a kid's own device.
+// Mom's and Dad's line (Kids today pop-up, 👤 By person): all four numbers, 0 and 1 too; "8+" = unbroken back to the oldest tick this
+// device holds (last week's read not landed yet, or the whole of last week full). "" for a kid's own device.
 function lsFourHTML(kid,st){
   if(!((typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD())||(typeof dadAwardOk==="function"&&dadAwardOk()))) return "";
-  let h=""; try{ h=SL_SLOTS.map(function(s){ return SL_SLBL[s]+' <b>'+lsStreak(s,kid)+'</b>'; }).join(' · '); }catch(e){ return ""; }
+  let h=""; try{ h=SL_SLOTS.map(function(s){ const n=lsStreak(s,kid); return SL_SLBL[s]+' <b>'+n+(n&&lsAtEdge(s,kid)?'+':'')+'</b>'; }).join(' · '); }catch(e){ return ""; }   // "3+": at least 3
   return '<div class="ls-four" style="font-size:11.5px;font-weight:600;color:#9a3412;'+(st||'')+'">\u{1F525} Days in a row: '+h+'</div>';
 }
 // LISTSTREAK_END
