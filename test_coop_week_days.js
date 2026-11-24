@@ -209,7 +209,9 @@ console.log("\nwiring — every day picker asks the helper; the field rides rlSe
   ok("gwCatchupExtraDates asks per date", /subjDaysFor\(kid,s,date\):al/.test(fn("gwCatchupExtraDates")));
   ok("reprojectSubjectWeek's _rpDays are the week's set (lane rhythm's field honoured; its own lines untouched)", /if\(_rh&&!_rh\.own\) _rpNc=_rh\.noCoopDays;/.test(fn("reprojectSubjectWeek")) && /_rpDays=subjDaysFor\(kid,\{allowedDays:_rpDays,noCoopDays:_rpNc\},_wISO\)/.test(fn("reprojectSubjectWeek")) && /let _rpDays=_subj\.allowedDays\|\|\[\], _rpCap=_subj\.cap\|\|1;/.test(fn("reprojectSubjectWeek")));
   ok("grid views (lost-to-co-op chips, daily minutes) ask per row date", (src.match(/subjDaysFor\(gvKid,s2,l2\.date\)/g) || []).length === 1 && (src.match(/subjDaysFor\(gvKid,s,l\.date\)/g) || []).length === 1);
-  ok("make-up suggester + make-up appender ask per week", /subjDaysFor\(k,s,dy\.date\):al/.test(fn("lmComputeSuggestions")) && /subjDaysFor\(kid,s,range\.start\)/.test(src));
+  // (the make-up suggester lmComputeSuggestions and the Extend appender flExtendSubject — both unreachable — went in LMCLEANUP
+  //  slice 3b; nothing else of theirs is left to ask per week)
+  ok("the removed make-up suggester / Extend appender left no per-week call behind", !/function lmComputeSuggestions\(|function flExtendSubject\(/.test(src));
   // CURRCARD 2026-11-11: the second row is rlPillHTML's "noCoopDays" case, drawn by the table (under _coopAny) and by the card
   ok("placement-rules table: a second pill row + the one-tap link, only for a kid in a co-op", /_P\("days"\)\+\(_coopAny\?_P\("noCoopDays"\):''\)/.test(fn("cbRenderRules")) && /case "noCoopDays": \{/.test(fn("rlPillHTML")) && /onclick="'\+arm\+'cwdPinDay\(\\''\+sk\+'\\',\\''\+d\+'\\'\)"/.test(fn("rlPillHTML")) && /onclick="cwdUseMonThu\(\\''\+kid\+'\\'\)"/.test(src) && /if\(_coopAny\) h\+=/.test(src));
   ok("rlSet's generic branch writes curriculum/subjects/<kid>/<sk>/<field> — noCoopDays rides it (null removes)", /db\.ref\("curriculum\/subjects\/"\+kid\+"\/"\+sk\+"\/"\+field\)\.set\(val===undefined\?null:val\)/.test(fn("rlSet")));

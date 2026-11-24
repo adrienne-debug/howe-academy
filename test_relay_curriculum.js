@@ -33,7 +33,9 @@ console.log("0. shape");
   ok("rlSet: a daily's laying field goes through the door; another unpaced subject's only saves",/_rlwDailyOk\(kid,sk\)/.test(rl)&&/isn't paced, so this week's cards update/.test(rl)&&/_rlwFieldUndo\(kid,sk,field,_was0\)/.test(rl));
   const rs=fn("reprojectSubjectWeek"); ok("the shell takes a daily (opts.daily) through its own diff, the gate otherwise unchanged",/opts&&opts\.daily/.test(rs)&&/_rlwDailyDiff\(kid,sk,weekData\.tasks,_rlwDailyWant\(kid,sk,gen,wn\)/.test(rs)&&/if\(!_dl&&\(typeof planBacked!=="function"\|\|!planBacked\(kid,sk\)\)\)\{ _then\(null\); return null; \}/.test(rs)&&/_dl\?null:_rpPatternWant/.test(rs));
   ok("the daily helpers live in the RELAY block, no phantom test in them",/function _rlwDailyOk\(/.test(BLK)&&/function _rlwDailyWant\(/.test(BLK)&&/function _rlwDailyDiff\(/.test(BLK)&&!/isPhantom/.test(fn("_rlwDailyDiff")));
-  ok("the Days pins, the editor sheet, pause / quick pause send a daily through the door",/_rlwDailyOk\(kid,sk\)&&typeof relayWeek/.test(fn("cbPinDay"))&&/_rlwDailyOk\(ceEditKid,ceEditKey\)/.test(fn("ceSaveField"))&&/_rlwDailyOk\(ceEditKid,ceEditKey\)/.test(fn("ceTogglePause"))&&/_rlwDailyOk\(kid,key\)/.test(fn("ceQuickPause")));
+  // (the quick ⏸ on the old Subjects list card, ceQuickPause, went in LMCLEANUP slice 3b — her call 2026-11-23 "Remove it"; the
+  //  card's own ⏸ below, ceTogglePause, writes the same fields through the same door)
+  ok("the Days pins, the editor sheet and the card's pause send a daily through the door",/_rlwDailyOk\(kid,sk\)&&typeof relayWeek/.test(fn("cbPinDay"))&&/_rlwDailyOk\(ceEditKid,ceEditKey\)/.test(fn("ceSaveField"))&&/_rlwDailyOk\(ceEditKid,ceEditKey\)/.test(fn("ceTogglePause")));
   ok("cbApply: the build's re-lay goes through the door",/relayWeek\("build"/.test(fn("cbApply")));
   ok("cwdRelayKids: one run, the subjects queued",/relayWeek\("coop-dates"/.test(fn("cwdRelayKids"))&&/_pairs\.push/.test(fn("cwdRelayKids")));
   ok("the co-op Mom-day flip: one run with Undo = the flag back",/relayWeek\("coop-mom"/.test(fn("coopToggleMomDay"))&&/calendar\/coopMomDays\/"\+ds,was:true/.test(fn("coopToggleMomDay")));
@@ -245,15 +247,15 @@ console.log("5. the dailies — their own diff, through the same shell (RELAY3D)
   const ctx={console,JSON,Object,Array,String,Date,ceEditKid:"kid_a",ceEditKey:"daily_piano",currData:{subjects:{kid_a:{daily_piano:{display:"Piano",tracking:"daily",minutes:20}}}},
     db:{ref:p=>({set:v=>log.writes.push([p,v])})},planBacked:()=>false,_rlwDailyOk:(k,s)=>s==="daily_piano",RLW_LAY_FIELDS:{minutes:1,fixedTime:1},_rlwFieldWords:f=>f,relayWeek:(w,i)=>log.relay.push([w,i]),
     ceRenderEditSheet:()=>{},renderAll:()=>{},cbTodayISO:()=>"2026-11-03",lnPauseRelay:()=>{ throw new Error("never for a daily"); }};
-  vm.createContext(ctx); vm.runInContext(fn("ceSaveField")+"\n"+fn("ceGetSubject")+"\n"+fn("ceTogglePause")+"\n"+fn("ceQuickPause"),ctx);
+  vm.createContext(ctx); vm.runInContext(fn("ceSaveField")+"\n"+fn("ceGetSubject")+"\n"+fn("ceTogglePause"),ctx);
   vm.runInContext('ceSaveField("minutes",30)',ctx);
   ok("the editor sheet: a daily's minutes → saved, through the door, Undo = 20",log.writes[0][0]==="curriculum/subjects/kid_a/daily_piano/minutes"&&log.relay.length===1&&log.relay[0][1].label==="📚 Piano: minutes"&&log.relay[0][1].undo[0].was===20,log);
   vm.runInContext('ceSaveField("display","Piano!")',ctx);
   ok("…a field the scheduler doesn't lay by: saved only",log.relay.length===1);
   vm.runInContext('ceTogglePause()',ctx);
   ok("pause from the sheet: through the door, Undo = paused back to false, pausedSince gone",log.relay.length===2&&log.relay[1][1].label==="⏸ Piano!"&&log.relay[1][1].undo[0].p==="curriculum/subjects/kid_a/daily_piano/paused"&&log.relay[1][1].undo[0].was===false&&log.relay[1][1].undo[1].gone===true,log.relay[1]);
-  vm.runInContext('ceQuickPause("kid_a","daily_piano")',ctx);
-  ok("resume from the list card: through the door, Undo = paused back to true, pausedSince back",log.relay.length===3&&log.relay[2][1].label==="▶ Piano!"&&log.relay[2][1].undo[0].was===true&&typeof log.relay[2][1].undo[1].was==="string",log.relay[2]); }
+  vm.runInContext('ceTogglePause()',ctx);
+  ok("resume from the card's ⏸ (was the old list card's quick ⏸, gone in slice 3b): through the door, Undo = paused back to true, pausedSince back",log.relay.length===3&&log.relay[2][1].label==="▶ Piano!"&&log.relay[2][1].undo[0].was===true&&typeof log.relay[2][1].undo[1].was==="string",log.relay[2]); }
 
 
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

@@ -197,10 +197,9 @@ console.log("\nthe sweep — dead means no subject AND no live card");
     saved.workflow.ghost.normal[0].subjects.join("|") === "Some Old Name");
 }
 
-console.log("\nsource wiring — the one matcher really owns all four sites");
+console.log("\nsource wiring — the one matcher really owns all three sites");   // the fourth, ceWorkflowTier, went with the unreachable Subjects page in LMCLEANUP slice 3b
 {
   ok("gwWorkflowRank calls wfMatch", src.indexOf("wfMatch(subs[j],key,disp)") > 0);
-  ok("ceWorkflowTier calls wfMatch", src.indexOf("wfMatch(subs[j],sk,disp)") > 0);
   ok("_wfWeight and cascadeWeight both call wfMatch",
     (src.match(/wfMatch\(subs\[j\],String\(t\.subjectKey\|\|""\),subj\)/g) || []).length === 2);
   ok("no ranking site still substring-matches on its own",
