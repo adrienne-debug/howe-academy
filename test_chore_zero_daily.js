@@ -30,34 +30,8 @@ let pass = 0, fail = 0; const ok = (n, c, x) => { if (c) { pass++; console.log("
 const J = x => JSON.stringify(x), clone = x => JSON.parse(J(x));
 const IDX = process.env.CZERO_INDEX || path.join(__dirname, "index.html"), HJS = fs.readFileSync(process.env.CZERO_HJS || path.join(__dirname, "house.js"), "utf8");
 
-// ── the app before: this tree, C6 taken out ──
-const once = (src, what, from, to, label) => { const n = typeof from === "string" ? src.split(from).length - 1 : (src.match(from) || []).length;
-  if (n !== 1) throw new Error("test_chore_zero_daily: the app before cannot be built — " + label + " found " + n + "× in " + what + " (must be exactly once)"); return src.replace(from, () => to); };
-function carveIdx(s) { const R = (a, b, l) => { s = once(s, "index.html", a, b, l); };
-  R(/^\/\/ CHOREZERO_START[^\n]*\n[\s\S]*?^\/\/ CHOREZERO_END\n/m, "", "the CHOREZERO block");
-  R(/^ {2}if\(typeof rtZeroSee==="function"\) rtZeroSee\("morning",kid,steps\);[^\n]*\n/m, "", "the Morning list's hook");
-  R(/^ {2}if\(typeof rtZeroSee==="function"\) rtZeroSee\(slot,kid,steps\);[^\n]*\n/m, "", "rtSlotHTML's hook");
-  R("function rtDailyRow(st,z){ return !!st&&(st.cad||\"daily\")===\"daily\"&&(st.pts>0)!==!!z&&", "function rtDailyRow(st){ return !!st&&(st.cad||\"daily\")===\"daily\"&&(st.pts||0)>0&&", "rtDailyRow");
-  R(/ z \(CHOREZERO, C6\)[^\n]*/, "", "rtDailyMissed's comment");
-  R("function rtDailyMissed(slot,kid,i,st,z){\n  if(!rtDailyRow(st,z)||", "function rtDailyMissed(slot,kid,i,st){\n  if(!rtDailyRow(st)||", "rtDailyMissed");
-  R(/^ {2}if\(z\)\{ const q=_todayDay==="monday"[^\n]*\n/m, "", "the walk's week check");
-  R("const from=z?rtZeroFrom(kid):[RT_DAILY_FROM,", "const from=[RT_DAILY_FROM,", "the walk's start");
-  R("for(let k=1;k<=(z?tp+8:6);k++){", "for(let k=1;k<=6;k++){", "the walk's length");
-  R("if(!w||!m){ if(z) return -1; break; }", "if(!w||!m) break;", "the walk's last week");
-  R("const lo=rtDailyLogOn(kid,w,dn,slot,st.label); if(lo){ if(z&&lo>1) return -1; break; }", "if(rtDailyLogOn(kid,w,dn,slot,st.label)) break;", "the walk's log");
-  R(".indexOf(w)<0) return 2;", ".indexOf(w)<0) return true;", "rtDailyLogOn's unsure");
-  R(/\+\(\(e\.zero&&e\.zero\.n\)\?[^\n]*?\/\* CHOREZERO \*\//, "", "the Click-off Log's −1");
-  if (/CHOREZERO|rtZero|RT_ZERO_FROM|czero_|e\.zero/.test(s)) throw new Error("test_chore_zero_daily: the app before still mentions CHOREZERO");
-  return s; }
-function carveHjs(s) { const R = (a, b, l) => { s = once(s, "house.js", a, b, l); };
-  R(/^\/\/ LEDGERZERO_START[^\n]*\n[\s\S]*?^\/\/ LEDGERZERO_END\n/m, "", "the LEDGERZERO block");
-  R(/^ {8}if\(r&&typeof lgZeroRow===[^\n]*\n/m, "", "the row hook");
-  R(/^ {2}out\.lists\.forEach\(function\(L\)\{ L\.rows\.forEach\(function\(r\)\{ out\.taken\+=[^\n]*\n/m, "", "the day's taken");
-  R(/^ {2}if\(on&&typeof lgZeroOff===[^\n]*\n/m, "", "the Excuse hook");
-  R(/^ {2}if\(off&&typeof lgZeroOn===[^\n]*\n/m, "", "the Excuse Undo hook");
-  R("+(typeof lgZeroSet===\"function\"?lgZeroSet(sep,sub):'')", "", "the setting");
-  if (/LEDGERZERO|lgZero|rtZero/.test(s)) throw new Error("test_chore_zero_daily: the app before's house.js still mentions LEDGERZERO");
-  return s; }
+// ── the app before: this tree, C6 taken out (test_fixtures/carve_c6.js) ──
+const { idx: carveIdx, hjs: carveHjs } = require(path.join(__dirname, "test_fixtures", "carve_c6.js"));
 const BASE_IDX = (() => { const t = path.join(os.tmpdir(), "chore_zero_before_" + process.pid + ".html"); fs.writeFileSync(t, carveIdx(fs.readFileSync(path.join(__dirname, "index.html"), "utf8"))); return t; })();
 const BASE_HJS = carveHjs(fs.readFileSync(path.join(__dirname, "house.js"), "utf8"));
 console.log("(the app before: this tree with CHOREZERO / LEDGERZERO taken out)");
