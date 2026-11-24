@@ -808,7 +808,10 @@
     // on the Leitner ladder (drop_count>0) and hasn't recovered to a slow tier yet. These
     // items get folded back into the daily rotation for review (see juWeekPicks).
     var SUBKEY = { Letters: "letters", Numbers: "numbers", Shapes: "shapes", Colors: "colors", Animals: "animals" };
-    var SLOW_TIER = { weekly: 1, bi_weekly: 1, biweekly: 1, monthly: 1 };  // recovered = no longer flag on drop alone
+    // NBNEEDS_GRAD: graduated counts as recovered too (her yes 2026-11-23, "Yes, fix it": a card that slipped once but is
+    // now mastered stops counting as trouble). Before, a graduated card with an old drop came back 🔁 forever. A recent
+    // miss still counts on any tier. index.html NBNEEDS_SLOW is the same list (the Notebook tab's trouble card).
+    var SLOW_TIER = { weekly: 1, bi_weekly: 1, biweekly: 1, monthly: 1, graduated: 1 };  // recovered = no longer flag on drop alone
     var flag = { letters: {}, numbers: {}, shapes: {}, colors: {}, animals: {} };
     var flagScore = { letters: {}, numbers: {}, shapes: {}, colors: {}, animals: {} };
     for (var i = 0; i < items.length; i++) {
