@@ -2125,7 +2125,7 @@ function lgAmzLog(kid,wk,dn,id){ return (((routineLog[kid]||{})[wk]||{})[dn]||{}
 function lgAmzSent(kid,slot,i,D){ const c=amGet(kid,slot,i,D.iso); if(!c||!amWhyIg(c)) return ""; const f=amPay(kid,c,amIso(_todayDay)); return " · 🙈 they ignored it"+(!c.done&&f<(c.pts||0)?" · pays "+f+" of "+c.pts+" ⭐ today":""); }
 function lgAmzRow(g,kid,D,it){
   if(g.c===0&&amWhyIg(it)){ const f=amPay(kid,it,D.iso); g.note+=" · 🙈 ignored"+(f<(it.pts||0)?" · pays "+f+" of "+it.pts+" ⭐":""); }
-  const L=lgAmzLog(kid,D.wk,D.dn,it.id); if(L&&L.amz) lgAmzTk(g,kid,D,it.id,L.amz,1); }
+  const L=lgAmzLog(kid,D.wk,D.dn,it.id); if(L&&L.amz) lgAmzTk(g,kid,D,it.id,L.amz,amWhyIg(it)?1:0); }   // ➖ Excuse only while it is "ignored"
 function lgAmzTk(g,kid,D,id,t,x){ const ok=lgDropOk(), js="('"+kid+"','"+D.wk+"','"+D.dn+"','"+id+"')", tw=D.k===0?"this morning":"that morning";
   if(!t.n){ g.note+=" · nothing taken "+tw+" ("+(t.why==="away"?"a day off":t.why==="pause"?"⏸ paused":"Take stars away was off")+")"; return; }
   g.note+=" · "+lgStar(t.n)+" taken "+tw;
