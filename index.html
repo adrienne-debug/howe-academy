@@ -2571,7 +2571,7 @@ function rtSetAlwaysOpenDay(d){
   if(db) db.ref("config/routineTimes").set(routineTimes);
   renderAll();
 }
-function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtAlwaysOpen(d)||(d===_todayDay&&typeof hhCleanOn==="function"&&hhCleanOn(_todayStr()))||rtSchoolworkDone(kid,d)||(d===_todayDay&&typeof openPmToday==="function"&&openPmToday(kid))||(d!==_todayDay)||(new Date().getHours()>=rtAfternoonHour()); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
+function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtAlwaysOpen(d)||(d===_todayDay&&typeof hhCleanOn==="function"&&hhCleanOn(_todayStr()))||(d===_todayDay&&(typeof schoolOffToday==="function"&&schoolOffToday()))||rtSchoolworkDone(kid,d)||(d===_todayDay&&typeof openPmToday==="function"&&openPmToday(kid))||(d!==_todayDay)||(new Date().getHours()>=rtAfternoonHour()); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
 // MEALS_START — after-meal jobs (her ask 2026-10-02, DeWalt table-jobs chart: set/clear/wipe table, sweep,
 // dishwasher after every meal). A step tagged st.meal sits in its meal's list under its own heading:
 // breakfast → Morning, lunch → Afternoon, supper → Evening. Lunch and Supper open at their OWN hour
@@ -9363,6 +9363,29 @@ function scheduleBreakToday(){
   return scan(calendarData.holidays,"holiday")||scan(calendarData.vacations,"vacation")
     ||((typeof hhCleanDay==="function"&&hhCleanDay(ds))?{name:"Cleaning day",type:"cleaning",start:ds,end:ds,pause:"school"}:null);   // 🧽 CLEANINGDAY: pauses like a vacation
 }
+// 🏖 BRKTODAY_START — ONE rule for today's school work on a break day (her "fix all" 2026-11-24, after KC_BREAK: "if they're on
+//   break, there shouldn't be anything there"). A full break week builds no week, so the active week is still LAST week's and its
+//   cards match today's day name; a one-day holiday added after the week was built leaves cards laid on that day. On a day
+//   scheduleBreakToday() returns a break (holiday, vacation, cleaning day — the Schedule tab's own test, never a second one) there
+//   are no school cards TODAY, and every screen and gate that asks about today's school work asks schoolOffToday(). Today only:
+//   past and future days, the week views, effectiveDay, the week builder and which week is active are not changed. Reads only.
+function schoolOffToday(){ try{ return !!scheduleBreakToday(); }catch(e){ return false; } }
+// The one plain line a "today" agenda draws where its school cards would be — the words and look of Kids' Corner's (KC_BREAK).
+function brkTodayLineHTML(){
+  let b=null; try{ b=scheduleBreakToday(); }catch(e){ b=null; } if(!b) return "";
+  return '<div style="padding:22px 14px;text-align:center;font-size:15px;font-weight:700;color:var(--muted)">'+(b.type==="cleaning"?'No school today \u2014 it\u2019s cleaning day \u{1F9FD}':'No school today \u2014 '+esc(b.name)+' \u{1F389}')+'</div>';
+}
+// Mom's 🗓 Schedule ▸ Today and Dad's ▸ All on a break day: the line, then only the rows that are not school cards — Mom's laundry,
+// meal-prep and house blocks (momAgendaHtml with no cards), Dad's own column (extra) — as each agenda draws a day with no cards.
+function brkTodayAgendaHTML(who,d,extra){
+  const _pk=kid, _pd=day; let rest="";
+  try{ kid=who; day=d;
+    if(who==="mom"){ const h=momAgendaHtml([]); if(h.indexOf('class="mom-agenda"')>=0) rest=h; }
+    else if(extra&&Array.isArray(extra.items)&&extra.items.length) rest=allAgendaHtml([],null,{extra:extra});
+  }catch(e){ rest=""; } finally{ kid=_pk; day=_pd; }
+  return brkTodayLineHTML()+rest;
+}
+// 🏖 BRKTODAY_END
 // First weekday strictly after today that isn't a calendar off-day and sits in a
 // real plan week — i.e. the day school actually picks back up. Capped so a
 // misconfigured calendar can never loop forever.
@@ -31937,7 +31960,7 @@ function storeOpenFor(kid){
   if(c.open===false) return false;
   if(c.closedFor&&c.closedFor[kid]) return false;
   const m=c.mode||"always";
-  const school=(typeof rtSchoolworkDone==="function")?rtSchoolworkDone(kid,_todayDay):true;
+  const school=(typeof schoolOffToday==="function"&&schoolOffToday())?true:((typeof rtSchoolworkDone==="function")?rtSchoolworkDone(kid,_todayDay):true);   // 🏖 BRKTODAY: a break day has no school work to finish
   const past=(new Date().getHours())>=((c.hour!=null?c.hour:16));
   if(m==="afterSchool") return school;
   if(m==="time") return past;
@@ -31949,7 +31972,7 @@ function storeClosedReason(kid){
   if(c.open===false) return "🚪 The store is closed right now";
   if(c.closedFor&&c.closedFor[kid]) return "🚪 The store is closed for "+cap(kid)+" right now";
   const m=c.mode||"always";
-  if((m==="afterSchool"||m==="both")&&(typeof rtSchoolworkDone==="function")&&!rtSchoolworkDone(kid,_todayDay)) return "📚 Opens when school work is done";
+  if((m==="afterSchool"||m==="both")&&!(typeof schoolOffToday==="function"&&schoolOffToday())&&(typeof rtSchoolworkDone==="function")&&!rtSchoolworkDone(kid,_todayDay)) return "📚 Opens when school work is done";   // 🏖 BRKTODAY
   if((m==="time"||m==="both")&&(new Date().getHours())<((c.hour!=null?c.hour:16))) return "⏰ Opens at "+_storeFmtHour(c.hour!=null?c.hour:16);
   return "";
 }
