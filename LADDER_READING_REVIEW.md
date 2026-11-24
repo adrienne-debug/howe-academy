@@ -37,7 +37,41 @@ What I kept to, from your rules:
 
 **Inside each level they go easier → harder**, by length and by the grade estimate below. Wrong choices are taken from the passage itself or from common misreadings (the tadpole when the question asks what a frog *starts* as; "a kind of flower" for *the kite rose*). There is never an "all of the above".
 
-**Page space.** The old passages were 60–120 words with two questions. g1–g4 fit the same half page. A g6 or g78 passage with four five-choice questions fills most of a page — see question 6 at the end.
+**Page space.** The old passages were 60–120 words with two questions. g1–g4 fit the same half page. A g6 or g78 passage with four five-choice questions fills most of a page — see question 5 at the end.
+
+## How each level fits what the notebook is for
+
+Your words (11/23): the notebook will "mostly be done by themselves except the littlest level, and be fun not hard, kinda warm up for the day, but also to prepare and get ready for test, and to review things in a new way that are troubling for them on the drills section."
+
+So the passages are meant to be **fun first** (something a kid wants to read), a **comfortable read** for the level (a warm-up, not a stretch), and **done alone from 2nd grade up**. Here is how each level meets that:
+
+| Level | Who reads it | Reads at | Stretch words | What makes it fun |
+|---|---|---|---|---|
+| **g1** | **With a grown-up.** She reads the 3–5 sentences, with help on a word as needed; you (or, later, the tablet) read her the questions and the three choices. | grade 0.8 on average — about at its level (1) | 1 in 10 passages, never more than 1 in one, each explained in its sentence | a hat blown into a puddle, a dog who finds the lost mitten, a box turned into a fort, a note about new kittens, owls, bees, the moon |
+| **g2** | **Alone** — the passage and the questions. Stems are one short line; choices are a few words. | grade 1.9 on average — about at its level (2) | 4 in 10 passages, never more than 1 in one, each explained in its sentence | a lemonade stand nobody can see, a kite that won't fly, a library book lost in the car, sloths with green fur, penguin dads, hummingbirds flying backward |
+| **g3** | Alone | grade 2.9 on average — about at its level (3) | 9 in 10 passages, never more than 1 in one, each explained in its sentence | a garden-mystery detective (who's eating the lettuce?), a cup-and-string telephone, fireflies, the camel's-hump myth, the first airplane |
+| **g4** | Alone | grade 3.8 on average — about at its level (4) | 11 in 10 passages, never more than 2 in one, each explained in its sentence | a sparrow loose in the garage, cookies made with salt by mistake, thin ice and a rock, a map with an ice-cream cone, bats that see with sound, beavers |
+| **g5** | Alone | grade 4.7 on average — a little under its level (5) | 12 in 10 passages, never more than 2 in one, each explained in its sentence | counting thunder in a blackout, a paper bridge that holds 43 pennies, lost on a trail, a sheep, a duck and a rooster in the first balloon, baby sea turtles |
+| **g6** | Alone | grade 5.7 on average — a little under its level (6) | 11 in 10 passages, never more than 2 in one, each explained in its sentence | a chess player who learns to slow down, a girl keeping a lighthouse lit in a storm, an octopus that escapes its tank, the Pony Express |
+| **g78** | Alone | grade 7.3 on average — about at its level (7–8) | 14 in 10 passages, never more than 2 in one, each explained in its sentence | a club election won by the wrong promises, the last ice harvest, a science project that goes wrong, water bears that survived space, a fix-it fair |
+
+**Comfortable, not hard.** Each level averages at or a little under its own grade on the estimate. Checking against your words, I found **2nd grade was the exception**: it averaged 2.4, a stretch for a child reading alone. Five g2 passages were rewritten in shorter sentences with the same facts and questions, and g2 now averages 1.9. A child placed on a level should find most passages easy to get through, and the questions are where the thinking happens.
+
+**Stretch words.** None at most levels' easiest passages, and never more than two per passage. Each is explained right in the sentence, so the word question can be answered from the page, never from what the child already happens to know.
+
+**Getting ready for the test.** The question kinds are the ones on the reading tests at each age — find it, work it out, word meaning, main idea, and from 5th grade author's purpose and which detail supports a claim. Choices go 3 → 4 → 5 to match.
+
+**Troubling drill items.** This ladder is fixed reading, so it does not follow each child's drill misses by itself. Two ways it can later: the notebook could pick a passage whose topic matches a deck in trouble (each passage has a `topic`), and a wrong answer here could feed the needs list by kind (for example, "word meaning" missed often). Neither is built; both are wiring decisions for later.
+
+**A few pieces are more useful than fun.** They are here because tests use those kinds of text — a persuasive letter, a public notice, a how-to, a history piece:
+- *Keep Our Library Open on Saturdays* (g7–8 letter)
+- *When Railroads Set the Clocks* (g7–8)
+- *Reading a Topographic Map* (g7–8 how-to)
+- *Please Don't Feed Bread to the Ducks* (g5 notice)
+- *Letters That Could Move* (the printing press, g6)
+- *Make a Rain Gauge* (g4 how-to)
+
+See question 9.
 
 ## How hard each passage reads
 
@@ -46,7 +80,7 @@ The grade estimate is the Flesch-Kincaid formula (sentence length and syllables 
 | Level | Average words | Average words per sentence | Average grade estimate | Lowest – highest | Passages flagged |
 |---|---|---|---|---|---|
 | g1 | 33.5 | 7.9 | 0.8 | -0.1 – 2.5 | 0 |
-| g2 | 54.7 | 10.2 | 2.4 | 1.3 – 3.3 | 0 |
+| g2 | 54.8 | 9.1 | 1.9 | 1.3 – 2.5 | 0 |
 | g3 | 93.1 | 9.8 | 2.9 | 1.9 – 3.9 | 0 |
 | g4 | 133.6 | 12.1 | 3.8 | 2.6 – 4.3 | 0 |
 | g5 | 163.7 | 12.2 | 4.7 | 3.5 – 5.9 | 0 |
@@ -74,11 +108,11 @@ The grade estimate is the Flesch-Kincaid formula (sentence length and syllables 
 | ra_g2_03 | Leo's Kite | story | 54 | 5 | 1.7 |
 | ra_g2_04 | Slow and Sleepy Sloths | true facts | 54 | 5 | 2 |
 | ra_g2_05 | Grow a Bean Plant | how-to | 64 | 6 | 1.8 |
-| ra_g2_06 | Hummingbirds | true facts | 53 | 5 | 2.8 |
-| ra_g2_07 | How a Rainbow Is Made | true facts | 55 | 6 | 2.8 |
-| ra_g2_08 | Penguin Dads | true facts | 57 | 6 | 3.2 |
-| ra_g2_09 | The Missing Library Book | story | 54 | 5 | 3.3 |
-| ra_g2_10 | The Lemonade Stand | story | 58 | 6 | 3.2 |
+| ra_g2_06 | Hummingbirds | true facts | 52 | 6 | 2.1 |
+| ra_g2_07 | How a Rainbow Is Made | true facts | 56 | 7 | 1.9 |
+| ra_g2_08 | Penguin Dads | true facts | 58 | 7 | 2.5 |
+| ra_g2_09 | The Missing Library Book | story | 53 | 8 | 1.7 |
+| ra_g2_10 | The Lemonade Stand | story | 59 | 8 | 2.3 |
 | **g3** | | | | | |
 | ra_g3_01 | The Squeaky Gate | story | 94 | 10 | 1.9 |
 | ra_g3_02 | The Tallest Tower | story | 86 | 10 | 2.4 |
@@ -205,9 +239,9 @@ The ✅ marks the right answer **here only**; on the child's page there is no ma
    - C. to make Leo run faster
    - *Why (parent page):* Before the tail the kite "bumped along the grass"; after it, "the kite rose up."
 
-**Penguin Dads** · true facts · 57 words · grade estimate 3.2 · `ra_g2_08`
+**Penguin Dads** · true facts · 58 words · grade estimate 2.5 · `ra_g2_08`
 
-> Penguins are birds, but they cannot fly. Their wings work like flippers, so they are fast swimmers. Emperor penguins live in icy Antarctica. The mother lays one egg. The father holds it on his feet under a warm fold of skin. He keeps it safe for about two months while the mother finds food in the sea.
+> Penguins are birds, but they cannot fly. Their wings work like flippers, so they are fast swimmers. Emperor penguins live in icy Antarctica. The mother lays one egg. The father holds it on his feet under a warm fold of skin. He keeps it safe for about two months. The mother goes to find food in the sea.
 
 1. *(find it)* What do a penguin's wings work like?
    - A. flippers ✅
@@ -657,6 +691,7 @@ After drafting, every question was read against its passage again by two separat
 6. **Ellis's eight old passages** (Transformers-themed, in his notebook's code). Default: leave them where they are as his own extras; the ladder replaces them as his daily read.
 7. **Topics.** Is there anything you'd like more of (North Carolina, faith, the kids' own interests told plainly — snakes, dinosaurs, frogs) or anything to leave out? One g6 story (a lighthouse keeper's daughter keeps the lamp lit in a storm) is a familiar *kind* of story — there is a true one from 1856 and a picture book about it. My people, place, year and details are all made up. Say if you'd rather have a different plot.
 8. **Names.** The stories use made-up, varied first names (Mia, Mateo, Priya, Noor, Ezra…) and no family names. Okay?
+9. **The drier pieces** (the library letter, railroad time, the topographic map, the duck notice, the printing press, the rain gauge). Default: keep them — no level has more than three — because tests use those kinds of text. Or swap any of them for something more fun on the same skill, such as a funny letter from a camp, a notice about a lost pet snake, or how a roller coaster works.
 
 ## The files
 
