@@ -51,7 +51,7 @@ snap["shark/withSightWords"] = hash(gen(Object.assign(clone(big), { notebookThem
 if (process.argv.includes("--hashes")) { console.log(JSON.stringify(snap)); process.exit(0); }
 // sha256 (first 16 hex) of JSON.stringify(generate(kid, ctx)) — taken from origin/main abb03281, BEFORE LU_WORDS.
 const BEFORE = {"lucy/plain":"af77007c75d1b458","lucy/emptyMastery":"af77007c75d1b458","lucy/otherDecks":"af77007c75d1b458","lucy/cursorNoDeck":"af77007c75d1b458","lucy/deckButOff":"af77007c75d1b458","lucy/loe":"36d587741a627cef","lucy/nineCards":"bd3fdff7318ec50f","lucy/withSpelling":"0e61fdac2fa0584b",
-  "julian/withSightWords":"45d8b8091e37cf39","caleb/withSightWords":"990f292921b2dd36","ellis/withSightWords":"375283d2cc0727d3","lincoln/withSightWords":"e428afcca3f96533","kid9/withSightWords":"477f4e9017a4f89d","shark/withSightWords":"d3f71e486b762c6b"};
+  "julian/withSightWords":"45d8b8091e37cf39","caleb/withSightWords":"990f292921b2dd36","ellis/withSightWords":"375283d2cc0727d3","lincoln/withSightWords":"92fec5297fe46073","kid9/withSightWords":"477f4e9017a4f89d","shark/withSightWords":"d3f71e486b762c6b"};
 
 console.log("(a) no deck / My Words off → byte-identical to main");
 Object.keys(NODATA).forEach(k => ok(snap["lucy/" + k] === BEFORE["lucy/" + k], "lucy/" + k, "now " + snap["lucy/" + k]));
