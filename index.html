@@ -2974,6 +2974,7 @@ function rtWaitOwn(st){ const id=st&&st._hh, j=(id&&typeof hhJobs==="function")?
 // 100% on its day, then 80 \u00b7 60 \u00b7 40 \u00b7 20 \u00b7 0%. Nothing is ever taken from a bank here; un-check takes back the stored amount, as always.
 // Blank slate (hub's call 2026-11-20): only a turn due on or after RT_FALL_FROM falls; an older one pays in full for as long as it waits.
 const RT_FALL_FROM="2026-11-22";
+const RT_TAKE_FROM="2026-11-30";   // CHOREDROP (C3): the blank slate for the drop's −20% — only a turn due on or after it can cost anything
 // What a step pays n days late, given its original stars: a step is 20% of the original, to the nearest whole star, at least 1.
 // 10 \u2b50: 8 6 4 2 0 \u00b7 15 \u2b50: 12 9 6 3 0 \u00b7 22 \u2b50: 18 13 9 4 0 \u00b7 5 \u2b50: 4 3 2 1 0. The one function every payer and display calls.
 function rtFallPts(pts,n){ pts=pts||0; if(!(n>0)||!(pts>0)) return pts; return Math.max(0,pts-Math.max(n,Math.round(pts*n/5))); }
@@ -3062,6 +3063,9 @@ function starRules(){ try{ return householdData.meta.starRules||{}; }catch(e){ r
 function starFallFrom(kid){ const R=starRules(), f=(R.fall||{})[kid]||{}, p=R.pause||{}; return p.on||f.on===false?"~":[f.from||"",p.from||""].sort()[1]; }
 function starTakeOk(kid){ const R=starRules(); return !(R.pause||{}).on&&(R.take||{})[kid]!==false; }
 function starTakeWhy(kid){ return (starRules().pause||{}).on?"⏸ Star rules are paused for everyone":"Taking stars away is off for "+cap(kid); }
+// CHOREDROP (C3): why the drop of a turn due on iso takes nothing — "pause" (paused, or due before the pause ended) · "off" (Take stars away
+// off, or due before it came back on: "On: it starts clean") — or "" (it may take).
+function starTakeAt(kid,iso){ const R=starRules(), t=(R.take||{})[kid], p=R.pause||{}; return (p.on||iso<(p.from||""))?"pause":(t===false||iso<((t&&t.from)||""))?"off":""; }
 function starTakeNo(kid){ if(starTakeOk(kid)) return false; if(typeof gwShowToast==="function") gwShowToast(starTakeWhy(kid)+", so nothing was taken. 📒 Ledger ⚙ changes it."); return true; }
 // STARRULES_END
 function rtLateDays(slot,kid,i,raw){   // raw (CHOREWAIT): the days since it was missed, wait or not — rtSlotHTML's drop check
@@ -3134,11 +3138,61 @@ function _rtLogLateMiss(slot,kid,i,cad,label,pts){
   if(!ds.length) return;
   const _st=(typeof rtStepsFor==="function")?(rtStepsFor(slot,kid)||[])[i]:null;   // LATE_FROM: never file a miss for a day before the step began
   const _bf=function(dn,prev){ return (typeof _rtBeforeFrom==="function"&&_rtBeforeFrom(_st,dn,prev))||(typeof rtWaved==="function"&&rtWaved(slot,kid,dn,i,prev?_prevWkKey():activeWk())); };   // WAVE: a waved day is handled
-  const due=_rtLastDueIdx(ds,DAYS_ALL.indexOf(_todayDay));
-  if(due>=0){ if(_bf(DAYS_ALL[due],false)) return; _rtLogMiss(kid,slot,i,DAYS_ALL[due],label,pts); return; }
+  const due=_rtLastDueIdx(ds,DAYS_ALL.indexOf(_todayDay)), tp=_rtPos(DAYS_ALL.indexOf(_todayDay)), _rtDropFile=(typeof _rtDropFileC3==="function")?_rtDropFileC3:function(k,s,j,d,l,p,w){ return _rtLogMiss(k,s,j,d,l,p,w); };   // CHOREDROP (a slice without it files as before)
+  if(due>=0){ if(_bf(DAYS_ALL[due],false)) return; _rtDropFile(kid,slot,i,DAYS_ALL[due],label,pts,undefined,tp-_rtPos(due)); return; }   // CHOREDROP: the drop, and what it costs
   const pd=_rtPrevDueIdx(ds), pw=_prevWkKey();
-  if(pd>=0&&pw){ if(_bf(DAYS_ALL[pd],true)) return; _rtLogMiss(kid,slot,i,DAYS_ALL[pd],label,pts,pw); }
+  if(pd>=0&&pw){ if(_bf(DAYS_ALL[pd],true)) return; _rtDropFile(kid,slot,i,DAYS_ALL[pd],label,pts,pw,tp+7-_rtPos(pd)); }
 }
+// CHOREDROP_START — her rule 2026-11-19 (missed-chores design §2.2, slice C3; ledger design §2–§4): "it starts deducting from their point"
+// → "A chore with a wait is still dropped at the end of its wait, and the drop takes 20% of its stars, once"; an empty bank: "Can go below
+// zero". The first slice that ever takes stars by itself. When a turn drops undone (rtSlotHTML → _rtLogLateMiss, the one place a drop is
+// noticed), the "— not done" line it files carries the decision, made ONCE, there: drop = {n: stars taken, bid: the bank line's id, due:
+// its own day, job: its chore} or {n:0, why:"zero"|"away"|"off"|"pause"} (0 ⭐ chore · a day off in its wait · Take stars away off for that kid or the turn was due before
+// it came back on · ⏸ paused or due before the pause ended). n = the chore's stars − rtFallPts(stars,1): 20%, nearest whole star, at least 1.
+// Exactly once: the line is created by a transaction that only writes if NO line is on the server, and only the device whose transaction
+// commits writes the one bank line, bank/<kid>/adjustments/cdrop_<wk>_<due day>_<kid>_<a|c|e>step<i> ("🧹 Vacuum the den · not done",
+// −2, src "drop"). A fixed id per kid, chore and due day; never through the 📮 outbox (obSet), so nothing replays it later. A redraw, a
+// reload, a second device, a flip of a switch or a give-back (📒 Ledger, house.js LEDGERDROP: gb on that line) never decide again.
+// A turn due before RT_TAKE_FROM, a plan row (st.house) and every row that never drops (daily, as needed, ✕ / ➖, 🌅, ticked) file
+// exactly as before: no decision, nothing taken. Writes only when db && !_dryRun(); dry-run and no-db keep it on this screen.
+// Days off (hub's rule 2026-11-23, "nothing is ever taken by accident", until Mom says otherwise): {n:0, why:"away"} when, for that kid,
+// its due day or any day of its wait (up to the day before it dropped) was 😷 Kid Off (calendar/kidOverrides/<kid>/<iso>.school ===
+// false) or a family-calendar holiday / vacation that paused this list (calendar/holidays|vacations/<id> .start–.end, .pause "all", or
+// "chores" for the Afternoon and Chores lists). A plain weekend or a school-only break changes nothing. The wait itself is C1's, as before.
+function rtDropAway(kid,slot,st,iso,n){
+  const C=(typeof calendarData!=="undefined"&&calendarData)||{}, o=(C.kidOverrides||{})[kid]||{}, W=rtWaitDays(st), cad=(st&&st.cad)||"daily";
+  for(let k=0;k<n;k++){ const d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+k);
+    const q=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    if(k>0&&(k>W||cadDueOn(cad,DAYS_ALL[(d.getDay()+6)%7])||(st.cycW&&!stepCycleOk(st,q)))) break;   // it dropped that day
+    if(o[q]&&o[q].school===false) return true;
+    let p=""; [C.holidays,C.vacations].forEach(function(c){ Object.values(c||{}).forEach(function(v){ const a=calNormDate(v&&(v.start||v.date)), b=calNormDate(v&&(v.end||v.start||v.date)); if(!p&&a&&q>=a&&q<=b) p=v.pause||"school"; }); });
+    if(p==="all"||(p==="chores"&&slot!=="evening")) return true; }
+  return false;
+}
+function rtDropTake(kid,st,iso,slot,n){
+  if(!st||st.house||!(iso>=RT_TAKE_FROM)) return null;
+  const s=st.pts||0; if(!(s>0)) return {n:0,why:"zero"};
+  if(slot&&n>0&&rtDropAway(kid,slot,st,iso,n)) return {n:0,why:"away"};
+  const no=starTakeAt(kid,iso); if(no) return {n:0,why:no};   // the 📒 ⚙ switches, as they are at the drop
+  return {n:s-rtFallPts(s,1)};
+}
+function _rtDropFileC3(kid,slot,i,dueDay,label,pts,wkIn,n){
+  const st=(rtStepsFor(slot,kid)||[])[i], t=new Date(), d=new Date(t.getFullYear(),t.getMonth(),t.getDate()-n,12);
+  const iso=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"), tk=n>0&&RT_ABBR[slot]?rtDropTake(kid,st,iso,slot,n):null;
+  if(!tk) return _rtLogMiss(kid,slot,i,dueDay,label,pts,wkIn);   // as before
+  const wk=wkIn||activeWk(), key="miss_"+slot+"_"+i, L=(routineLog[kid]=routineLog[kid]||{}), W=(L[wk]=L[wk]||{}), D=(W[dueDay]=W[dueDay]||{});
+  if(D[key]) return;
+  const bid="cdrop_"+wk+"_"+dueDay+"_"+kid+"_"+RT_ABBR[slot]+"step"+i;
+  tk.due=iso; tk.job=st._hh||("rt_"+slot+"_"+kid+"_"+hhSlug(st.label)); if(tk.n>0) tk.bid=bid;
+  const rec={label:(label||"Chore")+" — not done",slot:slot,act:"miss",ts:nowTs(),at:Date.now(),pts:pts||0,missed:true,drop:tk};
+  const ln=tk.n>0?{amount:-tk.n,note:(st.emoji?st.emoji+" ":"")+(label||"Chore")+" · not done",ts:rec.ts,iso:new Date().toISOString(),src:"drop",wk:wk,day:dueDay}:null;
+  const put=function(){ if(!ln) return; bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{}; bank[kid].adjustments[bid]=ln; };
+  D[key]=rec;
+  if(!db||_dryRun()){ put(); return; }
+  try{ db.ref("routineLog/"+kid+"/"+wk+"/"+dueDay+"/"+key).transaction(function(cur){ return cur?undefined:rec; },function(err,ok){
+    if(err||!ok||!ln) return; put(); db.ref("bank/"+kid+"/adjustments/"+bid).set(ln); },false); }catch(e){}   // the bank listener redraws
+}
+// CHOREDROP_END
 function rtSlotHTML(slot,kid){
   const steps=rtStepsFor(slot,kid,false,day), label=SL_SLBL[slot];
   if(!steps.length){
@@ -7235,7 +7289,7 @@ function chSettingsClickoffLogHTML(){
       var slbl=(typeof SL_SLBL!=="undefined"&&SL_SLBL[e.slot])||e.slot||"";
       var dlbl=(typeof DAY_LBL!=="undefined"&&DAY_LBL[e._day])||e._day||"";
       h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)'+(e.flagged?';opacity:.6':'')+'">';
-      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">'+((typeof flagMarkTxt==="function"&&flagMarkTxt(e))||'−100')+'</span>':'')+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
+      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">'+((typeof flagMarkTxt==="function"&&flagMarkTxt(e))||'−100')+'</span>':'')+((e.drop&&e.drop.n)?' <span style="color:#b91c1c;font-weight:800">'+(e.drop.gb?'−'+e.drop.n+' ⭐ given back':'−'+e.drop.n+' ⭐')+'</span>':'')/* CHOREDROP: what the drop took */+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
       if(on&&!e.flagged&&(typeof ckLogCanDock!=="function"||ckLogCanDock())) h+='<button onclick="rlogFlag(\''+kid+'\',\''+_rlwk+'\',\''+e._day+'\',\''+e._key+'\')" title="Didn\'t actually do it — dock 100 points" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ −100</button>';
       h+='</div>';
     });
@@ -14703,12 +14757,13 @@ function momSchedHouse(dayName,dayTasks){
       if(x.done) out.push({m:x.at,o:3,html:_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ 🧽 '+lbl+'</span>')});
       else out.push({m:x.at,o:2,html:_lbBox('#f0fdf4','#16a34a','<span style="flex:1;font-size:13px">🧽 '+lbl+' · '+x.mins+' min'+_kpCd(x.at,x.at+x.mins)+'</span>'+_kpBtn('✓ Done',"hhPlanCheck('"+mwTodayIso()+"','"+x.id+"')",true))}); }); return out.sort(function(a,b2){ return (a.m-b2.m)||(a.o-b2.o); }); }
   const list=hhHouseToday(); if(!list.length) return out;
-  const next=(typeof momSchedNextMom==="function")?momSchedNextMom(dayTasks||[]):null, def=hhHouseDefaultMin(), iso=mwTodayIso();
+  const next=(typeof momSchedNextMom==="function")?momSchedNextMom(dayTasks||[]):null, def=hhHouseDefaultMin(), iso=mwTodayIso(), P=(typeof hmixPlaced==="function")?hmixPlaced(dayName,dayTasks||[],list):null;   // 🏡 HOUSEMIX
   list.forEach(function(x){ const r=x.r, b=x.rec, key=hhHouseKey(r.id), lbl='<b>'+esc(r.label)+'</b> <span style="color:#6b6560">· '+esc(hhRoomName(hhRoomOf(r.job)))+'</span>';
     const doneBtn=_kpBtn('✓ Done',r.on,true), skipBtn=_kpBtn('Not now',"hhHouseBlockSet('"+_lbQ(r.id)+"','skip')",false), laterBtn=_kpBtn('⏰ 30 min later',"hhHouseBlockSet('"+_lbQ(r.id)+"','later')",false);
     if(r.done){ const ts=(((momdayData||{})[iso]||{}).chores||{})[(r.job.src&&r.job.src.id)||r.id]; const dm=(typeof ts==="number")?_lbMin(ts):def;
       out.push({m:(dm>=0&&dm<24*60)?dm:def,o:3,html:_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ 🏡 '+lbl+'</span>')}); return; }
     if(b&&b.at==="skip"){ out.push({m:def,o:1,html:_lbBox('#f0fdf4','#86efac','<span style="flex:1;font-size:13px">🏡 '+lbl+'</span>'+doneBtn)}); return; }
+    if(!b&&P&&P[r.id]){ out.push(hmixRow(r,lbl,P[r.id],doneBtn,skipBtn)); return; }   // 🏡 HOUSEMIX: placed in a gap
     if(!b){ out.push({m:def,o:1,html:_lbBox('#f0fdf4','#16a34a','<span style="flex:1 1 100%;font-size:13px">🏡 '+lbl+' — block out time?</span>'
         +'<label style="font-size:12px;color:#334155;font-weight:700">How long? <input id="hb-min-'+key+'" type="number" min="1" max="240" value="'+r.mins+'" style="width:54px;padding:4px 6px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px;font-family:\'DM Sans\',sans-serif"> min</label>'
         +_lbQBtn('Now',"hhHouseBlockSet('"+_lbQ(r.id)+"','now')",true)+(next?_lbQBtn('After '+esc(_lbCardName(next)),"hhHouseBlockSet('"+_lbQ(r.id)+"','after','"+_lbQ(next.id)+"')",false):'')+_lbQBtn('Later',"hhHouseBlockSet('"+_lbQ(r.id)+"','later')",false)+_lbQBtn('Not now',"hhHouseBlockSet('"+_lbQ(r.id)+"','skip')",false))}); return; }
@@ -14754,6 +14809,23 @@ function hgapLay(o){ o=o||{}; const win={start:Math.max(+o.now||0,+o.start||0),e
   const busy=hgapBusy(o.cards,o), gaps=hgapGaps(busy,win,o.cushion);
   return {busy:busy,gaps:gaps,placed:hgapPlace(o.chores,gaps,win)}; }
 // HOUSEGAP_END
+// HOUSEMIX_START — step 7 slice 2 (PLAN_house_step7 §5 row 2): once Mom taps "Mixed in" on 👤 By person (household/people/mom/fit
+// stored "mixed"; the unset default is not her tap — her answer 2026-11-20 "When I tap Mixed in"), momSchedHouse draws each unanswered
+// chore where hgapLay places it in her laid day as drawn, with ✓ Done · Now · ⏰ Later · Not now (today's taps, today's writes).
+// Worked out on each draw, kept nowhere, never handed to the Mom loop: no lesson moves for it. Not placed: no gap → after school, as
+// today. No school or her Mom-off day → by time of day (Morning 7:00 · Afternoon 12:00 · Night 5:00 PM, as Dad's); any time → as today.
+function hmixOn(){ return hhPeopleOf("mom").fit==="mixed"; }
+function hmixNoSchool(iso){ const d=new Date(iso+"T12:00:00").getDay(); if(d===0||d===6||scheduleBreakToday()) return true; return ROSTER.length>0&&ROSTER.every(function(k){ return !!smapIsKidOff(k,iso); }); }
+function hmixPlaced(dn,cards,list){ try{ if(!hmixOn()) return null; const P={};
+  const ch=list.filter(function(x){ return !x.r.done&&!x.rec; }).map(function(x){ return {id:x.r.id,mins:x.r.mins,slot:mcSlotOf(x.r.job),score:1}; });
+  if(mlMomOff()||hmixNoSchool(mwTodayIso())){ ch.forEach(function(c){ const m=DAD_SLOT_MIN[c.slot]; if(m!=null) P[c.id]={at:m,end:m+c.mins,how:"slot",slot:c.slot}; }); return P; }
+  const blocks=momBlockOpen().concat(hhHouseBlocksOpen(),kitPrepBlocksOpen()).filter(function(b){ return _mlBlkLaid[b.key]!=null; }).map(function(b){ return [_mlBlkLaid[b.key],_mlBlkLaid[b.key]+b.mins]; });
+  hgapLay({cards:cards,chores:ch,blocks:blocks,now:_mlNowMin(),start:gateStartMin(dn),end:coSchoolEnd(),lunch:_mlLunchWin(),done:function(t){ return !!_mlFinished(t.id,t); },lead:famIsMomCard,helper:helperHolds,span:mlMomSpan})
+    .placed.forEach(function(p){ if(p.how==="gap") P[p.id]=p; }); return P; }catch(e){ return null; } }
+function hmixRow(r,lbl,p,doneBtn,skipBtn){ const S=MC_SLOTS[p.slot];
+  return {m:p.at,o:1,html:_lbBox('#f0fdf4','#16a34a','<span style="flex:1 1 100%;font-size:13px">🏡 '+lbl+' · '+r.mins+' min · '+(S?S.ic+' '+S.nm:fromMin(p.at)+'–'+fromMin(p.end)+' · in a gap')+'</span>'
+    +doneBtn+_kpBtn('Now',"hhHouseBlockSet('"+_lbQ(r.id)+"','now')",false)+_kpBtn('⏰ Later',"hhHouseBlockSet('"+_lbQ(r.id)+"','later')",false)+skipBtn)}; }
+// HOUSEMIX_END
 // HH_SETTINGS_METER_START — PR A of the distributing cleaning day (her 2026-10-11: "settings per card on how often they should be
 // done and which kids can do … percentage wise farthest from being done … a cleaning day's start etc needs to be settings much
 // like a school day"). Three things, no behaviour change on any list:
@@ -44489,15 +44561,16 @@ function wbdFit(){
   const c=(w/WBD_GRID).toFixed(2)+"px";
   hold.style.backgroundImage=v.bg==="grid"?"linear-gradient(#bfdbfe 1px,transparent 1px),linear-gradient(90deg,#bfdbfe 1px,transparent 1px)":"none";
   hold.style.backgroundSize=v.bg==="grid"?c+" "+c:"auto";
+  if(v.bg==="lines"&&typeof wbdLinesCss==="function") wbdLinesCss(hold.style,Math.round(w));   // WBDLINES: ▤ Lines
   if(typeof wbFit==="function") wbFit(); if(typeof wbPaint==="function") wbPaint();
   return true;
 }
-function wbdBg(k){ const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!v.scratch) return; v.bg=_wbdBg=(k==="grid"?"grid":"blank"); wbdFit(); wbBarRender(); }
+function wbdBg(k){ const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!v.scratch) return; v.bg=_wbdBg=(k==="grid"||k==="lines"?k:"blank"); wbdFit(); wbBarRender(); }   // WBDLINES: + lines
 // wbBarRender's hook: the board's bar, drawn with the viewer's own button
 function wbdBarHTML(v,btn){
   return btn("\u2715","wbClose()")+'<span style="font-weight:800;font-size:13px;color:#0f172a">\u270D\uFE0F Whiteboard</span>'+
     '<span style="font-size:11px;color:#64748b">scratch \u00B7 \u2715 wipes it</span><span style="flex:1"></span>'+
-    btn("\u25A2 Blank","wbdBg(\'blank\')",v.bg!=="grid")+btn("\u25A6 Grid","wbdBg(\'grid\')",v.bg==="grid")+
+    btn("\u25A2 Blank","wbdBg(\'blank\')",v.bg!=="grid"&&v.bg!=="lines")+btn("\u25A6 Grid","wbdBg(\'grid\')",v.bg==="grid")+btn("\u25A4 Lines","wbdBg(\'lines\')",v.bg==="lines")+   // WBDLINES
     btn("\u270F\uFE0F","wbTool(\'pen\')",v.tool==="pen")+btn("\u{1FA79} Erase","wbTool(\'erase\')",v.tool==="erase")+
     btn("\u21A9\uFE0E Undo","wbUndo()")+btn("\u{1F9FD} Clear","wbClear()")+btn(v.penOnly?"\u270D\uFE0F Pencil only":"\u{1F446} Finger too","wbTogglePen()",v.penOnly)+
     ((typeof wbdSaveBtnHTML==="function")?wbdSaveBtnHTML(v,btn):"");   // WBDSAVE: 💾 Save — Mom, from Today's card on a unit day
@@ -44509,6 +44582,28 @@ function wbdDoorHTML(g){
 }
 try{ window.addEventListener("resize",function(){ if(typeof wbView!=="undefined"&&wbView&&wbView.scratch) wbdFit(); }); }catch(e){}   // a device with no ResizeObserver (the LG) still re-fits on a turn
 // WBOARD_END
+// WBDLINES_START — ▤ Lines on the whiteboard (Adrienne's yes 2026-11-24): handwriting rows for a beta family starting Logic of
+//   English Foundations A — Lesson 1 teaches the top line, the dotted midline and the baseline, and Mom writes big on a lined
+//   board for the child to trace; they have no physical board. Each row: a solid top line, a dashed midline, a darker, heavier
+//   baseline (where letters sit). Top→base = 1/8 of the board's width, half that again between rows (room for tails). Every size
+//   is a share of the width, so a turned iPad shows the same rows under the same ink. Drawn as the board's CSS (wbdFit) and on
+//   the 💾 Save picture (wbdJpeg). Stores nothing: the pick lives in _wbdBg for the sitting, like ▦ Grid. Blank stays the default.
+const WBD_LC="#94a3b8", WBD_BC="#475569";   // top + midline · baseline
+function wbdLn(w){ const x=w/8, lw=Math.max(1,w/600); return {x:x,p:x*1.5,t:x/4,lw:lw,bw:lw*2,d:w/96}; }
+function wbdLinesCss(s,w){
+  const L=wbdLn(w), f=n=>n.toFixed(2)+"px", P=f(L.p), ln=(y,h,c)=>"linear-gradient(transparent "+f(y-h/2)+","+c+" "+f(y-h/2)+","+c+" "+f(y+h/2)+",transparent "+f(y+h/2)+")";
+  s.backgroundImage=[ln(L.t,L.lw,WBD_LC),ln(L.t+L.x,L.bw,WBD_BC),"linear-gradient(90deg,transparent 50%,#fff 50%)",ln(L.t+L.x/2,L.lw,WBD_LC)].join(",");   // white gaps over the midline make its dashes
+  s.backgroundSize="100% "+P+",100% "+P+","+f(2*L.d)+" "+P+",100% "+P;
+}
+function wbdLinesDraw(g,W,H){
+  const L=wbdLn(W);
+  g.strokeStyle=WBD_LC; g.lineWidth=L.lw; g.beginPath();
+  for(let y=L.t;y<H;y+=L.p){ g.moveTo(0,y); g.lineTo(W,y); const m=y+L.x/2; if(m<H) for(let a=0;a<W-1;a+=2*L.d){ g.moveTo(a,m); g.lineTo(Math.min(W,a+L.d),m); } }
+  g.stroke(); g.strokeStyle=WBD_BC; g.lineWidth=L.bw; g.beginPath();
+  for(let y=L.t+L.x;y<H;y+=L.p){ g.moveTo(0,y); g.lineTo(W,y); }
+  g.stroke();
+}
+// WBDLINES_END
 // WBDSAVE_START — 💾 Save on the whiteboard (Sara's answer 2026-11-20: a board is kept only "when someone taps Save"; PLAN §7.2;
 //   Adrienne's "go with her answers and build" 2026-11-22). Scratch stays the default — nothing is written until Save is tapped.
 //   · WHO: Mom (momHere()), on a board opened from Today's card with a unit day (wbdOpen({uid, dayId})). Not on a board opened
@@ -44537,6 +44632,7 @@ function wbdJpeg(v){
   g.fillStyle="#fff"; g.fillRect(0,0,W,H);
   if(v.bg==="grid"){ const st=W/WBD_GRID; g.strokeStyle="#bfdbfe"; g.lineWidth=Math.max(1,W/800); g.beginPath();
     for(let x=st;x<W-1;x+=st){ g.moveTo(x,0); g.lineTo(x,H); } for(let y=st;y<H-1;y+=st){ g.moveTo(0,y); g.lineTo(W,y); } g.stroke(); }
+  if(v.bg==="lines"&&typeof wbdLinesDraw==="function") wbdLinesDraw(g,W,H);   // WBDLINES
   g.drawImage(ink,0,0,W,H);
   return c.toDataURL("image/jpeg",0.85);
 }
