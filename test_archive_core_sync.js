@@ -69,7 +69,8 @@ const blockA = SRC.indexOf("// ARCHCORE_START"), blockB = SRC.indexOf("// ARCHCO
   ok("the week closes write the whole week ({\"\":entry}) — both of them", (outside.match(/archWrite\(oldWK,\{"":entry\}\)/g) || []).length === 2);
   ok("one multi-path update for both copies; the full record alone if it's refused", /pr=db\.ref\(\)\.update\(both\)/.test(block) && (block.match(/db\.ref\(\)\.update\(full\)/g) || []).length === 2);
   ok("the 📚 card is on Settings, after the pictures card", /pinHtml\+=picMoveCardHtml\(\);[^\n]*\n\s*if\(typeof archCoreCardHtml==="function"\) pinHtml\+=archCoreCardHtml\(\);/.test(SRC));
-  ok("nothing new listens at start (the card reads the copy once, when Mom opens it)", !/archiveCore"\)\.on\(/.test(SRC) && /db\.ref\("archiveCore"\)\.once\("value"\)/.test(block));
+  const noBoot = SRC.replace(/\/\/ ARCHBOOT_START[\s\S]*?\/\/ ARCHBOOT_END/, "");   // ARCHBOOT (slice 4, 11/23) is the one start-up listener on the copy — test_archive_boot_core.js
+  ok("nothing else listens to the copy (the card reads it once, when Mom opens it)", !/archiveCore"\)\.on\(/.test(noBoot) && /db\.ref\("archiveCore"\)\.once\("value"\)/.test(block));
 }
 
 // ── worlds ──────────────────────────────────────────────────────────────────────────────────────────────────────────────

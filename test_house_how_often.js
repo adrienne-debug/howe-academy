@@ -241,11 +241,14 @@ console.log("\n── zero writes; not Mom: no taps ──");
   ok("not Mom: the card draws, no row opens a chore card", /📊 How often/.test(h) && !/hcOpen\(/.test(h) && /Mop the floor/.test(h));
 }
 
+// HOUSEQUIET (slice B of the missed-chores design, 2026-11-23) changes on purpose what the Household pages draw (test_house_quiet.js);
+// every caller asks typeof first, so this comparison with the app before runs on house.js with that block cut out.
+const noQ = s => { const i = s.indexOf("// HOUSEQUIET_START"); return i < 0 ? s : s.slice(0, i) + s.slice(s.indexOf("\n", s.indexOf("// HOUSEQUIET_END")) + 1); };
 console.log("\n── the rest of the three pages and the chore card: byte for byte the app before this change (8f71835c) ──");
 { let base = null; try { base = cp.execSync("git show 8f71835c:house.js", { cwd: __dirname, maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] }).toString(); } catch (e) { base = null; }
   if (!base) console.log("  (skipped: commit 8f71835c is not in this checkout)");
   else for (const [name, meta] of [["plan off", { takeover: 1 }], ["preview", { takeover: 1, engine: { mode: "preview", on: TODAY } }]]) {
-    const N = mkC({ meta }), O = mkC({ meta, mk: { house: false }, base });
+    const N = mkC({ meta, mk: { house: false }, base: noQ(V.HJS) }), O = mkC({ meta, mk: { house: false }, base });   // HOUSEQUIET: noQ
     const cut = (c, h) => { const k = c.hoCardHTML(); const i = h.indexOf(k); return i < 0 ? null : h.slice(0, i) + h.slice(i + k.length); };
     for (const rid of ["kitchen", "living", "entry", ""]) { const a = roomPage(N, rid), b = roomPage(O, rid);
       ok(name + ": " + (rid || "🏠 Whole house") + " = before, apart from the 📊 card", a !== b && cut(N, a) === b, [a.length, b.length]); }
