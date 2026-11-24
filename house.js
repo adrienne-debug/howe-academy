@@ -1524,7 +1524,7 @@ function lgRow(slot,kid,D,i,st){
     if(lgHeld(kid,rec.bid)) return Object.assign(r,{ic:"⏸",note:"waiting for your ✓ · "+p+" ⭐",held:p});
     if(lgUnpaid(kid,rec.bid)) return Object.assign(r,{ic:"✅",note:"not paid (your ✗ on its stars)"});
     r.ic="✅"; r.pts=p;
-    if(due) return r;
+    if(due){ if(p<full&&typeof rtDailyRow==="function"&&rtDailyRow(st)){ r.sh=full-p; r.note="paid "+p+" of "+full+" ⭐"; } return r; }   // CHOREDAILY (C5): a daily after 2+ missed days
     if(!/^wk:/.test(cad)||!lgCarried(slot)){ if(cad==="asneeded") r.note="as needed"; return r; }
     const E=lgDueBefore(st,D), n=E?D.k-E.k:0; r.sh=Math.max(0,full-p);
     r.note=(p<full?"paid "+p+" of "+full+" ⭐":"done late")+(E?" · due "+lgWd(E.iso):"")+((E&&rtWaitAsBefore(st))?" · "+n+" day"+(n>1?"s":"")+" late":"");
@@ -1533,7 +1533,7 @@ function lgRow(slot,kid,D,i,st){
   if(due){
     if(typeof amGet==="function"&&amGet(kid,slot,i,D.iso)) return Object.assign(r,{ic:"🌅",note:"sent to "+(D.k===0?"tomorrow":"the next")+" morning"});
     r.c=0; r.want=full;
-    if(D.k===0) return Object.assign(r,{ic:"○",note:"not done yet"});
+    if(D.k===0){ const dl=(typeof rtDailyNote==="function")?rtDailyNote(slot,kid,i,st):""; return Object.assign(r,{ic:"○",note:"not done yet"+(dl?" · "+dl:"")}); }   // CHOREDAILY (C5)
     const f=lgFate(slot,kid,i,st,D);
     return Object.assign(r,{ic:"✖",note:"not done"+(!f?"":f.done?" · done "+lgWd(f.done.iso)+", late (see that day)":f.gone?" · gone from "+who+"'s list "+lgWd(f.gone.iso):" · still on "+who+"'s list today")}); }
   if(D.k===0&&lgCarried(slot)){ const n=(typeof mdLateDays==="function")?mdLateDays(slot,kid,D.dn,i,st):0;
