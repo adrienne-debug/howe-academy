@@ -1814,7 +1814,7 @@ function lgRulesGoPoints(){ if(!lgRulesOk()) return false; lgClose(); lgRulesOpe
 //   are kept on the ✕ record (waved/<wk>/<day>/<kid>/<slot>step<i>/c3) and the bank line removed; its Undo puts both back exactly,
 //   before the ✕ record is removed. "↩ Put back" is left out (ledger design §3). Writes only when db && !_dryRun().
 //   📊 How often: a ○ whose drop took stars reads "○ −2", or "○ given back" (hoDrop, from the same lines).
-function lgDropOk(){ return (typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD()); }   // the pop-up's own gate: Mom, or Dad's link
+function lgDropOk(){ return (typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD()&&typeof dadAwardOk==="function"&&dadAwardOk()); }   // Mom, or Dad on his own link WITH his code in (➖ Excuse's gate) — her answer 2026-11-24 "Yes, ask for code": a kid holding a locked Dad device sees the row, not the buttons
 function lgDropLine(kid,id){ return (id&&bank[kid]&&bank[kid].adjustments&&bank[kid].adjustments[id])||null; }
 function lgDropDone(){ if(typeof renderAll==="function"){ try{ renderAll(); }catch(e){} } if(document.getElementById("lg-pop")) lgDraw(); }
 function lgDropDay(wk,dn){ for(let k=0;k>=lgMin();k--){ const D=lgDay(k); if(D&&D.wk===wk&&D.dn===dn) return D; } return null; }

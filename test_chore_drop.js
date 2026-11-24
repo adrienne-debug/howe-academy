@@ -280,9 +280,19 @@ for (let n = 0; n <= 32; n++) {
     m = w.mark(); const u1 = A.run("lgDropUndo(" + args + ")"); await w.flush();
     ok("H · Undo: ONE update — that exact line back (byte for byte), the gb mark removed; balance back", u1 === true && J(w.get("bank/kid_a/adjustments/" + S.vacLine.id)) === J(k) && w.get("routineLog/kid_a/" + S.vacMiss._wk + "/tuesday/" + S.vacMiss._k + "/drop/gb") == null && writes(w, m).length === 1 && bal(B, "kid_a") === b0, WS(w, m));
     ok("…the log line is the one filed Friday again (byte for byte)", J(w.get("routineLog/kid_a/" + S.vacMiss._wk + "/tuesday/" + S.vacMiss._k)) === J((({ _wk, _dn, _k, ...r }) => r)(S.vacMiss)));
-    // Dad's link gives it back
+    // Dad's link: his code first (her answer 2026-11-24 "Yes, ask for code") — a kid holding a locked Dad device sees the row, not the buttons
+    const gp = "routineLog/kid_a/" + S.vacMiss._wk + "/tuesday/" + S.vacMiss._k + "/drop/gb";
+    Dd.run("dadUnlocked=false;1"); const bL = bal(B, "kid_a"), rL = txt(goneRow(LG(Dd, "lgGo('kid_a',0,0)"), "Vacuum the den"));
+    ok("H · Dad's link LOCKED: the row still reads \"… · 2 ⭐ taken\", with no ⭐ Give stars back button", /Vacuum the den due Tue, not done in time · 2 ⭐ taken$/.test(rL) && !/Give stars back/.test(LG(Dd, "lgGo('kid_a',0,0)")), rL);
+    m = w.mark(); const gL = Dd.run("lgDropGive(" + args + ")"); await w.flush();
+    ok("…a tap anyway (lgDropGive) is refused: zero writes, the line stays, the balance unchanged", gL === false && writes(w, m).length === 0 && !!w.get("bank/kid_a/adjustments/" + S.vacLine.id) && w.get(gp) == null && bal(B, "kid_a") === bL, WS(w, m));
+    Dd.run("dadUnlocked=true;1");
     const gd = Dd.run("lgDropGive(" + args + ")"); await w.flush();
-    ok("H · Dad's link: ⭐ Give stars back works the same, marked by:\"dad\"; the row says \"⭐ Dad gave back +2 ⭐\" and his Undo shows", gd === true && w.get("routineLog/kid_a/" + S.vacMiss._wk + "/tuesday/" + S.vacMiss._k + "/drop/gb/by") === "dad" && /⭐ Dad gave back \+2 ⭐ Undo/.test(txt(goneRow(LG(Dd, "lgGo('kid_a',0,0)"), "Vacuum the den"))));
+    ok("H · Dad's link UNLOCKED (code in): ⭐ Give stars back works the same, marked by:\"dad\"; the row says \"⭐ Dad gave back +2 ⭐\" and his Undo shows", gd === true && w.get(gp + "/by") === "dad" && w.get("bank/kid_a/adjustments/" + S.vacLine.id) == null && bal(B, "kid_a") === bL + 2 && /⭐ Dad gave back \+2 ⭐ Undo$/.test(txt(goneRow(LG(Dd, "lgGo('kid_a',0,0)"), "Vacuum the den"))));
+    Dd.run("dadUnlocked=false;1"); const rU = txt(goneRow(LG(Dd, "lgGo('kid_a',0,0)"), "Vacuum the den"));
+    ok("H · locked again: the row shows \"⭐ Dad gave back +2 ⭐\" with no Undo button", /· 2 ⭐ taken ⭐ Dad gave back \+2 ⭐$/.test(rU), rU);
+    m = w.mark(); const uL = Dd.run("lgDropUndo(" + args + ")"); await w.flush();
+    ok("…a tap anyway (lgDropUndo) is refused: zero writes, still given back", uL === false && writes(w, m).length === 0 && w.get(gp + "/by") === "dad" && w.get("bank/kid_a/adjustments/" + S.vacLine.id) == null && bal(B, "kid_a") === bL + 2, WS(w, m));
     // ➖ Excuse on a dropped row (the window, −3): gives it back; Undo restores exactly
     const wi = /step(\d+)$/.exec(dropOf(w, "kid_a", "Wipe the window")[0].id)[1], wline = clone(dropOf(w, "kid_a", "Wipe the window")[0]); delete wline.id;
     const wmiss = clone(w.get("routineLog/kid_a/" + S.vacMiss._wk + "/tuesday/miss_chores_" + wi)), b1 = bal(B, "kid_a");
