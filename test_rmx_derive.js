@@ -42,7 +42,7 @@ console.log("\n# block hygiene");
 const code = block.split("\n").filter(l => !/^\s*\/\//.test(l)).map(l => l.replace(/\s+\/\/ .*$/, "")).join("\n");   // comments may cite the live incident; code may not name a kid or a book
 ok("no kid names / Howe subject keys in the code (comments excepted)", !/lincoln|ellis|lucy|julian|eggspress|hwt|singapore|read_detect/i.test(code));
 ok("no Firebase writes in the block", !/db\.ref|\.set\(|\.update\(|\.remove\(|rmWrite\(/.test(block));
-ok("never cbRemainingContent (it writes cbBacklogStash), never ceQuickPause", /Never cbRemainingContent/.test(block) && !/cbRemainingContent\(|ceQuickPause/.test(block));
+ok("never cbRemainingContent (it writes cbBacklogStash)", /Never cbRemainingContent/.test(block) && !/cbRemainingContent\(/.test(block));
 ok("rmStripHTML hooks the group guarded by typeof (test_roadmap's vm has no RMX)", /if\(typeof rmxStripHTML==="function"\)\{ try\{ h\+=rmxStripHTML\(kid\); \}catch\(e\)\{\} \}/.test(rblock));
 ok("hook sits between the strip header and the inline form", rblock.indexOf('rmxStripHTML(kid)') > rblock.indexOf("➕ Add") && rblock.indexOf('rmxStripHTML(kid)') < rblock.indexOf("if(rmEdit&&rmEdit.kid===kid&&!rmEdit.id) h+=rmFormHTML(kid)"));
 
@@ -75,7 +75,6 @@ const ctx = {
   gvFilled: v => !!(v && v !== "—" && v !== "nan" && String(v).trim()),
   gvDealtDates(kid, sk) { return ctx.dealt[sk] || {}; },
   cbRemainingContent() { throw new Error("cbRemainingContent must never be called — it writes cbBacklogStash"); },
-  ceQuickPause() { throw new Error("never"); },
   ceOpenEdit(kid, sk) { opened.push(kid + "/" + sk); },
   // step 2: fixed-date classes + 🏡 Family time, in miniature
   fxIsClass(s) { return !!(s && s.fixedTime); },
@@ -293,7 +292,7 @@ console.log("\n# strip HTML");
   reset({ s1: sub(10, { display: "Book <One>" }) }); doneN("s1", 5); ctx.proj.s1 = projTo(plus(30));
   const h = T("rmxStripHTML")(K);
   ok("group heading + a red row with the escaped text", /From the curriculum/.test(h) && /\u{1F534}/u.test(h) && /Book &lt;One&gt; runs out · 5 left · Nov 23/.test(h), h);
-  ok("row opens the Builder (rmxOpen → ceOpenEdit), nothing else", /onclick="rmxOpen\('kidx','s1'\)"/.test(h) && !/rmDone|rmEdit|ceQuickPause|rmWrite/.test(h));
+  ok("row opens the Builder (rmxOpen → ceOpenEdit), nothing else", /onclick="rmxOpen\('kidx','s1'\)"/.test(h) && !/rmDone|rmEdit|rmWrite/.test(h));
   T("rmxOpen")(K, "s1");
   ok("rmxOpen calls ceOpenEdit(kid, sk)", opened.join() === "kidx/s1", opened);
   reset({ a: sub(10, { display: "Book A" }), b: sub(20, { display: "Book B" }) }, { L1: { units: [{ sk: "a" }, { sk: "b" }] } }); doneN("a", 8); ctx.proj.a = projTo(plus(4));

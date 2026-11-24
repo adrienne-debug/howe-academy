@@ -43,7 +43,7 @@ function world(o) {
     console, Set, Math, Object, Array, String, Number, JSON, parseInt, Date,
     currData: { subjects: { kid: subjects }, done: { kid: done }, lessons: { kid: {} }, lanes: o.lanes ? { kid: JSON.parse(JSON.stringify(o.lanes)) } : undefined, dayCap: {} },
     db: { ref: p => ({ set: v => writes.push([p, "set", JSON.parse(JSON.stringify(v))]), remove: () => writes.push([p, "remove"]), update: v => writes.push([p, "update", v]) }) },
-    writes, cbKid: "kid", cbMsg: "", lnEdit: null, lnUndo: null, cbNewGroup: null, cbRulesOpen: true, cbFamilyRulesOpen: false, cbDayPinScroll: 0,
+    writes, cbKid: "kid", cbMsg: "", lnEdit: null, lnUndo: null, cbNewGroup: null, cbRulesOpen: true, cbDayPinScroll: 0,
     renderAll: () => { ctx.renders = (ctx.renders || 0) + 1; }, confirm: () => (o.confirm === undefined ? true : o.confirm),
     DEFAULT_DAY_CAP: 2, CURR_DEV_EMOJI: {}, CURR_DEV_LABEL: {}, document: { getElementById: () => null },
     cbDayCap: () => 0, cbAltGroups: () => ({}), cbOverCapDays: () => 0, cbGroupOf: () => null, rulesFamilyCardsHTML: () => "",

@@ -51,7 +51,7 @@ const ctx = {
   cbDefaultForm(kid, sk) { const s = ctx.currData.subjects[kid][sk] || {}; return { tpw: s.timesPerWeek || 3, allowedDays: (s.allowedDays || []).slice() }; },
   gvDerivedColumn(kid, sk) { projCalls.push(sk); const p = ctx.proj[sk]; return p === undefined ? null : p; },
   gvFilled: v => !!(v && v !== "—" && String(v).trim()), gvDealtDates(kid, sk) { return ctx.dealt[sk] || {}; },
-  cbRemainingContent() { throw new Error("never"); }, ceQuickPause() { throw new Error("never"); }, ceOpenEdit(kid, sk) { opened.push(kid + "/" + sk); },
+  cbRemainingContent() { throw new Error("never"); }, ceOpenEdit(kid, sk) { opened.push(kid + "/" + sk); },
   fxIsClass(s) { return !!(s && s.fixedTime); }, fxDateList(s) { return (s && Array.isArray(s.fixedDates) && s.fixedDates.length) ? s.fixedDates : null; },
   famProgress: {}, famBlocks: {}, famMaps: {}, famDefs() { return ctx.famBlocks; }, famList(v) { return Array.isArray(v) ? v.filter(Boolean) : (v ? Object.keys(v).map(k => v[k]) : []); },
   famTrack(it) { return (it && it.track && (it.track.mode === "week" || it.track.mode === "seq")) ? it.track : null; }, famLessonMap() { return { byDate: {}, ends: null, none: true }; }, famSheetOpen() {},

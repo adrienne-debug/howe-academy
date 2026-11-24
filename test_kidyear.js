@@ -12,7 +12,7 @@
  *   (3) cbRenderRules(col) is byte-identical to main's for two fixtures, and is exactly cap + lanes + table + door;
  *   (4) the lane editor keeps lnEdit across a tab switch and a re-render; closing the panel drops it (as before);
  *   (5) a 🛤 lane band tap on the Grid and the card's Lane shortcuts open the Lanes tab (on that lane / seeded);
- *   (6) renderCurrBuilder (the Builder tab) is reached from no onclick on the page;
+ *   (6) renderCurrBuilder (the Builder tab) is reached from no onclick on the page (since slice 3b: it is gone);
  *   (7) the three moved doors: 📋 Plan resources draws in the card's Links & supplies section; ⤒ Delete & shift up and
  *       Add it back… preview in the card's Pace section; Copy to another kid (on Fix-ups) lands on the copy's card;
  *   (8) KIDYEAR added no ref() path pattern anywhere in index.html (its merge 5e9050fa vs 7ca02a66), and the block
@@ -70,7 +70,7 @@ function panelWorld(S, o) {
     PACE_DEFAULT_PLANS: {}, celebSongs: [{ id: "s1", name: "Song" }], buildSubjectLessons: (k, sk) => ((subjects[sk] || {}).lessonSeq || []).map((l, i) => ({ lesson: l, dayNum: 90000 + i })), computeSubjectCursor: () => 0, formatPlanDate: d => String(d), HA_LS: { setItem() {}, getItem() { return null; } },
     db: { ref: p => ({ set: v => log.push([p, "set", JSON.parse(JSON.stringify(v === undefined ? null : v))]), remove: () => log.push([p, "remove"]), update: v => log.push([p, "update", JSON.parse(JSON.stringify(v))]) }) },
     log, gvKid: "kid", cbKid: "kid", cbMsg: "", lnEdit: null, lnUndo: o.undo ? { kid: "kid", id: "L1", label: "updated lane “Math”", prev: null } : null,
-    cbRulesOpen: true, cbFamilyRulesOpen: false, cbDayPinScroll: 0, cbNewGroup: null, ceSessEdit: o.sessOpen ? "fall" : null,
+    cbRulesOpen: true, cbDayPinScroll: 0, cbNewGroup: null, ceSessEdit: o.sessOpen ? "fall" : null,
     KID_COLOR: { kid: "#123456" }, ROSTER: ["kid", "other"], DEFAULT_DAY_CAP: 2, CURR_DEV_EMOJI: { paper: "📄" }, CURR_DEV_LABEL: { paper: "Paper" },
     momModeActive: true, adminPinUnlocked: true, renders: 0, renderAll: () => { ctx.renders++; }, confirm: () => true, setTimeout: () => 0,
     document: { getElementById: () => null }, cbDayCap: () => 180, cbOverCapDays: () => 0, cbAltGroups: () => ({}), cbGroupOf: () => null, rulesFamilyCardsHTML: () => "",
@@ -275,15 +275,15 @@ function buildersOf(S) {   // functions that open the Builder tab (or draw it)
 function callers(S, name) { const C = stripComments(S); const re = new RegExp("(^|[^\\w$.])" + name.replace(/\$/g, "\\$") + "\\(", "g"); let n = 0, m; while ((m = re.exec(C))) { if (C.slice(Math.max(0, m.index - 10), m.index + 1).indexOf("function") >= 0) continue; n++; } return n; }
 {
   const now = buildersOf(src);
-  ok("only these open the Builder tab: the router (on a 'builder' arg), cbJumpTo, gvJumpBuilder, renderCurriculumView's own branch", JSON.stringify(now) === JSON.stringify(["cbJumpTo", "gvJumpBuilder", "momHQGo", "renderCurriculumView"]), now);
+  ok("nothing opens the Builder tab any more (slice 3b removed the router case, cbJumpTo, gvJumpBuilder and the branch)", JSON.stringify(now) === "[]", now);
   ok("⤒ Delete & shift up, Add it back… and Copy to another kid no longer go there", ["gvSelShiftUp", "gvAuditFixGap", "cbCopyTo"].every(n => { const b = fn(n); return !/currInnerTab\s*=|cbOpenSubj\(|cbSetKid\(|cbRunPreview\(/.test(b); }));
   ok("cbJumpTo and gvJumpBuilder are called by nothing", callers(src, "cbJumpTo") === 0 && callers(src, "gvJumpBuilder") === 0, [callers(src, "cbJumpTo"), callers(src, "gvJumpBuilder")]);
   const C = stripComments(src);
   ok("no live HQ row or call passes 'builder' to momHQGo", !/momHQGo\(\\?['"]builder/.test(C) && !/_hqRow\("builder"/.test(C));
-  ok("no setCurrInnerTab('builder') anywhere, and the one-chip bar offers only the Grid", !/setCurrInnerTab\(\\?['"]builder/.test(C) && /\["grid"\]\.forEach\(tab=>\{/.test(fn("renderCurriculumView")));
+  ok("no setCurrInnerTab anywhere, and no one-chip bar (slice 3b)", !/setCurrInnerTab\(/.test(C) && !/\["grid"\]\.forEach\(tab=>\{/.test(fn("renderCurriculumView")));
   const attrs = []; { const re = /\son(click|change|input)="([^"]*)"/g; let m; while ((m = re.exec(C))) attrs.push(m[2]); }
   ok("no onclick/onchange text on the page names renderCurrBuilder, the builder tab, cbJumpTo or gvJumpBuilder", attrs.length > 1000 && !attrs.some(a => /renderCurrBuilder|currInnerTab=\\?'builder|cbJumpTo\(|gvJumpBuilder\(/.test(a)), attrs.filter(a => /builder|cbJumpTo|gvJumpBuilder/i.test(a)).slice(0, 5));
-  ok("renderCurrBuilder is still defined (it goes in slice 3b, after the audit)", fn("renderCurrBuilder").length > 1000);
+  ok("renderCurrBuilder is gone (slice 3b, after the audit)", fn("renderCurrBuilder") === "");
   if (MAIN) { const was = buildersOf(MAIN); ok("(the check bites: on main the three moved doors opened the Builder tab)", ["gvSelShiftUp", "gvAuditFixGap"].every(n => was.indexOf(n) >= 0) && /cbOpenSubj\(sk\);/.test(braceSlice(MAIN, "cbCopyTo")), was); }
 }
 
