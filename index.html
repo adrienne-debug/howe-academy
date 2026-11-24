@@ -56868,8 +56868,9 @@ const SC_MSG={
   noLib:"The spreadsheet reader couldn’t load (offline?). Save the sheet as CSV and pick that, or copy the cells and paste them in the box.",
   locked:"That spreadsheet is locked with a password. Open it, copy the cells and paste them in the box.",
   numbers:"That’s a Numbers file — in Numbers, Share ▸ Export ▸ Excel, then pick the Excel file. Or copy the cells and paste them in the box.",
-  type:"The app reads Excel (.xlsx, .xls), CSV, TSV, .txt and PDF files here. For this one, copy the list and paste it in the box."};
-const SC_ACCEPT=".xlsx,.xlsm,.xls,.ods,.csv,.tsv,.txt,.pdf,text/csv,text/tab-separated-values,text/plain,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  type:"The app reads Excel (.xlsx, .xls), CSV, TSV, .txt, Word (.docx) and PDF files here. For this one, copy the list and paste it in the box."};   // DOCXCARDS: + Word
+const SC_ACCEPT=".xlsx,.xlsm,.xls,.ods,.csv,.tsv,.txt,.pdf,text/csv,text/tab-separated-values,text/plain,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"+
+  ",.docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword";   // DOCXCARDS: Word files too (.doc only to say it can't be read)
 const SC_BACK_MORE=/^(?:notes?|info|details?|about|examples?|fun facts?|what it is|what it means)$/i;
 const SC_PIC_WORDS=/^(?:pictures?|images?|photos?|pics?|picture files?|image files?|file ?names?|links?|urls?)$/i;
 const SC_PIC_CELL=/^(?:https?:\/\/\S+|[^\s\/\\]+\.(?:jpe?g|png|gif|webp|heic|heif|bmp|svg))$/i;
@@ -56918,7 +56919,7 @@ function sheetLines(rows,pick){
 function scKind(name,type){ const n=String(name||"").toLowerCase(), m=String(type||"").toLowerCase(), ext=(/\.([a-z0-9]+)$/.exec(n)||[])[1]||"";
   if(/^(?:xlsx|xlsm|xls|ods)$/.test(ext)) return "book";
   if(ext==="csv") return "csv"; if(ext==="tsv"||ext==="tab") return "tsv"; if(ext==="txt"||ext==="text") return "txt"; if(ext==="pdf") return "pdf";
-  if(ext==="docx"||ext==="docm") return "docx"; if(ext==="doc") return "doc"; if(ext==="numbers") return "numbers";
+  if(ext==="docx"||ext==="docm") return "docx"; if(ext==="doc") return "doc"; if(ext==="numbers") return "numbers"; if(ext==="pages") return "pages";
   if(ext) return "other";
   if(/spreadsheetml|ms-excel|opendocument\.spreadsheet/.test(m)) return "book"; if(m==="text/csv") return "csv"; if(m==="text/tab-separated-values") return "tsv";
   if(m==="text/plain") return "txt"; if(m==="application/pdf") return "pdf"; if(/wordprocessingml/.test(m)) return "docx"; if(m==="application/msword") return "doc";
@@ -56982,12 +56983,15 @@ async function sheetCardsPick(input){
   const mine=()=>scMine(S)&&sheetCards.seq===seq;
   const say=m=>{ if(mine()){ sheetCards.busy=false; sheetCards.err=m; sheetCardsDraw(); } return null; };
   if(kind==="numbers") return say(SC_MSG.numbers);
-  if(!/^(?:book|csv|tsv|txt)$/.test(kind)) return say(SC_MSG.type);
+  if((kind==="doc"||kind==="pages")&&typeof DXC_MSG!=="undefined") return say(DXC_MSG[kind]);   // DOCXCARDS: old Word / Pages — said plainly
+  const word=kind==="docx"&&typeof docxReadText==="function";   // DOCXCARDS
+  if(!word&&!/^(?:book|csv|tsv|txt)$/.test(kind)) return say(SC_MSG.type);
   if((+file.size||0)>SC_MAX_BYTES) return say(SC_MSG.big);
   let bytes; try{ bytes=new Uint8Array(await scBytes(file)); }catch(e){ return say(SC_MSG.open); }
   if(!bytes.length) return say(SC_MSG.empty);
   let tabs=null, text=null;
-  if(kind==="book"){ let X=null; try{ X=(typeof haNeedXlsx==="function")?await haNeedXlsx():null; }catch(e){ X=null; }
+  if(word){ try{ text=await docxReadText(bytes); }catch(e){ return say(String(e&&e.message||e)); } }   // DOCXCARDS: paragraphs + tables → lines
+  else if(kind==="book"){ let X=null; try{ X=(typeof haNeedXlsx==="function")?await haNeedXlsx():null; }catch(e){ X=null; }
     if(!X||!X.utils||typeof X.read!=="function") return say(SC_MSG.noLib);
     try{ tabs=sheetBookTabs(X,bytes); }catch(e){ return say(/password|encrypt/i.test(String(e&&e.message||e))?SC_MSG.locked:SC_MSG.open); } }
   else { const t=scDecode(bytes), d=kind==="tsv"?"\t":kind==="csv"?scCsvDelim(t):(scTabbed(t)?"\t":"");
@@ -57013,7 +57017,7 @@ function sheetCardsHead(on){ const S=scSheet(), K=sheetCards; if(!scMine(S)||!K.
 const SC_BTN="display:inline-flex;align-items:center;gap:4px;min-height:40px;padding:8px 14px;border-radius:10px;border:1.5px solid #a7f3d0;background:#f0fdf4;color:#15803d;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;box-sizing:border-box";
 const SC_CHIP=on=>"padding:8px 12px;min-height:40px;border-radius:999px;border:1.5px solid "+(on?"#2d6a4f":"var(--border)")+";background:"+(on?"#2d6a4f":"#fff")+";color:"+(on?"#fff":"#374151")+";font-size:12.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif";
 const SC_SEL="flex:1 1 150px;min-width:0;max-width:100%;min-height:44px;box-sizing:border-box;padding:6px 8px;border:1.5px solid var(--border);border-radius:9px;background:#fff;font-size:16px;font-family:'DM Sans',sans-serif";
-function sheetCardsBtnHTML(){ return '<label data-sc-door="1" style="'+SC_BTN+'"><input type="file" id="card-sheet-xfile" accept="'+SC_ACCEPT+'" onchange="sheetCardsPick(this)" style="display:none">\u{1F4C4} File <span style="font-weight:600;font-size:11.5px">(Excel · CSV)</span></label>'; }
+function sheetCardsBtnHTML(){ return '<label data-sc-door="1" style="'+SC_BTN+'"><input type="file" id="card-sheet-xfile" accept="'+SC_ACCEPT+'" onchange="sheetCardsPick(this)" style="display:none">\u{1F4C4} File <span style="font-weight:600;font-size:11.5px">(Excel · CSV'+(typeof docxReadText==="function"?" · Word":"")+')</span></label>'; }   // DOCXCARDS: + Word
 function sheetCardsPanelHTML(S){ return '<div id="card-sheet-cols">'+sheetCardsPanelInner(S)+'</div>'; }
 function sheetCardsDraw(){ if(typeof document==="undefined") return; const el=document.getElementById("card-sheet-cols"); if(el) el.innerHTML=sheetCardsPanelInner(scSheet()); }
 function scColLabel(c){ return c.letter+(c.head?" · "+c.head:(c.sample?" · e.g. "+c.sample.slice(0,24)+(c.sample.length>24?"…":""):"")); }
@@ -57043,6 +57047,69 @@ function sheetCardsPanelInner(S){ const K=sheetCards; if(!K||!S||K.S!==S) return
   h+=notes.map(t=>'<div style="font-size:11px;color:#92400e;margin-top:5px;line-height:1.45">'+t+'</div>').join("");
   return h+'</div>'; }
 // SHEETCARDS_END
+// DOCXCARDS_START — 📄 File also reads a Word file (.docx) on Mom's device — no key, no AI, nothing uploaded (her ask 2026-11-19:
+//   "Mom could import … an Excel sheet"; her go 2026-11-22/23: "go with her answers and build"; PLAN_unit_easy_import_2026-11-19.md
+//   §1.6, §3 Files, slice D).
+//   · A .docx IS a zip: kitZipEntries (the zip reader the recipe import uses) opens it and word/document.xml is walked by
+//     docxXmlLines (pure): each paragraph is a line (a soft line break starts a new one; a tab stays a tab); a Heading / Title
+//     paragraph gets "# " so the splitter sees a heading; each table row is ONE line with its cells joined by a tab, so a
+//     2-column table arrives as name | meaning and its "Word | Meaning" row as the column names. Deleted (tracked) text, field
+//     codes, the fallback copy of a text box and paragraph settings are left out. Word's list numbers are formatting, so the
+//     lines come through clean.
+//   · The text lands in the paste box like a .txt list and the SAME check screen reads it (green rows, no per-row tick);
+//     Add = CHECKFIX's writes, unchanged. The 60,000-character cap and the 15 MB cap are SHEETCARDS's.
+//   · An old binary Word file (.doc) can't be read this way: she is told so plainly, with what to do (Save As .docx, or copy and
+//     paste). A password-locked .docx, a file that isn't really a Word file, or one with no text (only pictures) → one line.
+//     Pages / .odt / .rtf are not read (out of scope): the plain "copy and paste" line; Pages gets its own Export ▸ Word line.
+//   · Mom-only (SHEETCARDS checks); no kid's name; no database writes.
+const DXC_MSG={
+  doc:"That’s an older Word file (.doc), which the app can’t read. In Word, File ▸ Save As ▸ Word Document (.docx) and pick that — or copy the text and paste it in the box.",
+  pages:"That’s a Pages file — in Pages, Share ▸ Export ▸ Word, then pick the Word file. Or copy the text and paste it in the box.",
+  open:"Couldn’t open that Word file. Save it again in Word as .docx, or copy the text and paste it in the box.",
+  locked:"That Word file is locked with a password. Open it, copy the text and paste it in the box.",
+  none:"That Word file has no text the app can read (only pictures?). Copy the text and paste it in the box."};
+const DXC_SKIP={"w:instrText":1,"w:delText":1,"w:del":1,"w:moveFrom":1,"mc:Fallback":1,"w:pPr":1,"w:rPr":1,"w:sectPr":1,"w:tblPr":1,"w:tcPr":1,"w:trPr":1};
+function docxUnesc(s){ return String(s).replace(/&(?:#(\d+)|#x([0-9a-f]+)|(amp|lt|gt|quot|apos));/gi,(m,d,h,n)=>{ try{ return d?String.fromCodePoint(+d):h?String.fromCodePoint(parseInt(h,16)):({amp:"&",lt:"<",gt:">",quot:'"',apos:"'"})[n.toLowerCase()]; }catch(e){ return ""; } }); }
+// word/document.xml → its lines (pure): paragraphs, and each table row as cells joined by a tab
+function docxXmlLines(xml){
+  const out=[], P=[], T=[], re=/<(\/?)([A-Za-z][\w.:-]*)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>|([^<]+)/g; let m, skip=0, inT=false;
+  const push=(text,head)=>{ String(text).split("\n").forEach(l=>{ l=l.replace(/[  ]+/g," ").replace(/^\s+|\s+$/g,""); if(l) out.push((head?"# ":"")+l); }); };
+  const deliver=p=>{ const tb=T[T.length-1]; if(tb&&tb.cell) tb.cell.push(p.buf.replace(/\s+/g," ").trim()); else push(p.buf,p.head); };
+  while((m=re.exec(String(xml||"")))){
+    const close=m[1]==="/", tag=m[2], self=m[4]==="/";
+    if(m[5]!==undefined){ if(!skip&&inT&&P.length) P[P.length-1].buf+=docxUnesc(m[5]); continue; }
+    if(tag==="w:pStyle"&&P.length&&/\bw:val="(?:heading\s*\d*|title|subtitle)"/i.test(m[3])) P[P.length-1].head=true;
+    if(skip){ if(!self) skip+=close?-1:1; continue; }
+    if(!close&&!self&&DXC_SKIP[tag]){ skip=1; continue; }
+    if(tag==="w:t"){ inT=!close&&!self; continue; }
+    if(!close){
+      if(tag==="w:p"){ if(!self) P.push({buf:"",head:false}); }
+      else if(P.length&&(tag==="w:tab"||tag==="w:ptab")) P[P.length-1].buf+="\t";
+      else if(P.length&&(tag==="w:br"||tag==="w:cr")) P[P.length-1].buf+="\n";
+      else if(P.length&&tag==="w:noBreakHyphen") P[P.length-1].buf+="-";
+      else if(tag==="w:tbl"&&!self) T.push({rows:[],row:null,cell:null});
+      else if(tag==="w:tr"&&T.length&&!self) T[T.length-1].row=[];
+      else if(tag==="w:tc"&&T.length&&!self) T[T.length-1].cell=[];
+      continue; }
+    if(tag==="w:p"){ const p=P.pop(); if(p) deliver(p); }
+    else if(tag==="w:tc"&&T.length){ const t=T[T.length-1]; if(t.row&&t.cell) t.row.push(t.cell.filter(Boolean).join(" ")); t.cell=null; }
+    else if(tag==="w:tr"&&T.length){ const t=T[T.length-1]; if(t.row&&t.row.some(Boolean)) t.rows.push(t.row); t.row=null; }
+    else if(tag==="w:tbl"&&T.length){ const t=T.pop(), lines=t.rows.map(r=>r.map(c=>c.replace(/\t/g," ")).join("\t").replace(/^\t+|\t+$/g,"")).filter(Boolean);
+      const up=T[T.length-1]; if(up&&up.cell) up.cell.push(lines.join(" ").replace(/\t/g," ")); else lines.forEach(l=>out.push(l)); }
+  }
+  return out; }
+// a .docx's bytes → its text (lines joined). Throws Error(plain line).
+async function docxReadText(bytes){
+  const b=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes||[]);
+  if(b.length>=4&&b[0]===0xD0&&b[1]===0xCF&&b[2]===0x11&&b[3]===0xE0) throw new Error(DXC_MSG.locked);   // an encrypted .docx is an OLE box, not a zip
+  if(!(b.length>=4&&b[0]===0x50&&b[1]===0x4B)||typeof kitZipEntries!=="function") throw new Error(DXC_MSG.open);
+  let ents; try{ ents=await kitZipEntries(b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength)); }catch(e){ throw new Error(DXC_MSG.open); }
+  const main=(ents||[]).find(e=>e.name==="word/document.xml")||(ents||[]).find(e=>/^word\/document\d*\.xml$/i.test(e.name));
+  if(!main) throw new Error(DXC_MSG.open);   // a zip, but not a Word file
+  let xml; try{ xml=new TextDecoder("utf-8").decode(main.data); }catch(e){ throw new Error(DXC_MSG.open); }
+  const lines=docxXmlLines(xml); if(!lines.length) throw new Error(DXC_MSG.none);
+  return lines.join("\n"); }
+// DOCXCARDS_END
 // ── Unit card editor: edit shared photo + bio (applies to every enrolled kid) ──
 // ── Batch add: paste many cards into a unit deck at once ("front | back" per line) ────
 // New cards append to the registry deck AND flow immediately to every enrolled kid:

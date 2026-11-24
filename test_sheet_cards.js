@@ -171,7 +171,7 @@ const ids = h => (h.match(/\sid="([^"]+)"/g) || []).map(x => x.replace(/^\sid="|
     const u16 = new Uint8Array([0xFF, 0xFE, ...[..."Guppy\tFisch\n"].flatMap(ch => [ch.charCodeAt(0), 0])]);
     ok("Excel's 'Unicode text' (UTF-16 with its mark) reads", G.scDecode(u16) === "Guppy\tFisch\n");
     ok("an old Excel CSV in Windows-1252 reads (é not lost)", G.scDecode(new Uint8Array([0x43, 0x61, 0x66, 0xE9, 0x2C, 0x78])) === "Café,x");
-    ok("file kinds by name, then type", ["a.xlsx", "a.XLS", "a.ods", "a.csv", "a.tsv", "a.txt", "a.pdf", "a.docx", "a.doc", "a.numbers", "a.pages", "a.jpg"].map(n => G.scKind(n)).join() === "book,book,book,csv,tsv,txt,pdf,docx,doc,numbers,other,other" && G.scKind("noext", "text/csv") === "csv");
+    ok("file kinds by name, then type", ["a.xlsx", "a.XLS", "a.ods", "a.csv", "a.tsv", "a.txt", "a.pdf", "a.docx", "a.doc", "a.numbers", "a.pages", "a.jpg"].map(n => G.scKind(n)).join() === "book,book,book,csv,tsv,txt,pdf,docx,doc,numbers,pages,other" && G.scKind("noext", "text/csv") === "csv");
   }
 
   console.log("\n── the sheet: 📄 File beside 📄 PDF and 📸 Photo ──");
@@ -295,7 +295,7 @@ const ids = h => (h.match(/\sid="([^"]+)"/g) || []).map(x => x.replace(/^\sid="|
   }
   {
     const w = sheetWorld(), S = w.open();
-    for (const [n, re] of [["notes.pages", /The app reads Excel \(\.xlsx, \.xls\), CSV, TSV, \.txt and PDF files/], ["pic.jpg", /copy the list and paste it/], ["sheet.numbers", /That’s a Numbers file — in Numbers, Share ▸ Export ▸ Excel/]]) {
+    for (const [n, re] of [["notes.odt", /The app reads Excel \(\.xlsx, \.xls\), CSV, TSV, \.txt, Word \(\.docx\) and PDF files/], ["pic.jpg", /copy the list and paste it/], ["sheet.numbers", /That’s a Numbers file — in Numbers, Share ▸ Export ▸ Excel/]]) {
       await w.pick(file(n, "PK\u0003\u0004 not for this"));
       ok("a wrong-type file (" + n + ") says what to do; nothing lands", re.test(w.panel()) && w.box() === "" && !S.rows.length, w.panel());
     }
