@@ -103,7 +103,7 @@ console.log("── the control: Mom only, one targeted value ──");
 
 console.log("── wiring: one home, the only writer ──");
 ok("the card is placed once: the kid's section of the Notebook tab, after the look and extra-pages cards",
-  (src.match(/nbLevelCardHtml\(/g) || []).length === 2 && /        lookHtml\+\n        xpHtml\+\n        nbLevelCardHtml\(sel\)\+   \/\/ 📏 NBLEVEL: Notebook level \(Mom\)\n        reviewHtml\+\n/.test(src));
+  (src.match(/nbLevelCardHtml\(/g) || []).length === 2 && /        lookHtml\+\n        xpHtml\+\n        nbLevelCardHtml\(sel\)\+   \/\/ 📏 NBLEVEL: Notebook level \(Mom\)\n(        \(\(typeof nbLadderCardHtml==="function"\)\?nbLadderCardHtml\(sel\):""\)\+   \/\/ 📚 NBLADDER[^\n]*\n)?        reviewHtml\+\n/.test(src));   // NBLADDER (2026-11-24): the Ladders card may follow it
 ok("nbSetGradeOverride is called only from the card", (src.match(/nbSetGradeOverride\(/g) || []).length === 2);
 ok("gradeOverride is touched nowhere outside the block", src.split("gradeOverride").length - 1 === block.split("gradeOverride").length - 1);
 ok("haNbContext hands the generators ctx.grade + ctx.gradeBand (nbGrade unchanged)",
@@ -114,7 +114,9 @@ ok("nbGradeOf (the US Path page's grade — it changes that page's content) is u
   src.indexOf('function nbGradeOf(kid){ const g=((nbRecOf(kid).notebook||{}).gradeLabel); if(g==="K") return "Kindergarten"; if(typeof g==="string"&&g.trim()) return g.trim(); return isPreK(kid)?"Pre-K":null; }') > 0);
 {
   // every NBLEVEL name outside the block is one of the call sites above
-  const out = src.slice(0, i0) + src.slice(i1);
+  let out = src.slice(0, i0) + src.slice(i1);
+  const l0 = out.indexOf("// NBLADDER_START"), l1 = out.indexOf("// NBLADDER_END");
+  if (l0 >= 0 && l1 > l0) out = out.slice(0, l0) + out.slice(l1);   // NBLADDER (2026-11-24): the ladders' default level reads nbLevelGrade (test_nb_ladder.js)
   const stray = out.split("\n").filter((l) => /nbLevelCtx|nbLevelGrade|nbKidLabel|nbLevelCardHtml|nbSetGradeOverride|nbLvKey|nbLvBand|NB_LEVEL_CHOICES/.test(l))
     .filter((l) => !/const nbLv=nbLevelCtx\(kid\)|\$\{nbKidLabel\(k,g\.label\)\}|nbKidLabel\(x\.k,x\.label\)|nbKidLabel\(meta\.k,meta\.label\)|nbLevelCardHtml\(sel\)\+/.test(l));
   ok("no other line outside the block uses it", stray.length === 0, stray.map((l) => l.trim().slice(0, 80)));
