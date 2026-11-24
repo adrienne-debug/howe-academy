@@ -197,9 +197,9 @@ pages, All About Me, unit and spelling pages, mazes and sudoku.
 | **½″ prong margin** | Notebook, top | whole family | no | (not per kid) |
 | **Notebook tab on/off** | your families dashboard | whole family | no | |
 
-Two more facts worth knowing: eleven of these saves skip the practice-mode check that newer code has, and the Personal
-info and Activity pages saves write a whole list in one go — against this repo's own rule (targeted writes only).
-Neither is changed here.
+One more fact worth knowing: the Personal info and Activity pages saves write a whole list in one go — against this
+repo's own rule (targeted writes only). Eleven of the older saves also lean on the app's global practice-mode guard
+instead of carrying their own check, as newer code does. Neither is changed here.
 
 ---
 
@@ -493,7 +493,7 @@ on this branch).
   `notebookSettings/<kid>/notebookTheme`; no key check — an unknown key reads as the kid's own look), `nbSetLevel`
   50016, `nbNameCardHtml` 50034, `nbXpSave` 50063, `nbDgToggle` 50089, `NB_WB_KIDS` 50148, `nbUnitDayToggle` 50788,
   `nbJuSet` 50812, `nbPlanCardHtml` 50852, `nbBindingToggle` 50911, `nbSetReviewCap` 50918, `nbSavePersonal` 50926
-  (no `momHere()`, whole-node `set`, no dry-run check), `nbActUpload` 50980, `nbtSetMode` 51234, `nbtSend` 51262,
+  (no `momHere()`, whole-node `set`, no own dry-run check — the global `db.ref` patch at ih ~4594 is its only guard), `nbActUpload` 50980, `nbtSetMode` 51234, `nbtSend` 51262,
   `nbtTabHtml` 51670, `unitToggleNbInsert` 56107, `renderNotebook` 57390 (personal 57414, review card 57504, extra
   pages 57641, look card 57655), `nbSetTargetWk` 37653, `haGenerateStory` 37926, `mastSetCountEmoji` 73560, `nbsSet`
   76574. Kid-side patterns: `kcPick` 46669 (device-local), `gameDeckSet` 82842 (Mom's allow grid), `gameLike` 78072
