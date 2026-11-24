@@ -985,7 +985,7 @@ function hoRec(id,X){
     let q=0, by=""; for(let k=n+1;k<nx&&k<=X.t;k++){ const d=hoCell(id,k,X); if(d&&d.done){ q=k-n; by=d.who; break; } }
     if(q) marks.push({n:n,m:"late",who:c.who,q:q,by:by});
     else if(hhIsKid(c.who)&&typeof hdKidOff==="function"&&hdKidOff(c.who,_hhIsoOf(n))) marks.push({n:n,m:"skip",who:c.who,off:1});
-    else if(nx<=X.t) marks.push({n:n,m:"drop",who:c.who}); }   // else: still inside its wait, not done yet → no mark
+    else if(nx<=X.t){ const mk={n:n,m:"drop",who:c.who}, dk=(typeof hoDrop==="function")?hoDrop(X,id,n):null; if(dk) mk.dk=dk; marks.push(mk); } }   // LEDGERDROP: what the drop took   // else: still inside its wait, not done yet → no mark
   if(!hhIsKid(j.who)){ const d=marks.filter(function(x){ return x.m==="on"||x.m==="late"; }); if(!d.length) return none("no check-offs");
     return {form:"ticks",wk:cnt?4:8,marks:d}; }   // a grown-up's or a grab's: the times checked off, never a dropped one
   return {form:cnt?"count":"marks",daily:cad==="daily",marks:marks};
@@ -998,8 +998,8 @@ function hoText(r){ if(r.form==="none") return 'no record yet · '+esc(r.why); c
   if(!s.n) return 'no record yet · '+(s.skip?s.skip+' not counted':'nothing due yet');
   return s.done+' of the last '+s.n+(r.form==="count"?(r.daily?' days':' times'):'')+(s.late?' · '+s.late+' late':'')+(r.form==="marks"&&s.drop?' · '+s.drop+' dropped':'')+(s.skip?' · '+s.skip+' not counted':''); }
 function hoMarksHTML(r){ if(r.form!=="marks") return ''; return '<span style="font-size:12px;letter-spacing:1px;white-space:nowrap">'+r.marks.map(function(x){ const M=HO_MARK[x.m], iso=_hhIsoOf(x.n);
-    const tip=hpDay(iso)+' · '+(x.m==="on"?'done that day':x.m==="late"?'done '+x.q+' day'+(x.q===1?'':'s')+' late':x.m==="drop"?'not done by its next day':x.off?'off that day':'not counted')+(x.by?' by '+hhWhoName(x.by):'');
-    return '<span title="'+esc(tip)+'" style="color:'+M[1]+'">'+M[0]+'</span>'; }).join('')+'</span>'; }
+    const tip=hpDay(iso)+' · '+(x.m==="on"?'done that day':x.m==="late"?'done '+x.q+' day'+(x.q===1?'':'s')+' late':x.m==="drop"?'not done by its next day'+(x.dk?' · '+x.dk.n+' ⭐ '+(x.dk.gb?'given back':'taken'):''):x.off?'off that day':'not counted')+(x.by?' by '+hhWhoName(x.by):'');
+    return '<span title="'+esc(tip)+'" style="color:'+M[1]+'">'+M[0]+(x.dk?'<span style="font-size:10px;letter-spacing:0;color:'+(x.dk.gb?'#64748b':'#b91c1c')+'"> '+(x.dk.gb?'given back':'−'+x.dk.n)+'</span>':'')+'</span>'; }).join('')+'</span>'; }   // LEDGERDROP: "○ −2" / "○ given back"
 // The rows for a filter, least done first (no record yet last), and the filter's line.
 function hoRows(f,X){ const J=hhJobs(), out=[];
   hwIds(f.k==="who"?{k:"all"}:f).forEach(function(id){ const r0=hoRec(id,X); if(!r0) return; const r=hoSee(r0,f);
@@ -1564,13 +1564,16 @@ function lgDayData(kid,k){
       const b=lgBonus(kid,m[D.wk+"_"+D.dn+"_"+kid+"_"+slot],"🏁","List complete bonus"); if(b) rows.push(b);
       if(rows.length) out.lists.push({slot:slot,title:LG_LIST[slot]||slot,rows:rows,done:rows.filter(function(r){ return r.c===1; }).length,tot:rows.filter(function(r){ return r.c===0||r.c===1; }).length});
       // gone from the list that day: the turn due on its last day before this one left the list today
+      const g0=out.gone.length;   // LEDGERDROP
       if(lgCarried(slot)) steps.forEach(function(st,i){ if(!st||st.house||!/^wk:/.test(st.cad||"")) return; const E=lgDueBefore(st,D); if(!E||!lgMap(E)) return;
         const er=lgRec(slot,kid,E,i); if((er&&er.done)||(lgWaved(slot,kid,E,i)&&!(typeof lgXHere==="function"&&lgXHere(kid,D,slot,i,E)))) return;   // ➖ LEDGERX: excused here just now → kept in its spot
         const f=lgFate(slot,kid,i,st,E,D.k); if(f&&f.gone&&f.gone.k===D.k){ const g={ic:"✖",nm:(st.emoji?st.emoji+" ":"")+(st.label||"Chore"),id:st.house||st._hh||"",note:"due "+lgWd(E.iso)+", not done in time"}; if(typeof lgXGone==="function") lgXGone(g,slot,kid,D,E,i,st); out.gone.push(g); } });
+      if(typeof lgDropGones==="function") lgDropGones(out.gone,g0,slot,kid,D,steps);   // 📒 LEDGERDROP (C3): what each drop took
     });
     const db2=lgBonus(kid,m[D.wk+"_"+D.dn+"_"+kid+"_day"],"🏆","Whole day complete"); if(db2) out.lists.push({slot:"day",title:"🏆 Whole day",rows:[db2],done:0,tot:0});
   } finally { day=pd; _prevSlWk=pw; }
   out.lists.forEach(function(L){ L.rows.forEach(function(r){ out.earned+=(r.pts||0)+(r.gb||0); out.short+=r.sh||0; out.held+=r.held||0; if(r.c===0) out.open++; }); });
+  out.taken=0; out.gone.forEach(function(r){ out.taken+=r.tk||0; });   // LEDGERDROP: what came off the bank
   return out;
 }
 // ── drawing ──
@@ -1578,7 +1581,7 @@ function lgHelloOpen(){ try{ return HA_LS.getItem(LG_HELLO)!=="1"; }catch(e){ re
 function lgHelloClose(){ try{ HA_LS.setItem(LG_HELLO,"1"); }catch(e){} lgDraw(); }
 function lgDate(iso,long){ const d=new Date(iso+"T12:00:00"); return isNaN(d.getTime())?"":d.toLocaleDateString("en-US",long?{weekday:"long"}:{weekday:"short",month:"short",day:"numeric"}); }
 function lgStar(n){ return n+" ⭐"; }
-function lgSum(x,today){ return "earned "+lgStar(x.earned)+(x.short?" · fell short "+lgStar(x.short):"")+(x.open?" · "+x.open+" not done"+(today?" yet":""):"")+(x.held?" · ⏸ "+lgStar(x.held)+" waiting for your ✓":""); }
+function lgSum(x,today){ return "earned "+lgStar(x.earned)+(x.short?" · fell short "+lgStar(x.short):"")+(x.taken?" · taken "+lgStar(x.taken):"")+(x.open?" · "+x.open+" not done"+(today?" yet":""):"")+(x.held?" · ⏸ "+lgStar(x.held)+" waiting for your ✓":""); }
 function lgRowHTML(r){
   const nm=(r.id&&typeof hcGoOk==="function"&&hcGoOk(r.id))?'<span onclick="lgClose();hcGo(\''+r.id+'\')" style="cursor:pointer;text-decoration:underline dotted #94a3b8">'+esc(r.nm)+'</span>':esc(r.nm);
   return '<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;padding:5px 2px;border-bottom:1px solid #f3f4f6;font-size:13px'+(r.c===0||r.ic==="➖"?';color:#6b7280':'')+'">'
@@ -1598,8 +1601,8 @@ function lgDayHTML(kid,k){
   return '<div style="font-size:13.5px;padding:6px 2px 2px"><b>'+lbl+':</b> '+lgSum(x,k===0)+'</div>'+lgListsHTML(x,kid); }
 // This week = Sunday … today (or last week's Sunday … Saturday): every day's rows under its date, the week's totals on top
 function lgWeekHTML(kid){
-  const t=lgNow(), last=lgDay(lgOff)&&lgDay(lgOff).prev, a=last?-(t+8):-(t+1), b=last?-(t+2):0, days=[], tot={earned:0,short:0,open:0,held:0};
-  for(let k=a;k<=b;k++){ const x=lgDayData(kid,k); if(x.notYet) return lgFar(LG_NOTYET); if(x.none) continue; days.push(x); ["earned","short","open","held"].forEach(function(f){ tot[f]+=x[f]; }); }
+  const t=lgNow(), last=lgDay(lgOff)&&lgDay(lgOff).prev, a=last?-(t+8):-(t+1), b=last?-(t+2):0, days=[], tot={earned:0,short:0,open:0,held:0,taken:0};
+  for(let k=a;k<=b;k++){ const x=lgDayData(kid,k); if(x.notYet) return lgFar(LG_NOTYET); if(x.none) continue; days.push(x); ["earned","short","open","held","taken"].forEach(function(f){ tot[f]+=x[f]||0; }); }
   return '<div style="font-size:13.5px;padding:6px 2px 2px"><b>'+(last?'Last week':'This week')+':</b> '+lgSum(tot,!last)+'</div>'
     +days.map(function(x){ return '<div style="margin-top:12px;padding:5px 8px;background:#f8fafc;border-radius:8px;font-size:12.5px"><b>'+(x.D.k===0?'Today':lgDate(x.D.iso))+'</b> <span style="color:#6b7280">'+lgSum(x,x.D.k===0)+'</span></div>'+lgListsHTML(x,kid); }).join(''); }
 function lgHTML(){
@@ -1727,12 +1730,14 @@ function lgExcuse(kid,wk,dn,slot,i,here,g){
   if(!lgXOk()||!lgXArgOk(kid,slot,i)) return false; const E=lgXDay(wk,dn), st=E&&lgXStep(slot,kid,E,i);
   if(!lgXCan(slot,kid,E,i,st)){ lgXDone(); return false; }   // done, excused already (this device or another), or not a row that can be
   rtWave(slot,kid,E.dn,i,E.wk,st); const on=lgWaved(slot,kid,E,i);
+  if(on&&!st.house&&typeof lgDropOff==="function") lgDropOff(kid,E,slot,i);   // LEDGERDROP: anything the drop took goes back, kept for Undo
   if(on&&!st.house) lgXMissOff(kid,E,slot,i);   // LEDGERXLOG: its "— not done" line out
   if(on&&here&&here!==E.iso) lgXJ[kid+"|"+here+"|"+slot+"|"+i]={wk:E.wk,dn:E.dn,g:g?1:0};
   lgXDone(); return on; }
 function lgExcuseUndo(kid,wk,dn,slot,i){
   if(!lgXOk()||!lgXArgOk(kid,slot,i)) return false; const E=lgXDay(wk,dn), st=E&&lgXStep(slot,kid,E,i);
   if(!E||!st||!lgMap(E)||!lgWaved(slot,kid,E,i)){ lgXDone(); return false; }
+  if(!st.house&&typeof lgDropKept==="function"){ const kp=lgDropKept(kid,E,slot,i); if(kp) lgDropOn(kid,E,slot,i,kp); }   // LEDGERDROP: what Excuse kept goes back exactly, BEFORE the ✕ record goes (no device files it afresh in between, and the filing below then finds the line there)
   rtWave(slot,kid,E.dn,i,E.wk,st); const off=!lgWaved(slot,kid,E,i);
   if(off&&!st.house) lgXMissOn(kid,E,slot,i,st);   // LEDGERXLOG: and back
   if(off) Object.keys(lgXJ).forEach(function(k){ const v=lgXJ[k]; if(v.wk===E.wk&&v.dn===E.dn&&k.split("|")[0]===kid&&k.split("|").slice(2).join("|")===slot+"|"+i) delete lgXJ[k]; });
@@ -1767,7 +1772,7 @@ function lgRWrite(rel,v){
   if(typeof renderAll==="function"){ try{ renderAll(); }catch(e){} } if(document.getElementById("lg-pop")) lgDraw(); return true; }
 function lgRKid(kid){ return SL_KIDS.indexOf(kid)>=0; }
 function lgRuleFall(kid){ if(!lgRulesOk()||!lgRKid(kid)) return false; return lgRWrite("fall/"+kid,lgRFallOn(kid)?{on:false}:{from:lgRToday()}); }
-function lgRuleTake(kid){ if(!lgRulesOk()||!lgRKid(kid)) return false; return lgRWrite("take/"+kid,lgRTakeOn(kid)?false:null); }
+function lgRuleTake(kid){ if(!lgRulesOk()||!lgRKid(kid)) return false; return lgRWrite("take/"+kid,lgRTakeOn(kid)?false:{from:lgRToday()}); }   // LEDGERDROP (C3): On again starts clean — a turn due before today costs nothing
 function lgRulePause(){ if(!lgRulesOk()) return false; return lgRWrite("pause",lgRPaused()?{from:lgRToday()}:{on:true}); }
 function lgRulesToggle(){ if(!lgRulesOk()) return; lgRulesOpen=!lgRulesOpen; lgDraw(); }
 // ── drawing ──
@@ -1799,6 +1804,64 @@ function lgRulesHello(){ return lgRulesOk()?' To change the star rules, tap ⚙.
 function lgRulesGoSpot(){ if(!lgRulesOk()) return false; lgClose(); lgRulesOpen=false; spSetOpen=true; if(typeof _cuRe==="function") _cuRe(); if(typeof _spScroll==="function") _spScroll(); return true; }
 function lgRulesGoPoints(){ if(!lgRulesOk()) return false; lgClose(); lgRulesOpen=false; cpTab="points"; if(cpSlot==="grabs") cpSlot="chores"; setAdminSub("chores"); return true; }
 // LEDGERRULES_END
+// LEDGERDROP_START — what a dropped turn took, on its 📒 Ledger row (missed-chores design §2.4 and §4, slice C3; ledger design §2 and §3;
+// the hub's brief 2026-11-23). index.html CHOREDROP files the drop's decision on its "— not done" line (routineLog/<kid>/<wk>/<due day>/
+// miss_<slot>_<i>, .drop = {n, bid, due, job} or {n:0, why}) and writes the one bank line. Here, Mom or Dad (the ledger's gate):
+//   the "Gone from her list" row: "✖ Vacuum the den · due Tue, not done in time · 2 ⭐ taken" with ⭐ Give stars back (Mom, or Dad's link: the same gate as the late tick's), and
+//   "taken 2 ⭐" in that day's line on top. Give stars back = ONE multi-path update: the bank line removed + drop.gb = {by, ts, line: the
+//   removed line} on the log line, so no device ever takes it again (the line is never filed twice) and Undo puts back that exact line.
+//   ➖ Excuse on that row also gives back what was taken: before its "— not done" line goes, that line and the bank line
+//   are kept on the ✕ record (waved/<wk>/<day>/<kid>/<slot>step<i>/c3) and the bank line removed; its Undo puts both back exactly,
+//   before the ✕ record is removed. "↩ Put back" is left out (ledger design §3). Writes only when db && !_dryRun().
+//   📊 How often: a ○ whose drop took stars reads "○ −2", or "○ given back" (hoDrop, from the same lines).
+function lgDropOk(){ return (typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD()); }   // the pop-up's own gate: Mom, or Dad's link
+function lgDropLine(kid,id){ return (id&&bank[kid]&&bank[kid].adjustments&&bank[kid].adjustments[id])||null; }
+function lgDropDone(){ if(typeof renderAll==="function"){ try{ renderAll(); }catch(e){} } if(document.getElementById("lg-pop")) lgDraw(); }
+function lgDropDay(wk,dn){ for(let k=0;k>=lgMin();k--){ const D=lgDay(k); if(D&&D.wk===wk&&D.dn===dn) return D; } return null; }
+function lgDropArg(kid,slot,i){ return SL_KIDS.indexOf(kid)>=0&&!!RT_ABBR[slot]&&i===(i|0)&&i>=0; }
+function lgDropKey(slot,i){ return "miss_"+slot+"_"+i; }
+function lgDropLog(kid,E,slot,i){ return (((routineLog[kid]||{})[E.wk]||{})[E.dn]||{})[lgDropKey(slot,i)]||null; }
+function lgDropOf(kid,E,slot,i){ const L=lgDropLog(kid,E,slot,i), t=L&&L.drop; return t?{t:t,line:t.bid?lgDropLine(kid,t.bid):null}:null; }
+function lgDropPath(kid,E,slot,i){ return "routineLog/"+kid+"/"+E.wk+"/"+E.dn+"/"+lgDropKey(slot,i); }
+function lgDropUp(u){ if(typeof db!=="undefined"&&db&&!_dryRun()) db.ref().update(u); }
+// the gone rows this list added (from g0), matched to their steps in the order lgDayData walked them
+function lgDropGones(G,g0,slot,kid,D,steps){ let q=g0; steps.forEach(function(st,i){ if(q>=G.length||!st||st.house||!/^wk:/.test(st.cad||"")||G[q].nm!==(st.emoji?st.emoji+" ":"")+(st.label||"Chore")) return; const E=lgDueBefore(st,D); if(E) lgDropGone(G[q],slot,kid,E,i); q++; }); }
+function lgDropGone(g,slot,kid,E,i){
+  const x=g.ic==="✖"?lgDropOf(kid,E,slot,i):null; if(!x) return; const t=x.t, ok=lgDropOk(), js="('"+kid+"','"+E.wk+"','"+E.dn+"','"+slot+"',"+i+")";
+  if(!t.n){ if(t.why!=="zero") g.note+=" · nothing taken ("+(t.why==="pause"?"⏸ paused":"Take stars away was off")+")"; return; }
+  g.note+=" · "+lgStar(t.n)+" taken";
+  if(t.gb){ g.gbH='<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="font-size:11.5px;font-weight:800;color:#b45309">⭐ '+(t.gb.by==="dad"?"Dad":"Mom")+' gave back +'+lgStar(t.n)+'</span>'+(ok?'<button onclick="lgDropUndo'+js+'" style="border:1.5px solid var(--border);background:#fff;color:#374151;border-radius:8px;padding:2px 9px;font-size:11.5px;font-weight:700;cursor:pointer">Undo</button>':'')+'</span>'; return; }
+  if(!x.line){ g.note+=", not in the Star Bank now"; return; }
+  g.tk=t.n; if(ok) g.gbH='<button onclick="lgDropGive'+js+'" title="Put back the '+t.n+' ⭐ this drop took. It still counts as not done." style="border:1.5px solid #f59e0b;background:#fffbeb;color:#92400e;border-radius:8px;padding:2px 9px;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap">⭐ Give stars back</button>'; }
+// The taps: the turn is read again now (never trusted from the drawing).
+function lgDropGive(kid,wk,dn,slot,i){
+  if(!lgDropOk()||!lgDropArg(kid,slot,i)) return false; const E=lgDropDay(wk,dn), x=E&&lgDropOf(kid,E,slot,i);
+  if(!x||!(x.t.n>0)||x.t.gb||!x.line){ lgDropDone(); return false; }   // nothing taken, given back already (here or on another device), or not in the bank
+  const gb={by:(typeof momHere==="function"&&momHere())?"mom":"dad",ts:nowTs(),at:Date.now(),line:x.line}, u={};
+  x.t.gb=gb; delete bank[kid].adjustments[x.t.bid];
+  u[lgDropPath(kid,E,slot,i)+"/drop/gb"]=gb; u["bank/"+kid+"/adjustments/"+x.t.bid]=null; lgDropUp(u);
+  lgDropDone(); return true; }
+function lgDropUndo(kid,wk,dn,slot,i){
+  if(!lgDropOk()||!lgDropArg(kid,slot,i)) return false; const E=lgDropDay(wk,dn), x=E&&lgDropOf(kid,E,slot,i), gb=x&&x.t.gb;
+  if(!gb||!gb.line||x.line){ lgDropDone(); return false; }
+  const u={}; delete x.t.gb; bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{}; bank[kid].adjustments[x.t.bid]=gb.line;
+  u[lgDropPath(kid,E,slot,i)+"/drop/gb"]=null; u["bank/"+kid+"/adjustments/"+x.t.bid]=gb.line; lgDropUp(u);
+  lgDropDone(); return true; }
+// ➖ Excuse : keep the drop's line and its bank line on the ✕ record and give the stars back; Undo: both back exactly.
+function lgDropOff(kid,E,slot,i){ const L=lgDropLog(kid,E,slot,i); if(!L||!L.drop) return;
+  const t=L.drop, ln=t.bid?lgDropLine(kid,t.bid):null, kp={log:JSON.parse(JSON.stringify(L))}, k=rtWaveKey(slot,i), w=(((wavedData[E.wk]||{})[E.dn]||{})[kid]||{})[k], u={};
+  if(ln) kp.line=ln; if(w) w.c3=kp; if(ln) delete bank[kid].adjustments[t.bid];
+  u["waved/"+E.wk+"/"+E.dn+"/"+kid+"/"+k+"/c3"]=kp; if(ln) u["bank/"+kid+"/adjustments/"+t.bid]=null; lgDropUp(u); }
+function lgDropKept(kid,E,slot,i){ const w=(((wavedData[E.wk]||{})[E.dn]||{})[kid]||{})[rtWaveKey(slot,i)]; return (w&&w.c3&&w.c3.log)?w.c3:null; }
+function lgDropOn(kid,E,slot,i,kp){ const k=lgDropKey(slot,i), bid=kp.log.drop&&kp.log.drop.bid, u={};
+  routineLog[kid]=routineLog[kid]||{}; routineLog[kid][E.wk]=routineLog[kid][E.wk]||{}; routineLog[kid][E.wk][E.dn]=routineLog[kid][E.wk][E.dn]||{}; routineLog[kid][E.wk][E.dn][k]=kp.log;
+  if(kp.line&&bid){ bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{}; bank[kid].adjustments[bid]=kp.line; u["bank/"+kid+"/adjustments/"+bid]=kp.line; }
+  u[lgDropPath(kid,E,slot,i)]=kp.log; lgDropUp(u); }
+// 📊 How often : the drop of chore id due on day number n → {n, gb} when it took stars, from the drops' own lines
+function hoDrop(X,id,n){ if(!X.dr){ X.dr={}; Object.keys(routineLog||{}).forEach(function(k){ const L=routineLog[k]||{}; Object.keys(L).forEach(function(w){ Object.keys(L[w]||{}).forEach(function(d){ const D=L[w][d]||{};
+    Object.keys(D).forEach(function(q){ const t=D[q]&&D[q].drop; if(t&&t.n>0&&t.due&&t.job) X.dr[t.job+"|"+t.due]={n:t.n,gb:!!t.gb}; }); }); }); }); }
+  return X.dr[id+"|"+_hhIsoOf(n)]||null; }
+// LEDGERDROP_END
 // HOUSESWITCH_START — 🚪 the real switch and today's stored plan on 👤 By person (Household by room, step 4; DESIGN §4.3 doors, §5 last
 // bullet, her yes 2026-11-17). Mom only. ON first PROVES a houseDay save works (houseDay/<today>/hello) and only then writes
 // household/meta/engine = {mode:"on", on:<today>} together with each house chore's last-done date filled once from the 8 weeks of
