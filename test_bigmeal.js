@@ -280,7 +280,7 @@ console.log("\n# the files");
 {
   const code = BM.replace(/^\s*\/\/.*$/gm, "");
   ok("bigmeal.js has no database call of its own (no db / ref / on / set)", !/\bdb\b|\.ref\(|firebase/.test(code));
-  ok("…no setInterval (and no timer at all in slice 1)", !/setInterval|setTimeout/.test(code));
+  ok("…no setInterval; at most one setTimeout (slice 4's minute tick in the cook view)", !/setInterval/.test(code) && (code.match(/setTimeout\(/g) || []).length <= 1);
   ok("…names no other node's path: kitchen/ calendar/ momday dadday seasonJobs gifts", !/kitchen\/|calendar\/|momday|dadday|seasonJobs|gifts/.test(code));
   ok("…no family's names", !/Lincoln|Ellis|Lucy|Julian|Howe|Burris|DeWalt|Dewalt|Melanie|Sara\b|Adrienne|Andrew/.test(BM));
   ok("…never reads the planner's test hook", !/_snTest/.test(code) && /window\._snApi/.test(code));
