@@ -53,7 +53,8 @@ const FAM = () => ({
   a_bed: K({ label: "Make the bed", emoji: "🛏", who: "kid_a", slot: "chores", cad: "daily", pts: 2, order: 0 }),
   a_dust: K({ label: "Dust the shelves", emoji: "🪶", who: "kid_a", slot: "chores", cad: "daily", pts: 10, order: 1 }),
   a_sink: K({ label: "Wipe the sink", emoji: "🚰", who: "kid_a", slot: "chores", cad: "daily", pts: 10, order: 2 }),
-  c_toys: K({ label: "Toys in the bin", emoji: "🧩", who: "kid_c", slot: "chores", cad: "daily", pts: 3, order: 0 })
+  c_toys: K({ label: "Toys in the bin", emoji: "🧩", who: "kid_c", slot: "chores", cad: "daily", pts: 3, order: 0 }),
+  b_vac: K({ label: "Vacuum the den", emoji: "🧹", who: "kid_b", slot: "chores", cad: "wk:1", pts: 10, order: 0 })   // never done: C3's drop (section I)
 });
 const CAP = "globalThis.__cf=[];globalThis.__say=true;confirm=function(m){ __cf.push(m); return __say; };tab='moms-plan';HA_LS.setItem('ha_ledger_hello','1');1";
 async function mkWorld(index) {
@@ -247,6 +248,21 @@ console.log("\n── H · dryrun writes nothing ──");
   await w.at(2026, 11, 24, 16, 30);
   const m = w.mark(); const c = SPC(Dr); const a = Dr.run("spResolve('kid_a',0,'no')"); const k = logKey(Dr, "kid_a", "Dust the shelves"); if (k) Dr.run(flagJs(k, "kid_a")); await w.flush();
   ok("?dryrun=1, his code in: the draw, ✗ and ⚠️ show on that screen, nothing reaches the database", Dr.run("_dryRun()") === true && /id="sp-card"/.test(c) && a === true && !!k && Dr.run("spDay('kid_a').results[0].by") === "dad" && w.since(m).length === 0, w.since(m).map(l => l.path));
+}
+
+// ── I ──
+console.log("\n── I · a dropped chore's line (C3) in the log opened from Dad's Day ──");
+{ const { w, A, B, Dd } = N; const drawB = d => d.run("(function(){ const d0=day; day=_todayDay; try{ rtOpen={}; return rtSlotHTML('chores','kid_b'); } finally{ day=d0; } })()");
+  for (let dd = 25; dd <= 34; dd++) { const d = new Date(2026, 10, dd); await w.at(d.getFullYear(), d.getMonth() + 1, d.getDate(), 8, 0); drawB(B); drawB(A); await w.flush(); }   // through Fri 12/4
+  const adj = Object.values(w.get("bank/kid_b/adjustments") || {}).filter(a => a.src === "drop"), log = LOG(A);
+  const row = h => (String(h).split('<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)').filter(r => r.indexOf("Vacuum the den — not done") >= 0 && r.indexOf("−2 ⭐") >= 0).map(r => { const i = r.indexOf("</div></div>") + 12; return r.slice(0, r.indexOf("</div>", i) + 6); })[0] || "");   // the line itself, to its own </div>
+  ok("the setup: Fri 12/4, kid_b's Tue 12/1 vacuum was dropped — one bank line −2 (src drop), its \"— not done\" line in Mom's Log tab shows \"−2 ⭐\"", adj.length === 1 && adj[0].amount === -2 && row(log) !== "", [adj, txt(row(log))]);
+  lock(Dd, true);
+  ok("…the log opened from Dad's Day, locked: that line exactly as in Mom's Log tab (\"−2 ⭐\"), the whole log = hers minus ⚠️ plus the line", DOOR(Dd, true) === lockedDoor(log) && row(DOOR(Dd, true)) === row(log));
+  lock(Dd, false);
+  ok("…with his code: the whole log = hers byte for byte, that line the same", DOOR(Dd, true) === openDoor(log) && row(DOOR(Dd, true)) === row(log));
+  ok("…and that line has no ⚠️ of its own, for Mom or for Dad (true on main today: the ⚠️ is only on a ✓ line, act \"on\")", row(log) !== "" && !/rlogFlag/.test(row(log)) && !/rlogFlag/.test(row(DOOR(Dd, true))), txt(row(log)));
+  lock(Dd, true); Dd.run("rlDadOpen=false;1");
 }
 
 try { fs.unlinkSync(BASE_IDX); } catch (e) {}
