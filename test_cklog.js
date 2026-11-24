@@ -20,7 +20,7 @@ function world(o) {
   const ctx = {
     console, WK: "week24", activeWk: () => "week24", _todayDay: "thursday", ROSTER: ["julian", "lucy", "lincoln", "ellis"], PACE_KCOL: {},
     weekData: { tasks: o.tasks || [] }, checked: o.checked || {}, histState: o.hist || {}, routineLog: o.rlog || {},
-    effectiveDay: t => t.day, momHere: () => o.who === "mom", _kioskD: () => o.who === "dad",
+    effectiveDay: t => t.day, momHere: () => o.who === "mom", _kioskD: () => o.who === "dad", dadAwardOk: () => !!o.code,   // DADGATE: his code in
     bankDirect: (k, p, n) => { banks.push([k, p, n]); return "bd1"; }, confirm: m => { confirms.push(m); return o.say !== false; },
     cap: s => s.charAt(0).toUpperCase() + s.slice(1), esc: s => String(s), nowTs: () => "3:00 PM " + MD, dbg: () => {}, renderAll: () => {},
     ld: () => ({}), sv: () => {}, _dryRun: () => false, db: { ref: p => ({ update: v => writes.push([p, v]) }) },
@@ -69,10 +69,10 @@ console.log("\n── the dock ──");
   ok("Cancel on the confirm → nothing happens", w.banks.length === 0 && w.writes.length === 0);
 }
 {
-  const w = world({ who: "dad", tasks: T, checked: CK, rlog: RL, hist: { dm: {} } });
+  const w = world({ who: "dad", code: true, tasks: T, checked: CK, rlog: RL, hist: { dm: {} } });
   ok("Dad's link sees the card", w.call("mdCardCheckLog()") !== "");
   w.call("ckLogDock('task','lucy','dm','Dimensions')");
-  ok("Dad can dock, and the mark says so", w.banks.length === 1 && w.writes[0][1].flagBy === "dad");
+  ok("Dad with his code in can dock, and the mark says so", w.banks.length === 1 && w.writes[0][1].flagBy === "dad");
 }
 {
   const w = world({ who: "kid", tasks: T, checked: CK, rlog: RL, hist: { dm: {} } });

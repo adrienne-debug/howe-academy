@@ -163,7 +163,8 @@ let before, after;
 
 // ── D ──
 console.log("\n── D · a second tap, a second device, two at once: one line ──");
-{ let m = w.mark();
+{ Dd.run("dadUnlocked=true;1");   // DADGATE (her answer 2026-11-24): Dad's link gives stars back only with his code in
+  let m = w.mark();
   ok("a second tap on the same device: no, nothing written", A.run("lgGive(" + carArgs + ")") === false && writes(w, m).length === 0);
   m = w.mark();
   ok("Dad's link, having heard the first: no, nothing written", Dd.run("lgGive(" + carArgs + ")") === false && writes(w, m).length === 0);
@@ -173,6 +174,7 @@ console.log("\n── D · a second tap, a second device, two at once: one line 
   const r1 = A.run("lgGive(" + carArgs + ")"), r2 = Dd.run("lgGive(" + carArgs + ")"); await w.flush();   // before either hears the other
   ok("two devices tap before either hears the other: both write the same one path, so the bank has ONE line, +2", r1 && r2 && writes(w, m).every(e => e.path === "bank/kid_a/adjustments/" + CAR) && gbLines(w, "kid_a").length === 1 && bal(B, "kid_a") === b0 + 2, [writes(w, m).map(e => e.path), gbLines(w, "kid_a"), bal(B, "kid_a") - b0]);
   A.run("lgGiveUndo(" + carArgs + ")"); await w.flush();
+  Dd.run("dadUnlocked=false;1");
 }
 
 // ── E ──
@@ -239,13 +241,15 @@ console.log("\n── H · a kid's device and a kiosk cannot ──");
 }
 
 // ── J ──
-console.log("\n── J · Dad's own link ──");
-{ const m = w.mark(), h = LG(Dd, "lgShow();lgGo('kid_a',0,0)");
-  ok("Dad's link: the same button on the car", /⭐ Give stars back$/.test(rowT(h, "Wash the car")));
+console.log("\n── J · Dad's own link, his code in ──");
+{ Dd.run("dadUnlocked=true;1");   // DADGATE (her answer 2026-11-24): locked, he has no button (test_dad_code_gates.js)
+  const m = w.mark(), h = LG(Dd, "lgShow();lgGo('kid_a',0,0)");
+  ok("Dad's link, his code in: the same button on the car", /⭐ Give stars back$/.test(rowT(h, "Wash the car")));
   ok("his tap: one line \"⭐ Dad gave back: 🚗 Wash the car\" +2, by dad", Dd.run("lgGive(" + carArgs + ")") === true && (await w.flush(), true) && (w.get("bank/kid_a/adjustments/" + CAR) || {}).note === "⭐ Dad gave back: 🚗 Wash the car" && w.get("bank/kid_a/adjustments/" + CAR).by === "dad" && writes(w, m).length === 1);
   ok("Mom's ledger then says \"⭐ Dad gave back +2 ⭐\" with Undo", /⭐ Dad gave back \+2 ⭐ Undo$/.test(rowT(LG(A, "lgGo('kid_a',0,0)"), "Wash the car")));
   Dd.run("lgGiveUndo(" + carArgs + ")"); await w.flush();
   ok("his Undo removes it", !w.get("bank/kid_a/adjustments/" + CAR));
+  Dd.run("dadUnlocked=false;1");
 }
 
 // ── I ──
