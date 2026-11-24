@@ -37,7 +37,7 @@ const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.ht
   R(/^\/\/ CHOREDROP_START[^\n]*\n[\s\S]*?^\/\/ CHOREDROP_END\n/m, "", "the CHOREDROP block");
   R(/^const RT_TAKE_FROM=[^\n]*\n/m, "", "RT_TAKE_FROM");
   R(/^\/\/ CHOREDROP \(C3\): why the drop[^\n]*\n[^\n]*\nfunction starTakeAt[^\n]*\n/m, "", "starTakeAt");
-  R("  const due=_rtLastDueIdx(ds,DAYS_ALL.indexOf(_todayDay)), tp=_rtPos(DAYS_ALL.indexOf(_todayDay));", "  const due=_rtLastDueIdx(ds,DAYS_ALL.indexOf(_todayDay));", "_rtLogLateMiss's tp");
+  R(/^ {2}const due=_rtLastDueIdx\(ds,DAYS_ALL\.indexOf\(_todayDay\)\), tp=[^\n]*/m, "  const due=_rtLastDueIdx(ds,DAYS_ALL.indexOf(_todayDay));", "_rtLogLateMiss's tp");
   R(/_rtDropFile\(kid,slot,i,DAYS_ALL\[due\],label,pts,undefined,tp-_rtPos\(due\)\); return; \}[^\n]*/, "_rtLogMiss(kid,slot,i,DAYS_ALL[due],label,pts); return; }", "this week's call");
   R("_rtDropFile(kid,slot,i,DAYS_ALL[pd],label,pts,pw,tp+7-_rtPos(pd)); }", "_rtLogMiss(kid,slot,i,DAYS_ALL[pd],label,pts,pw); }", "last week's call");
   R(/\+\(\(e\.drop&&e\.drop\.n\)\?[^\n]*?\/\* CHOREDROP: what the drop took \*\//, "", "the Click-off Log's −2");
