@@ -2008,6 +2008,7 @@ function toggleMorningStep(kid,i){
 }
 function mrIndividualHTML(kid){
   const steps=morningStepsFor(kid);
+  if(typeof rtZeroSee==="function") rtZeroSee("morning",kid,steps);   // CHOREZERO
   const _am=(typeof amFor==="function")?amFor(kid,day):[], _amIso=_am.length?amIso(day):null, _amDn=_am.filter(it=>amDoneBy(it,_amIso)).length;   // SENDAM
   if(!steps.length){
     const s=getSlot(kid,"morning"), _amH=_am.length?'<div class="mr-steps">'+amRowsHTML(kid,_am,routineEditable())+'</div>':'';   // SENDAM: a kid with no morning steps still sees what was sent, above the Morning box
@@ -3000,21 +3001,22 @@ function rtFallPill(st,n){ const p=(st&&st.pts)||0, f=rtFallPay(st,n,arguments[2
 // (calendar/kidOverrides school:false), \ud83c\udf05 sent that day, a day before RT_DAILY_FROM or before the kid's "Stars fall when late" / \u23f8 Pause (the \ud83d\udcd2 Ledger \u2699, read as rtFallDays reads it).
 // Not the plan's own rows (st.house), the laundry line's rows, or a rotating job (st.rot: the job and its free days change hands each day).
 const RT_DAILY_FROM="2026-11-30";
-function rtDailyRow(st){ return !!st&&(st.cad||"daily")==="daily"&&(st.pts||0)>0&&!st.house&&!st.line&&!st.laundry&&!st.rot; }
-// Missed days in a row before today, 0\u20266 (6 = already 0 \u2b50).
-function rtDailyMissed(slot,kid,i,st){
-  if(!rtDailyRow(st)||typeof _todayDay!=="string") return 0;
+function rtDailyRow(st,z){ return !!st&&(st.cad||"daily")==="daily"&&(st.pts>0)!==!!z&&!st.house&&!st.line&&!st.laundry&&!st.rot; }
+// Missed days in a row before today, 0\u20266 (6 = already 0 \u2b50). z (CHOREZERO, C6): a 0 \u2b50 daily, walked back to last week's Sunday; -1 = unsure.
+function rtDailyMissed(slot,kid,i,st,z){
+  if(!rtDailyRow(st,z)||typeof _todayDay!=="string") return 0;
   const tp=_rtPos(DAYS_ALL.indexOf(_todayDay)), t=new Date(), wk=activeWk(), ab=slot==="morning"?"m":RT_ABBR[slot]; if(tp<-1||!ab) return 0;
   const iso=function(k){ const d=new Date(t.getFullYear(),t.getMonth(),t.getDate()-k,12); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
   const mon=routineDateISO("monday"); if(mon&&mon!==iso(tp)) return 0;   // the week on screen is not today's week (a week change mid-flight): say nothing
-  const from=[RT_DAILY_FROM,starFallFrom(kid)].sort()[1], off=((typeof calendarData!=="undefined"&&calendarData&&calendarData.kidOverrides)||{})[kid]||{};
+  if(z){ const q=_todayDay==="monday"?"tuesday":"monday"; if(routineDateISO(q)!==iso(tp-_rtPos(DAYS_ALL.indexOf(q)))) return -1; }   // C6: that week's own dates must be today's (routineDateISO says today for today)
+  const from=z?rtZeroFrom(kid):[RT_DAILY_FROM,starFallFrom(kid)].sort()[1], off=((typeof calendarData!=="undefined"&&calendarData&&calendarData.kidOverrides)||{})[kid]||{};
   let n=0;
-  for(let k=1;k<=6;k++){ const ds=iso(k), p=tp-k, prev=p<-1; if(ds<from) break;
+  for(let k=1;k<=(z?tp+8:6);k++){ const ds=iso(k), p=tp-k, prev=p<-1; if(ds<from) break;
     const w=prev?_prevWkKey():wk, dn=DAYS_ALL[_rtIdx(prev?p+7:p)]; if(prev&&typeof _loadPrevSl==="function") _loadPrevSl();
-    const m=prev?(_prevSlWk===w?prevSlState:null):slState; if(!w||!m) break;   // last week not on this device yet: say nothing
+    const m=prev?(_prevSlWk===w?prevSlState:null):slState; if(!w||!m){ if(z) return -1; break; }   // last week not on this device yet: say nothing
     if((st.from&&ds<st.from)||(st.to&&ds>st.to)||!stepCycleOk(st,ds)) break;
     const r=m[w+"_"+dn+"_"+kid+"_"+ab+"step"+i]; if(r&&r.done) break;
-    if(rtDailyLogOn(kid,w,dn,slot,st.label)) break;   // its place moved: the day's own log says this chore was ticked
+    const lo=rtDailyLogOn(kid,w,dn,slot,st.label); if(lo){ if(z&&lo>1) return -1; break; }   // its place moved: the day's own log says this chore was ticked
     if((((wavedData[w]||{})[dn]||{})[kid]||{})[slot+"step"+i]) break;
     if((off[ds]||{}).school===false) break;
     if(rtDailyCalOff(slot,ds)) break;   // a holiday / vacation that took this list off that day
@@ -3028,7 +3030,7 @@ function rtDailyMissed(slot,kid,i,st){
 // standing "on" line for this list and this chore's words. Last week's log not on this device yet: unsure, so the count stops.
 function rtDailyLogOn(kid,w,dn,slot,label){
   const W=((typeof routineLog!=="undefined"&&routineLog)||{})[kid]||{};
-  if(!W[w]&&typeof _rlWin!=="undefined"&&typeof db!=="undefined"&&db&&String(_rlWin.key||"").split("|")[0].split(",").indexOf(w)<0) return true;
+  if(!W[w]&&typeof _rlWin!=="undefined"&&typeof db!=="undefined"&&db&&String(_rlWin.key||"").split("|")[0].split(",").indexOf(w)<0) return 2;
   const L=(W[w]||{})[dn]||{}; let last=null;
   Object.keys(L).forEach(function(k){ const x=L[k]; if(x&&x.slot===slot&&x.label===label&&(x.act==="on"||x.act==="off")&&(!last||(x.at||0)>=(last.at||0))) last=x; });
   return !!(last&&last.act==="on");
@@ -3057,6 +3059,39 @@ function rtDailyJoin(j){ return rtDailyOn(j)?_hhIsoLocal(Date.now()):""; }
 function rtDailyOnIds(){ const J=hhJobs(); return Object.keys(J).filter(function(id){ return rtDailyOn(J[id]); }); }
 function rtDailyStampNew(before){ if(!before) return; const J=hhJobs(); Object.keys(J).forEach(function(id){ const t=before.indexOf(id)<0?rtDailyJoin(J[id]):""; if(t&&J[id].from!==t){ J[id].from=t; if(_hhWrite()) db.ref("household/jobs/"+id+"/from").set(t); } }); }
 // CHOREDAILY_END
+// CHOREZERO_START — her rule 2026-11-19/20 (missed-chores design §2.8, slice C6): a daily worth 0 ⭐: "A flat 1 ⭐ a day", "1 day missed
+// wouldnt cost them"; where it stops: "give both options" (11/24). Missed = C5's walk (rtDailyMissed z). From the 2nd missed day in a row,
+// 1 ⭐ comes off that kid's bank each morning: 📒 ⚙ "Stops after 5" (the default, starRules/zero missing or {stop:5}) = the 2nd–6th missed
+// days, then nothing until it is done once; "No stop" ({stop:0}) = every day. Only TODAY's line, noticed by a draw of the kid's list on
+// today's tab (rtSlotHTML, mrIndividualHTML); a day nobody draws costs nothing and is never filed later. Decided once (C3's way): the
+// line routineLog/<kid>/<wk>/<day>/zero_<chore> {zero:{n:1,run,bid,job} | {n:0,why:"off"|"pause",run,job}} is made by a transaction that
+// writes only if none is on the server; only that device writes bank/<kid>/adjustments/czero_<wk>_<day>_<kid>_<chore> (−1, src "zero").
+// Before deciding, every input is heard from the server (once), so a device just woken or offline takes nothing. Never obSet.
+const RT_ZERO_FROM="2026-12-07";
+function rtZeroFrom(kid){ const R=starRules(), t=(R.take||{})[kid]; return [RT_ZERO_FROM,(t&&t.from)||"",(R.pause||{}).from||""].sort()[2]; }
+function rtZeroStop(){ return (starRules().zero||{}).stop!==0; }
+function rtZeroKey(slot,kid,st){ return st._hh||("rt_"+slot+"_"+kid+"_"+hhSlug(st.label)); }
+function rtZeroRun(slot,kid,i,st){ const n=rtDailyMissed(slot,kid,i,st,1); return n>1&&(n<7||!rtZeroStop())?n:0; }
+function rtZeroSee(slot,kid,steps){ if(day===_todayDay) (steps||[]).forEach(function(st,i){ if(rtDailyRow(st,1)&&stepWindowOk(st,day)&&!rtWaved(slot,kid,day,i)) rtZeroFile(slot,kid,i,st); }); }
+let _czWait={};
+function rtZeroFile(slot,kid,i,st,heard){
+  const wk=activeWk(), dn=_todayDay, jk=rtZeroKey(slot,kid,st), key="zero_"+jk, w=kid+"|"+key, live=db&&!_dryRun();
+  if((((routineLog[kid]||{})[wk]||{})[dn]||{})[key]||(!heard&&_czWait[w])) return; const n=rtZeroRun(slot,kid,i,st); if(!n) return;
+  if(live&&!heard){ _czWait[w]=1; const pw=_prevWkKey(), P=[wk+"/sl","routineLog/"+kid+"/"+wk,"routineLog/"+kid+"/"+(pw||wk),"waved","calendar","household"].map(function(p){ return db.ref(p).once("value"); });
+    P.push(db.ref("amCarry/"+kid).orderByKey().startAt(_amIsoAdd(_amToday(),-60)).once("value"));   // amAttach's own query
+    Promise.all(P).then(function(){ delete _czWait[w]; const s=(rtStepsFor(slot,kid,false,dn)||[])[i];
+      if(_todayDay===dn&&activeWk()===wk&&s&&rtDailyRow(s,1)&&rtZeroKey(slot,kid,s)===jk&&!rtWaved(slot,kid,dn,i)) rtZeroFile(slot,kid,i,s,1); },function(){ delete _czWait[w]; });
+    return; }
+  const no=starTakeAt(kid,_amToday()), bid="czero_"+wk+"_"+dn+"_"+kid+"_"+jk, z=no?{n:0,why:no,run:n,job:jk}:{n:1,run:n,bid:bid,job:jk};
+  const rec={label:(st.label||"Chore")+" — not done "+n+" days",slot:slot,act:"zero",ts:nowTs(),at:Date.now(),pts:0,zero:z};
+  const ln=z.n?{amount:-1,note:(st.emoji?st.emoji+" ":"")+(st.label||"Chore")+" · not done "+n+" days",ts:rec.ts,iso:new Date().toISOString(),src:"zero",wk:wk,day:dn}:null;
+  const put=function(){ if(!ln) return; bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{}; bank[kid].adjustments[bid]=ln; };
+  const L=(routineLog[kid]=routineLog[kid]||{}), W=(L[wk]=L[wk]||{}); (W[dn]=W[dn]||{})[key]=rec;
+  if(!live){ put(); return; }
+  try{ db.ref("routineLog/"+kid+"/"+wk+"/"+dn+"/"+key).transaction(function(cur){ return cur?undefined:rec; },function(err,ok){
+    if(err||!ok||!ln) return; put(); db.ref("bank/"+kid+"/adjustments/"+bid).set(ln); },false); }catch(e){}   // the bank listener redraws
+}
+// CHOREZERO_END
 // STARRULES_START — 📒 Ledger ⚙ star rules (chore ledger design §4, L4, her yes 11/23), written by house.js LEDGERRULES at household/meta/
 // starRules {fall:{kid:{on:false}|{from}},take:{kid:false},pause:{on:true}|{from}}; missing = as before. A flip never reaches back.
 function starRules(){ try{ return householdData.meta.starRules||{}; }catch(e){ return {}; } }
@@ -3212,6 +3247,7 @@ function rtSlotHTML(slot,kid){
   const _raw=steps.map((st,i)=>(day===_todayDay&&wavedIdx.indexOf(i)<0)?rtLateDays(slot,kid,i,true):0);
   const _wait=_raw.map((n,i)=>(n>0&&stepWindowOk(steps[i],day))?((typeof rtWaitCut==="function")?rtWaitCut(steps[i],n):n):0);
   _raw.forEach((n,i)=>{ const st=steps[i]; if(n>0&&!_wait[i]&&(stepWindowOk(st,day)||(st.cycW&&stepWindowOk(Object.assign({},st,{cycW:0}),day)))) _rtLogLateMiss(slot,kid,i,st.cad||"daily",st.label,st.pts||0); });
+  if(typeof rtZeroSee==="function") rtZeroSee(slot,kid,steps);   // CHOREZERO: a 0 ⭐ daily missed 2+ days in a row
   const dueIdx=steps.map((st,i)=>i).filter(i=>wavedIdx.indexOf(i)<0&&stepWindowOk(steps[i],day)&&(cadDueOn(steps[i].cad||"daily",day)||_wait[i]>0));   // carry-overs only on today's tab
   const total=dueIdx.length;
   // ✋ as-needed rows: shown, tappable, paid — but never part of total/allDone.
@@ -7289,7 +7325,7 @@ function chSettingsClickoffLogHTML(){
       var slbl=(typeof SL_SLBL!=="undefined"&&SL_SLBL[e.slot])||e.slot||"";
       var dlbl=(typeof DAY_LBL!=="undefined"&&DAY_LBL[e._day])||e._day||"";
       h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)'+(e.flagged?';opacity:.6':'')+'">';
-      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">'+((typeof flagMarkTxt==="function"&&flagMarkTxt(e))||'−100')+'</span>':'')+((e.drop&&e.drop.n)?' <span style="color:#b91c1c;font-weight:800">'+(e.drop.gb?'−'+e.drop.n+' ⭐ given back':'−'+e.drop.n+' ⭐')+'</span>':'')/* CHOREDROP: what the drop took */+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
+      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">'+((typeof flagMarkTxt==="function"&&flagMarkTxt(e))||'−100')+'</span>':'')+((e.drop&&e.drop.n)?' <span style="color:#b91c1c;font-weight:800">'+(e.drop.gb?'−'+e.drop.n+' ⭐ given back':'−'+e.drop.n+' ⭐')+'</span>':'')/* CHOREDROP: what the drop took */+((e.zero&&e.zero.n)?' <span style="color:#b91c1c;font-weight:800">'+(e.zero.gb?'−1 ⭐ given back':'−1 ⭐')+'</span>':'')/* CHOREZERO */+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
       if(on&&!e.flagged) h+='<button onclick="rlogFlag(\''+kid+'\',\''+_rlwk+'\',\''+e._day+'\',\''+e._key+'\')" title="Didn\'t actually do it — dock 100 points" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ −100</button>';
       h+='</div>';
     });
