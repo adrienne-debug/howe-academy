@@ -189,10 +189,13 @@ console.log("\n── 3 · the whole app, plan ON ──");
 if (HAVE_BASE) { const S = await mkApp("on", winHH("on", {}), BASE, BHJS); await S.w.at(2026, 11, 16, 7, 0); const x = ((clone(S.w.get("houseDay/" + MON)) || {}).plan || {}).c_a_win;
   ok("(contrast) " + WAS + " put it on Kid B's list (so 3 bites)", !!x && x.who === "kid_b" && J(onLists(S.B, "c_a_win", "monday")) === J(["chores/kid_b/monday"]), x); }
 
+// HOUSEQUIET (slice B of the missed-chores design, 2026-11-23) changes on purpose what the Household pages draw (test_house_quiet.js);
+// every caller asks typeof first, so this comparison with the app before runs on house.js with that block cut out.
+const noQ = s => { const i = s.indexOf("// HOUSEQUIET_START"); return i < 0 ? s : s.slice(0, i) + s.slice(s.indexOf("\n", s.indexOf("// HOUSEQUIET_END")) + 1); };
 console.log("\n── 4 · the whole app, everyone at one level, chores at mixed levels: = " + WAS + " ──");
 if (HAVE_BASE) for (const mode of ["off", "preview", "on"]) for (const L of [1, 2, 3]) {
   if (mode !== "on" && L === 3) continue;   // off / preview never read the plan for lists; levels 1 and 2 cover them
-  const N = await replay(mode, L, 14, undefined, HJS), B0 = await replay(mode, L, 14, BASE, BHJS), lab = mode + " · everyone at Level " + L;
+  const N = await replay(mode, L, 14, undefined, noQ(HJS)), B0 = await replay(mode, L, 14, BASE, BHJS), lab = mode + " · everyone at Level " + L;   // HOUSEQUIET: noQ
   const badDay = N.shots.map((s, i) => s === B0.shots[i] ? null : isoN(i >> 1) + (i & 1 ? " 18:00" : " 07:00")).filter(Boolean);
   ok(lab + " · every kid's lists, Mom's and Dad's, Mom's 👤 By person, twice a day for 14 days = " + WAS, badDay.length === 0, badDay.slice(0, 3));
   ok(lab + " · every write, in order (" + N.writes.split("\n").length + ") = " + WAS, N.writes === B0.writes, (() => { const x = N.writes.split("\n"), y = B0.writes.split("\n"); const i = x.findIndex((l, j) => l !== y[j]); return [i, x[i], y[i]]; })());
