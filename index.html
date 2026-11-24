@@ -2918,11 +2918,23 @@ function rtDailyMissed(slot,kid,i,st){
     const m=prev?(_prevSlWk===w?prevSlState:null):slState; if(!w||!m) break;   // last week not on this device yet: say nothing
     if((st.from&&ds<st.from)||(st.to&&ds>st.to)||!stepCycleOk(st,ds)) break;
     const r=m[w+"_"+dn+"_"+kid+"_"+ab+"step"+i]; if(r&&r.done) break;
+    if(rtDailyLogOn(kid,w,dn,slot,st.label)) break;   // its place moved: the day's own log says this chore was ticked
     if((((wavedData[w]||{})[dn]||{})[kid]||{})[slot+"step"+i]) break;
     if((off[ds]||{}).school===false) break;
     if(slot!=="morning"&&typeof amCarry!=="undefined"&&((amCarry||{})[kid]||{})[ds+"_"+ab+"step"+i]) break;   // 🌅 sent that day (amKey)
     n++; }
   return n;
+}
+// A row's ticks are kept by its place in the list (i), and a list edit can move the places of the rows after it (nothing re-keys the
+// stored ticks), so the place alone can read another row's day (hub's review 2026-11-23). A day only counts as missed when the day's
+// own Click-off Log (routineLog/<kid>/<wk>/<day>, live for this week and last, written in the same tap as the tick) also has no
+// standing "on" line for this list and this chore's words. Last week's log not on this device yet: unsure, so the count stops.
+function rtDailyLogOn(kid,w,dn,slot,label){
+  const W=((typeof routineLog!=="undefined"&&routineLog)||{})[kid]||{};
+  if(!W[w]&&typeof _rlWin!=="undefined"&&typeof db!=="undefined"&&db&&String(_rlWin.key||"").split("|")[0].split(",").indexOf(w)<0) return true;
+  const L=(W[w]||{})[dn]||{}; let last=null;
+  Object.keys(L).forEach(function(k){ const x=L[k]; if(x&&x.slot===slot&&x.label===label&&(x.act==="on"||x.act==="off")&&(!last||(x.at||0)>=(last.at||0))) last=x; });
+  return !!(last&&last.act==="on");
 }
 // What the row pays today (the one number every payer and display reads); not a daily row = its stars.
 function rtDailyPay(slot,kid,i,st){ const p=(st&&st.pts)||0; if(!rtDailyRow(st)) return p; const n=rtDailyMissed(slot,kid,i,st); return n>1?rtFallPts(p,n-1):p; }
@@ -2930,6 +2942,15 @@ function rtDailyPay(slot,kid,i,st){ const p=(st&&st.pts)||0; if(!rtDailyRow(st))
 function rtDailyPill(p,f,cls){ return '<span class="'+(cls||"mr-pts")+'">'+(f===p?'+'+p:'<s style="opacity:.6">'+p+'</s> \u2192 '+f)+' \u2b50</span>'; }
 // Mom's pop-up note: "missed 2 days \u00b7 pays 8 of 10 \u2b50"
 function rtDailyNote(slot,kid,i,st){ const p=(st&&st.pts)||0, f=rtDailyPay(slot,kid,i,st); return f<p?"missed "+rtDailyMissed(slot,kid,i,st)+" days \u00b7 pays "+f+" of "+p+" \u2b50":""; }
+// A daily row that JOINS a kid's list starts that day (hub's review 2026-11-23): a daily row has no start date of its own, so on the
+// day it is added, given to another kid, moved to another list, turned daily, or comes back on with a level / a keep, the walk would
+// read days it was not that kid's daily as misses. Each of those taps also writes from = today (the start date LATE_FROM gives a
+// weekday row), and the walk stops at st.from. rtDailyOn: on a kid's list as a daily now (hhKidJobIds' own test) · rtDailyJoin: today,
+// or "" · rtDailyOnIds / rtDailyStampNew: the rows a level or keep tap brings on, stamped by targeted writes (Mom's device only).
+function rtDailyOn(j){ return !!j&&typeof _hhIsKidJob==="function"&&_hhIsKidJob(j)&&SL_SLOTS.indexOf(j.slot)>=0&&(j.cad||"daily")==="daily"&&!j.rot&&j.status!=="retired"&&!j.hold&&hhLevelOut(j); }
+function rtDailyJoin(j){ return rtDailyOn(j)?_hhIsoLocal(Date.now()):""; }
+function rtDailyOnIds(){ const J=hhJobs(); return Object.keys(J).filter(function(id){ return rtDailyOn(J[id]); }); }
+function rtDailyStampNew(before){ if(!before) return; const J=hhJobs(); Object.keys(J).forEach(function(id){ const t=before.indexOf(id)<0?rtDailyJoin(J[id]):""; if(t&&J[id].from!==t){ J[id].from=t; if(_hhWrite()) db.ref("household/jobs/"+id+"/from").set(t); } }); }
 // CHOREDAILY_END
 // STARRULES_START — 📒 Ledger ⚙ star rules (chore ledger design §4, L4, her yes 11/23), written by house.js LEDGERRULES at household/meta/
 // starRules {fall:{kid:{on:false}|{from}},take:{kid:false},pause:{on:true}|{from}}; missing = as before. A flip never reaches back.
@@ -13581,7 +13602,9 @@ function hhSet(id,field,val){
   if(field==="minutes"){ val=parseInt(val,10); if(!(val>0&&val<=240)) return; }                       // 🧹 HOUSEHOLD_GRID plan fields
   if(field==="level"){ val=parseInt(val,10); if(!(val>=1&&val<=3)) return; }
   if(field==="planCad"&&!(val==="daily"||/^wk:[0-6]$/.test(val)||val==="")) return;
+  const _dw=(typeof rtDailyOnIds==="function")?rtDailyOnIds():null;   // CHOREDAILY: a level or keep that brings a daily on starts it today
   jobs[id][field]=val; if(field==="verdict") jobs[id].status=(val==="retire")?"retired":"active";
+  if(_dw) rtDailyStampNew(_dw);   // CHOREDAILY
   householdOnValue(householdData);
   if(_hhWrite()){ db.ref("household/jobs/"+id+"/"+field).set(val); if(field==="verdict") db.ref("household/jobs/"+id+"/status").set(jobs[id].status); }
   hhRender();
@@ -14040,10 +14063,12 @@ function hhRoomHTML(){
   return h;
 }
 // ── Levels ──
-function hhLevelSet(v){ if(typeof momHere==="function"&&!momHere()) return; v=parseInt(v,10); if(!(v>=1&&v<=3)) return; householdData.levels=householdData.levels||{}; householdData.levels.cleaning=Object.assign({},householdData.levels.cleaning,{current:v,at:Date.now()}); householdOnValue(householdData); if(_hhWrite()) db.ref("household/levels/cleaning/current").set(v); if(typeof renderAll==="function") renderAll(); else hhRender(); }   // HH_LEVEL_GATE: lists follow the level
+function hhLevelSet(v){ if(typeof momHere==="function"&&!momHere()) return; v=parseInt(v,10); if(!(v>=1&&v<=3)) return; const _dw=(typeof rtDailyOnIds==="function")?rtDailyOnIds():null; householdData.levels=householdData.levels||{}; householdData.levels.cleaning=Object.assign({},householdData.levels.cleaning,{current:v,at:Date.now()}); if(_dw) rtDailyStampNew(_dw); householdOnValue(householdData); if(_hhWrite()) db.ref("household/levels/cleaning/current").set(v); if(typeof renderAll==="function") renderAll(); else hhRender(); }   // HH_LEVEL_GATE: lists follow the level
 // HH_LEVEL_PERSON: v = 1..3 pins that person; v = 0 clears it (follow the family dial). One targeted write.
 function hhLevelSetFor(who,v){ if(typeof momHere==="function"&&!momHere()) return; if(HH_WHO.indexOf(who)<0||who==="grab") return; v=parseInt(v,10); if(!(v>=0&&v<=3)) return;
+  const _dw=(typeof rtDailyOnIds==="function")?rtDailyOnIds():null;   // CHOREDAILY: the dailies a level brings on start today
   householdData.levels=householdData.levels||{}; if(v===0){ delete householdData.levels[who]; } else { householdData.levels[who]={current:v,at:Date.now()}; }
+  if(_dw) rtDailyStampNew(_dw);   // CHOREDAILY
   householdOnValue(householdData); if(_hhWrite()){ if(v===0) db.ref("household/levels/"+who).remove(); else db.ref("household/levels/"+who+"/current").set(v); } if(typeof renderAll==="function") renderAll(); else hhRender(); }
 function hhLevelCycle(id){ const j=hhJobs()[id]; if(!j) return; hhSet(id,"level",(hhLevelOf(j)%3)+1); }
 // The last three full Mon–Sun weeks: due vs done over the house rows at or below the current level.
@@ -14115,13 +14140,16 @@ function hhSyncKids(){
         id="hh"+now.toString(36)+Math.random().toString(36).slice(2,6); const area=hhGuessArea(f.label,slot,f.rot);
         const job=Object.assign({},f,{slot:slot,who:kid,src:{kind:"new"},source:"Household tab",area:area,floor:(area==="cleaning"||area==="pickup")?hhGuessFloor(f.label,f.zone):"",status:"active",verdict:"",note:"",order:i,ts:now});
         if(!job.from&&/^wk:/.test(job.cad||"")) job.from=_hhIsoLocal(now);   // LATE_FROM: a new weekday step begins today
+        if(typeof rtDailyJoin==="function"&&rtDailyJoin(job)) job.from=rtDailyJoin(job);   // CHOREDAILY: a new daily starts today
         upd["household/jobs/"+id]=job; jobs[id]=job; Object.defineProperty(st,"_hh",{value:id,enumerable:false,writable:true});
       } else {
         const j=jobs[id];
+        const _dw=(typeof rtDailyOn==="function")?rtDailyOn(j)+"|"+j.who+"|"+j.slot:"";   // CHOREDAILY: was it this kid's daily on this list?
         HH_STEP_KEYS.forEach(function(k){ const nv=(f[k]===undefined)?null:f[k], ov=(j[k]===undefined||j[k]===""||j[k]===null)?null:j[k]; if(JSON.stringify(nv)!==JSON.stringify(ov)){ upd["household/jobs/"+id+"/"+k]=nv; if(nv===null) delete j[k]; else j[k]=nv; } });
         if(j.who!==kid){ upd["household/jobs/"+id+"/who"]=kid; j.who=kid; } if(j.slot!==slot){ upd["household/jobs/"+id+"/slot"]=slot; j.slot=slot; }
         if((j.order||0)!==i){ upd["household/jobs/"+id+"/order"]=i; j.order=i; }
         if(j.status!=="active"){ upd["household/jobs/"+id+"/status"]="active"; j.status="active"; }
+        if(_dw&&rtDailyJoin(j)&&_dw!=="true|"+j.who+"|"+j.slot&&j.from!==rtDailyJoin(j)){ upd["household/jobs/"+id+"/from"]=rtDailyJoin(j); j.from=rtDailyJoin(j); }   // CHOREDAILY: it joins this list today
       }
       seen[id]=1; }); }); });
   Object.keys(jobs).forEach(function(id){ const j=jobs[id]; if(_hhIsKidJob(j)&&j.status!=="retired"&&hhLevelOut(j)&&!j.hold&&!seen[id]){ upd["household/jobs/"+id+"/status"]="retired"; upd["household/jobs/"+id+"/verdict"]="retire"; j.status="retired"; j.verdict="retire"; } });   // HH_LEVEL_GATE: a gated-off row is not a deleted row. HH_SYNC_HELD 2026-11-16: nor is a one-time job waiting in the ☑️ Once pile — it is off the list on purpose (hhKidJobIds), so every Chores & Stars save retired it
@@ -14266,6 +14294,7 @@ function hhAddSave(){
   const now=Date.now(), id="hh"+now.toString(36)+Math.random().toString(36).slice(2,6), area=HH_AREAS[hhAdd.area]?hhAdd.area:hhGuessArea(label,slot,"");   // HH_ADD_FORM: her pick, else the guess
   const job={label:label,cad:cad,slot:slot,pts:pts,who:who,src:kid?{kind:"new"}:{kind:(who==="dad"?"dadChore":"momChore"),id:id},source:"Household tab",area:area,floor:(area==="cleaning"||area==="pickup")?(_hhRoomFloor(room)||hhGuessFloor(label,"")):"",room:room,level:level,status:"active",verdict:"",note:"",order:_hhNextOrder(who,slot),ts:now};
   if(emoji) job.emoji=emoji; if(/^wk:/.test(cad)||cad==="once") job.from=_hhIsoLocal(now);     // LATE_FROM: begins today (a once-job too)
+  if(typeof rtDailyJoin==="function"&&rtDailyJoin(job)) job.from=rtDailyJoin(job);              // CHOREDAILY: a new daily starts today
   if(kind==="project") job.layer="project";   // HH_PROJECTS
   if(kind==="once") job.hold=true;             // HH_ONCEPILE: in the pile until she sends it
   const others=Object.keys(hhAdd.can||{}).filter(function(w){ return hhAdd.can[w]&&w!==who&&HH_WHO.indexOf(w)>=0&&w!=="grab"; }); if(others.length) job.can=[who].concat(others);   // HH_SETTINGS_METER
@@ -14314,6 +14343,7 @@ function hhGiveTo(id,who){
   else { if(j.rot) set("rot",null); if(j.free) set("free",null); /* HH_ROTATE: Mom's and Dad's rows do not rotate */ set("src",{kind:(who==="dad"?"dadChore":"momChore"),id:id}); const m={morning:"morning",afternoon:"afternoon",evening:"night",chores:""}; if(m[j.slot]!==undefined) set("slot",m[j.slot]); else if(!HH_MC_SLOTS.some(function(c){ return c[0]===(j.slot||""); })) set("slot",""); if(j.srcTs!==undefined) set("srcTs",null); }
   set("order",_hhNextOrder(who,j.slot,id));
   if(/^wk:/.test(j.cad||"")) set("from",_hhIsoLocal(Date.now()));                              // LATE_FROM: a new owner starts today
+  if(typeof rtDailyJoin==="function"&&rtDailyJoin(j)) set("from",rtDailyJoin(j));               // CHOREDAILY: a daily's new owner starts today
   hhGive=""; householdOnValue(householdData);
   if(_hhWrite()) db.ref().update(upd);                                                          // one multi-path update (this row, plus a retired placeholder turn)
   if(typeof mwToast==="function") try{ mwToast("Gave "+(j.label||"it")+" to "+hhWhoName(who)); }catch(e){}

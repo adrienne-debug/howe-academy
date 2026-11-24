@@ -226,6 +226,7 @@ function hhEditCadMode(cad){ cad=cad||"daily"; if(/^wk:|^sat$|^sun$/.test(cad)) 
 function hhEditDays(cad){ if(cad==="sat") return [5]; if(cad==="sun") return [6]; if(!/^wk:/.test(cad||"")) return []; return cad.slice(3).split(",").filter(function(x){ return x!==""; }).map(Number).filter(function(n){ return n>=0&&n<=6; }); }
 function hhEditSet(id,field,val){
   if(typeof momHere==="function"&&!momHere()) return null; const jobs=hhJobs(), j=jobs[id]; if(!j) return null; const upd={}, P="household/jobs/"+id+"/", kid=hhIsKid(j.who);
+  const _dw=(typeof rtDailyOn==="function")?rtDailyOn(j)+"|"+j.slot:"";   // CHOREDAILY (C5): was it a daily on this list?
   if(["minutes","room","level","area","can","verdict"].indexOf(field)>=0){ hhSet(id,field,val); return val; }
   if(field==="label"){ val=String(val||"").trim().slice(0,80); if(!val) return null; }
   else if(field==="emoji"){ val=String(val||"").trim().slice(0,4); }
@@ -237,6 +238,7 @@ function hhEditSet(id,field,val){
   else if(field==="from"){ val=String(val||""); if(val&&!/^\d{4}-\d{2}-\d{2}$/.test(val)) return null; }
   else return null;
   if(val===""){ upd[P+field]=null; delete j[field]; } else { upd[P+field]=val; j[field]=val; }
+  if(_dw&&field!=="from"&&rtDailyJoin(j)&&_dw!=="true|"+j.slot){ upd[P+"from"]=rtDailyJoin(j); j.from=upd[P+"from"]; }   // CHOREDAILY (C5): turned daily or moved to another list: it starts today
   householdOnValue(householdData); if(_hhWrite()) db.ref().update(upd); hhRender(); return val;
 }
 function hhEditCadMode_set(id,mode){ const j=hhJobs()[id]; if(!j) return null; const cad=j.cad||"daily"; if(mode==="wk"){ const d=hhEditDays(cad); return hhEditSet(id,"cad","wk:"+(d.length?d:[(new Date().getDay()+6)%7]).join(",")); } if(mode==="nd"){ return hhEditSet(id,"cad",/^\d+d$/.test(cad)?cad:"3d"); } return hhEditSet(id,"cad",mode); }
