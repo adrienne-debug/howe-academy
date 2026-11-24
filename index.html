@@ -44526,15 +44526,16 @@ function wbdFit(){
   const c=(w/WBD_GRID).toFixed(2)+"px";
   hold.style.backgroundImage=v.bg==="grid"?"linear-gradient(#bfdbfe 1px,transparent 1px),linear-gradient(90deg,#bfdbfe 1px,transparent 1px)":"none";
   hold.style.backgroundSize=v.bg==="grid"?c+" "+c:"auto";
+  if(v.bg==="lines"&&typeof wbdLinesCss==="function") wbdLinesCss(hold.style,Math.round(w));   // WBDLINES: ▤ Lines
   if(typeof wbFit==="function") wbFit(); if(typeof wbPaint==="function") wbPaint();
   return true;
 }
-function wbdBg(k){ const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!v.scratch) return; v.bg=_wbdBg=(k==="grid"?"grid":"blank"); wbdFit(); wbBarRender(); }
+function wbdBg(k){ const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!v.scratch) return; v.bg=_wbdBg=(k==="grid"||k==="lines"?k:"blank"); wbdFit(); wbBarRender(); }   // WBDLINES: + lines
 // wbBarRender's hook: the board's bar, drawn with the viewer's own button
 function wbdBarHTML(v,btn){
   return btn("\u2715","wbClose()")+'<span style="font-weight:800;font-size:13px;color:#0f172a">\u270D\uFE0F Whiteboard</span>'+
     '<span style="font-size:11px;color:#64748b">scratch \u00B7 \u2715 wipes it</span><span style="flex:1"></span>'+
-    btn("\u25A2 Blank","wbdBg(\'blank\')",v.bg!=="grid")+btn("\u25A6 Grid","wbdBg(\'grid\')",v.bg==="grid")+
+    btn("\u25A2 Blank","wbdBg(\'blank\')",v.bg!=="grid"&&v.bg!=="lines")+btn("\u25A6 Grid","wbdBg(\'grid\')",v.bg==="grid")+btn("\u25A4 Lines","wbdBg(\'lines\')",v.bg==="lines")+   // WBDLINES
     btn("\u270F\uFE0F","wbTool(\'pen\')",v.tool==="pen")+btn("\u{1FA79} Erase","wbTool(\'erase\')",v.tool==="erase")+
     btn("\u21A9\uFE0E Undo","wbUndo()")+btn("\u{1F9FD} Clear","wbClear()")+btn(v.penOnly?"\u270D\uFE0F Pencil only":"\u{1F446} Finger too","wbTogglePen()",v.penOnly)+
     ((typeof wbdSaveBtnHTML==="function")?wbdSaveBtnHTML(v,btn):"");   // WBDSAVE: 💾 Save — Mom, from Today's card on a unit day
@@ -44546,6 +44547,28 @@ function wbdDoorHTML(g){
 }
 try{ window.addEventListener("resize",function(){ if(typeof wbView!=="undefined"&&wbView&&wbView.scratch) wbdFit(); }); }catch(e){}   // a device with no ResizeObserver (the LG) still re-fits on a turn
 // WBOARD_END
+// WBDLINES_START — ▤ Lines on the whiteboard (Adrienne's yes 2026-11-24): handwriting rows for a beta family starting Logic of
+//   English Foundations A — Lesson 1 teaches the top line, the dotted midline and the baseline, and Mom writes big on a lined
+//   board for the child to trace; they have no physical board. Each row: a solid top line, a dashed midline, a darker, heavier
+//   baseline (where letters sit). Top→base = 1/8 of the board's width, half that again between rows (room for tails). Every size
+//   is a share of the width, so a turned iPad shows the same rows under the same ink. Drawn as the board's CSS (wbdFit) and on
+//   the 💾 Save picture (wbdJpeg). Stores nothing: the pick lives in _wbdBg for the sitting, like ▦ Grid. Blank stays the default.
+const WBD_LC="#94a3b8", WBD_BC="#475569";   // top + midline · baseline
+function wbdLn(w){ const x=w/8, lw=Math.max(1,w/600); return {x:x,p:x*1.5,t:x/4,lw:lw,bw:lw*2,d:w/96}; }
+function wbdLinesCss(s,w){
+  const L=wbdLn(w), f=n=>n.toFixed(2)+"px", P=f(L.p), ln=(y,h,c)=>"linear-gradient(transparent "+f(y-h/2)+","+c+" "+f(y-h/2)+","+c+" "+f(y+h/2)+",transparent "+f(y+h/2)+")";
+  s.backgroundImage=[ln(L.t,L.lw,WBD_LC),ln(L.t+L.x,L.bw,WBD_BC),"linear-gradient(90deg,transparent 50%,#fff 50%)",ln(L.t+L.x/2,L.lw,WBD_LC)].join(",");   // white gaps over the midline make its dashes
+  s.backgroundSize="100% "+P+",100% "+P+","+f(2*L.d)+" "+P+",100% "+P;
+}
+function wbdLinesDraw(g,W,H){
+  const L=wbdLn(W);
+  g.strokeStyle=WBD_LC; g.lineWidth=L.lw; g.beginPath();
+  for(let y=L.t;y<H;y+=L.p){ g.moveTo(0,y); g.lineTo(W,y); const m=y+L.x/2; if(m<H) for(let a=0;a<W-1;a+=2*L.d){ g.moveTo(a,m); g.lineTo(Math.min(W,a+L.d),m); } }
+  g.stroke(); g.strokeStyle=WBD_BC; g.lineWidth=L.bw; g.beginPath();
+  for(let y=L.t+L.x;y<H;y+=L.p){ g.moveTo(0,y); g.lineTo(W,y); }
+  g.stroke();
+}
+// WBDLINES_END
 // WBDSAVE_START — 💾 Save on the whiteboard (Sara's answer 2026-11-20: a board is kept only "when someone taps Save"; PLAN §7.2;
 //   Adrienne's "go with her answers and build" 2026-11-22). Scratch stays the default — nothing is written until Save is tapped.
 //   · WHO: Mom (momHere()), on a board opened from Today's card with a unit day (wbdOpen({uid, dayId})). Not on a board opened
@@ -44574,6 +44597,7 @@ function wbdJpeg(v){
   g.fillStyle="#fff"; g.fillRect(0,0,W,H);
   if(v.bg==="grid"){ const st=W/WBD_GRID; g.strokeStyle="#bfdbfe"; g.lineWidth=Math.max(1,W/800); g.beginPath();
     for(let x=st;x<W-1;x+=st){ g.moveTo(x,0); g.lineTo(x,H); } for(let y=st;y<H-1;y+=st){ g.moveTo(0,y); g.lineTo(W,y); } g.stroke(); }
+  if(v.bg==="lines"&&typeof wbdLinesDraw==="function") wbdLinesDraw(g,W,H);   // WBDLINES
   g.drawImage(ink,0,0,W,H);
   return c.toDataURL("image/jpeg",0.85);
 }
