@@ -309,7 +309,7 @@ function othersView(o){   // 🎁 From others: one card per giver
   let h=intro("Presents someone else is buying — a grandparent, aunt or uncle. Tick 🗣 when you've told them what to get, 👍 when they say yes and ✅ when they've got it. These never count in your money or your lists.");
   if(!L.length)return h+'<div class="gf-card"><div class="gf-empty">Nobody else is buying anything yet. Open a present and pick who\'s buying it.</div></div>';
   byGiver(L).forEach(g=>{const t=g.items.filter(it=>it.told).length,y=g.items.filter(it=>it.yes).length,gt=g.items.filter(it=>it.got).length;
-    h+='<div class="gf-card"><div class="gf-ghd"><span>🎁 '+esc(g.name)+'</span><span class="gf-gsum">'+g.items.length+' · '+t+' told · '+y+' said yes · '+gt+' got it</span></div><div class="gf-bd">'+g.items.map(it=>fromRow(it,null)).join("")+'</div></div>';});
+    h+='<div class="gf-card"><div class="gf-ghd"><span>🎁 '+esc(g.name)+'</span><span class="gf-gsum">'+g.items.length+' · '+t+' told · '+y+' said yes · '+gt+' got it</span></div><div class="gf-bd">'+textActs(o,g)+g.items.map(it=>fromRow(it,null)).join("")+'</div></div>';});
   return h;
 }
 function fromField(f){   // the present's sheet
@@ -334,6 +334,38 @@ function gfFromTick(id,k){   // ONE update: told / yes / got = today, or removed
   else{it[k]=today();write("gifts/items/"+id,{[k]:it[k]},"update");log(k==="told"?"🗣 Told "+g+" about "+it.name:k==="yes"?"👍 "+g+" said yes to "+it.name:"✅ "+g+" has got "+it.name);}
   gfDraw();
 }
+// GIFTTUNE 3 (worksheet: "Would you want to hand a relative their list?" → "Yes, something I can text them"): 📤 on each giver's card in
+// 🎁 From others builds plain text — a first line, then one line per present THIS giver is buying this occasion: who it's for + its name
+// (+ its link). Never a price, hiding spot, paper, note, or anyone else's present. Handed to the device's share sheet, else copied to the
+// clipboard; no network call. Then ONE tap 🗣 Mark these N as told (one multi-path update of told only) — nothing is ticked by itself.
+let gfTextOffer=null;   // {oid, gid, ids}: the not-yet-told presents in the list she just handed over
+function fromText(oid,gid){
+  const o=occ(oid)||{},nm=x=>(person(x)||{}).name||"?",L=(byGiver(fromOthers(oid).filter(it=>it.from===gid))[0]||{items:[]}).items;
+  return {L,text:["Hi "+giverName(gid)+"! Here's your gift list for "+(o.name||"the holidays")+":"].concat(L.map(it=>{const P=pidsOf(it),ln=String(it.link||"").trim();
+    return "• "+(P.length?P.map(nm).join(" & ")+": ":"")+String(it.name||"").trim()+(ln?" — "+ln:"");})).join("\n")};
+}
+function textActs(o,g){
+  const f=gfTextOffer,I=gfData.items||{},n=f&&f.oid===o.id&&f.gid===g.pid?f.ids.filter(id=>I[id]&&!ours(I[id])&&I[id].from===f.gid&&!I[id].told).length:0;
+  return '<div class="gf-acts" style="margin:0 0 6px"><button class="gf-tool" onclick="gfFromText(\''+esc(g.pid)+'\')">📤 Text '+esc(g.name)+' their list</button>'+
+    (n?'<button class="gf-tool" onclick="gfFromToldAll()">🗣 Mark these '+n+' as told</button><button class="gf-tool gf-mini" onclick="gfFromTextNo()">Not now</button>':'')+'</div>';
+}
+function gfFromText(gid){
+  const oid=curOcc();if(!oid)return;const r=fromText(oid,gid);if(!r.L.length)return;
+  const ids=r.L.filter(it=>!it.told).map(it=>it.id),nav=typeof navigator!=="undefined"?navigator:null;
+  const done=msg=>{gfTextOffer=ids.length?{oid,gid,ids}:null;if(msg)toast(msg);gfDraw();};
+  try{
+    if(nav&&typeof nav.share==="function"){Promise.resolve(nav.share({text:r.text})).then(()=>done(""),()=>{});return;}   // cancelled or refused: quietly nothing
+    if(nav&&nav.clipboard&&typeof nav.clipboard.writeText==="function"){Promise.resolve(nav.clipboard.writeText(r.text)).then(()=>done("📋 Copied — paste it into a text to "+giverName(gid)),()=>toast("Couldn't copy on this device"));return;}
+  }catch(e){return;}
+  toast("Couldn't copy on this device");
+}
+function gfFromToldAll(){   // ONE multi-path update: <iid>/told = today, only for the ones still not told
+  const f=gfTextOffer;gfTextOffer=null;if(!f)return;const I=gfData.items||{},t=today(),up={};
+  f.ids.forEach(id=>{const it=I[id];if(it&&!ours(it)&&it.from===f.gid&&!it.told){it.told=t;up[id+"/told"]=t;}});
+  const n=Object.keys(up).length;if(n){write("gifts/items",up,"update");log("🗣 Told "+giverName(f.gid)+" about "+n+" present"+(n===1?"":"s")+" (sent their list)");}
+  gfDraw();
+}
+function gfFromTextNo(){gfTextOffer=null;gfDraw();}
 // FROMOTHERS_END
 
 // ── the Christmas views (slice 2) ─────────────────────────────────────────────
@@ -1792,7 +1824,7 @@ window.renderGifts=function(el,ah){
   grpOpen(el);   // GIFTS_GROUPS: a fresh visit opens on 👧 Kids
   gfRoot=el;gfAh=ah||"";gfListen();gfDraw();
 };
-Object.assign(window,{gfFromPick,gfFromFormTick,gfFromTick,gfTagsToggle,gfSplitMode,gfSplitSet,gfPack,gfOpened,gfGivenAt,gfSpotPick,gfSendTo,gfBringIn,gfShareSet,gfShareSize,gfGo,gfSelToggle,gfPick,gfBulk,gfBulkIds,gfGather,gfEveTick,gfLineAdd,gfLineTick,gfLineDel,gfLinesCopy,gfEvenEdit,gfNeed,gfStartOcc,gfPickOcc,gfOpenPerson,gfBack,gfNewItem,gfEditItem,gfMove,gfSet,gfSetDraw,gfTogglePid,gfSecBudget,gfSecEdit,gfSecAdd,gfCancel,gfSave,gfDelete,gfNext,gfNewPerson,gfEditPerson,gfBudget,gfGroupBudget,gfNewGroup,gfNewOcc,gfOccEdit});
+Object.assign(window,{gfFromPick,gfFromFormTick,gfFromTick,gfFromText,gfFromToldAll,gfFromTextNo,gfTagsToggle,gfSplitMode,gfSplitSet,gfPack,gfOpened,gfGivenAt,gfSpotPick,gfSendTo,gfBringIn,gfShareSet,gfShareSize,gfGo,gfSelToggle,gfPick,gfBulk,gfBulkIds,gfGather,gfEveTick,gfLineAdd,gfLineTick,gfLineDel,gfLinesCopy,gfEvenEdit,gfNeed,gfStartOcc,gfPickOcc,gfOpenPerson,gfBack,gfNewItem,gfEditItem,gfMove,gfSet,gfSetDraw,gfTogglePid,gfSecBudget,gfSecEdit,gfSecAdd,gfCancel,gfSave,gfDelete,gfNext,gfNewPerson,gfEditPerson,gfBudget,gfGroupBudget,gfNewGroup,gfNewOcc,gfOccEdit});
 window._gfTest={allItems,ours,fromOthers,othersFor,tally,giveAt,atHome,nextOf,reminders:(t,h)=>giftReminders(t,h),held,evenData,behind,evenSet,sel:()=>gfSel,selOn:()=>gfSelOn,data:()=>gfData,setData:d=>{gfData=d||{};gfLoaded=true;},people,groups,occs,secsOf,items,personTot,groupTot,occTot,left,share,curOcc,
-  setOcc:o=>{gfOcc=o;},view:()=>gfView,edit:()=>gfEdit,draw:gfDraw,setRoot:(el,ah)=>{gfRoot=el;gfAh=ah||"";},reset:()=>{gfGrp="kids";gfOcc=null;gfView="people";gfPid=null;gfEdit=null;gfRcOpen=null;gfOthersOpen=null;},rc:RC_TEST,oc:OCC_TEST,gr:GRP_TEST};
+  setOcc:o=>{gfOcc=o;},view:()=>gfView,edit:()=>gfEdit,draw:gfDraw,setRoot:(el,ah)=>{gfRoot=el;gfAh=ah||"";},reset:()=>{gfTextOffer=null;gfGrp="kids";gfOcc=null;gfView="people";gfPid=null;gfEdit=null;gfRcOpen=null;gfOthersOpen=null;},rc:RC_TEST,oc:OCC_TEST,gr:GRP_TEST};
 })();

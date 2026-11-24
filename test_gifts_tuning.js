@@ -178,5 +178,69 @@ console.log("\n# 2 · a present someone else is buying counts as a GIFT for that
   ok("…a relative's present that is partly FOR Dad is never shown or counted on his side (Ava still 6)", !/Surprise/.test(h) && /6 presents · 🎁 3 from others · </.test(h) && !/7 presents/.test(h), h.match(/\d+ presents?[^<]*/g));
 }
 
+(async () => {
+console.log("\n# 3 · 📤 Text a giver their list");
+const GMA = "Hi Gma Rose! Here's your gift list for Christmas 2026:\n• Ava: Bike — https://example.com/bike\n• Cal: Jigsaw\n• Ava: Mittens";
+const setNav = o => { delete navigator.share; delete navigator.clipboard; Object.assign(navigator, o || {}); };
+{
+  reset(WITH()); W.renderGifts(root, "<nav/>"); W.gfGo("others"); const h = root.innerHTML;
+  ok("each giver's card has '📤 Text <name> their list'", /onclick="gfFromText\('p-gma'\)">📤 Text Gma Rose their list<\/button>/.test(h) && /onclick="gfFromText\('p-pat'\)">📤 Text Uncle Pat their list<\/button>/.test(h));
+  ok("…no 'Mark as told' offer before anything is handed over", !/gfFromToldAll/.test(h));
+  const shared = []; setNav({ share: o => { shared.push(o); return Promise.resolve(); } });
+  writes.length = 0; W.gfFromText("p-gma"); await tick();
+  ok("share sheet gets {text} only — a first line, then one line per present Gma Rose is buying (kid: present — link)", shared.length === 1 && J(Object.keys(shared[0])) === '["text"]' && shared[0].text === GMA, shared);
+  const tx = shared[0] ? shared[0].text : "";
+  ok("NEVER a price, spot, paper, store, note or status in it", !/\$|200|220|Garage|Red stripes|Bikes Inc|SECRETNOTE|Ordered|Idea|📦|🛒|💭|🎀/.test(tx), tx);
+  ok("NEVER Mom's own presents, another giver's, or another occasion's", !/Socks|Candy|Trampoline|Lego|Watch|Book|Board game|Chocolate egg/.test(tx), tx);
+  ok("handing it over wrote nothing and made no network call", writes.length === 0 && net.length === 0, [writes, net]);
+  let o = root.innerHTML;
+  ok("then ONE offer: '🗣 Mark these 2 as told' (the Jigsaw is already told) + Not now", /onclick="gfFromToldAll\(\)">🗣 Mark these 2 as told<\/button>/.test(o) && /gfFromTextNo\(\)">Not now/.test(o), o.match(/Mark these[^<]*/));
+  ok("…only on Gma Rose's card", (o.match(/gfFromToldAll/g) || []).length === 1 && o.indexOf("gfFromToldAll") < o.indexOf("Uncle Pat</span>"));
+  ok("…nothing ticked by itself", !T.data().items.o1.told && !T.data().items.o4.told);
+  writes.length = 0; W.gfFromToldAll();
+  ok("tap = ONE multi-path update of told only: {o1/told, o4/told}", nonLog().length === 1 && nonLog()[0].op === "update" && nonLog()[0].path === "gifts/items" && J(nonLog()[0].val) === '{"o1/told":"2026-11-20","o4/told":"2026-11-20"}', nonLog());
+  ok("…the Jigsaw keeps its own told day", T.data().items.o3.told === "2026-11-17");
+  ok("…log 'Told Gma Rose about 2 presents (sent their list)'", logs()[0] === "🗣 Told Gma Rose about 2 presents (sent their list)", logs());
+  ok("…the offer is gone and the header counts 3 told", !/gfFromToldAll/.test(root.innerHTML) && /3 · 3 told · 1 said yes · 0 got it/.test(root.innerHTML));
+  writes.length = 0; W.gfFromToldAll();
+  ok("a second tap writes nothing", writes.length === 0);
+  shared.length = 0; W.gfFromText("p-pat"); await tick();
+  ok("a shared present reads 'Ava & Ben: Board game'; all told already → no offer", shared[0] && shared[0].text === "Hi Uncle Pat! Here's your gift list for Christmas 2026:\n• Ava & Ben: Board game" && !/gfFromToldAll/.test(root.innerHTML), shared);
+}
+{
+  reset(WITH()); W.renderGifts(root, "<nav/>"); W.gfGo("others");
+  setNav({ share: () => { const e = new Error("cancel"); e.name = "AbortError"; return Promise.reject(e); } });
+  W.gfFromText("p-gma"); await tick();
+  ok("a cancelled share: no toast, no offer, nothing written", toasts.length === 0 && !/gfFromToldAll/.test(root.innerHTML) && writes.length === 0, toasts);
+  setNav({ share: () => { throw new Error("NotAllowedError"); } });
+  W.gfFromText("p-gma"); await tick();
+  ok("a refused share (throws): quietly nothing", toasts.length === 0 && !/gfFromToldAll/.test(root.innerHTML) && writes.length === 0, toasts);
+  const copied = []; setNav({ clipboard: { writeText: t => { copied.push(t); return Promise.resolve(); } } });
+  W.gfFromText("p-gma"); await tick();
+  ok("no share sheet: copied to the clipboard + a toast saying so", copied[0] === GMA && toasts[0] === "📋 Copied — paste it into a text to Gma Rose", [copied, toasts]);
+  ok("…and the same one-tap offer", /🗣 Mark these 2 as told/.test(root.innerHTML));
+  W.gfFromTextNo();
+  ok("Not now: the offer goes, nothing written", !/gfFromToldAll/.test(root.innerHTML) && writes.length === 0);
+  W.gfFromText("p-gma"); await tick(); W.gfFromTick("o4", "told"); writes.length = 0;
+  ok("one ticked by hand meanwhile → 'Mark these 1 as told'", /🗣 Mark these 1 as told/.test(root.innerHTML));
+  W.gfFromToldAll();
+  ok("…and the tap only writes that one", J(nonLog()[0].val) === '{"o1/told":"2026-11-20"}', nonLog());
+  toasts.length = 0; setNav({ clipboard: { writeText: () => Promise.reject(new Error("denied")) } });
+  W.gfFromText("p-gma"); await tick();
+  ok("a refused copy: says it couldn't, no offer", toasts[0] === "Couldn't copy on this device" && !/gfFromToldAll/.test(root.innerHTML), toasts);
+  toasts.length = 0; setNav({}); W.gfFromText("p-gma"); await tick();
+  ok("neither share nor clipboard: says it couldn't, no offer", toasts[0] === "Couldn't copy on this device" && !/gfFromToldAll/.test(root.innerHTML), toasts);
+}
+{
+  reset(WITH()); S.dry = true; W.renderGifts(root, "<nav/>"); W.gfGo("others"); setNav({ share: () => Promise.resolve() });
+  W.gfFromText("p-gma"); await tick(); W.gfFromToldAll();
+  ok("dry run (?dryrun=1): the Mark-as-told tap writes nothing", writes.length === 0, writes); S.dry = false;
+  ok("no network call anywhere in this section", net.length === 0, net);
+  const blk = SRC.slice(SRC.indexOf("GIFTTUNE 3"), SRC.indexOf("// FROMOTHERS_END"));
+  ok("the text-a-list code has no fetch / XHR / sendBeacon / link out", !/fetch\(|XMLHttpRequest|sendBeacon|location\.|window\.open|sms:/.test(blk));
+  setNav({});
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
+})();
