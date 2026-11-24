@@ -17,6 +17,7 @@ const fs = require("fs"), path = require("path"), os = require("os"), cp = requi
 const W = require(path.join(__dirname, "test_fixtures", "house_world.js"));
 let pass = 0, fail = 0; const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + JSON.stringify(x).slice(0, 500) + ")" : "")); } };
 const J = x => JSON.stringify(x), clone = x => JSON.parse(J(x));
+const unLS = s => String(s).replace(/ <span class=\\*"ls-fire\\*"[^>]*>🔥 \d+<\/span>/g, "").replace(/<div class=\\*"ls-four\\*"[^>]*>.*?<\/div>/g, "");   // LISTSTREAK (P2): the 🔥 streak's own markup, left out of the comparisons with older copies (test_list_streak.js checks it)
 const BASE_SHA = "6b3fe607";
 let BASE = null; try { const t = path.join(os.tmpdir(), "prevsl_base_" + process.pid + ".html"); fs.writeFileSync(t, cp.execSync("git show " + BASE_SHA + ":index.html", { cwd: __dirname, maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] })); BASE = t; } catch (e) { BASE = null; }
 console.log("(the app before: " + (BASE ? BASE_SHA : "none — git show " + BASE_SHA + " failed; the checks against it are skipped") + ")");
@@ -73,7 +74,7 @@ console.log("\n── 2 · after last week's read lands: the rule as normal ─�
 }
 console.log("\n── 3 · a device that reloads on Sunday: as today ──");
 if (BASE) { const N = await week(undefined, { reload: true, skip: ["Wash the bikes"] }), O = await week(BASE, { reload: true, skip: ["Wash the bikes"] });
-  ok("every draw (the first, after the read, Monday, Tuesday) = the app before, byte for byte", J([N.first, N.after, N.d7, N.d8]).replace(/<s style=\\"opacity:\.6\\">(\d+)<\/s> → \d+ ⭐/g, "+$1 ⭐") === J([O.first, O.after, O.d7, O.d8]));
+  ok("every draw (the first, after the read, Monday, Tuesday) = the app before, byte for byte", unLS(J([N.first, N.after, N.d7, N.d8])).replace(/<s style=\\"opacity:\.6\\">(\d+)<\/s> → \d+ ⭐/g, "+$1 ⭐") === J([O.first, O.after, O.d7, O.d8]));
   ok("every write and the whole database = the app before", N.writes === O.writes && N.tree === O.tree);
   ok("(sanity) the missed chore's line was filed on both", N.miss.length === 1 && J(N.miss) === J(O.miss), N.miss);
 } else console.log("  (skipped: the app before)");
