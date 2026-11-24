@@ -3378,6 +3378,7 @@ let _archWaitFns=[], _archWaitShown=false;
 function archiveEnsureAll(){
   if(fbArchiveLoaded||typeof db==="undefined"||!db) return true;
   _archWaitShown=true;
+  try{ if(typeof archLoadFull==="function") archLoadFull("needed"); }catch(e){}   // ARCHBOOT: a device started on the smaller copy fetches every detail now
   return false;
 }
 function archiveWhenAll(fn){
@@ -3519,6 +3520,58 @@ function archCoreBackfill(){
   }).catch(function(e){ _acBusy=false; _acMsg="✗ Not saved ("+((e&&e.message)||e)+"). Nothing changed."; archCoreRefresh(); });
 }
 // ARCHCORE_END
+// ARCHBOOT_START — devices start on the smaller copy of the past weeks (her "Start slice 4" 2026-11-23,
+// PLAN_archive_window_2026-11-21.md §7 slice 4). Start-up listens to archiveCore (≈1.8 MB) instead of archive (≈3 MB): the main
+// screens read only the kept fields (test_archive_core.js proves every answer the same on live data). `archive` in memory holds
+// the copy (archCoreOnly) until something needs every detail — a build, a re-lay, History, Attendance, the editor, a print:
+// archiveEnsureAll() calls archLoadFull(), which listens to the full archive and stops listening to the copy. fbArchiveLoaded
+// keeps its meaning: the FULL archive is here. The copy isn't trusted (→ the full archive at once) when it is empty (a family
+// that hasn't tapped Settings ▸ 📚 Past weeks ▸ Make the copy) or doesn't have last week (a week closed where the copy wasn't kept).
+let archCoreOnly=false, _archFullOn=false, _archCoreCb=null, _archCoreTimer=null;
+function archBootListen(){
+  if(typeof db==="undefined"||!db) return;
+  _archCoreCb=db.ref("archiveCore").on("value",function(s){
+    if(_archFullOn) return;   // the full archive has taken over
+    const v=s.val()||{};
+    if(!Object.keys(v).length){ archLoadFull("no copy"); return; }
+    archive=v; archCoreOnly=true;
+    _archMs();
+    if(!archCoreHasLastWeek()){ archLoadFull("copy behind"); return; }
+    if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
+  });
+}
+// the copy has the week before the active one (a skipped week number just loads the full archive — never wrong, only bigger)
+function archCoreHasLastWeek(){
+  if(!archCoreOnly) return true;
+  const m=/^week(\d+)$/.exec(String((typeof WK!=="undefined"&&WK)||"")); if(!m) return true;
+  const n=parseInt(m[1],10); if(n<=1) return true;
+  return !!(archive&&archive["week"+(n-1)]);
+}
+// the active week changed (Sunday's close): look again once the close's own copy write has had time to arrive
+function archCoreCheckSoon(){
+  if(!archCoreOnly||_archFullOn) return;
+  try{ clearTimeout(_archCoreTimer); }catch(e){}
+  _archCoreTimer=setTimeout(function(){ if(archCoreOnly&&!_archFullOn&&!archCoreHasLastWeek()) archLoadFull("copy behind"); },5000);
+}
+// ⏱ CDBOOTS: archMs = when this start's past weeks arrived (the copy, or the full archive when the copy isn't used); first time only
+function _archMs(){ try{ if(typeof cdMark==="function") cdMark("archMs"); }catch(eM){} }
+function archLoadFull(why){
+  if(_archFullOn||typeof db==="undefined"||!db) return;
+  _archFullOn=true;
+  if(why==="copy behind"){ try{ if(typeof dbg==="function") dbg("past weeks: the smaller copy is missing last week — loading every detail"); }catch(e){} }   // the unusual case only: no log line on every start
+  try{ if(_archCoreCb) db.ref("archiveCore").off("value",_archCoreCb); }catch(e){}
+  db.ref("archive").on("value",s=>{
+    fbArchiveLoaded=true; archCoreOnly=false;
+    _archMs();
+    archive=s.val()||{};
+    // ARCHNOSTR (her yes 2026-11-21, PLAN_archive_window slice 0): no HA_LS.setItem("ha_archive",JSON.stringify(archive)) here or at the
+    // 5 archive writes — HA_LS drops "ha_archive" (NO_MIRROR, LS_ARCHIVE 10/22), so it only turned 2.85 MB into text to be thrown away.
+    if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
+    if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
+    try{ if(typeof _archAllArrived==="function") _archAllArrived(); }catch(eA){}   // ARCHENSURE: the full archive is here — run what waited, redraw a Loading page
+  });
+}
+// ARCHBOOT_END
 let cascadeDebounce = null;
 let fbTasksHighWater = 0; // max task count ever seen from Firebase — guards against accidental wipes
 // Dry-run mode (?dryrun=1 or localStorage ha_dryrun=1): reads work, writes are no-ops.
@@ -4675,6 +4728,7 @@ function initFb() {
     db.ref("ha_active_wk").on("value",s=>{
       const fbWk=s.val();
       _abActiveWkNull=!fbWk;   // 🆕 ABFIRST
+      try{ if(typeof archCoreCheckSoon==="function") archCoreCheckSoon(); }catch(eAC){}   // ARCHBOOT: a new week → the copy must have the one just closed
       if(fbWk && fbWk!==WK){
         dbg("ha_active_wk changed FB="+fbWk+" local="+WK);
         WK=fbWk; HA_LS.setItem("ha_active_wk",WK); weekData.week=WK;
@@ -4718,16 +4772,7 @@ function initFb() {
       committedShapeSigs=s.val()||{};
       try{HA_LS.setItem("ha_shape_sigs",JSON.stringify(committedShapeSigs));}catch(e){}
     });
-    db.ref("archive").on("value",s=>{
-      fbArchiveLoaded=true;
-      try{ if(typeof cdMark==="function") cdMark("archMs"); }catch(eM){}   // ⏱ CDBOOTS (live from the server — no device copy since LS_ARCHIVE)
-      archive=s.val()||{};
-      // ARCHNOSTR (her yes 2026-11-21, PLAN_archive_window slice 0): no HA_LS.setItem("ha_archive",JSON.stringify(archive)) here or at the
-      // 5 archive writes — HA_LS drops "ha_archive" (NO_MIRROR, LS_ARCHIVE 10/22), so it only turned 2.85 MB into text to be thrown away.
-      if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
-      if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
-      try{ if(typeof _archAllArrived==="function") _archAllArrived(); }catch(eA){}   // ARCHENSURE: the full archive is here — run what waited, redraw a Loading page
-    });
+    archBootListen();   // ARCHBOOT (slice 4, 2026-11-23): the smaller copy at start; the full past weeks when something needs every detail
     db.ref("notebookStories").on("value",s=>{
       notebookStories=s.val()||{};
       try{HA_LS.setItem("ha_nb_stories",JSON.stringify(notebookStories));}catch(e){}
@@ -47292,8 +47337,10 @@ function relayWeek(why,info){
   try{ clearTimeout(_rlwTimer); }catch(e){}
   _rlwTimer=setTimeout(function(){ _rlwFire(0); },RLW_WAIT_MS);
 }
+function _rlwArchRefire(){ _rlwFire(0); }
 function _rlwFire(att){
   const pend=_rlwPend; if(!pend) return;
+  if(typeof archiveWhenAll==="function"&&!archiveWhenAll(_rlwArchRefire)) return;   // ARCHBOOT: on the smaller copy the re-lay waits for every past week (then the checks below run as before)
   const ready=(typeof fbCheckedLoaded==="undefined"||fbCheckedLoaded)&&(typeof fbTasksLoaded==="undefined"||fbTasksLoaded)&&(typeof fbHistoryLoaded==="undefined"||fbHistoryLoaded)&&(typeof fbCurrLoaded==="undefined"||fbCurrLoaded)&&(typeof archiveEnsureAll!=="function"||archiveEnsureAll());   // ARCHENSURE: a re-lay builds from every past week — wait for them like the rest
   if(!ready||(typeof lockHeldByOther==="function"&&lockHeldByOther())){
     if(att<20){ _rlwTimer=setTimeout(function(){ _rlwFire(att+1); },500); return; }   // ~10 s for a passing sweep / the data
@@ -63415,6 +63462,7 @@ function reprojectSubjectWeek(kid,sk,why,opts){
   const wn=currWeekNum(); if(!wn){ _then(null); return null; }
   // Only the ACTIVE plan week has cards to keep in step; a parked or past week is left alone.
   try{ const r=gwWeekDateRange(wn); const eff=_schoolWeekDateFor(_todayStr()); if(!r||eff<r.start||eff>r.end){ _then(null); return null; } }catch(e){ _then(null); return null; }
+  if(typeof archiveWhenAll==="function"&&!archiveWhenAll(function(){ reprojectSubjectWeek(kid,sk,why,opts); })) return null;   // ARCHBOOT: the build needs every past week — this re-lay runs again when they arrive (it used to skip)
   const _rpMode=(opts&&opts.relayFrom)||_rpRelayMode();   // ⏭ asked once, before the lock
   let out=null;
   haClaimSchedLock("reproject",function(release){
@@ -93161,8 +93209,9 @@ function autoGenerateWeekIfNeeded(){
   // empty; generating then would undercount cursors and re-schedule finished lessons.
   // Retry until the listeners have answered.
   // NO_MIRROR: the retrieval (drill/sprint) slots come from Mastery's retrievalPlan — wait for it too.
-  if(!fbCheckedLoaded||!(fbTasksLoaded||_abFirstWeek())||!fbArchiveLoaded||!_haMastReady){ setTimeout(autoGenerateWeekIfNeeded,5000); return; }   // 🆕 ABFIRST: a brand-new family's empty week counts as loaded here
+  if(!fbCheckedLoaded||!(fbTasksLoaded||_abFirstWeek())||!_haMastReady){ setTimeout(autoGenerateWeekIfNeeded,5000); return; }   // 🆕 ABFIRST: a brand-new family's empty week counts as loaded here
   if(!_abDue(_abDueCtx())){ setTimeout(autoGenerateWeekIfNeeded,60000); return; }   // her question 2, "start": a Sunday waits for its school start
+  if(typeof archiveEnsureAll==="function"?!archiveEnsureAll():!fbArchiveLoaded){ setTimeout(autoGenerateWeekIfNeeded,5000); return; }   // ARCHBOOT (slice 4): every past week, asked for LAST — only once this week's own data says a build is really due (at start the week can look empty for a moment)
   _autoGenTried=true;
   db.ref("week"+wn+"/tasks").once("value",s=>{
     const _existing=s.val();
