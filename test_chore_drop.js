@@ -286,6 +286,15 @@ for (let n = 0; n <= 32; n++) {
     ok("H · Dad's link LOCKED: the row still reads \"… · 2 ⭐ taken\", with no ⭐ Give stars back button", /Vacuum the den due Tue, not done in time · 2 ⭐ taken$/.test(rL) && !/Give stars back/.test(LG(Dd, "lgGo('kid_a',0,0)")), rL);
     m = w.mark(); const gL = Dd.run("lgDropGive(" + args + ")"); await w.flush();
     ok("…a tap anyway (lgDropGive) is refused: zero writes, the line stays, the balance unchanged", gL === false && writes(w, m).length === 0 && !!w.get("bank/kid_a/adjustments/" + S.vacLine.id) && w.get(gp) == null && bal(B, "kid_a") === bL, WS(w, m));
+    // the Dad code alone opens nothing (hub round 3): a device NOT on Dad's link with dadUnlocked — a kid's tablet (Kk) and a plain device (Nd)
+    const Nd = w.boot("Nd", "devNd"); Nd.run(CAP); await w.flush(); loadH(Nd, HJS);
+    const NOD = [["a kid's tablet", Kk], ["a plain device", Nd]], bank0 = () => J(w.get("bank/kid_a"));
+    const noBtn = d => { const hs = ["lgShow()", "lgShow();lgGo('kid_a',0,0)", "lgShow();lgGo('kid_a',-1,0)", "lgShow();lgGo('kid_a',0,1)"].map(js => LG(d, js)); try { hs.push(LG(d, "lgDraw()")); } catch (e) {} return { ok: !hs.some(h => /lgDropGive|lgDropUndo|Give stars back/.test(h)), n: hs.map(h => h.length) }; };
+    for (const [nm, d] of NOD) {
+      d.run("dadUnlocked=true;1"); const v = noBtn(d), b1 = bank0();
+      m = w.mark(); const r = d.run("lgDropGive(" + args + ")"); await w.flush();
+      ok("H · " + nm + " NOT on Dad's link, Dad's code typed: no ⭐ Give stars back in any ledger it draws; lgDropGive refused, zero writes, the bank unchanged", v.ok && r === false && writes(w, m).length === 0 && bank0() === b1 && w.get(gp) == null, { v, r, w: WS(w, m) });
+      d.run("dadUnlocked=false;1"); }
     Dd.run("dadUnlocked=true;1");
     const gd = Dd.run("lgDropGive(" + args + ")"); await w.flush();
     ok("H · Dad's link UNLOCKED (code in): ⭐ Give stars back works the same, marked by:\"dad\"; the row says \"⭐ Dad gave back +2 ⭐\" and his Undo shows", gd === true && w.get(gp + "/by") === "dad" && w.get("bank/kid_a/adjustments/" + S.vacLine.id) == null && bal(B, "kid_a") === bL + 2 && /⭐ Dad gave back \+2 ⭐ Undo$/.test(txt(goneRow(LG(Dd, "lgGo('kid_a',0,0)"), "Vacuum the den"))));
@@ -293,6 +302,12 @@ for (let n = 0; n <= 32; n++) {
     ok("H · locked again: the row shows \"⭐ Dad gave back +2 ⭐\" with no Undo button", /· 2 ⭐ taken ⭐ Dad gave back \+2 ⭐$/.test(rU), rU);
     m = w.mark(); const uL = Dd.run("lgDropUndo(" + args + ")"); await w.flush();
     ok("…a tap anyway (lgDropUndo) is refused: zero writes, still given back", uL === false && writes(w, m).length === 0 && w.get(gp + "/by") === "dad" && w.get("bank/kid_a/adjustments/" + S.vacLine.id) == null && bal(B, "kid_a") === bL + 2, WS(w, m));
+    for (const [nm, d] of NOD) {
+      d.run("dadUnlocked=true;1"); const v = noBtn(d), b1 = bank0();
+      m = w.mark(); const r = d.run("lgDropUndo(" + args + ")"); await w.flush();
+      ok("H · " + nm + " NOT on Dad's link, Dad's code typed: no Undo on the given-back row in any ledger it draws; lgDropUndo refused, zero writes, the bank unchanged, still given back", v.ok && r === false && writes(w, m).length === 0 && bank0() === b1 && w.get(gp + "/by") === "dad", { v, r, w: WS(w, m) });
+      d.run("dadUnlocked=false;1"); }
+    w.devs.splice(w.devs.indexOf(Nd), 1);
     // ➖ Excuse on a dropped row (the window, −3): gives it back; Undo restores exactly
     const wi = /step(\d+)$/.exec(dropOf(w, "kid_a", "Wipe the window")[0].id)[1], wline = clone(dropOf(w, "kid_a", "Wipe the window")[0]); delete wline.id;
     const wmiss = clone(w.get("routineLog/kid_a/" + S.vacMiss._wk + "/tuesday/miss_chores_" + wi)), b1 = bal(B, "kid_a");
