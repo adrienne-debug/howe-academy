@@ -9,6 +9,10 @@ const si = raw.indexOf(startTag);
 const ei = raw.indexOf(endTag);
 if (si < 0 || ei < 0) { console.error("FAIL: could not find S7_START/S7_END markers in " + SRC); process.exit(1); }
 const block = raw.slice(si + startTag.length, ei);
+// ONESPLIT (slice H): mhqImpSplit runs on cardSplit, so the CARDSPLIT block rides along — every check below runs with the new
+// splitter behind it (without it the adapter would quietly fall back to the old splitter and prove nothing).
+const csi = raw.indexOf("// CARDSPLIT_START"), cse = raw.indexOf("// CARDSPLIT_END");
+const csBlock = (csi >= 0 && cse > csi) ? raw.slice(csi, cse) : "";
 
 // Build a fresh module instance. `bank` seeds mhqBank(); `addManyResult` is what
 // the mastBankAddMany stub returns; `confirmReturns` controls the confirm() stub.
@@ -58,7 +62,7 @@ function build(opts) {
     '  getFile: function(){ return mhqImpFile; }\n' +
     '};\n';
 
-  return new Function(stubs + block + ret)();
+  return new Function(stubs + csBlock + block + ret)();
 }
 
 let passed = 0, failed = 0;
@@ -224,6 +228,13 @@ function deepEq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
   mod.mhqImpRun();
   ok("(g) no deck chosen -> mastBankAddMany not called", mod.getAddManyCalls().length === 0, mod.getAddManyCalls().length);
   ok("(g) message asks to pick a deck", /deck/i.test(mod.getMsg()), mod.getMsg());
+})();
+
+(function () {
+  const mod = build();
+  ok("(h) the shared splitter is behind mhqImpSplit (ONESPLIT)", !!csBlock &&
+    JSON.stringify(mod.mhqImpSplit("Guppy - a tiny, colorful fish\nPlaty - a round fish").rows) ===
+    JSON.stringify([{ name: "Guppy", def: "a tiny, colorful fish" }, { name: "Platy", def: "a round fish" }]));
 })();
 
 console.log("");
