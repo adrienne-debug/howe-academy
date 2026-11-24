@@ -11,7 +11,7 @@
  *
  * Shape rules checked (each one is from Mom's brief, 2026-11-23):
  *   - ids unique, "ra_<level>_NN" (a stable name, not a place), lv matches the id, o = 1..count inside each level
- *     (the reading order, easier → harder); count is 30 for g1 and g2, 10 for the rest
+ *     (the reading order, easier → harder); count is 30 for g1, 31 for g2, 11 for the rest
  *   - topics: a list of plain slugs ("animals", "north-carolina", "snakes") so a family can leave a topic out
  *   - word count stored = word count counted, and inside the level's range
  *   - 3 questions for g1–g2, 4 from g3; 3 choices g1–g2, 4 for g3–g4, 5 from g5 (matches the boys' banks)
@@ -28,16 +28,17 @@
 "use strict";
 const fs = require("fs"), path = require("path");
 
-// count: g1 and g2 hold 30 (Mom 2026-11-23: "Yes, write more" — Lucy's first test is May/summer 2027); the rest 10 for now.
+// count: g1 30 and g2 31 (Mom 2026-11-23: "Yes, write more" — Lucy's first test is May/summer 2027); the rest 11 for now.
+// The +1 from g2 up is one "people of faith" biography per level (Mom 11/23: "People of faith"), tagged faith.
 // writeFirst: from g3 every question says whether it works with the choices hidden (Mom 11/23: "Write first some days").
 const LEVELS = {
   g1:  { grade: 1,   label: "1st grade",     words: [15, 45],   sentences: [3, 5], qs: 3, choices: 3, count: 30 },
-  g2:  { grade: 2,   label: "2nd grade",     words: [40, 70],   qs: 3, choices: 3, count: 30 },
-  g3:  { grade: 3,   label: "3rd grade",     words: [80, 120],  qs: 4, choices: 4, count: 10, writeFirst: true },
-  g4:  { grade: 4,   label: "4th grade",     words: [120, 160], qs: 4, choices: 4, count: 10, writeFirst: true },
-  g5:  { grade: 5,   label: "5th grade",     words: [150, 200], qs: 4, choices: 5, count: 10, writeFirst: true },
-  g6:  { grade: 6,   label: "6th grade",     words: [180, 240], qs: 4, choices: 5, count: 10, writeFirst: true },
-  g78: { grade: 7.5, label: "7th–8th grade", words: [220, 300], qs: 4, choices: 5, count: 10, writeFirst: true },
+  g2:  { grade: 2,   label: "2nd grade",     words: [40, 70],   qs: 3, choices: 3, count: 31 },
+  g3:  { grade: 3,   label: "3rd grade",     words: [80, 120],  qs: 4, choices: 4, count: 11, writeFirst: true },
+  g4:  { grade: 4,   label: "4th grade",     words: [120, 160], qs: 4, choices: 4, count: 11, writeFirst: true },
+  g5:  { grade: 5,   label: "5th grade",     words: [150, 200], qs: 4, choices: 5, count: 11, writeFirst: true },
+  g6:  { grade: 6,   label: "6th grade",     words: [180, 240], qs: 4, choices: 5, count: 11, writeFirst: true },
+  g78: { grade: 7.5, label: "7th–8th grade", words: [220, 300], qs: 4, choices: 5, count: 11, writeFirst: true },
 };
 const TOPIC_SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const LEVEL_ORDER = Object.keys(LEVELS);

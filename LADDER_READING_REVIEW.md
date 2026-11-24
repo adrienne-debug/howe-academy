@@ -6,13 +6,13 @@ This is the first of the five shared ladders in the notebooks study (§25, "unit
 
 Why it matters now: Lucy's notebook has not one sentence to read, and her first test (May / summer 2027) has a reading part. Ellis lost his daily passage when his question bank replaced it. Lincoln gets one passage a week.
 
-**What changed after your answers (11/23):** g1 and g2 now have **30 passages each** (20 new in each). Every g1 question and choice is rewritten in words as easy as the passage, so Lucy reads the whole page herself. From 3rd grade, every question is marked for "write first" days. Every passage has topic tags a family can switch off. New passages add North Carolina, snakes, dinosaurs and frogs. The six drier pieces are swapped for livelier ones of the same kind. All of it had a second read. The full list is under "Decided 11/23" near the end.
+**What changed after your answers (11/23):** g1 and g2 now have **30 passages each** (20 new in each). Every g1 question and choice is rewritten in words as easy as the passage, so Lucy reads the whole page herself. From 3rd grade, every question is marked for "write first" days. Every passage has topic tags a family can switch off. New passages add North Carolina, snakes, dinosaurs and frogs. The six drier pieces are swapped for livelier ones of the same kind. Then, after your faith answer ("People of faith"), one true-facts biography was added at each level from g2 up — the people are listed in their own section below so you can swap any of them. All of it had a second read. The full list is under "Decided 11/23" near the end.
 
 What I kept to, from your rules:
 - **The answer never shows on the child's page.** Each question has the right letter and a one-line *why* for **your** page only — it points to the words in the passage that prove the answer.
 - **Works printed and on a tablet.** Plain text, no pictures needed, no step that depends on covering anything. Circle a letter on paper; tap it on the tablet.
 - **Any family can use it.** All writing is new (not copied from any book, test or workbook). No family names (none of any enrolled child's name, in any of the three families), no brands or characters. Topics: animals and nature, weather and space, how everyday things work, kids solving small problems, long-ago people and inventions, places, North Carolina.
-- **About half stories, half true facts**, plus how-tos, letters or notices, and poems for variety (110 in all: 39 stories, 50 true-facts pieces, 8 how-tos, 7 poems, 6 letters or notices).
+- **About half stories, half true facts**, plus how-tos, letters or notices, and poems for variety (116 in all: 39 stories, 56 true-facts pieces, 8 how-tos, 7 poems, 6 letters or notices).
 - **True facts only when they are well established.** Anything I'd like you or a second reader to confirm is listed near the end.
 
 ## What each level is like
@@ -20,12 +20,12 @@ What I kept to, from your rules:
 | Level | Who it fits | Passages | Length | Questions | Choices | What the questions ask |
 |---|---|---|---|---|---|---|
 | **g1** — 1st grade | Lucy now; Julian later | 30 | 3–5 short sentences (15–45 words) | 3 | 3 | She reads the questions too — one short line in sound-it-out and sight words. Find it, a little work-it-out, what is it about. |
-| **g2** — 2nd grade | Lucy, by spring — the read-it-yourself step a year before the 3rd-grade test form | 30 | 40–70 words | 3 | 3 | Find it, work it out, one word meaning, main idea or best title. |
-| **g3** — 3rd grade | the first year the test makes a child read alone | 10 | 80–120 words | 4 | 4 | Same four kinds, plus a stretch word explained in the passage. |
-| **g4** — 4th grade | Ellis now (where his old passages were) | 10 | 120–160 words | 4 | 4 | Same, with more work-it-out and figurative words (a tree's "green jacket"). |
-| **g5** — 5th grade | Ellis, next | 10 | 150–200 words | 4 | 5 | Adds author's purpose and which detail supports a claim — the older kids' test kinds. |
-| **g6** — 6th grade | Lincoln now | 10 | 180–240 words | 4 | 5 | Same six kinds; longer, with history and science. |
-| **g7–8** — 7th–8th grade | Lincoln next; another family's 7th grader | 10 | 220–300 words | 4 | 5 | Same six kinds; theme, the other side answered in a letter, reading a claim against evidence. |
+| **g2** — 2nd grade | Lucy, by spring — the read-it-yourself step a year before the 3rd-grade test form | 31 | 40–70 words | 3 | 3 | Find it, work it out, one word meaning, main idea or best title. |
+| **g3** — 3rd grade | the first year the test makes a child read alone | 11 | 80–120 words | 4 | 4 | Same four kinds, plus a stretch word explained in the passage. |
+| **g4** — 4th grade | Ellis now (where his old passages were) | 11 | 120–160 words | 4 | 4 | Same, with more work-it-out and figurative words (a tree's "green jacket"). |
+| **g5** — 5th grade | Ellis, next | 11 | 150–200 words | 4 | 5 | Adds author's purpose and which detail supports a claim — the older kids' test kinds. |
+| **g6** — 6th grade | Lincoln now | 11 | 180–240 words | 4 | 5 | Same six kinds; longer, with history and science. |
+| **g7–8** — 7th–8th grade | Lincoln next; another family's 7th grader | 11 | 220–300 words | 4 | 5 | Same six kinds; theme, the other side answered in a letter, reading a claim against evidence. |
 
 **How the levels feel, in plain words**
 
@@ -50,12 +50,12 @@ So the passages are meant to be **fun first** (something a kid wants to read), a
 | Level | Who reads it | Reads at | Stretch words | What makes it fun |
 |---|---|---|---|---|
 | **g1** | **Alone** — the passage, the question and the three choices, all in g1 words. Help on a word only if she asks. | grade 0.7 on average — a little under its level (1) | 2 in 30 passages, never more than 1 in one, each explained in its sentence | a dog who finds the lost mitten, a pancake stuck on the wall, a snake peeling off its skin like a sock, sticky-toed tree frogs, dinosaur bones, wild ponies and sea-turtle eggs on North Carolina beaches |
-| **g2** | **Alone** — the passage and the questions. Stems are one short line; choices are a few words. | grade 2 on average — about at its level (2) | 7 in 30 passages, never more than 1 in one, each explained in its sentence | a lemonade stand nobody can see, a hamster found with a trail of seeds, a paint spill that becomes a whale, a plant that eats bugs, snakes that can't blink, T. rex's tiny arms, the lighthouse that moved |
-| **g3** | Alone | grade 2.9 on average — about at its level (3) | 9 in 10 passages, never more than 1 in one, each explained in its sentence | a garden-mystery detective (who's eating the lettuce?), a cup-and-string telephone, fireflies, the camel's-hump myth, the first airplane |
-| **g4** | Alone | grade 3.7 on average — a little under its level (4) | 11 in 10 passages, never more than 2 in one, each explained in its sentence | a sparrow loose in the garage, cookies made with salt by mistake, thin ice and a rock, a map with an ice-cream cone, bats that see with sound, water that walks between cups |
-| **g5** | Alone | grade 4.6 on average — a little under its level (5) | 13 in 10 passages, never more than 2 in one, each explained in its sentence | counting thunder in a blackout, a paper bridge that holds 43 pennies, lost on a trail, a sheep, a duck and a rooster in the first balloon, a ranger's notice that snakes are out |
-| **g6** | Alone | grade 5.5 on average — a little under its level (6) | 12 in 10 passages, never more than 2 in one, each explained in its sentence | a chess player who learns to slow down, a girl keeping a lighthouse lit in a storm, an octopus that escapes its tank, a dog walk full of burrs that led to an invention |
-| **g7–8** | Alone | grade 7.2 on average — a little under its level (7–8) | 16 in 10 passages, never more than 2 in one, each explained in its sentence | a club election won by the wrong promises, the Lost Colony, a marble roller coaster, water bears that survived space, a letter to save the climbing tree |
+| **g2** | **Alone** — the passage and the questions. Stems are one short line; choices are a few words. | grade 2 on average — about at its level (2) | 7 in 31 passages, never more than 1 in one, each explained in its sentence | a lemonade stand nobody can see, a hamster found with a trail of seeds, a paint spill that becomes a whale, a plant that eats bugs, snakes that can't blink, T. rex's tiny arms, the lighthouse that moved |
+| **g3** | Alone | grade 2.9 on average — about at its level (3) | 10 in 11 passages, never more than 1 in one, each explained in its sentence | a garden-mystery detective (who's eating the lettuce?), a cup-and-string telephone, fireflies, the camel's-hump myth, the first airplane |
+| **g4** | Alone | grade 3.7 on average — a little under its level (4) | 12 in 11 passages, never more than 2 in one, each explained in its sentence | a sparrow loose in the garage, cookies made with salt by mistake, thin ice and a rock, a map with an ice-cream cone, bats that see with sound, water that walks between cups |
+| **g5** | Alone | grade 4.5 on average — a little under its level (5) | 14 in 11 passages, never more than 2 in one, each explained in its sentence | counting thunder in a blackout, a paper bridge that holds 43 pennies, lost on a trail, a sheep, a duck and a rooster in the first balloon, a ranger's notice that snakes are out |
+| **g6** | Alone | grade 5.5 on average — a little under its level (6) | 13 in 11 passages, never more than 2 in one, each explained in its sentence | a chess player who learns to slow down, a girl keeping a lighthouse lit in a storm, an octopus that escapes its tank, a dog walk full of burrs that led to an invention |
+| **g7–8** | Alone | grade 7.2 on average — a little under its level (7–8) | 18 in 11 passages, never more than 2 in one, each explained in its sentence | a club election won by the wrong promises, the Lost Colony, a marble roller coaster, water bears that survived space, a letter to save the climbing tree |
 
 **Comfortable, not hard.** Each level averages at or a little under its own grade on the estimate (see the table above). On the first check, 2nd grade averaged 2.4, a stretch for a child reading alone; those passages were rewritten in shorter sentences. The new g1 and g2 passages were held to the same mark. A child placed on a level should find most passages easy to get through; the questions are where the thinking happens.
 
@@ -74,30 +74,31 @@ You chose "Write first some days." On those days the build will hide the choices
 
 I did not reword any stem to raise the count. Two questions whose answers are feelings ("Why does Simon speak quietly?", "How does the speaker feel about the mapmaker?") are marked false after the second read: written freely, several feelings are fair, so only the choices can be marked. Three "Which…" questions are marked true because a child can write them first and every right answer is on your page: "Which way do the hatchlings head?", "Which stars point the way to Polaris?", "Which tip is on their poster?" (any of the three tips counts).
 
-200 questions in g3–g7/8; **174** are write-first.
+220 questions in g3–g7/8; **190** are write-first.
 
 | Level | Write-first questions |
 |---|---|
-| g3 | 38 of 40 |
-| g4 | 37 of 40 |
-| g5 | 35 of 40 |
-| g6 | 32 of 40 |
-| g7–8 | 32 of 40 |
+| g3 | 42 of 44 |
+| g4 | 41 of 44 |
+| g5 | 37 of 44 |
+| g6 | 35 of 44 |
+| g7–8 | 35 of 44 |
 
 ## Topics a family can switch off
 
-Every passage now has `topics` — one or more plain tags, so a family could leave a topic out later. A passage can carry more than one; the rat-snake piece, for example, is `animals`, `snakes` and `north-carolina`. There are **no faith passages yet**: you said yes, and I'm waiting to hear which kind before writing any.
+Every passage now has `topics` — one or more plain tags, so a family could leave a topic out later. A passage can carry more than one; the rat-snake piece, for example, is `animals`, `snakes` and `north-carolina`. The six **people of faith** pieces are tagged `faith` (and `long-ago`), so a family can leave them out the same way as `north-carolina`.
 
 | Topic | Passages |
 |---|---|
 | `animals` | 41 |
 | `kids` | 31 |
+| `long-ago` | 15 |
 | `north-carolina` | 11 |
 | `how-things-work` | 10 |
-| `long-ago` | 9 |
-| `places` | 7 |
-| `plants` | 7 |
+| `places` | 8 |
+| `plants` | 8 |
 | `weather` | 7 |
+| `faith` | 6 |
 | `frogs` | 6 |
 | `snakes` | 6 |
 | `dinosaurs` | 5 |
@@ -107,6 +108,28 @@ Every passage now has `topics` — one or more plain tags, so a family could lea
 | `nature` | 2 |
 | `neighbors` | 2 |
 
+## People of faith (added 11/23)
+
+**The people chosen — swap any of them:**
+
+| Level | Person | What the passage tells | How their faith shaped it |
+|---|---|---|---|
+| g2 | **Harriet Tubman** | escaped slavery in 1849, then went back again and again to lead about seventy people to freedom | she prayed as she went and said God showed her the way |
+| g3 | **Florence Nightingale** | became a nurse against her family's wishes; cleaned up an army hospital in 1854; "the Lady with the Lamp" | at sixteen she felt God was calling her to help others |
+| g4 | **George Washington Carver** | born into slavery; "the plant doctor"; taught farmers at Tuskegee to rotate cotton with peanuts | he said studying plants was learning about what God had made; prayed on walks before dawn |
+| g5 | **Eric Liddell** | the Scottish runner who would not race the 100 meters at the 1924 Olympics because the heats were on a Sunday — then won the 400 | he kept Sunday as a day of rest and worship; later a teacher and missionary in China |
+| g6 | **Martin Luther King Jr.** | the Montgomery bus boycott, 1955–56; the 1963 speech; the 1964 Nobel Peace Prize | his faith taught him to love even people who treated him unfairly, so he kept the protest peaceful |
+| g7–8 | **Mohandas Gandhi** | the 1930 Salt March of about 240 miles; India's independence in 1947; inspired King | as a Hindu, he held to *ahimsa* — doing no harm to any living thing — so he resisted without violence |
+
+**How I chose.** You didn't name people or a tradition, so I picked people who are well documented and widely admired, where the faith link is a plain, widely accepted fact rather than an opinion. The stories also fit each age: a simple, brave escape at g2; a teen's calling and a hospital at g3; science and farming at g4; an Olympic race at g5; the bus boycott at g6; a mass march and an idea that crossed continents at g7–8. Five are Christian and one is Hindu. That gives a second family a piece from outside one tradition, and it ties back to King, who learned from Gandhi.
+
+**How they're written.** Each is a true-facts piece like the other long-ago-people passages:
+- who they were, what they did, and in one or two plain sentences, that their faith was the reason
+- no preaching, no doctrine, and no Bible stories retold
+- the hard history (slavery, segregation, colonial rule) is told plainly and briefly, at the level of a school history book, with no violent detail
+
+**g1: none, on purpose.** In 3–5 short sentences, "their faith was the reason" comes out thin or preachy. I'd rather Lucy meet these people at g2, where there is room to tell it honestly.
+
 ## How hard each passage reads
 
 The grade estimate is the Flesch-Kincaid formula (sentence length and syllables per word). It is only an estimate: it runs low on stories with lots of talking and high on true-facts pieces full of long names. A passage is flagged ⚑ if its estimate is more than 1½ grades from its level. **None are flagged**; every level reads harder than the one below it. Run `node ladders/check_read_and_answer.js` to see the same numbers.
@@ -114,12 +137,12 @@ The grade estimate is the Flesch-Kincaid formula (sentence length and syllables 
 | Level | Passages | Average words | Average words per sentence | Average grade estimate | Lowest – highest | Passages flagged |
 |---|---|---|---|---|---|---|
 | g1 | 30 | 31.4 | 8.1 | 0.7 | -0.5 – 2.5 | 0 |
-| g2 | 30 | 52.9 | 8.9 | 2 | 0.5 – 3.2 | 0 |
-| g3 | 10 | 93.1 | 9.8 | 2.9 | 1.9 – 3.9 | 0 |
-| g4 | 10 | 133.3 | 11.8 | 3.7 | 2.6 – 4.3 | 0 |
-| g5 | 10 | 164.6 | 12.2 | 4.6 | 3.5 – 5.7 | 0 |
-| g6 | 10 | 197.2 | 13.7 | 5.5 | 4.5 – 6.7 | 0 |
-| g7–8 | 10 | 243.6 | 16 | 7.2 | 6.1 – 8 | 0 |
+| g2 | 31 | 53.4 | 8.9 | 2 | 0.5 – 3.2 | 0 |
+| g3 | 11 | 95.3 | 9.7 | 2.9 | 1.9 – 3.9 | 0 |
+| g4 | 11 | 133.9 | 11.7 | 3.7 | 2.6 – 4.3 | 0 |
+| g5 | 11 | 165.6 | 12.2 | 4.5 | 3.5 – 5.7 | 0 |
+| g6 | 11 | 197 | 13.6 | 5.5 | 4.5 – 6.7 | 0 |
+| g7–8 | 11 | 241.5 | 16 | 7.2 | 6.1 – 8 | 0 |
 
 <details><summary>Every passage, in the order a child meets it</summary>
 
@@ -183,10 +206,11 @@ The grade estimate is the Flesch-Kincaid formula (sentence length and syllables 
 | 24 | ra_g2_10 | The Lemonade Stand | story | kids | 59 | 2.3 |
 | 25 | ra_g2_08 | Penguin Dads | true facts | animals | 58 | 2.5 |
 | 26 | ra_g2_11 | The Plant That Eats Bugs | true facts | plants, north-carolina | 60 | 2.5 |
-| 27 | ra_g2_12 | The Tallest Mountain in the East | true facts | places, north-carolina | 47 | 3.1 |
-| 28 | ra_g2_21 | Spring Peepers | true facts | animals, frogs | 53 | 3 |
-| 29 | ra_g2_13 | The Lighthouse That Moved | true facts | places, north-carolina | 58 | 3 |
-| 30 | ra_g2_18 | Dinosaur Cousins | true facts | animals, dinosaurs | 54 | 3.2 |
+| 27 | ra_g2_31 | Harriet Tubman Goes Back | true facts | faith, long-ago | 69 | 2.3 |
+| 28 | ra_g2_12 | The Tallest Mountain in the East | true facts | places, north-carolina | 47 | 3.1 |
+| 29 | ra_g2_21 | Spring Peepers | true facts | animals, frogs | 53 | 3 |
+| 30 | ra_g2_13 | The Lighthouse That Moved | true facts | places, north-carolina | 58 | 3 |
+| 31 | ra_g2_18 | Dinosaur Cousins | true facts | animals, dinosaurs | 54 | 3.2 |
 | **g3** | | | | | | |
 | 1 | ra_g3_01 | The Squeaky Gate | story | how-things-work | 94 | 1.9 |
 | 2 | ra_g3_04 | Lost Cat | letter / notice | neighbors | 92 | 2.1 |
@@ -195,53 +219,58 @@ The grade estimate is the Flesch-Kincaid formula (sentence length and syllables 
 | 5 | ra_g3_05 | Spiders Are Not Insects | true facts | animals | 82 | 3.2 |
 | 6 | ra_g3_06 | Make a Cup Telephone | how-to | how-things-work | 98 | 2.9 |
 | 7 | ra_g3_07 | The Garden Mystery | story | kids | 90 | 3.2 |
-| 8 | ra_g3_08 | Why Leaves Change Color | true facts | plants | 93 | 3.8 |
-| 9 | ra_g3_09 | Twelve Seconds in the Air | true facts | inventions, long-ago, north-carolina | 92 | 3.9 |
-| 10 | ra_g3_10 | The Camel's Hump | true facts | animals | 106 | 3.9 |
+| 8 | ra_g3_11 | The Lady with the Lamp | true facts | faith, long-ago | 117 | 2.8 |
+| 9 | ra_g3_08 | Why Leaves Change Color | true facts | plants | 93 | 3.8 |
+| 10 | ra_g3_09 | Twelve Seconds in the Air | true facts | inventions, long-ago, north-carolina | 92 | 3.9 |
+| 11 | ra_g3_10 | The Camel's Hump | true facts | animals | 106 | 3.9 |
 | **g4** | | | | | | |
 | 1 | ra_g4_01 | Thin Ice | story | kids | 129 | 2.6 |
 | 2 | ra_g4_02 | Seeing with Sound | true facts | animals | 125 | 3.5 |
 | 3 | ra_g4_03 | The Bake Sale Mix-Up | story | kids | 127 | 3.6 |
 | 4 | ra_g4_04 | Nature's Builders | true facts | animals | 131 | 3.6 |
 | 5 | ra_g4_06 | Make Walking Water | how-to | how-things-work | 144 | 3.4 |
-| 6 | ra_g4_05 | A Map for Lina | story | kids | 133 | 3.8 |
-| 7 | ra_g4_07 | Dots That Speak | true facts | long-ago | 126 | 4.3 |
-| 8 | ra_g4_08 | The Same Old Water | true facts | weather | 131 | 4.2 |
-| 9 | ra_g4_09 | A Bird in the Garage | story | animals | 140 | 4.1 |
-| 10 | ra_g4_10 | The Old Oak Speaks | poem | plants | 147 | 4.2 |
+| 6 | ra_g4_11 | The Plant Doctor | true facts | faith, long-ago, plants | 140 | 3.6 |
+| 7 | ra_g4_05 | A Map for Lina | story | kids | 133 | 3.8 |
+| 8 | ra_g4_07 | Dots That Speak | true facts | long-ago | 126 | 4.3 |
+| 9 | ra_g4_08 | The Same Old Water | true facts | weather | 131 | 4.2 |
+| 10 | ra_g4_09 | A Bird in the Garage | story | animals | 140 | 4.1 |
+| 11 | ra_g4_10 | The Old Oak Speaks | poem | plants | 147 | 4.2 |
 | **g5** | | | | | | |
 | 1 | ra_g5_04 | Follow the Blazes | story | places | 175 | 3.5 |
 | 2 | ra_g5_01 | Why Ice Floats | true facts | how-things-work | 152 | 4 |
 | 3 | ra_g5_02 | Make a Needle Compass | how-to | how-things-work | 152 | 4 |
 | 4 | ra_g5_03 | The Paper Bridge | story | how-things-work | 180 | 3.5 |
 | 5 | ra_g5_05 | Counting the Thunder | story | weather | 169 | 4 |
-| 6 | ra_g5_06 | Follow the Brightest Sky | true facts | animals | 158 | 4.8 |
-| 7 | ra_g5_10 | Snakes Are Out on the Trail | letter / notice | animals, snakes, north-carolina | 168 | 5 |
-| 8 | ra_g5_08 | The Long Flight of the Monarchs | true facts | animals | 155 | 5.6 |
-| 9 | ra_g5_07 | A Sheep, a Duck, and a Rooster | true facts | inventions, long-ago | 168 | 5.5 |
-| 10 | ra_g5_09 | Double the Recipe | story | kids | 169 | 5.7 |
+| 6 | ra_g5_11 | The Runner Who Would Not Race on Sunday | true facts | faith, long-ago | 176 | 4.2 |
+| 7 | ra_g5_06 | Follow the Brightest Sky | true facts | animals | 158 | 4.8 |
+| 8 | ra_g5_10 | Snakes Are Out on the Trail | letter / notice | animals, snakes, north-carolina | 168 | 5 |
+| 9 | ra_g5_08 | The Long Flight of the Monarchs | true facts | animals | 155 | 5.6 |
+| 10 | ra_g5_07 | A Sheep, a Duck, and a Rooster | true facts | inventions, long-ago | 168 | 5.5 |
+| 11 | ra_g5_09 | Double the Recipe | story | kids | 169 | 5.7 |
 | **g6** | | | | | | |
 | 1 | ra_g6_01 | The Keeper's Daughter | story | long-ago | 194 | 4.7 |
 | 2 | ra_g6_02 | The Chess Clock | story | kids | 206 | 4.6 |
 | 3 | ra_g6_03 | Backyard Neighbors | story | kids | 224 | 4.5 |
 | 4 | ra_g6_04 | Late Frost | story | plants | 198 | 5.2 |
 | 5 | ra_g6_10 | The Burr That Became a Fastener | true facts | inventions, long-ago | 195 | 5.5 |
-| 6 | ra_g6_05 | The Real Reason for the Seasons | true facts | space | 186 | 5.7 |
-| 7 | ra_g6_06 | The Map in the Drawer | poem | places | 190 | 5.9 |
-| 8 | ra_g6_07 | The Clever Octopus | true facts | animals | 187 | 6.3 |
-| 9 | ra_g6_08 | Find the North Star | how-to | space | 195 | 6.4 |
-| 10 | ra_g6_09 | The Pony Express | true facts | long-ago | 197 | 6.7 |
+| 6 | ra_g6_11 | Walking Instead of Riding | true facts | faith, long-ago | 195 | 5.5 |
+| 7 | ra_g6_05 | The Real Reason for the Seasons | true facts | space | 186 | 5.7 |
+| 8 | ra_g6_06 | The Map in the Drawer | poem | places | 190 | 5.9 |
+| 9 | ra_g6_07 | The Clever Octopus | true facts | animals | 187 | 6.3 |
+| 10 | ra_g6_08 | Find the North Star | how-to | space | 195 | 6.4 |
+| 11 | ra_g6_09 | The Pony Express | true facts | long-ago | 197 | 6.7 |
 | **g7–8** | | | | | | |
 | 1 | ra_g78_01 | Cities Built by Animals | true facts | nature | 228 | 6.3 |
 | 2 | ra_g78_03 | Build a Marble Roller Coaster | how-to | how-things-work | 244 | 6.2 |
 | 3 | ra_g78_02 | The Last Ice Harvest | story | long-ago | 258 | 6.1 |
 | 4 | ra_g78_09 | Save the Climbing Tree | letter / notice | places, nature | 245 | 6.5 |
-| 5 | ra_g78_04 | The Colony That Vanished | true facts | long-ago, north-carolina, places | 222 | 7.5 |
-| 6 | ra_g78_05 | Field Notes | story | kids | 256 | 7.6 |
-| 7 | ra_g78_08 | The Fix-It Fair | story | how-things-work | 264 | 7.5 |
-| 8 | ra_g78_06 | The Long Road to Paper | true facts | inventions, long-ago | 234 | 7.9 |
-| 9 | ra_g78_07 | The Toughest Animal on Earth | true facts | animals | 228 | 8 |
-| 10 | ra_g78_10 | The Honest Speech | story | kids | 257 | 7.9 |
+| 5 | ra_g78_11 | The March to the Sea | true facts | faith, long-ago, places | 221 | 7.5 |
+| 6 | ra_g78_04 | The Colony That Vanished | true facts | long-ago, north-carolina, places | 222 | 7.5 |
+| 7 | ra_g78_05 | Field Notes | story | kids | 256 | 7.6 |
+| 8 | ra_g78_08 | The Fix-It Fair | story | how-things-work | 264 | 7.5 |
+| 9 | ra_g78_06 | The Long Road to Paper | true facts | inventions, long-ago | 234 | 7.9 |
+| 10 | ra_g78_07 | The Toughest Animal on Earth | true facts | animals | 228 | 8 |
+| 11 | ra_g78_10 | The Honest Speech | story | kids | 257 | 7.9 |
 
 </details>
 
@@ -298,8 +327,8 @@ The ✅ marks the right answer **here only**; on the child's page there is no ma
 > Leo made a kite out of paper and sticks. He ran across the field, but the kite just bumped along the grass. Grandpa watched and said, "Try a longer tail." Leo tied on a long strip of cloth. This time the kite rose up and up until it looked as small as a bird.
 
 1. *(word meaning)* "The kite rose up and up." What does rose mean here?
-   - A. a kind of flower
-   - B. went up ✅
+   - A. went up ✅
+   - B. a kind of flower
    - C. fell down
    - *Why (parent page):* "Rose up and up until it looked as small as a bird" — it went higher and higher.
 2. *(find it)* What did Leo tie on for a tail?
@@ -308,9 +337,9 @@ The ✅ marks the right answer **here only**; on the child's page there is no ma
    - C. a stick
    - *Why (parent page):* "Leo tied on a long strip of cloth."
 3. *(work it out)* Why did Grandpa tell Leo to try a longer tail?
-   - A. to help the kite fly ✅
-   - B. to make the kite heavy so it falls
-   - C. to make Leo run faster
+   - A. to make the kite heavy so it falls
+   - B. to make Leo run faster
+   - C. to help the kite fly ✅
    - *Why (parent page):* Before the tail the kite "bumped along the grass"; after it, "the kite rose up."
 
 **A Snake That Helps Farmers** · true facts · 54 words · grade estimate 2.4 · topics: animals, snakes, north-carolina · `ra_g2_16`
@@ -319,17 +348,17 @@ The ✅ marks the right answer **here only**; on the child's page there is no ma
 
 1. *(find it)* Why are farmers glad to have a rat snake near the barn?
    - A. It guards the cows.
-   - B. It keeps the barn warm.
-   - C. It eats mice and rats. ✅
+   - B. It eats mice and rats. ✅
+   - C. It keeps the barn warm.
    - *Why (parent page):* "It eats mice and rats, so farmers are often glad to have one near the barn."
 2. *(word meaning)* What is venom?
-   - A. a kind of barn
-   - B. a long black tail
-   - C. poison in a bite ✅
+   - A. poison in a bite ✅
+   - B. a kind of barn
+   - C. a long black tail
    - *Why (parent page):* The passage tells you: "venom, the poison some snakes have in their bite."
 3. *(find it)* Where can a rat snake climb?
-   - A. only on rocks
-   - B. right up a tree ✅
+   - A. right up a tree ✅
+   - B. only on rocks
    - C. nowhere
    - *Why (parent page):* "They can slither right up a tree!"
 
@@ -342,20 +371,20 @@ The ✅ marks the right answer **here only**; on the child's page there is no ma
 1. *(find it · write first: yes)* What was being eaten?
    - A. Grandma's carrots
    - B. the fence
-   - C. Grandma's lettuce ✅
-   - D. the flowers
+   - C. the flowers
+   - D. Grandma's lettuce ✅
    - *Why (parent page):* The first sentence: "Something was eating Grandma's lettuce."
 2. *(word meaning · write first: yes)* "She looked for clues in the garden." What are clues?
    - A. kinds of plants
    - B. tools for digging
-   - C. things that help you figure something out ✅
-   - D. pieces of a fence
+   - C. pieces of a fence
+   - D. things that help you figure something out ✅
    - *Why (parent page):* Jada was being a detective; the paw prints and fur helped her figure out the answer.
 3. *(work it out · write first: yes)* How did Jada figure out it was a rabbit?
    - A. She saw it eating.
    - B. Grandma told her.
-   - C. She heard it in the night.
-   - D. She found paw prints and fluffy fur. ✅
+   - C. She found paw prints and fluffy fur. ✅
+   - D. She heard it in the night.
    - *Why (parent page):* She found "small paw prints" and "a tuft of fluffy brown fur," then said "A rabbit!"
 4. *(find it · write first: yes)* Why did they push the bottom of the fence into the ground?
    - A. so the fence would look nice
@@ -369,15 +398,15 @@ The ✅ marks the right answer **here only**; on the child's page there is no ma
 > Wilbur and Orville Wright were brothers. They ran a bicycle shop in Dayton, Ohio. They loved to study how birds fly. For years they built gliders and tested them. A glider has no engine. On December 17, 1903, near Kitty Hawk, North Carolina, they tried a new airplane that had one. Orville lay on the wing as the engine roared. The plane rose into the air and flew for about twelve seconds. It was the first powered airplane flight that a pilot could control. It was short, but it changed the world.
 
 1. *(find it · write first: yes)* How long did that first flight last?
-   - A. about twelve minutes
-   - B. about twelve seconds ✅
+   - A. about twelve seconds ✅
+   - B. about twelve minutes
    - C. about one hour
    - D. a whole day
    - *Why (parent page):* "The plane ... flew for about twelve seconds."
 2. *(find it · write first: yes)* What kind of shop did the Wright brothers run?
-   - A. a toy shop
-   - B. a bird shop
-   - C. a bicycle shop ✅
+   - A. a bicycle shop ✅
+   - B. a toy shop
+   - C. a bird shop
    - D. an airplane shop
    - *Why (parent page):* "They ran a bicycle shop in Dayton, Ohio."
 3. *(word meaning · write first: yes)* "The first powered airplane flight" — what does powered mean here?
@@ -389,8 +418,8 @@ The ✅ marks the right answer **here only**; on the child's page there is no ma
 4. *(work it out · write first: yes)* Why did the brothers study birds?
    - A. to draw them
    - B. to keep them as pets
-   - C. to learn how things can fly ✅
-   - D. to sell them in their shop
+   - C. to sell them in their shop
+   - D. to learn how things can fly ✅
    - *Why (parent page):* "They loved to study how birds fly" while they worked on flying machines.
 
 ### g4 — 4th grade
@@ -400,9 +429,9 @@ The ✅ marks the right answer **here only**; on the child's page there is no ma
 > A new family moved into the blue house across the street. Their daughter, Lina, did not know her way around yet, so Ruby decided to help. She spread out a large sheet of paper and drew their street right in the middle. She added the park at the north end, the library around the corner, and the ice cream shop two blocks east. In one corner she drew a compass rose with N, S, E, and W. Then she made a key: a small tree meant a park, a book meant the library, and a cone meant ice cream. Ruby rolled the map up, tied it with a ribbon, and carried it across the street. Lina studied it for a long time. "Can we start with the cone?" she asked with a grin.
 
 1. *(word meaning · write first: yes)* On Ruby's map, what is the key?
-   - A. something that opens a door
-   - B. the most important street
-   - C. a list that tells what the little pictures mean ✅
+   - A. a list that tells what the little pictures mean ✅
+   - B. something that opens a door
+   - C. the most important street
    - D. the ribbon around the map
    - *Why (parent page):* "She made a key: a small tree meant a park, a book meant the library, and a cone meant ice cream."
 2. *(work it out · write first: yes)* Where does Lina want to go first?
@@ -412,16 +441,16 @@ The ✅ marks the right answer **here only**; on the child's page there is no ma
    - D. the blue house
    - *Why (parent page):* On the key, "a cone meant ice cream," and Lina asks to "start with the cone."
 3. *(find it · write first: yes)* What did Ruby draw in one corner of the map?
-   - A. the blue house
-   - B. the park
-   - C. a ribbon
-   - D. a compass rose ✅
+   - A. a compass rose ✅
+   - B. the blue house
+   - C. the park
+   - D. a ribbon
    - *Why (parent page):* "In one corner she drew a compass rose with N, S, E, and W."
 4. *(main idea / title · write first: yes)* Why did Ruby make the map?
    - A. to win a drawing contest
    - B. to find a lost library book
-   - C. to help Lina learn her way around ✅
-   - D. to show where she buried a treasure
+   - C. to show where she buried a treasure
+   - D. to help Lina learn her way around ✅
    - *Why (parent page):* "Lina did not know her way around yet, so Ruby decided to help."
 
 **Make Walking Water** · how-to · 144 words · grade estimate 3.4 · topics: how-things-work · `ra_g4_06`
@@ -430,9 +459,9 @@ The ✅ marks the right answer **here only**; on the child's page there is no ma
 
 1. *(find it · write first: yes)* Which cup do you leave empty at the start?
    - A. the cup with red water
-   - B. the middle cup ✅
-   - C. the cup with blue water
-   - D. the cup on the left
+   - B. the cup with blue water
+   - C. the cup on the left
+   - D. the middle cup ✅
    - *Why (parent page):* "Fill the two outside cups with water and leave the middle cup empty."
 2. *(word meaning · write first: yes)* What does absorb mean in these steps?
    - A. dry out
@@ -441,8 +470,8 @@ The ✅ marks the right answer **here only**; on the child's page there is no ma
    - D. spill over
    - *Why (parent page):* The steps tell you: "soak up, or absorb, water."
 3. *(work it out · write first: yes)* Why does the water in the middle cup turn purple?
-   - A. Red and blue water both drip in and mix. ✅
-   - B. The paper towels turn the water purple.
+   - A. The paper towels turn the water purple.
+   - B. Red and blue water both drip in and mix. ✅
    - C. The water sits in the sun.
    - D. You add purple coloring at the end.
    - *Why (parent page):* Red walks in from one side and blue from the other; red and blue mixed make purple.
@@ -460,24 +489,24 @@ The ✅ marks the right answer **here only**; on the child's page there is no ma
 > The lights flickered once, then went out. In the sudden darkness, Mateo's little brother grabbed his arm, and outside, rain hammered against the windows. "It's okay, Sam," Mateo said, switching on a flashlight. "Want to know a trick for telling how far away the storm is?" Sam nodded. "When you see lightning, start counting seconds. Stop when you hear the thunder." A white flash lit the room. "One, two, three," they counted together. On eleven, the thunder rumbled. "Light travels much faster than sound," Mateo explained. "We see the flash almost right away, but the sound takes about five seconds to go one mile. Eleven seconds means the lightning was about two miles away." They waited for the next flash, and this time they counted to fifteen. After the one that followed, they reached nineteen. Slowly, Sam's grip on Mateo's arm loosened. "It's getting farther away," he said. "Exactly," said Mateo. By the time the lights blinked back on, Sam was asleep on the couch, still holding the flashlight.
 
 1. *(find it · write first: yes)* About how long does the sound of thunder take to travel one mile?
-   - A. about one second
-   - B. about five seconds ✅
+   - A. about five seconds ✅
+   - B. about one second
    - C. about eleven seconds
    - D. about two minutes
    - E. no time at all
    - *Why (parent page):* Mateo says "the sound takes about five seconds to go one mile."
 2. *(work it out · write first: yes)* Why did Sam's grip on Mateo's arm loosen?
-   - A. The flashlight was too heavy.
-   - B. Mateo told him to let go.
-   - C. He felt less scared as the storm moved away. ✅
+   - A. He felt less scared as the storm moved away. ✅
+   - B. The flashlight was too heavy.
+   - C. Mateo told him to let go.
    - D. The lights had come back on.
    - E. He wanted to count by himself.
    - *Why (parent page):* It loosens right after the counts grow to fifteen and nineteen, and Sam says "It's getting farther away." The lights come on later.
 3. *(what supports this · write first: no)* Which detail best shows that the storm was moving away?
-   - A. The counts went from eleven to fifteen to nineteen. ✅
-   - B. Rain hammered the windows.
-   - C. The lights flickered once.
-   - D. A white flash lit the room.
+   - A. Rain hammered the windows.
+   - B. The lights flickered once.
+   - C. A white flash lit the room.
+   - D. The counts went from eleven to fifteen to nineteen. ✅
    - E. Light travels faster than sound.
    - *Why (parent page):* Longer counts mean the thunder took longer to arrive — so the lightning was farther off each time.
 4. *(author's purpose · write first: yes)* Why does the author include Mateo's explanation about light and sound?
@@ -509,9 +538,9 @@ The ✅ marks the right answer **here only**; on the child's page there is no ma
    - E. They eat mice and insects. ✅
    - *Why (parent page):* "Most snakes in North Carolina are harmless, and they help the park by eating mice and insects."
 3. *(find it · write first: yes)* What should you do if a snake is on the path?
-   - A. Run past it as fast as you can before it moves.
-   - B. Move it off the path with a long stick.
-   - C. Stand still, step back slowly, and give it room. ✅
+   - A. Stand still, step back slowly, and give it room. ✅
+   - B. Run past it as fast as you can before it moves.
+   - C. Move it off the path with a long stick.
    - D. Call to it softly like a pet.
    - E. Wait for it to chase you away.
    - *Why (parent page):* "If one is on the path, stand still, step back slowly, and give it plenty of room."
@@ -533,21 +562,21 @@ The ✅ marks the right answer **here only**; on the child's page there is no ma
    - A. They lived on islands.
    - B. They carried oil cans.
    - C. They climbed spiral stairs.
-   - D. They trimmed the lamp's wick through the night. ✅
-   - E. They were very quick.
+   - D. They were very quick.
+   - E. They trimmed the lamp's wick through the night. ✅
    - *Why (parent page):* "He climbed again to trim its wick ... Lighthouse keepers were nicknamed 'wickies' for that reason."
 2. *(word meaning · write first: yes)* "Trim its wick" — what does trim mean here?
    - A. light with a match
-   - B. cut neatly ✅
-   - C. decorate
-   - D. fill with oil
+   - B. decorate
+   - C. fill with oil
+   - D. cut neatly ✅
    - E. put out
    - *Why (parent page):* Clara used "the scissors" to trim — she cut the wick so the flame would burn "bright and steady."
 3. *(work it out · write first: yes)* Why does her father whisper, "Ships are out there"?
    - A. He wants Clara to go fishing.
-   - B. Without the light, ships could hit the rocks in the storm. ✅
-   - C. He hears a ship's horn.
-   - D. He is dreaming about sailing.
+   - B. He hears a ship's horn.
+   - C. He is dreaming about sailing.
+   - D. Without the light, ships could hit the rocks in the storm. ✅
    - E. He wants a doctor to come by boat.
    - *Why (parent page):* A lighthouse warns ships away from danger, and at dawn a boat turns "safely away from the rocks below."
 4. *(what supports this · write first: no)* Which detail best shows that Clara's work mattered?
@@ -563,31 +592,31 @@ The ✅ marks the right answer **here only**; on the child's page there is no ma
 > In 1941, a Swiss engineer named George de Mestral went for a walk in the mountains with his dog. When they got home, both of them were covered with burrs, the prickly seed heads of a plant called burdock. Pulling them off took a long time. Most people would have grumbled and thrown the burrs away, but de Mestral was curious. Why did they stick so well? He looked at one under a microscope and saw hundreds of tiny hooks. The hooks caught on anything with loops, like the threads of his socks or the fur of his dog. He wondered whether people could copy the idea. For years he experimented, trying one material after another. Cotton wore out too quickly, but a strong new material called nylon worked. He made one strip covered with tiny hooks and another covered with tiny loops. Pressed together, they held tight; pulled apart, they opened with a ripping sound. He patented his invention in the 1950s. Today, hook-and-loop fasteners close shoes, jackets, and backpacks, and astronauts have used them to keep tools from floating away. It all began with a curious man and a dog covered in burrs.
 
 1. *(word meaning · write first: yes)* "For years he experimented." What does experimented mean?
-   - A. gave up on an idea after it failed once
-   - B. sold his invention
-   - C. tried different ways to see what worked ✅
+   - A. tried different ways to see what worked ✅
+   - B. gave up on an idea after it failed once
+   - C. sold his invention
    - D. walked a long way through the mountains
    - E. looked through a microscope
    - *Why (parent page):* The sentence goes on: "trying one material after another." Cotton failed; nylon worked.
 2. *(find it · write first: yes)* What did de Mestral see when he looked at a burr under a microscope?
-   - A. hundreds of tiny loops
-   - B. a sticky glue
-   - C. tiny seeds with wings
-   - D. hundreds of tiny hooks ✅
+   - A. hundreds of tiny hooks ✅
+   - B. hundreds of tiny loops
+   - C. a sticky glue
+   - D. tiny seeds with wings
    - E. threads from his socks
    - *Why (parent page):* "He looked at one under a microscope and saw hundreds of tiny hooks." The loops were on his socks and dog.
 3. *(work it out · write first: yes)* What can you tell about de Mestral from this passage?
    - A. He did not like his dog.
-   - B. He gave up as soon as the cotton wore out.
-   - C. He was curious and kept trying for years. ✅
+   - B. He was curious and kept trying for years. ✅
+   - C. He gave up as soon as the cotton wore out.
    - D. He was an astronaut who went to space.
    - E. He invented the microscope.
    - *Why (parent page):* He asked "Why did they stick so well?" when others would have grumbled, and "for years he experimented."
 4. *(author's purpose · write first: yes)* Why does the author mention that most people would have grumbled and thrown the burrs away?
    - A. to explain how to remove burrs
    - B. to warn readers to stay away from burdock plants
-   - C. to show that de Mestral was grumpy
-   - D. to show how unusual de Mestral's curiosity was ✅
+   - C. to show how unusual de Mestral's curiosity was ✅
+   - D. to show that de Mestral was grumpy
    - E. to explain why cotton wore out too quickly
    - *Why (parent page):* It sets up the contrast: "but de Mestral was curious."
 
@@ -598,31 +627,31 @@ The ✅ marks the right answer **here only**; on the child's page there is no ma
 > For her science project, Amara made a prediction: more birds would visit her feeder on colder days. The idea seemed obvious, since birds need extra energy to stay warm and should therefore eat more when temperatures drop below freezing. For three weeks, she sat by the kitchen window for twenty minutes every morning, recording the outdoor temperature and making a tally mark for every bird that landed on the feeder. When she finally organized her numbers into a chart, however, she frowned. Several of the coldest mornings had attracted very few visitors. On the most bitter morning of all, when the thermometer read eleven degrees, she had counted only four birds, yet a mild morning the following week had brought twenty-three. "My prediction was wrong," she told her uncle, a biologist who studied birds for a living. "The whole project is ruined." Her uncle paged thoughtfully through her notebook. "Wrong isn't ruined," he said. "Look at your notes about the weather, not just the temperature." Amara examined the pages again and noticed that beside each of the busiest days, she had written the same word: snow. On those mornings, fresh snow had blanketed the ground, hiding the seeds that birds normally find for themselves. On that eleven-degree morning, the coldest of all, the ground had been completely bare. "So it isn't really the cold," she said slowly. "It's whether they can find food anywhere else." Her uncle smiled. "Now you have a new question to test, and that is exactly how science is supposed to work."
 
 1. *(word meaning · write first: yes)* What is a prediction?
-   - A. a chart of numbers
-   - B. a kind of bird feeder
-   - C. a guess about what will happen, made before testing it ✅
+   - A. a guess about what will happen, made before testing it ✅
+   - B. a chart of numbers
+   - C. a kind of bird feeder
    - D. a reading from a thermometer
    - E. a final answer that has been proven
    - *Why (parent page):* Amara made her prediction first, then spent three weeks testing it — and it turned out wrong.
 2. *(what supports this · write first: no)* Which detail best supports Amara's new idea about the birds?
    - A. She sat by the kitchen window for twenty minutes every morning.
    - B. Birds need extra energy to stay warm.
-   - C. Beside each of the busiest days, she had written the same word: snow. ✅
-   - D. Her uncle studied birds for a living.
+   - C. Her uncle studied birds for a living.
+   - D. Beside each of the busiest days, she had written the same word: snow. ✅
    - E. She made a tally mark for every bird that landed.
    - *Why (parent page):* Her new idea is that snow hides the birds' natural food — and the busiest days were the snowy ones.
 3. *(work it out · write first: yes)* Why did only four birds come on the coldest morning?
    - A. It was too cold for birds to fly.
-   - B. Amara forgot to fill the feeder.
-   - C. The ground was bare, so they could find food elsewhere. ✅
+   - B. The ground was bare, so they could find food elsewhere. ✅
+   - C. Amara forgot to fill the feeder.
    - D. The thermometer was broken.
    - E. Snow had covered the feeder.
    - *Why (parent page):* "On that eleven-degree morning, the coldest of all, the ground had been completely bare" — seeds were easy to find without the feeder.
 4. *(main idea / title · write first: yes)* What is the main message of the story?
    - A. Science projects should always prove the prediction right.
-   - B. A prediction that turns out wrong can still lead to new discoveries. ✅
-   - C. Birds do not need food in winter.
-   - D. Uncles are better at science than students.
+   - B. Birds do not need food in winter.
+   - C. Uncles are better at science than students.
+   - D. A prediction that turns out wrong can still lead to new discoveries. ✅
    - E. Cold weather is the most important thing to measure.
    - *Why (parent page):* "Wrong isn't ruined ... Now you have a new question to test, and that is exactly how science is supposed to work."
 
@@ -631,30 +660,30 @@ The ✅ marks the right answer **here only**; on the child's page there is no ma
 > In 1587, about 115 English men, women, and children sailed across the Atlantic Ocean to start a settlement on Roanoke Island, off the coast of what is now North Carolina. Their leader was an artist named John White. Soon after they arrived, his daughter gave birth to a girl named Virginia Dare, the first English child born in the Americas. The colonists soon realized they would run short of supplies, so White sailed back to England for help, expecting to return within months. Instead, he was delayed for three years. England was at war with Spain, and nearly every ship was needed for the fight. When White finally returned in August 1590, the settlement was empty. The houses had been taken down, and there was no sign of a battle. The only clues were letters carved into wood: CRO on a tree and the word CROATOAN on a post. Croatoan was the name of a nearby island and of the Native American people who lived there, who had been friendly to the English. White hoped the colonists had moved there, but a storm drove his ship back to England before he could search. No one knows for certain what happened to the colonists, and historians and archaeologists are still looking for answers today. That is why it is called the Lost Colony.
 
 1. *(find it · write first: yes)* What word was carved on the post?
-   - A. CRO
-   - B. ROANOKE
-   - C. CROATOAN ✅
+   - A. CROATOAN ✅
+   - B. CRO
+   - C. ROANOKE
    - D. VIRGINIA
    - E. HELP
    - *Why (parent page):* "CRO on a tree and the word CROATOAN on a post."
 2. *(work it out · write first: yes)* Why did White hope the colonists had gone to Croatoan?
    - A. He had told them to sail home to England without him.
    - B. He could see their houses standing on that island.
-   - C. Virginia Dare was born there.
-   - D. The storm had already blown his ship onto that island.
-   - E. The carving named it, and the people there had been friendly. ✅
+   - C. The carving named it, and the people there had been friendly. ✅
+   - D. Virginia Dare was born there.
+   - E. The storm had already blown his ship onto that island.
    - *Why (parent page):* The carved clue "CROATOAN" named a nearby island whose people "had been friendly to the English."
 3. *(what supports this · write first: no)* Which detail best supports the idea that the colonists were not attacked before they left?
-   - A. The houses had been taken down, and there was no sign of a battle. ✅
-   - B. White was delayed in England for three whole years.
-   - C. England was at war with Spain.
-   - D. A storm drove his ship back to England before he could search.
+   - A. White was delayed in England for three whole years.
+   - B. England was at war with Spain.
+   - C. A storm drove his ship back to England before he could search.
+   - D. The houses had been taken down, and there was no sign of a battle. ✅
    - E. Virginia Dare was born soon after they arrived.
    - *Why (parent page):* "The houses had been taken down, and there was no sign of a battle" — which suggests the colonists left on purpose.
 4. *(word meaning · write first: yes)* "Instead, he was delayed for three years." What does delayed mean?
-   - A. lost at sea on the way back
-   - B. sent to war
-   - C. kept from going until later ✅
+   - A. kept from going until later ✅
+   - B. lost at sea on the way back
+   - C. sent to war
    - D. made the leader of the colony
    - E. given more supplies
    - *Why (parent page):* He meant to return "within months" but could not, because "nearly every ship was needed for the fight."
@@ -675,6 +704,14 @@ Every true-facts piece sticks to things that are widely taught and well establis
 - *Snakes Are Out on the Trail* (g5 notice) — snakes are cold-blooded; most North Carolina snakes are harmless and eat mice and insects; a few kinds, such as the copperhead, are venomous; give a snake room — it is not chasing you.
 - *The Colony That Vanished* (g7–8) — 1587, about 115 English settlers on Roanoke Island; led by the artist John White; Virginia Dare, the first English child born in the Americas; White sailed for supplies and was held up three years by the war with Spain; in August 1590 the settlement was empty, the houses taken down, no sign of a fight; "CRO" carved on a tree and "CROATOAN" on a post; Croatoan was a nearby island and its friendly people; a storm stopped his search; still unsolved.
 - *Twelve Seconds in the Air* (g3) — the Wright brothers' first flight near Kitty Hawk, 1903 (see g3 below).
+
+**People of faith (new — please look at these too)**
+- *Harriet Tubman Goes Back* (g2) — born into slavery in Maryland; escaped in 1849; went back again and again and led about seventy people out; travelled at night by the North Star; a woman of strong faith who prayed and said God guided her. ★ "about seventy" is the usual modern count from her own trips (she also gave directions to others).
+- *The Lady with the Lamp* (g3) — Florence Nightingale, born 1820 to a wealthy English family (she was born in Florence, Italy, while the family was travelling, so the passage says only "her English family"); felt called by God at sixteen; years later became a nurse, against her family's wishes; 1854, the Crimean War, an army hospital; she got it cleaned and brought clean clothes and better food (the water and drains were fixed by a government team, so the passage doesn't credit her with those); she became known as "the Lady with the Lamp" through newspaper reports and a poem.
+- *The Plant Doctor* (g4) — George Washington Carver, born into slavery in Missouri about 1864; called "the plant doctor" as a boy; began teaching at Tuskegee in Alabama in 1896; taught farmers to switch crops, rotating cotton with peanuts and sweet potatoes; peanuts return nutrients (nitrogen) to the soil — "the things plants need to grow," not plant food, since plants make their own; found many uses for those crops, including foods and dyes; devout, with pre-dawn walks to pray.
+- *The Runner Who Would Not Race on Sunday* (g5) — Eric Liddell; 1924 Paris Olympics; the 100 m heats fell on a Sunday and he would not run them; won the 400 m in 47.6 seconds, a new Olympic record (often called a world record too, but that is disputed, so the passage says Olympic); born in China; went back in 1925 as a teacher and missionary and spent most of his life there.
+- *Walking Instead of Riding* (g6) — Martin Luther King Jr., pastor of a Baptist church in Montgomery; Rosa Parks arrested December 1955; the bus boycott lasted more than a year; in 1956 the Supreme Court ruled that the bus law broke the Constitution (Browder v. Gayle); the 1963 "I Have a Dream" speech in Washington; the 1964 Nobel Peace Prize.
+- *The March to the Sea* (g7–8) — Mohandas Gandhi, born 1869 in British-ruled India; thrown off a train in South Africa (1893) despite a first-class ticket; a Hindu who held to *ahimsa*; peaceful refusal to obey unfair laws; the British salt law (dating from 1882) banned Indians from making salt and taxed it; the 1930 Salt March of about 240 miles to the sea; tens of thousands jailed; independence in 1947; inspired King.
 
 **g1**
 - *The Moon* — the moon makes no light of its own; its light comes from the sun; no wind or rain there; a footprint can last a very long time.
@@ -772,6 +809,18 @@ Every question was read against its passage by careful readers who had not seen 
   - "Repair Café" is a registered name, so that story now uses a **fix-it fair**.
   - The lost-hiker story gives the safe rule: follow the trail marks if you can see them; if you can't, stay where you are.
 
+**Round 3 (11/23, the six people of faith):**
+- A separate reader checked every fact and the tone. Tone was fine in all six: each says plainly that the faith was the person's own, and none teaches doctrine.
+- **Two wrong facts fixed:**
+  - Florence Nightingale was born in Florence, Italy, not England.
+  - The salt law dates from 1882; it was already old by 1930.
+- **Four overstatements fixed:**
+  - Nightingale didn't bring in the water supply.
+  - Plants don't get "food" from the soil.
+  - Liddell's time was certainly an Olympic record; "world record" is disputed.
+  - The court ruled the bus law broke the Constitution, not that it was "unfair."
+- **On the questions:** 12 changed, mostly evening out long right answers. Two *why* lines now quote the passage. One write-first flag turned false: "Why does the author tell about Liddell's work in China?" has more than one fair answer when written freely.
+
 **Round 2 (11/23, after your answers) — everything new or changed:** all 60 g1 and g2 passages (the 40 new ones, and the first 20 with their rewritten g1 questions or simplified g2 text), the six swapped-in pieces, and every write-first flag.
 
 Two separate readers again: one for all 60 g1–g2 passages, one for the six swaps and every write-first flag.
@@ -818,7 +867,7 @@ Two separate readers again: one for all 60 g1–g2 passages, one for the six swa
 7. **Topics:** "Add those topics." → **Done:**
    - The new passages include North Carolina (eleven pieces), snakes, dinosaurs and frogs: real animals and real facts, no characters or brands.
    - Every passage has `topics` tags.
-   - **Faith:** yes, but no faith passages are written yet, until you say which kind.
+   - **Faith:** "People of faith" — done: one true-facts biography per level from g2 to g7–8 (see "People of faith" above), tagged `faith`.
    - The g6 lighthouse story stays.
 8. **Names:** "Names are fine." Same in the new passages. No family names, and no enrolled child's name in any family. *Thin Ice* used "Caleb", the DeWalt family's kindergartner, so he is now "Simon".
 9. **The six drier pieces:** "Swap for fun ones." → **Done:** each is replaced by a livelier piece of the same kind, level and question kinds, and the new one keeps the old id:
@@ -834,11 +883,11 @@ Two separate readers again: one for all 60 g1–g2 passages, one for the six swa
 ## New questions (each has a default)
 
 1. **Write-first for main idea and author's purpose.** I marked "What is the main idea?" and "What is the author's purpose?" as write-first, because a child can answer in their own words and the *why* line shows what to look for. They are the hardest kind to mark from a child's own words, though. Default: keep them as write-first. Or limit write-first days to find-it, work-it-out and word questions.
-2. **Faith passages** — waiting on which kind (the hub is asking you). Nothing is written until then.
+2. **The six people of faith.** Keep these six, or swap any of them? Other well-documented choices for the same idea: William Wilberforce (ending the British slave trade), Corrie ten Boom (hiding Jewish neighbors in World War II), Mother Teresa, Fred Rogers, Johann Sebastian Bach. Default: keep the six.
 
 ## The files
 
-- `ladders/read_and_answer.json` — the 110 passages.
+- `ladders/read_and_answer.json` — the 116 passages.
   - Each passage has an id (`ra_g3_07`). The id is a stable name, not a place: the reading order is `o`.
   - It also has its level, title, kind, `topics`, word count, the text, and any stretch words.
   - The questions use the boys' bank shape with the *why* line added: `{type, text, c: [choices], ans: "B", why}`. From g3 up they also carry `writeFirst`.
