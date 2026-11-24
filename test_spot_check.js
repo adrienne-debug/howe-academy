@@ -103,7 +103,7 @@ console.log("(2) The daily draw: random, n picks, fixed once drawn");
   ok("?dryrun=1: drawn locally, nothing written", dr.spEnsureDraw("lucy",true).picks.length===1&&dr.writes.length===0&&dr.tx.length===0);
 }
 console.log("(3) ✓ / ✗ — ✗ is CHOREUNDO's undo for that item");
-{ const c=mk(); kidTick(c,"chores",1); kidTick(c,"chores",0);
+{ const c=mk({set:{penalty:{on:false}}}); kidTick(c,"chores",1); kidTick(c,"chores",0);
   ok("setup: +25 banked by the kid", bal(c,"lucy")===25);
   vm.runInContext("spotData={lucy:{'"+ISO+"':{n:2,picks:[{k:'s:chores:1',kind:'step',slot:'chores',i:1,d:'thursday',label:'Unload the dishwasher',type:'chore',pts:15},{k:'s:chores:0',kind:'step',slot:'chores',i:0,d:'thursday',label:'Start a load of laundry',type:'laundry',pts:10}]}}}",c);
   c.writes.length=0;
@@ -205,10 +205,11 @@ console.log("(8) ⚙ What the draw picks from — settings/spotCheck/types");
   const dr=mk({dry:true}); dr.spSetType("chore"); ok("?dryrun=1: switch flips locally, nothing written", dr.spTypes().chore===false&&dr.writes.length===0);
   ok("listener on settings/spotCheck feeds spotSetOnValue", /db\.ref\("settings\/spotCheck"\)\.on\("value",s=>\{ if\(typeof spotSetOnValue==="function"\) spotSetOnValue\(s\.val\(\)\);/.test(src));
 }
-console.log("(9) −pts if not done — settings/spotCheck/penalty, off unless she turns it on");
+console.log("(9) −pts if not done — settings/spotCheck/penalty, ON at 100 unless she turns it off (L5, her answer 2026-11-21)");
 { const PICK="spotData={lucy:{'"+ISO+"':{n:2,picks:[{k:'s:chores:1',kind:'step',slot:'chores',i:1,d:'thursday',label:'Unload the dishwasher',type:'chore',pts:15}]}}}";
-  const c=mk(); kidTick(c,"chores",1); vm.runInContext(PICK,c);
-  ok("off by default (nothing saved): spPenalty().on false, shown amount 100", c.spPenalty().on===false&&c.spPenalty().pts===100);
+  ok("ON at 100 by default (nothing saved; L5)", mk().spPenalty().on===true&&mk().spPenalty().pts===100);
+  const c=mk({set:{penalty:{on:false}}}); kidTick(c,"chores",1); vm.runInContext(PICK,c);
+  ok("off (she turned it off): spPenalty().on false, shown amount 100", c.spPenalty().on===false&&c.spPenalty().pts===100);
   c.spResolve("lucy",0,"no");
   ok("off: ✗ takes back only the item's own 15 ⭐ — no penalty entry, no pen on the result", bal(c,"lucy")===0&&!adj(c,"lucy").some(a=>/Spot check: not done/.test(a.note))&&!c.spDay("lucy",ISO).results[0].pen, adj(c,"lucy"));
   ok("off: the confirm says nothing about a penalty", c.confirms.length===1&&!/rule/.test(c.confirms[0]), c.confirms);
@@ -227,7 +228,7 @@ console.log("(9) −pts if not done — settings/spotCheck/penalty, off unless s
   ok("on, cancelled at the confirm: nothing taken off", x.spResolve("lucy",0,"no")===false&&bal(x,"lucy")===15);
   const a=mk({set:{penalty:{on:true,pts:50}}}); kidTick(a,"chores",1); vm.runInContext(PICK,a); a.spResolve("lucy",0,"no");
   ok("her amount is used (50)", adj(a,"lucy").some(e=>e.amount===-50)&&/−50 ⭐ more/.test(a.confirms[0]));
-  const w=mk(); w.writes.length=0; w.spSetPenOn();
+  const w=mk({set:{penalty:{on:false}}}); w.writes.length=0; w.spSetPenOn();
   ok("the switch writes settings/spotCheck/penalty/on = true and the shown 100 as pts", w.spPenalty().on&&w.writes.some(e=>e[1]==="settings/spotCheck/penalty/on"&&e[2]===true)&&w.writes.some(e=>e[1]==="settings/spotCheck/penalty/pts"&&e[2]===100), w.writes);
   w.writes.length=0; w.spSetPenPts("75");
   ok("the amount box writes settings/spotCheck/penalty/pts = 75 only", w.spPenalty().pts===75&&w.writes.length===1&&w.writes[0][1]==="settings/spotCheck/penalty/pts"&&w.writes[0][2]===75, w.writes);
@@ -236,7 +237,7 @@ console.log("(9) −pts if not done — settings/spotCheck/penalty, off unless s
   w.spSetToggle(); const S=w.mdCardSpotCheck();
   ok("the sheet: '✗ Not done also takes off [75] ⭐' with its switch", /spSetPenOn\(\)/.test(S)&&/✗ Not done also takes off/.test(S)&&/value="75"/.test(S)&&/spSetPenPts\(this\.value\)/.test(S), S);
   const n=mk({notMom:true}); ok("off Mom mode: the switch and the box do nothing", n.spSetPenOn()===false&&n.spSetPenPts(20)===false&&n.writes.length===0);
-  const d=mk({dry:true}); d.spSetPenOn(); ok("?dryrun=1: the switch flips locally, nothing written", d.spPenalty().on&&d.writes.length===0);
+  const d=mk({dry:true,set:{penalty:{on:false}}}); d.spSetPenOn(); ok("?dryrun=1: the switch flips locally, nothing written", d.spPenalty().on&&d.writes.length===0);
 }
 console.log("(10) 🔎 Spot check on Mom's afternoon checklist — derived, never in momChores");
 { const PICKS="spotData={lucy:{'"+ISO+"':{n:2,picks:[{k:'a',label:'A',type:'chore'},{k:'b',label:'B',type:'chore'}]}}}";

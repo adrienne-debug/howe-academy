@@ -39,7 +39,7 @@ const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.ht
   s = s.slice(0, a) + s.slice(b);
   s = R(s, 'function ckLogCanSee(){ try{ return momHere()||_kioskD(); }catch(e){ return false; } }\nfunction ckLogCanDock(){ try{ return momHere()||(_kioskD()&&typeof dadAwardOk==="function"&&dadAwardOk()); }catch(e){ return false; } }',
     'function ckLogCanDock(){ try{ return momHere()||_kioskD(); }catch(e){ return false; } }', "the gates");
-  s = R(s, '    if(!ckLogCanSee()) return "";   // DADGATE\n    const items=ckLogToday(), canDock=ckLogCanDock();', '    if(!ckLogCanDock()) return "";\n    const items=ckLogToday();', "the card's gate");
+  s = R(s, '    if(!ckLogCanSee()) return "";   // DADGATE\n    const items=ckLogToday(), canDock=ckLogCanDock(),', '    if(!ckLogCanDock()) return "";\n    const items=ckLogToday(),', "the card's gate");   // L5 (FLAGONE) reads the penalty on the same line
   s = R(s, "          else if(canDock) h+='<button onclick=\"event.stopPropagation();ckLogDock(", "          else h+='<button onclick=\"event.stopPropagation();ckLogDock(", "the −100's gate");
   s = s.replace(/^ {6}if\(!canDock\) h\+='<div[^\n]*DADGATE: a locked Dad\n/m, "");
   if (/DADGATE|ckLogCanSee|canDock/.test(s)) throw new Error("test_dad_code_gates: the app before's index.html still has DADGATE");
@@ -80,7 +80,8 @@ const CTIP = '<div style="font-size:11.5px;color:#6b7280;margin-top:6px">🔒 Pu
 const FOOT = "in the subject sheet to undo the record.</div>";
 // a locked Dad's drawing, worked out from the app before's: the buttons out, the one line in
 const lockedLG = h => { h = h.replace(GIVE, "").replace(GUNDO, ""); const i = h.lastIndexOf("</div></div>"); return h.slice(0, i) + LTIP + h.slice(i); };
-const lockedCK = h => h.replace(DOCK, "").replace(FOOT, FOOT + CTIP);
+const FUNDO = /<button onclick="event\.stopPropagation\(\);flagUndo\([^"]*\)" title="[^"]*" style="[^"]*">undo<\/button>/g;   // L5 (FLAGONE): a mark's undo is a button the lock takes away too
+const lockedCK = h => h.replace(DOCK, "").replace(FUNDO, "").replace(FOOT, FOOT + CTIP);
 // each write as [op, path, the value now at that path] — an ordinary bank line's id and a push key are random, the times are the clock's
 const norm = p => p.replace(/(\/adjustments\/)(?!lgb_)[^/]+$/, "$1*").replace(/-P\d+/g, "-P*");
 const vals = (w, m) => w.since(m || 0).map(l => { let v = w.get(l.path); v = v && typeof v === "object" ? Object.assign({}, v) : v; if (v && typeof v === "object") { delete v.ts; delete v.iso; delete v.flagTs; delete v.at; } return [l.op, norm(l.path), v === undefined ? null : v]; });
@@ -155,7 +156,7 @@ console.log("\n── B · Dad's link, his code in = the app before's Dad ──
   ok("his Undo: the same as the app before's (one remove, the line gone)", J(u[0]) === J(u[1]) && u[0][0] === true && u[0][1].length === 1 && u[0][1][0][0] === "remove" && !N.w.get("bank/kid_a/adjustments/" + N.CAR), u);
   const d = []; for (const S of [N, O]) { const k = logKey(S.Dd, "kid_c", "Toys in the bin"), m = S.w.mark(); S.Dd.run("__cf=[];1"); S.Dd.run(dockJs(k, "kid_c", "Toys in the bin")); await S.w.flush(); d.push([S.Dd.run("__cf.length"), vals(S.w, m), bankOf(S.w, "kid_c"), S.w.get("routineLog/kid_c/" + k.join("/")).flagBy]); }
   ok("his 🧾 −100: the same ask, writes and bank as the app before's Dad; the mark says Dad", J(d[0]) === J(d[1]) && d[0][0] === 1 && d[0][3] === "dad" && d[0][2].some(a => a[0] === -100 && / · by Dad$/.test(a[1])), d);
-  ok("🧾 afterwards: byte for byte the app before's (\"🚩 by Dad · −100\")", CK(N.Dd) === CK(O.Dd) && /🚩 by Dad · −100$/.test(ckRow(CK(N.Dd), "Toys in the bin")));
+  ok("🧾 afterwards: byte for byte the app before's (\"🚩 by Dad · −100\", and L5's undo with his code in)", CK(N.Dd) === CK(O.Dd) && /🚩 by Dad · −100 undo$/.test(ckRow(CK(N.Dd), "Toys in the bin")));
 }
 
 // ── C ──

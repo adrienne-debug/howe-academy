@@ -52,7 +52,7 @@ const PIECES = [
   Object.assign(rec,patch);
   if(db) db.ref(`, "rlogFlag"]
 ];
-const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const BASE_IDX = (() => { let s = require(path.join(__dirname, "test_fixtures", "ledger_l5_out.js")).idx(fs.readFileSync(path.join(__dirname, "index.html"), "utf8"));   // L5 (FLAGONE) out first: it reworks these lines
   for (const [a, b, l] of PIECES) { const n = typeof a === "string" ? s.split(a).length - 1 : (s.match(a) || []).length;
     if (n !== 1) throw new Error("test_flag_mark_who: the app before cannot be built — " + l + " found " + n + "×"); s = s.replace(a, () => b); }
   if (/FLAGWHO|flagWho|flagMarkTxt|flagOffAsk/.test(s)) throw new Error("test_flag_mark_who: the app before still has FLAGWHO");
@@ -106,7 +106,7 @@ console.log("\n── A · Take stars away ON: as before, plus who ──");
   ok("the Click-off Log's ⚠️ (Mom): the same ask and the same writes as before (the −100 and one update of the line)", a.ask === b.ask && J(a.w) === J(b.w) && J(a.w) === J(["set bank/kid_a/adjustments/*", "update routineLog/kid_a/" + logKey(N.A, "kid_a", "Make the bed").join("/")]), [a.w, b.w]);
   ok("…the Star Bank line: −100, \"🚩 false check-off dock · by Mom\" (before: no who)", J(a.bank) === J([[-100, "🚩 false check-off dock · by Mom"]]) && J(b.bank) === J([[-100, "🚩 false check-off dock"]]));
   const { flagTs: t1, ...ra } = a.rec, { flagTs: t2, ...rb } = b.rec;
-  ok("…the line's record = before + flagBy \"mom\" (flagged, penalty −100)", J(ra) === J(Object.assign({}, rb, { flagBy: "mom" })) && ra.penalty === -100, [ra, rb]);
+  ok("…the line's record = before + flagBy \"mom\" (flagged, penalty −100) + L5's flagBid (the minus line's fixed id)", J(Object.assign({}, ra, { flagBid: undefined })) === J(Object.assign({}, rb, { flagBy: "mom" })) && ra.penalty === -100 && /^flg_/.test(ra.flagBid), [ra, rb]);
   ok("…drawn: the Click-off Log \"🚩 by Mom · −100\" (before \"−100\"); 🧾 \"🚩 by Mom · −100\" (before \"🚩 −100\")", /<span style="color:#b91c1c;font-weight:800">🚩 by Mom · −100<\/span>/.test(a.log) && /<span style="color:#b91c1c;font-weight:800">−100<\/span>/.test(b.log) && />🚩 by Mom · −100<\/span>/.test(a.ck) && />🚩 −100<\/span>/.test(b.ck) && /title="docked −100"/.test(a.ck), [a.log.slice(-200), a.ck.slice(-200)]);
   DUMP.momLog = a.log; DUMP.momCk = a.ck;
   // 🧾's −100 by an unlocked Dad on his link, a step line
@@ -122,7 +122,7 @@ console.log("\n── A · Take stars away ON: as before, plus who ──");
     const m = S.w.mark(); S.A.run("ckLogDock('task','kid_c','t_fw','Math page 12')"); await S.w.flush();
     return { w: writes(S.w, m), bank: notes(S.w, "kid_c"), h: (({ flagTs, ...x }) => x)(S.A.run("histState.t_fw")), ck: ckRow(ckHTML(S.A), "Math page 12") }; };
   const e = await card(N), f = await card(O);
-  ok("🧾's −100 on a school card (Mom): the same writes as before; the bank line ends \" · by Mom\"; drawn \"🚩 by Mom · −100\"", J(e.w) === J(f.w) && e.w.length === 2 && J(e.h) === J(f.h) && e.h.flagBy === "mom" && J(e.bank) === J([[-100, "🚩 false check-off dock — Math page 12 · by Mom"]]) && />🚩 by Mom · −100<\/span>/.test(e.ck), [e.w, f.w, e.h]);
+  ok("🧾's −100 on a school card (Mom): the same writes as before (+ L5's flagBid on the mark); the bank line ends \" · by Mom\"; drawn \"🚩 by Mom · −100\"", J(e.w) === J(f.w) && e.w.length === 2 && J(Object.assign({}, e.h, { flagBid: undefined })) === J(f.h) && e.h.flagBid === "flg_week3_t_fw" && e.h.flagBy === "mom" && J(e.bank) === J([[-100, "🚩 false check-off dock — Math page 12 · by Mom"]]) && />🚩 by Mom · −100<\/span>/.test(e.ck), [e.w, f.w, e.h]);
   ok("a kid's device: both refused, nothing written (as before)", await (async () => { const r = []; for (const S of [N, O]) { const k = logKey(S.A, "kid_c", "Toys in the bin"), m = S.w.mark();
     S.Kk.run("rlogFlag('kid_c','" + k.join("','") + "')"); S.Kk.run("ckLogDock('step','kid_c'," + J(k.join("/")) + ",'Toys in the bin')"); await S.w.flush(); r.push(S.w.since(m).length); } return J(r) === J([0, 0]); })());
   ok("Dad's link, code in: the Click-off Log's rlogFlag still refuses (Mom's; the Log is not on his link), nothing written", await (async () => { const r = []; for (const S of [N, O]) { const k = logKey(S.A, "kid_c", "Toys in the bin"), m = S.w.mark();
