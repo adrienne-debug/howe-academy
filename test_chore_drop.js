@@ -167,7 +167,7 @@ for (let n = 0; n <= 32; n++) {
       if (dow === 4 && n < 28) tick(B, "kid_b", "Wash the bins");
     }
     tA.forEach(l => tick(B, "kid_a", l));
-    if (n === 19) tick(B, "kid_c", "Toys in the bin");   // Sat 12/5: +10 brings kid_c back above zero
+    if (n === 19) { S.toysPay = B.run("(function(){ const L=rtStepsFor('chores','kid_c'), i=L.findIndex(s=>s&&s.label==='Toys in the bin'); return rtDailyPay('chores','kid_c',i,L[i]); })()"); tick(B, "kid_c", "Toys in the bin"); }   // Sat 12/5: her first tick of the daily since Mon 11/30 (C5: missed 5 days in a row → pays 2 of 10)
     await w.flush();
     // Mom's own taps (the same on both)
     if (n === 15) { A.run("(function(){ day=_todayDay; rtWave('chores','kid_a','tuesday'," + idxOf(A, "chores", "kid_a", "Sweep the hall") + "); })()"); }   // ✕ today: Sweep the hall
@@ -241,7 +241,7 @@ for (let n = 0; n <= 32; n++) {
     ok("…the star chip says \"⭐ -2\", the store \"⭐ -2\", the bank's vault \"-2 ⭐\" (what a kid sees, as the code draws it)", /⭐ -2$/.test(S.below.chip) && S.below.store === "⭐ -2" && S.below.vault === "-2 ⭐", S.below);
     ok("…the Star Bank statement line: \"➖ 🛁 Scrub the tub · not done −4 ⭐ -2 ⭐\"", / ➖ 🛁 Scrub the tub · not done −4 ⭐ -2 ⭐$/.test(S.below.stmt), S.below.stmt);
   }
-  if (n === 19) ok("G · …and back: Sat she ticks Toys in the bin (+10) → 8 ⭐; the −4 line stays", bal(X.B, "kid_c") === 8 && dropOf(X.w, "kid_c", "Scrub the tub").length === 1, bal(X.B, "kid_c"));
+  if (n === 19) ok("G · …and back up: Sat she ticks Toys in the bin, which pays what C5 says (missed Mon–Fri: 2 of 10) → −2 + 2 = 0 ⭐; the −4 line stays (the drop leaves C5's pay alone)", S.toysPay === 2 && bal(X.B, "kid_c") === -2 + S.toysPay && dropOf(X.w, "kid_c", "Scrub the tub").length === 1, [S.toysPay, bal(X.B, "kid_c")]);
   if (n === 18) {
     // ── E: redraws, reload, two devices, the outbox ──
     console.log("\n── E · exactly once ──");
@@ -393,7 +393,7 @@ console.log("\n── E · two devices at once; a device offline; dry-run ──
   const lb = dropOf(w, "kid_b", "Sweep the porch"), mb = missLines(w, "kid_b", "Sweep the porch").filter(r => r.drop);
   ok("L · first drawn Tue 12/8 (its next day): filed then, under LAST week's Tuesday (12/1), and it takes −2 (the line dated the day it was noticed)", lb.length === 1 && lb[0].amount === -2 && mb.length === 1 && mb[0].drop.due === "2026-12-01" && mb[0]._wk !== V.A.run("activeWk()") && /^2026-12-08/.test(lb[0].iso), [lb, mb]);
   for (let n = 23; n <= 28; n++) { await go(w, n, 8); tick(P, "kid_c", "Toys in the bin"); await w.flush(); }
-  await go(w, 29, 8); tick(P, "kid_c", "Toys in the bin"); drawAll(P, ["kid_b"]); await w.flush();   // Tue 12/15 (12/8's turn missed, never drawn Wed 12/9 … Mon 12/14)
+  await go(w, 29, 8); tick(P, "kid_c", "Toys in the bin"); await w.flush();   // Tue 12/15: still nobody draws kid_b's list (12/8's turn dropped Wed 12/9; its next day passes undrawn)
   await go(w, 30, 8); m = w.mark(); drawAll(P, ["kid_b"]); await w.flush();
   ok("L · a turn whose list nobody draws from its drop to its next day (12/8's, first drawn Wed 12/16): never filed, never costs", !missLines(w, "kid_b", "Sweep the porch").some(r => r.drop && r.drop.due === "2026-12-08") && dropOf(w, "kid_b", "Sweep the porch").length === 1, missLines(w, "kid_b", "Sweep the porch").map(r => r.drop));
 }
