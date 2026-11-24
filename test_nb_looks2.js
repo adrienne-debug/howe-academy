@@ -130,12 +130,12 @@ NEW.forEach(k => {
     .concat(az.filter(l => !seen["1" + l + " says /" + l + "/ · " + T.soundWords[l][0] + " " + T.soundWords[l][1]]));
   ok(!notSeen.length, k + ": all 26 “A is for …” words and all 26 “a says /a/ · …” words really printed in those notebooks", notSeen.join(""));
 });
-// the three pieces the first looks leave to another look (reported in PLAN_notebook_looks_2026-11-23.md, not changed here)
+// the three pieces the first looks used to leave to another look — fixed by NB_LOOKFIX (2026-11-24, test_nb_lookfix.js)
 const lowSound = { nbLowercase: true };
-ok(/says \/d\/ · dig|says \/t\/ · truck|says \/h\/ · hammer/.test(text(NB.generate("kid9", full("shark", lowSound)).student + NB.generate("kid9", full("shark", lowSound, { weekNum: "week31", letterCursor: { week: 30, idx: 5, adv: 5, from: 30 } })).student + NB.generate("kid9", full("shark", lowSound, { weekNum: "week32", letterCursor: { week: 31, idx: 10, adv: 5, from: 30 } })).student)),
-  "(known, unchanged) the shark look still borrows the construction sound words — the new looks carry their own");
-ok(/My Animal Friends[\s\S]*?🦁 🦖 🦕 🦒/.test(NB.generate("kid9", base({ kidName: "Finn", notebookTheme: "construction" })).student) &&
-   NEW.every(k => !/🦖|🦕/.test(NB.generate("kid9", base({ kidName: "Finn", notebookTheme: k })).student)), "(known, unchanged) the construction cover lists the dinosaur friends — a new look lists its own");
+ok(!/says \/d\/ · dig|says \/t\/ · truck|says \/h\/ · hammer/.test(text(NB.generate("kid9", full("shark", lowSound)).student + NB.generate("kid9", full("shark", lowSound, { weekNum: "week31", letterCursor: { week: 30, idx: 5, adv: 5, from: 30 } })).student + NB.generate("kid9", full("shark", lowSound, { weekNum: "week32", letterCursor: { week: 31, idx: 10, adv: 5, from: 30 } })).student)),
+  "the shark look no longer borrows the construction sound words (NB_LOOKFIX) — and the new looks carry their own");
+ok(/My Animal Friends[\s\S]*?🦫 🐜 🐝 🐦/.test(NB.generate("kid9", base({ kidName: "Finn", notebookTheme: "construction" })).student) &&
+   NEW.every(k => !/🦖|🦕/.test(NB.generate("kid9", base({ kidName: "Finn", notebookTheme: k })).student)), "the construction cover lists its own friends (NB_LOOKFIX) — a new look lists its own");
 ok(/My Animal Friends[\s\S]*?🐮 🐷 🐴 🐔/.test(NB.generate("kid9", base({ kidName: "Finn", notebookTheme: "farm" })).student) &&
    /My Animal Friends[\s\S]*?🦊 🐻 🦉 🦌/.test(NB.generate("kid9", base({ kidName: "Finn", notebookTheme: "forest" })).student) &&
    /My Animal Friends[\s\S]*?🦁 🦒 🐘 🐵/.test(NB.generate("kid9", base({ kidName: "Finn", notebookTheme: "space" })).student), "no Animals deck → each look's own four friends");
