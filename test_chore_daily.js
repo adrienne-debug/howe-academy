@@ -34,21 +34,22 @@ const once = (src, what, from, to, label) => { const n = typeof from === "string
 const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
   const R = (a, b, l) => { s = once(s, "index.html", a, b, l); };
   R(/^\/\/ CHOREDAILY_START[^\n]*\n[\s\S]*?^\/\/ CHOREDAILY_END\n/m, "", "the CHOREDAILY block");
-  R(':(now&&_b0>0&&day===_todayDay&&typeof rtDailyPay==="function")?rtDailyPay(slot,kid,i,_st0):_b0;   // CHOREDAILY: a daily missed 2+ days in a row', ":_b0;", "toggleRtStep");
+  R('\n    const _bd=(now&&_b0>0&&typeof rtDailyPay==="function"&&day===_todayDay&&rtDailyRow(_st0))?rtDailyPay(slot,kid,i,_st0):_bf;   // CHOREDAILY: a daily missed 2+ days in a row', "", "toggleRtStep");
+  R("(_bd + zoneBonusFor(_st0&&_st0.zone,_bd))", "(_bf + zoneBonusFor(_st0&&_st0.zone,_bf))", "toggleRtStep's pay");
   R(', _b1=_st?(_st.pts||0):0, _b0=(now&&_b1>0&&typeof _todayDay==="string"&&day===_todayDay&&typeof rtDailyPay==="function")?rtDailyPay("morning",kid,i,_st):_b1;   // CHOREDAILY', ", _b0=_st?(_st.pts||0):0;", "toggleMorningStep");
   R("((cur&&cur.pts!=null)?cur.pts:_b1);", "((cur&&cur.pts!=null)?cur.pts:_b0);", "toggleMorningStep's un-tick");
   R(`((st.pts||0)>0?' '+((typeof rtDailyPay==="function"&&day===_todayDay)?rtDailyPill(st.pts,rtDailyPay("morning",kid,i,st),'cadtag" style="color:#b45309;border-color:#fde68a'):'<span class="cadtag" style="color:#b45309;border-color:#fde68a">+'+(st.pts||0)+' \\u2b50</span>'):'')+   // CHOREDAILY`,
     `((st.pts||0)>0?' <span class="cadtag" style="color:#b45309;border-color:#fde68a">+'+(st.pts||0)+' \\u2b50</span>':'')+`, "the Morning row");
   R(`((typeof rtDailyPay==="function"&&day===_todayDay&&rtDailyRow(st))?rtDailyPill(pts,rtDailyPay(slot,kid,i,st)):(typeof rtFallPill==="function")?`, `((typeof rtFallPill==="function")?`, "rtSlotHTML");
   R("; CHOREDAILY: a daily after 2+ missed days\n", "\n", "rtSlotHTML's comment");
-  R(`,dly:(_due&&day===_todayDay&&typeof rtDailyNote==="function")?rtDailyNote("morning",kid,i,st):""}); });   // CHOREDAILY: Mom's note`, "}); });", "boardStatPop's Morning note");
-  R(`const _dl=day===_todayDay&&typeof rtDailyRow==="function"&&rtDailyRow(st), _f=_dl?rtDailyPay(slot,kid,i,st):(typeof rtFallPay==="function")?rtFallPay(st,_ln,kid):(st.pts||0);   // CHOREFALL: a falling row shows both numbers, as on the kid's row; CHOREDAILY: a daily too`,
+  R(`,dly:(_due&&typeof rtDailyNote==="function"&&day===_todayDay)?rtDailyNote("morning",kid,i,st):""}); });   // CHOREDAILY: Mom's note`, "}); });", "boardStatPop's Morning note");
+  R(`const _dl=typeof rtDailyRow==="function"&&day===_todayDay&&rtDailyRow(st), _f=_dl?rtDailyPay(slot,kid,i,st):(typeof rtFallPay==="function")?rtFallPay(st,_ln,kid):(st.pts||0);   // CHOREFALL: a falling row shows both numbers, as on the kid's row; CHOREDAILY: a daily too`,
     `const _f=(typeof rtFallPay==="function")?rtFallPay(st,_ln,kid):(st.pts||0);   // CHOREFALL: a falling row shows both numbers, as on the kid's row`, "boardStatPop's pay");
   R(`,pay:_f,dly:_dl?rtDailyNote(slot,kid,i,st):""}); });`, ",pay:_f}); });", "boardStatPop's note field");
   R(`+((r.dly&&_note&&!r.done&&!r.wv)?'<span style="font-size:10.5px;font-weight:700;color:#6b7280;margin-left:6px;white-space:nowrap">'+r.dly+'</span>':'')+'</span>'+   // CHOREDAILY: "missed 2 days · pays 8 of 10 ⭐"; CHOREWAIT`, "+'</span>'+   // CHOREWAIT", "boardStatPop's note");
   R(`:(typeof rtDailyPay==="function")?rtDailyPay(slot,k,i,steps[i]):((steps[i]||{}).pts||0)); });   // CHOREFALL: a falling row counts what it pays today; CHOREDAILY: a daily too`, ":((steps[i]||{}).pts||0)); });   // CHOREFALL: a falling row counts what it pays today", "kcPointsHTML");
   R(`\n      if(due&&dn===today&&typeof rtDailyPay==="function"){ const f=rtDailyPay(slot,who,idx,st); if(f!==row.pts) row.fall=f; }   // CHOREDAILY: a daily after 2+ missed days`, "", "hhCleanRows");
-  if (/CHOREDAILY|rtDaily|RT_DAILY_FROM|_b1/.test(s)) throw new Error("test_chore_daily: the app before still mentions CHOREDAILY");
+  if (/CHOREDAILY|rtDaily|RT_DAILY_FROM|_b1|_bd\b/.test(s)) throw new Error("test_chore_daily: the app before still mentions CHOREDAILY");
   const t = path.join(os.tmpdir(), "chore_daily_before_" + process.pid + ".html"); fs.writeFileSync(t, s); return t; })();
 const BASE_HJS = (() => { let s = HJS;
   const R = (a, b, l) => { s = once(s, "house.js", a, b, l); };
