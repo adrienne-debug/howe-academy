@@ -2120,20 +2120,21 @@ function hoDrop(X,id,n){ if(!X.dr){ X.dr={}; Object.keys(routineLog||{}).forEach
 // (not their fault after all: every line of that carry on this device given back with gb.x, and its why = "notfault", in ONE update;
 // its Undo puts every line and "ignored" back). The gate is LEDGERDROP's (Mom, or Dad's link with his code). A line whose carry was
 // taken off the list keeps a row of its own. Writes only when db && !_dryRun() (lgDropUp).
+function lgAmzBtn(fn,args,lab,tip){ const u=lab==="Undo"; return '<button onclick="'+fn+'('+args+')"'+(tip?' title="'+tip+'"':'')+' style="border:1.5px solid '+(u?'var(--border)':'#d1d5db')+';background:#fff;color:'+(u?'#374151':'#6b7280')+';border-radius:8px;padding:2px 9px;font-size:11.5px;font-weight:'+(u?700:800)+';cursor:pointer;white-space:nowrap">'+lab+'</button>'; }   // the ledger's own button look
 function lgAmzLog(kid,wk,dn,id){ return (((routineLog[kid]||{})[wk]||{})[dn]||{})["amz_"+id]||null; }
 function lgAmzSent(kid,slot,i,D){ const c=amGet(kid,slot,i,D.iso); if(!c||!amWhyIg(c)) return ""; const f=amPay(kid,c,amIso(_todayDay)); return " · 🙈 they ignored it"+(!c.done&&f<(c.pts||0)?" · pays "+f+" of "+c.pts+" ⭐ today":""); }
-function lgAmzRow(r,kid,D,it){
-  if(r.c===0&&amWhyIg(it)){ const f=amPay(kid,it,D.iso); r.note+=" · 🙈 ignored"+(f<(it.pts||0)?" · pays "+f+" of "+it.pts+" ⭐":""); }
-  const L=lgAmzLog(kid,D.wk,D.dn,it.id); if(L&&L.amz) lgAmzTk(r,kid,D,it.id,L.amz,1); }
-function lgAmzTk(r,kid,D,id,t,x){ const ok=lgDropOk(), js="('"+kid+"','"+D.wk+"','"+D.dn+"','"+id+"')", tw=D.k===0?"this morning":"that morning";
-  if(!t.n){ r.note+=" · nothing taken "+tw+" ("+(t.why==="away"?"a day off":t.why==="pause"?"⏸ paused":"Take stars away was off")+")"; return; }
-  r.note+=" · "+lgStar(t.n)+" taken "+tw;
-  if(t.gb){ r.gbH='<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="font-size:11.5px;font-weight:800;color:#b45309">'+(t.gb.x?'➖ excused · ':'')+'⭐ '+(t.gb.by==="dad"?"Dad":"Mom")+' gave back +'+lgStar(t.n)+'</span>'+(ok?lgXBtn(t.gb.x?"lgAmzExUndo":"lgAmzUndo",js.slice(1,-1),"Undo",""):'')+'</span>'; return; }
-  if(!lgDropLine(kid,t.bid)){ r.note+=", not in the Star Bank now"; return; }
-  r.atk=t.n; if(ok) r.gbH=(x?lgXBtn("lgAmzExcuse","'"+kid+"','"+id+"'","➖ Excuse","Not their fault after all: every star this took goes back, and it pays full stars from now on"):'')+' <button onclick="lgAmzGive'+js+'" style="border:1.5px solid #f59e0b;background:#fffbeb;color:#92400e;border-radius:8px;padding:2px 9px;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap">⭐ Give stars back</button>'; }
+function lgAmzRow(g,kid,D,it){
+  if(g.c===0&&amWhyIg(it)){ const f=amPay(kid,it,D.iso); g.note+=" · 🙈 ignored"+(f<(it.pts||0)?" · pays "+f+" of "+it.pts+" ⭐":""); }
+  const L=lgAmzLog(kid,D.wk,D.dn,it.id); if(L&&L.amz) lgAmzTk(g,kid,D,it.id,L.amz,1); }
+function lgAmzTk(g,kid,D,id,t,x){ const ok=lgDropOk(), js="('"+kid+"','"+D.wk+"','"+D.dn+"','"+id+"')", tw=D.k===0?"this morning":"that morning";
+  if(!t.n){ g.note+=" · nothing taken "+tw+" ("+(t.why==="away"?"a day off":t.why==="pause"?"⏸ paused":"Take stars away was off")+")"; return; }
+  g.note+=" · "+lgStar(t.n)+" taken "+tw;
+  if(t.gb){ g.gbH='<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="font-size:11.5px;font-weight:800;color:#b45309">'+(t.gb.x?'➖ excused · ':'')+'⭐ '+(t.gb.by==="dad"?"Dad":"Mom")+' gave back +'+lgStar(t.n)+'</span>'+(ok?lgAmzBtn(t.gb.x?"lgAmzExUndo":"lgAmzUndo",js.slice(1,-1),"Undo",""):'')+'</span>'; return; }
+  if(!lgDropLine(kid,t.bid)){ g.note+=", not in the Star Bank now"; return; }
+  g.atk=t.n; if(ok) g.gbH=(x?lgAmzBtn("lgAmzExcuse","'"+kid+"','"+id+"'","➖ Excuse","Not their fault after all: every star this took goes back, and it pays full stars from now on"):'')+' <button onclick="lgAmzGive'+js+'" style="border:1.5px solid #f59e0b;background:#fffbeb;color:#92400e;border-radius:8px;padding:2px 9px;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap">⭐ Give stars back</button>'; }
 // the lines of a carry no longer on the list (✕ take off) that day: a row each
 function lgAmzLost(rows,kid,D){ const L=((routineLog[kid]||{})[D.wk]||{})[D.dn]||{}, m=(amCarry||{})[kid]||{};
-  Object.keys(L).forEach(function(k){ const x=L[k], t=x&&x.amz; if(!t||!/^amz_/.test(k)||m[t.id]) return; const r={ic:"✖",nm:"🌅 "+String(x.label||"").replace(/ — not done$/,""),note:"taken off the list"}; lgAmzTk(r,kid,D,t.id,t,0); rows.push(r); }); }
+  Object.keys(L).forEach(function(k){ const x=L[k], t=x&&x.amz; if(!t||!/^amz_/.test(k)||m[t.id]) return; const q={ic:"✖",nm:"🌅 "+String(x.label||"").replace(/ — not done$/,""),note:"taken off the list"}; lgAmzTk(q,kid,D,t.id,t,0); rows.push(q); }); }
 function lgAmzP(kid,wk,dn,id){ return "routineLog/"+kid+"/"+wk+"/"+dn+"/amz_"+id+"/amz/gb"; }
 function lgAmzGive(kid,wk,dn,id){ const L=lgDropOk()&&lgAmzLog(kid,wk,dn,id), t=L&&L.amz, ln=t&&lgDropLine(kid,t.bid);
   if(!ln||!(t.n>0)||t.gb){ lgDropDone(); return false; } const u={}; t.gb={by:momHere()?"mom":"dad",ts:nowTs(),at:Date.now(),line:ln}; delete bank[kid].adjustments[t.bid];
