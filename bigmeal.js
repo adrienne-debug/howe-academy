@@ -3,6 +3,9 @@
 // "where each dish cooks: oven, crockpot, air fryer, stove", "the oven temperature for each dish"; Q11 "I type how long it cooks
 // and where. The app works out when to start"). Plan: PLAN_holiday_menu_2026-11-24.md §6 slice 1. Later slices (rest and get-ready
 // time, warnings, the day before, the cook view, 🔴 NOW, the tablet lock) are NOT here.
+// BIGMEAL slice 2: a dish can rest after cooking and need minutes to get ready first; "Heat the oven" steps; plain warnings when
+// the oven needs two temperatures at once, holds more than fits, or an appliance is wanted twice — warnings NEVER block anything;
+// "Your kitchen" (how many ovens, dishes at once, burners, slow cookers…) on <idea>/meal/n.
 //
 // WHERE IT LIVES: a big meal is a planner idea that has an eat time. Its food lines are its dishes; its day is the idea's day.
 // This file is lazy: seasons.js loads it (bmLoad) only when Mom taps ⏱ Cooking timeline. It never runs at app start and
@@ -13,9 +16,13 @@
 //   <idea>/food/<id>   the planner's food line {name, mid?, ts, menu?} + optional:
 //                      where:"oven"|"stove"|"slow"|"air"|"pot"|"grill"|"micro"|"x"|"none"   whereTxt (only with "x", ≤20)
 //                      cook:<minutes it cooks, 1–2880>       temp:"325" | "low" (≤12, shown as typed)
+//                      (slice 2) rest:<minutes it sits after, 1–240>  prep:<minutes to get it ready, 1–600>  big:true (fills the oven)
+//                      note:"Baste every 45 min" (≤120)
+//   <idea>/meal/n      {oven, spots, stove, slow, air, pot, grill, micro} — what this kitchen has (absent = the defaults, or the
+//                      numbers of the family's latest other meal, shown until she changes one)
 //   <idea> = seasons/ideas/<sid>/<iid> or seasonSecret/<sid>/<iid> (the planner's base()). An old food line (name only) is a dish
 //   with no times — it shows under "Not timed yet". Opening the page writes nothing. No migration.
-// THE RULE (slice 1: nothing rests, nothing needs getting ready):  in = eat − cook.  Minutes from midnight of the meal's day;
+// THE RULE:  out = eat − rest · in = out − cook · start getting it ready = in − prep  (so ready + prep + cook + rest = eat).  Minutes from midnight of the meal's day;
 //   a negative number is the day before. No eat time → no times. No place or no cook time → that dish has no time. NEVER a guess.
 // WRITES: this file has no database call of its own. Every write is exact paths, checked against BM_OK (only …/meal and
 //   …/food/<id>), then handed to the planner's own apply() (its SN_OK guard, ?dryrun=1 inert). A changed dish writes only the
@@ -27,7 +34,9 @@ const BM_WHERE=[["oven","🔥","Oven","into the oven"],["stove","🍳","Stove to
   ["air","💨","Air fryer","into the air fryer"],["pot","♨️","Pressure cooker","into the pressure cooker"],["grill","🍖","Grill or smoker","onto the grill"],
   ["micro","📡","Microwave","into the microwave"],["x","✏️","Something else",""],["none","🧊","No cooking","put it out"]];
 const BM_OK=/^(seasons\/ideas|seasonSecret)\/[^\/]+\/[^\/]+\/(meal|food\/[^\/]+)(\/|$)/;
-const COOK_MAX=2880, DAY=1440;
+const COOK_MAX=2880, DAY=1440, HEAT=15, NEAR=25;   // an oven heats 15 min before a dish goes in · 25° apart can share an oven
+// what a kitchen has: [default, lowest, highest, one, many]
+const BM_KIT={oven:[1,1,4,"oven","ovens"],spots:[2,1,6,"dish at once","dishes at once"],stove:[4,1,12,"burner","burners"],slow:[1,1,9],air:[1,1,9],pot:[1,1,9],grill:[1,1,9],micro:[1,1,9]};
 let bmSid=null, bmIid=null, bmEd=null, bmEl=null, bmMsg="";
 
 function A(){try{return window._snApi||null;}catch(e){return null;}}
@@ -54,26 +63,36 @@ function eatOf(it){const m=it&&it.meal;return (m&&typeof m==="object")?clockMin(
 
 // ── a dish = a food line, read carefully (a bad or missing number is "not set", never 0 minutes) ──
 function whereOf(w){return whereRow(w)?w:"";}
+function num(v,lo,hi){if(!(typeof v==="number"||/^\d+$/.test(String(v==null?"":v))))return null;const n=Math.floor(+v);return (n>=lo&&n<=hi)?n:null;}
 function dishOf(L){
   const r=(L&&L.r)||{},w=whereOf(r.where),cooks=!!w&&w!=="none";
-  const c=(typeof r.cook==="number"||/^\d+$/.test(String(r.cook==null?"":r.cook)))?Math.floor(+r.cook):NaN;
   return {id:L.id,L,name:String(r.name||"").trim()||"(no name)",mid:r.mid?String(r.mid):"",where:w,
-    whereTxt:w==="x"?String(r.whereTxt||"").trim().slice(0,20):"",cook:(cooks&&c>=1&&c<=COOK_MAX)?c:null,
-    temp:cooks?String(r.temp==null?"":r.temp).trim().slice(0,12):"",ts:+r.ts||0};
+    whereTxt:w==="x"?String(r.whereTxt||"").trim().slice(0,20):"",cook:cooks?num(r.cook,1,COOK_MAX):null,
+    temp:cooks?String(r.temp==null?"":r.temp).trim().slice(0,12):"",rest:cooks?(num(r.rest,1,240)||0):0,prep:num(r.prep,1,600)||0,
+    big:w==="oven"&&r.big===true,note:String(r.note==null?"":r.note).trim().slice(0,120),ts:+r.ts||0};
 }
 function timed(d){return !!d.where&&d.where!=="none"&&d.cook>0;}
 function laneKey(d){return d.where==="x"?"x:"+(d.whereTxt.toLowerCase()||"?"):d.where;}
 function laneIx(d){const i=BM_WHERE.findIndex(x=>x[0]===d.where);return i<0?99:i;}
-// slice 1: nothing rests and nothing needs getting ready, so a dish comes out when we eat.
-function plan(eat,D){return D.map(d=>timed(d)&&eat!=null?Object.assign({},d,{out:eat,in:eat-d.cook}):Object.assign({},d,{out:null,in:null}));}
+// out = eat − rest · in = out − cook · ready = in − prep. A no-cooking dish that needs getting ready starts at eat − prep.
+function plan(eat,D){return D.map(d=>{
+  if(eat!=null&&timed(d)){const out=eat-d.rest,inn=out-d.cook;return Object.assign({},d,{out,in:inn,ready:d.prep?inn-d.prep:null});}
+  return Object.assign({},d,{out:null,in:null,ready:(eat!=null&&d.where==="none"&&d.prep)?eat-d.prep:null});});}
 function intoTxt(d){const w=whereRow(d.where);return d.where==="x"?"into the "+(d.whereTxt||"something else"):(w?w[3]:"");}
 function tempTxt(t){return /^\d{2,3}$/.test(t)?t+"°":t;}
-// The list in time order: each dish's "in" row, then the last row — eat, and what to put out.
+// The list in time order: heat the oven · a dish comes out (and rests) · start getting one ready · one goes in · then eat.
+// "Heat the oven" only when the oven is cold: no other oven dish is in it in the 15 minutes before this one goes in.
+const RANK={heat:0,o:1,r:2,i:3,eat:4};
+function tempN(t){const m=/(\d{2,3})/.exec(String(t==null?"":t));return m?+m[1]:null;}
 function steps(eat,P){
   if(eat==null)return [];
-  const S=P.filter(d=>d.in!=null).map(d=>({at:d.in,k:"i",fid:d.id,d}));
-  S.sort((a,b)=>a.at-b.at||laneIx(a.d)-laneIx(b.d)||a.d.name.localeCompare(b.d.name));
-  S.push({at:eat,k:"eat",out:P.filter(d=>d.in!=null).map(d=>d.name),put:P.filter(d=>d.where==="none").map(d=>d.name)});
+  const S=[],ov=P.filter(d=>d.in!=null&&d.where==="oven").sort((a,b)=>a.in-b.in);
+  ov.forEach(d=>{const hot=ov.some(o=>o!==d&&o.in<d.in&&o.out>d.in-HEAT);if(!hot&&!S.some(x=>x.k==="heat"&&x.at===d.in-HEAT))S.push({at:d.in-HEAT,k:"heat",d,key:"heat"+(d.in-HEAT)});});
+  P.forEach(d=>{if(d.ready!=null)S.push({at:d.ready,k:"r",d,key:d.id+"_r"});
+    if(d.in!=null){S.push({at:d.in,k:"i",d,key:d.id+"_i"});if(d.rest)S.push({at:d.out,k:"o",d,key:d.id+"_o"});}});
+  S.forEach(x=>{x.fid=x.d.id;});
+  S.sort((a,b)=>a.at-b.at||RANK[a.k]-RANK[b.k]||laneIx(a.d)-laneIx(b.d)||a.d.name.localeCompare(b.d.name));
+  S.push({at:eat,k:"eat",key:"eat",out:P.filter(d=>d.in!=null&&!d.rest).map(d=>d.name),put:P.filter(d=>d.where==="none").map(d=>d.name)});
   return S;
 }
 // By place: one group per appliance in use (her own "something else" names each get one), then "No cooking".
@@ -83,6 +102,48 @@ function lanes(P){
   const L=order.map(k=>G[k]).sort((a,b)=>BM_WHERE.findIndex(x=>x[0]===a.where)-BM_WHERE.findIndex(x=>x[0]===b.where)||a.name.localeCompare(b.name));
   L.forEach(g=>g.dishes.sort((a,b)=>(a.in==null?1e9:a.in)-(b.in==null?1e9:b.in)||a.name.localeCompare(b.name)));
   return L;
+}
+// ── your kitchen, and the warnings ────────────────────────────────────────────
+function kitN(raw){const n={};Object.keys(BM_KIT).forEach(k=>{const v=raw&&typeof raw==="object"?num(raw[k],BM_KIT[k][1],BM_KIT[k][2]):null;n[k]=v||BM_KIT[k][0];});return n;}
+function hasN(m){return !!(m&&typeof m==="object"&&m.n&&typeof m.n==="object"&&Object.keys(m.n).some(k=>BM_KIT[k]));}
+function kitchenOf(it){   // her numbers · else the family's latest other meal's (shown, not saved, until she changes one) · else the defaults
+  if(it&&hasN(it.meal))return {n:kitN(it.meal.n),from:"own"};
+  const a=A();let best=null;
+  try{a.seasons().forEach(s=>a.ideasOf(s.id).forEach(x=>{if(it&&x.id===it.id&&x.sid===it.sid)return;if(hasN(x.meal)&&(!best||(+x.meal.ts||0)>(+best.meal.ts||0)))best=x;}));}catch(e){}
+  return best?{n:kitN(best.meal.n),from:"copy",src:best}:{n:kitN(null),from:"default"};
+}
+function capOf(n,key){return BM_KIT[key]?n[key]:1;}
+// At every moment a dish goes in or comes out: oven dishes grouped by temperature (25° apart = the same setting; a dish with no
+// temperature joins the first group — it takes room but is never "a different temperature"); each group needs ceil(dishes ÷ dishes-at-once) ovens (a dish that fills the oven
+// counts as a full oven). More ovens needed than she has → "temp" when there are more temperatures than ovens, else "full".
+// Any other appliance: more dishes in it than she has → "one" ("stove" for burners). The same warning over touching moments is ONE.
+function clashes(P,n){
+  const T=P.filter(d=>d.in!=null),pts=[...new Set(T.reduce((a,d)=>a.concat([d.in,d.out]),[]))].sort((a,b)=>a-b),out=[];
+  [...new Set(T.map(laneKey))].forEach(key=>{let cur=null;
+    for(let i=0;i<pts.length-1;i++){
+      const t=pts[i],B=T.filter(d=>laneKey(d)===key&&d.in<=t&&t<d.out).sort((a,b)=>a.in-b.in||a.name.localeCompare(b.name));let k=null,G=null;
+      if(key==="oven"&&B.length){G=[];const add=(g,d)=>{g.w+=d.big?n.spots:1;g.d.push(d);};
+        B.filter(d=>tempN(d.temp)!=null).forEach(d=>{const tn=tempN(d.temp);let g=G.find(x=>Math.abs(x.t-tn)<=NEAR);if(!g){g={t:tn,w:0,d:[]};G.push(g);}add(g,d);});
+        B.filter(d=>tempN(d.temp)==null).forEach(d=>{if(!G.length)G.push({t:null,w:0,d:[]});add(G[0],d);});   // no temperature: fits with any — it still takes room
+        const need=G.reduce((a,g)=>a+Math.ceil(g.w/n.spots),0);if(need>n.oven)k=G.filter(g=>g.t!=null).length>n.oven?"temp":"full";}
+      else if(key!=="oven"&&B.length>capOf(n,key))k=key==="stove"?"stove":"one";
+      const ids=B.map(d=>d.id).sort().join(",");
+      if(k&&cur&&cur.k===k&&cur.ids===ids&&cur.to===t)cur.to=pts[i+1];
+      else if(k){cur={k,key,from:t,to:pts[i+1],ids,dishes:B,groups:G};out.push(cur);}
+      else cur=null;
+    }});
+  return out.sort((a,b)=>a.from-b.from);
+}
+function andList(x){return x.length<2?x.join(""):x.slice(0,-1).join(", ")+" and "+x[x.length-1];}
+function theTxt(d){return intoTxt(d).replace(/^(into|onto) /,"");}
+function warnText(c,n,day){
+  const when="From "+stepWhen(c.from,day)+" to "+stepWhen(c.to,day),D=c.dishes,nm=andList(D.map(d=>d.name));
+  if(c.k==="temp"){const G=c.groups.filter(g=>g.t!=null).sort((a,b)=>a.t-b.t);
+    return when+", the oven needs "+andList(G.map(g=>g.t+"° for "+andList(g.d.map(d=>d.name))))+". "+(n.oven===1?(G.length===2?"One oven can’t do both.":"One oven can’t do them all."):"Your "+n.oven+" ovens can’t do "+G.length+" temperatures at once.");}
+  if(c.k==="full"){const big=D.filter(d=>d.big).map(d=>d.name);
+    return when+", "+D.length+" dishes are in the oven: "+nm+". "+(n.oven===1?"Your oven fits "+n.spots:"Your "+n.oven+" ovens fit "+n.oven*n.spots)+" at once."+(big.length?" "+andList(big)+(big.length>1?" each fill":" fills")+" a whole oven.":"");}
+  if(c.k==="stove")return when+", "+D.length+" dishes are on the stove: "+nm+". You have "+n.stove+" burner"+(n.stove===1?"":"s")+".";
+  return when+", "+D.length+" dishes want "+theTxt(D[0])+": "+nm+".";
 }
 function notTimed(P){return P.filter(d=>!timed(d)&&d.where!=="none");}
 function stepWhen(at,day){
@@ -107,18 +168,38 @@ function calTime(it,day){const a=A(),w=a.whens(it).find(x=>x.d===day);return w?c
 
 // ── drawing ──────────────────────────────────────────────────────────────────
 function chip(t,cls){return '<span class="bm-chip'+(cls?" "+cls:"")+'">'+t+'</span>';}
+function stepTxt(s){
+  const d=s.d,nw=t=>'<span class="bm-nw">'+t+'</span>';
+  if(s.k==="heat")return "Heat the oven"+(tempN(d.temp)!=null?" to "+nw(esc(tempTxt(d.temp))):"");
+  if(s.k==="r")return "Start <em>"+esc(d.name)+"</em> ("+nw(dur(d.prep))+" to get it ready)";
+  if(s.k==="o")return "<em>"+esc(d.name)+"</em> comes out · rests "+nw(dur(d.rest));
+  return "<em>"+esc(d.name)+"</em> — "+esc(intoTxt(d))+(d.temp?" · "+nw(esc(tempTxt(d.temp))):"")+" · "+nw(dur(d.cook));
+}
 function stepsHTML(eat,P,day){
   if(eat==null)return '<div class="bm-empty">Put in when you eat. Then each dish’s start time shows here.</div>';
-  const S=steps(eat,P);
-  return S.map(s=>{
+  return steps(eat,P).map(s=>{
     if(s.k==="eat")return '<div class="bm-step eat"><b>'+esc(stepWhen(s.at,day))+'</b><span>Everything out. Eat!'+(s.put.length?'<small>Put out: '+esc(s.put.join(", "))+'</small>':"")+'</span></div>';
-    const d=s.d;return '<div class="bm-step"><b>'+esc(stepWhen(s.at,day))+'</b><span><em>'+esc(d.name)+'</em> — '+esc(intoTxt(d))+(d.temp?' · <span class="bm-nw">'+esc(tempTxt(d.temp))+'</span>':"")+' · <span class="bm-nw">'+dur(d.cook)+'</span></span></div>';
+    return '<div class="bm-step'+(s.k==="heat"?" heat":"")+'"><b>'+esc(stepWhen(s.at,day))+'</b><span>'+stepTxt(s)+'</span></div>';
   }).join("");
+}
+function warnHTML(C,n,day){
+  return C.map(c=>{const btn=(c.k==="one"&&BM_KIT[c.key])||c.k==="stove";
+    return '<div class="bm-warn">⚠ '+esc(warnText(c,n,day))+(btn?' <button class="bm-tool" onclick="bmHave(\''+c.key+'\','+c.dishes.length+')">I have '+c.dishes.length+(c.k==="stove"?" burners":"")+'</button>':"")+'</div>';}).join("");
+}
+function kitHTML(K){
+  const n=K.n,row=(k,lbl)=>'<div class="bm-kit"><span>'+lbl+'</span><button class="bm-tool" onclick="bmKit(\''+k+'\',-1)"'+(n[k]<=BM_KIT[k][1]?" disabled":"")+'>−</button><b>'+n[k]+'</b><button class="bm-tool" onclick="bmKit(\''+k+'\',1)"'+(n[k]>=BM_KIT[k][2]?" disabled":"")+'>＋</button></div>';
+  const extra=["slow","air","pot","grill","micro"].filter(k=>n[k]>1).map(k=>n[k]+" × "+whereRow(k)[2].toLowerCase());
+  return '<div class="bm-card"><div class="bm-h">🏠 Your kitchen</div>'+row("oven","🔥 Ovens")+row("spots","Dishes in one oven at once")+row("stove","🍳 Burners")
+    +(extra.length?'<div class="bm-hint">Also: '+esc(extra.join(" · "))+'</div>':"")
+    +(K.from==="copy"?'<div class="bm-hint">Same as '+esc(K.src.t||"your last meal")+'. Change it here for this meal.</div>':"")+'</div>';
 }
 function dishRow(d,eat,day){
   const a=A(),rec=d.mid&&a.recipes()[d.mid],bits=[];
   if(d.temp)bits.push(esc(tempTxt(d.temp)));if(d.cook)bits.push(dur(d.cook));
-  if(d.in!=null)bits.push("in at "+esc(stepWhen(d.in,day)));
+  if(d.prep)bits.push(dur(d.prep)+" to get ready");if(d.rest)bits.push("rests "+dur(d.rest));if(d.big)bits.push("fills the oven");
+  if(d.where==="oven"&&d.cook&&!d.temp)bits.push('<span class="bm-chip">no temperature</span>');
+  if(d.in!=null)bits.push("in at "+esc(stepWhen(d.in,day))+(d.rest?" · out "+esc(stepWhen(d.out,day)):""));
+  if(d.note)bits.push("📝 "+esc(d.note));
   if(!d.where)bits.push("where does it cook?");else if(d.where!=="none"&&!d.cook)bits.push("how long does it cook?");
   if(d.mid&&!rec)bits.push("📖 recipe gone from the Kitchen");
   const shop=rec?'<button class="bm-tool" onclick="bmShop(\''+q(d.id)+'\')">🛒 Ingredients</button>':(d.mid?"":'<button class="bm-tool" onclick="bmBuy()">🧺 What to buy</button>');
@@ -134,17 +215,19 @@ function pageHTML(){
   const top='<div class="bm-top"><button class="bm-back" onclick="bmClose()">← Back</button>';
   if(!it)return top+'</div><div class="bm-empty">That meal is gone.</div>';
   const day=a.ideaDay(it),eat=eatOf(it),D=dishesOf(it),P=plan(eat,D),NT=notTimed(P),days=Object.keys(a.whens(it).reduce((m,w)=>{m[w.d]=1;return m;},{})).length;
-  const ct=day?calTime(it,day):null;
+  const ct=day?calTime(it,day):null,K=kitchenOf(it),C=eat!=null?clashes(P,K.n):[];
   let h=top+'<div class="bm-title">'+esc(it.emoji||"🍽")+" "+esc(it.t||"")+'</div></div>';
   h+='<div class="bm-sub">'+(day?a.fmtDay(day)+(days>1?" · It is on "+days+" days. This is for the next one.":""):"📅 No day yet — the times still work. Give it a day with 📅 Schedule.")+(a.hideOf(it)?" · 🤫 a surprise — only you see this":"")+'</div>';
   h+='<div class="bm-card bm-eat"><label>🍽 We eat at <input type="time" id="bm-eat" value="'+(eat!=null?hhmm(eat):"")+'" onchange="bmEat(this.value)"></label>'
     +(eat==null&&ct!=null?'<button class="bm-go" onclick="bmEat(\''+hhmm(ct)+'\')">Use '+fmtClock(ct)+' (the calendar time)</button>':"")
     +(bmMsg?'<div class="bm-msg">'+esc(bmMsg)+'</div>':"")+'</div>';
+  if(C.length)h+='<div class="bm-warns">'+warnHTML(C,K.n,day)+'<div class="bm-hint">These are only warnings. Change a dish or your kitchen, or ignore them.</div></div>';
+  else if(eat!=null&&P.some(d=>d.in!=null))h+='<div class="bm-ok">✓ Nothing clashes.</div>';
   h+='<div class="bm-cols"><div class="bm-card"><div class="bm-h">⏱ When to start</div>'+stepsHTML(eat,P,day)+'</div>'
     +'<div class="bm-card"><div class="bm-h">🔥 Where it cooks</div>'+lanesHTML(P,eat,day)+'</div></div>';
   if(NT.length)h+='<div class="bm-card"><div class="bm-h">📝 Not timed yet</div><div class="bm-hint">Tap a dish to add where it cooks and how long.</div>'+NT.map(d=>dishRow(d,eat,day)).join("")+'</div>';
   if(!D.length)h+='<div class="bm-empty">No dishes yet. Tap ＋ Add a dish.</div>';
-  h+='<div class="bm-acts"><button class="bm-go" onclick="bmDish(\'\')">＋ Add a dish</button></div>';
+  h+='<div class="bm-acts"><button class="bm-go" onclick="bmDish(\'\')">＋ Add a dish</button></div>'+kitHTML(K);
   h+='<div class="bm-hint">You type how long each dish cooks. The app never guesses a time. Nothing here changes the Menu, the calendar or school.</div>';
   return h+(bmEd?sheetHTML():"");
 }
@@ -157,7 +240,11 @@ function sheetHTML(){
   h+='<div class="bm-form">'+field("name","Dish","Turkey","","wide")+'</div>';
   h+='<div class="bm-lab">Where does it cook?</div><div class="bm-chips">'+BM_WHERE.map(w=>'<button class="bm-f'+(f.where===w[0]?" on":"")+'" onclick="bmWhere(\''+w[0]+'\')">'+w[1]+" "+w[2]+'</button>').join("")+'</div>';
   if(f.where==="x")h+='<div class="bm-form">'+field("whereTxt","What is it called?","Roaster","","wide")+'</div>';
-  if(cooks)h+='<div class="bm-lab">How long does it cook?</div><div class="bm-form">'+field("h","Hours","0","number")+field("m","Minutes","45","number")+field("temp","Temperature (optional)","325 or low")+'</div>';
+  if(cooks)h+='<div class="bm-lab">How long does it cook?</div><div class="bm-form">'+field("h","Hours","0","number")+field("m","Minutes","45","number")+field("temp","Temperature (optional)","325 or low")+'</div>'
+    +'<div class="bm-form">'+field("prep","Minutes to get it ready first (optional)","20","number")+field("rest","Minutes it rests after (optional)","45","number")+'</div>'
+    +(f.where==="oven"?'<label class="bm-check"><input type="checkbox"'+(f.big?" checked":"")+' onchange="bmDishSet(\'big\',this.checked?\'1\':\'\')"> It fills the whole oven (nothing else fits beside it)</label>':"");
+  if(f.where==="none")h+='<div class="bm-form">'+field("prep","Minutes to get it ready (optional)","15","number")+'</div>';
+  h+='<div class="bm-form">'+field("note","Note (optional)","Baste every 45 minutes","","wide")+'</div>';
   if(f.where==="none")h+='<div class="bm-hint">It goes on the table when you eat.</div>';
   h+='<div class="bm-acts bm-foot"><button class="bm-go" onclick="bmDishSave()">'+(e.fid?"Save":"Add")+'</button><button class="bm-tool" onclick="bmDishCancel()">Cancel</button>'
     +(e.fid?'<button class="bm-tool bm-del" onclick="bmDishDel()">'+(e.ask?"Tap again to delete":"Delete")+'</button>':"")+'</div>';
@@ -181,6 +268,13 @@ const BM_CSS=`
 .bm-step small{display:block;font-size:13px;color:#64748b;margin-top:2px}
 .bm-step.eat{color:#166534;font-weight:800}
 .bm-nw{white-space:nowrap}
+.bm-step.heat{color:#b45309}
+.bm-warns{margin-bottom:10px}.bm-warn{background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;padding:9px 12px;margin-bottom:6px;font-size:14px;font-weight:700;color:#92400e;line-height:1.4}
+.bm-warn .bm-tool{margin-left:6px;padding:5px 10px}
+.bm-ok{background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:14px;font-weight:800;color:#166534}
+.bm-kit{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:14px}.bm-kit span{flex:1}.bm-kit b{min-width:22px;text-align:center;font-size:16px}
+.bm-tool:disabled{opacity:.4}
+.bm-check{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;margin-top:10px}
 .bm-lane{border-top:1px solid #f1f5f9;padding:6px 0}
 .bm-lh{font-size:14px;font-weight:800;padding:2px 0}.bm-lh small{display:block;font-size:12px;font-weight:600;color:#64748b}
 .bm-dish{display:flex;align-items:center;gap:6px;min-height:44px;flex-wrap:wrap}
@@ -232,9 +326,9 @@ function bmEat(v){
   put(up);bmDraw();
 }
 function bmDish(fid){
-  const it=cur();if(!it)return;let f={name:"",mid:"",where:"",whereTxt:"",h:"",m:"",temp:""};
+  const it=cur();if(!it)return;let f={name:"",mid:"",where:"",whereTxt:"",h:"",m:"",temp:"",prep:"",rest:"",big:"",note:""};
   if(fid){const d=dishesOf(it).find(x=>x.id===fid);if(!d)return;const r=d.L.r||{};
-    f={name:String(r.name||""),mid:d.mid,where:d.where,whereTxt:d.whereTxt,h:d.cook?String(Math.floor(d.cook/60)):"",m:d.cook?String(d.cook%60):"",temp:d.temp};}
+    f={name:String(r.name||""),mid:d.mid,where:d.where,whereTxt:d.whereTxt,h:d.cook?String(Math.floor(d.cook/60)):"",m:d.cook?String(d.cook%60):"",temp:d.temp,prep:d.prep?String(d.prep):"",rest:d.rest?String(d.rest):"",big:d.big?"1":"",note:d.note};}
   bmEd={fid:fid||null,form:f,msg:"",ask:false};bmDraw();
 }
 function bmDishSet(k,v){if(bmEd&&k in bmEd.form)bmEd.form[k]=String(v==null?"":v);}
@@ -254,7 +348,11 @@ function bmDishSave(){
     if(!(t>=1&&t<=COOK_MAX)){e.msg="How long must be between 1 minute and 48 hours.";bmDraw();return false;}
     cook=t;
   }
-  const want={name,mid:mid||null,where:w||null,whereTxt:wt||null,cook,temp:temp||null},up={};
+  const mins=(v,hi)=>{const t=String(v||"").trim();if(t==="")return 0;return (/^\d+$/.test(t)&&+t<=hi)?+t:NaN;};
+  const prep=(cooks||w==="none")?mins(f.prep,600):0,rest=cooks?mins(f.rest,240):0;
+  if(isNaN(prep)){e.msg="Getting it ready must be 0 to 600 minutes.";bmDraw();return false;}
+  if(isNaN(rest)){e.msg="Resting must be 0 to 240 minutes.";bmDraw();return false;}
+  const want={name,mid:mid||null,where:w||null,whereTxt:wt||null,cook,temp:temp||null,prep:prep||null,rest:rest||null,big:(w==="oven"&&f.big)?true:null,note:f.note.trim().slice(0,120)||null},up={};
   if(!L){const rec={name,ts:Date.now()};Object.keys(want).forEach(k=>{if(want[k]!=null&&k!=="name")rec[k]=want[k];});up[baseOf(it)+"/food/"+a.rid("f")]=rec;}
   else{const r=L.r,p=a.lineBase(L,"food")+"/";Object.keys(want).forEach(k=>{const was=r[k]==null||r[k]===""?null:r[k];if(String(was)!==String(want[k]))up[p+k]=want[k];});}
   if(Object.keys(up).length)put(up);
@@ -266,10 +364,19 @@ function bmDishDel(){
   if(L){const up={};up[a.lineBase(L,"food")]=null;if(put(up)&&a.stillOn)a.stillOn([L]);}
   bmEd=null;bmDraw();
 }
+// "I have 2" · ＋ / − on Your kitchen. A meal still showing the latest other meal's numbers saves those too, so nothing jumps.
+function bmHave(key,val){
+  const it=cur();if(!it||!BM_KIT[key])return;const K=kitchenOf(it),v=num(val,BM_KIT[key][1],BM_KIT[key][2]);if(v==null)return;
+  const b=baseOf(it)+"/meal/n/",up={};
+  if(K.from==="copy")Object.keys(K.n).forEach(k=>{if(K.n[k]!==BM_KIT[k][0])up[b+k]=K.n[k];});
+  if(K.from!=="own"||K.n[key]!==v)up[b+key]=v;
+  if(Object.keys(up).length)put(up);bmDraw();
+}
+function bmKit(key,delta){const it=cur();if(it&&BM_KIT[key])bmHave(key,kitchenOf(it).n[key]+delta);}
 function bmShop(fid){const a=A(),it=cur();if(it&&a.foodShop)a.foodShop(it.sid,it.id,fid);}
 function bmBuy(){const a=A(),it=cur();if(it&&a.lineOpen)a.lineOpen("sup",it.id,"");}   // the planner's own supply pop-up (it sits above this page)
 
-Object.assign(window,{bmOpen,bmClose,bmRefresh,bmEat,bmDish,bmDishSet,bmWhere,bmDishMid,bmDishCancel,bmDishSave,bmDishDel,bmShop,bmBuy});
-window._bmTest={clockMin,fmtClock,hhmm,dayShift,dur,dishOf,timed,plan,steps,lanes,notTimed,stepWhen,put,eatOf,OK:BM_OK,WHERE:BM_WHERE,draw:bmDraw,
+Object.assign(window,{bmHave,bmKit,bmOpen,bmClose,bmRefresh,bmEat,bmDish,bmDishSet,bmWhere,bmDishMid,bmDishCancel,bmDishSave,bmDishDel,bmShop,bmBuy});
+window._bmTest={tempN,clashes,kitchenOf,kitN,warnText,HEAT,NEAR,KIT:BM_KIT,clockMin,fmtClock,hhmm,dayShift,dur,dishOf,timed,plan,steps,lanes,notTimed,stepWhen,put,eatOf,OK:BM_OK,WHERE:BM_WHERE,draw:bmDraw,
   state:()=>({sid:bmSid,iid:bmIid,ed:bmEd,el:bmEl,msg:bmMsg})};
 })();
