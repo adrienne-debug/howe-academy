@@ -51256,6 +51256,7 @@ async function nbtSend(kid){
     const wk=nbTargetWk(), wn=nbTargetWkNum();
     say("📱 Building "+cap(kid)+"'s notebook…");
     const ctx=haNbContext(kid); ctx.bindingMargin=false;   // no prongs on a tablet
+    ctx.nbPageTags=true;   // NBT_TODAY: every page says its day(s) and a short name (data-nb-day / data-nb-name) — the tablet copy only, paper is untouched
     const out=lib.generate(kid,ctx);
     if(out&&out.warnings&&out.warnings.length) alert("⚠ "+cap(kid)+"'s notebook:\n\n"+out.warnings.join("\n\n"));
     nbtPersistCursors(kid,out);
@@ -51332,7 +51333,9 @@ function nbtShow(kid,wk,html,ansHtml,opts){
   const F="font-family:'DM Sans',sans-serif";
   ov.innerHTML=
     '<div id="nbt-bar" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fff;border-bottom:1px solid #e2e8f0;flex:none;'+F+';flex-wrap:wrap"></div>'+
-    '<div id="nbt-stage" style="flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;gap:12px;flex-wrap:wrap;padding:10px;-webkit-overflow-scrolling:touch">'+
+    '<div id="nbt-body" style="flex:1;min-height:0;display:flex">'+   // NBT_TODAY: the list sits beside the stage (or above it on a narrow screen), never over the page
+    '<div id="nbt-today" style="display:none"></div>'+
+    '<div id="nbt-stage" style="flex:1;overflow:auto;min-width:0;min-height:0;display:flex;align-items:flex-start;justify-content:center;gap:12px;flex-wrap:wrap;padding:10px;-webkit-overflow-scrolling:touch">'+
       '<div id="nbt-hold" style="position:relative;line-height:0;box-shadow:0 2px 14px rgba(0,0,0,.18);border-radius:4px;overflow:hidden;background:#fff;width:816px;height:1056px;flex:none">'+
         // the page is laid out at its real 8.5in × 11in (816 × 1056 CSS px) and scaled as a whole — nothing reflows, nothing can clip
         '<iframe id="nbt-doc" title="notebook page" sandbox="allow-same-origin" style="position:absolute;left:0;top:0;width:816px;height:1056px;border:0;transform-origin:0 0;pointer-events:none;background:#fff"></iframe>'+
@@ -51342,11 +51345,13 @@ function nbtShow(kid,wk,html,ansHtml,opts){
         '<div style="position:absolute;top:8px;left:8px;z-index:1;background:#065f46;color:#fff;font-size:11px;font-weight:800;border-radius:8px;padding:2px 8px;'+F+';line-height:1.4">ANSWER KEY</div>'+
         '<iframe id="nbt-ans" title="answer key" sandbox="allow-same-origin" style="position:absolute;left:0;top:0;width:816px;height:1056px;border:0;transform-origin:0 0;pointer-events:none;background:#fff"></iframe>'+
       '</div>':'')+
-    '</div>';
+    '</div>'+
+    '</div>';   // NBT_TODAY: closes nbt-body
   document.body.appendChild(ov);
   const fr=document.getElementById("nbt-doc");
   fr.onload=()=>{ const v=nbtView; if(v!==nbtView||!v) return;
     try{ nbtPrepDoc(fr.contentDocument); v.n=nbtPages(fr.contentDocument).length; v.days=nbtPageDays(fr.contentDocument); }catch(e){ v.n=0; v.days=[]; }
+    v.meta=nbtTodayMeta(fr.contentDocument,v.days);   // NBT_TODAY: each page's day(s) + name (a week sent before NBT_TODAY: the label guess above)
     v.page=Math.max(1,Math.min(v.n||1,v.page));
     // the card's day first: keep the remembered page when it is one of that day's pages, else the day's first page
     const first=v.days.indexOf(v.day)+1;
@@ -51394,7 +51399,7 @@ function nbtShowAns(){
 }
 function nbtGoAns(d){ const v=nbtView; if(!v||!v.ans||!v.ansReady) return; const n=v.ansPage+d; if(n<1||n>(v.ansN||1)) return; v.ansPage=n; nbtShowAns(); nbtBarRender(); }
 async function nbtGoDay(day){   // the day strip: that day's first page (its pages in order from there)
-  const v=nbtView; if(!v||!v.ready) return; const first=v.days.indexOf(day)+1; if(!first) return;
+  const v=nbtView; if(!v||!v.ready) return; const first=(v.days.indexOf(day)+1)||nbtTodayFirst(v,day); if(!first) return;   // NBT_TODAY: or the first page on that day's list
   if(v.dirty) await nbtSave(); if(nbtView!==v) return;
   v.day=day; v.noDay=false; v.page=first; v.strokes=[]; v.dirty=false; nbtPaint(); nbtShowPage(); nbtLoadInk();
 }
@@ -51408,6 +51413,7 @@ function nbtFitAll(){
   fr.style.transform="scale("+k+")";
   if(ah&&af){ ah.style.width=Math.round(816*k)+"px"; ah.style.height=Math.round(1056*k)+"px"; af.style.transform="scale("+k+")"; }
   if(nbtFitCanvas()) nbtPaint();
+  nbtTodayFitCheck();   // NBT_TODAY: beside ↔ above when the screen crosses the wide line
 }
 let _nbtRO=null;
 function nbtWatchFit(){
@@ -51431,7 +51437,7 @@ function nbtBarRender(){
   const bar=document.getElementById("nbt-bar"); if(!bar||!nbtView) return; const v=nbtView;
   const btn=(lbl,fn,on,sm)=>'<button onclick="'+fn+'" style="padding:'+(sm?'5px 8px':'7px 11px')+';border-radius:9px;border:1.5px solid '+(on?"#1d4ed8":"#cbd5e1")+';background:'+(on?"#dbeafe":"#fff")+';font-size:'+(sm?'12px':'13px')+';font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
   // the day strip: the days the pages name, in order, + Any; the lit one is the page on screen
-  const pd=v.days[v.page-1]||"", have=NBT_DAYS.filter(d=>v.days.indexOf(d)>=0), anyN=v.days.filter(d=>d==="any").length;
+  const pd=v.days[v.page-1]||"", have=NBT_DAYS.filter(d=>v.days.indexOf(d)>=0||nbtTodayHas(v,d)), anyN=v.days.filter(d=>d==="any").length;   // NBT_TODAY: + days only a ticked page names
   const strip=have.length?'<span style="display:inline-flex;gap:3px;align-items:center">'+have.map(d=>btn(NBT_DAY3[d],"nbtGoDay('"+d+"')",pd===d,true)).join("")+(anyN?btn("Any","nbtGoDay('any')",pd==="any",true):"")+'</span>':"";
   let where;
   if(!v.ready) where="…";
@@ -51444,6 +51450,7 @@ function nbtBarRender(){
     '<span style="font-weight:800;font-size:13px;color:#0f172a;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📓 Notebook · '+String(v.wk).replace("week","Week ")+'</span>'+
     '<span style="padding:3px 9px;border-radius:999px;background:'+((typeof SL_KCOL!=="undefined"&&SL_KCOL[v.kid])||"#64748b")+';color:#fff;font-size:11px;font-weight:800">'+((typeof SL_KLBL!=="undefined"&&SL_KLBL[v.kid])||v.kid)+'</span>'+
     strip+
+    btn(nbtTodayOpen(v)?"📋 Today ▾":"📋 Today ▸","nbtTodayToggle()",nbtTodayOpen(v),true)+   // NBT_TODAY: the list folds with one button
     '<span style="flex:1"></span>'+
     btn("◀","nbtGo(-1)")+
     '<span style="font-size:12px;font-weight:700;color:#475569;min-width:64px;text-align:center">'+where+'</span>'+
@@ -51459,6 +51466,7 @@ function nbtBarRender(){
       btn(v.dirty?"💾 Save":"✓ Saved","nbtSave()",v.dirty)
     ):"");
   try{ const cv=document.getElementById("nbt-ink"); if(cv) cv.style.touchAction=v.penOnly?"pan-x pan-y":"none"; }catch(e){}   // 👆 as the workbooks: pencil-only lets a finger scroll
+  nbtTodayRender();   // NBT_TODAY: the list follows every bar repaint (page, day, ink)
 }
 function nbtTool(t){ if(!nbtView) return; nbtView.tool=t; nbtBarRender(); }
 function nbtTogglePen(){ if(!nbtView) return; nbtView.penOnly=!nbtView.penOnly; nbtBarRender(); }
@@ -51474,7 +51482,8 @@ async function nbtLoadInk(){
   v.strokes=[]; v.dirty=false;
   try{ if(db){ const s=await db.ref(nbtInkPath(v.kid,v.wk,pg)).once("value"); const d=s.val();
     if(nbtView!==v||v.page!==pg) return;
-    if(d&&d.s) v.strokes=(Array.isArray(d.s)?d.s:Object.values(d.s)).map(k=>({c:k.c,w:k.w,p:Array.isArray(k.p)?k.p:Object.values(k.p||{})})); } }catch(e){}
+    if(d&&d.s) v.strokes=(Array.isArray(d.s)?d.s:Object.values(d.s)).map(k=>({c:k.c,w:k.w,p:Array.isArray(k.p)?k.p:Object.values(k.p||{})}));
+    nbtTodayInked(v,pg,v.strokes.length>0); } }catch(e){}   // NBT_TODAY: this page's ✓ from what was just read
   nbtFitCanvas(); nbtPaint(); nbtBarRender();
 }
 function nbtFitCanvas(){
@@ -51554,10 +51563,11 @@ function nbtAutoSaveSoon(){
 async function nbtSave(quiet){
   const v=nbtView; if(!v||!v.ink) return;
   if(!db||_dryRun()){ v.dirty=false; nbtBarRender(); return; }
-  const rev=v._rev||0;
+  const rev=v._rev||0, tdPg=v.page, tdHas=v.strokes.length>0;   // NBT_TODAY: the ✓ belongs to the page this save is for
   try{
     await db.ref(nbtInkPath(v.kid,v.wk,v.page)).set({v:1,s:v.strokes,ts:Date.now()});   // one page, one path
     if((v._rev||0)===rev) v.dirty=false;
+    nbtTodayInked(v,tdPg,tdHas);   // NBT_TODAY
     if(nbtView===v) nbtBarRender();
   }catch(e){ if(!quiet) alert("Couldn't save that page: "+(e.message||e)); else if(typeof dbg==="function") dbg("nbt autosave failed: "+(e.message||e)); }
 }
@@ -51640,6 +51650,103 @@ function nbtAcPaint(g,cv){
   });
 }
 // NBT_AUTOCHK_END
+// NBT_TODAY_START — 📋 the Today list beside the tablet page (PLAN_notebooks_study_2026-11-23 §16 / step 3; her words 2026-11-23:
+// "they have all the pages that they need to do that day, maybe with like little buttons off to the side so it switches to the
+// right things that they should be doing that day so they're not just doing the one school day thing"). The builder now marks
+// every page of a tablet copy with its day(s) and a short name (notebooks.js NBT_TODAY: data-nb-day = weekdays | "week" |
+// "last", data-nb-name); a week sent before that has neither and falls back to nbtDayOf's guess from the label, as before.
+// The list = the chosen day's pages in book order (its own pages + every unit or extra page Mom ticked for that day), then
+// "Any time this week". One tap goes to that page. ✓ = that page has writing saved (one stroke read,
+// notebookWork/<kid>/<wk>/<page>/s/0, never the whole page); every page of the day ✓ → "All done for today". It only reads:
+// nothing is written, the Notebook card is NOT ticked (Mom's default — the card is done the same way as with paper), and ink
+// stays saved by page number. Layout: beside the page on a wide screen, a strip above it on a narrow one; one button folds it.
+// It is never over the page and never inside nbt-hold, so the ink canvas still covers exactly the page and NBT_AUTOCHK's
+// geometry (letter rects in the page's own 816 × 1056 units, canvas points as 0..1 of the canvas) is untouched. Same list on a
+// kid's device and on Mom's (her answer-key pane stays beside the page).
+const NBT_TODAY_WIDE=1000;   // px: at this window width and up the list sits beside the page; below it, a strip above the page
+// a printed label → a short name, for a week sent before NBT_TODAY ("Unit Study — Snakes (1/2)" → "Snakes", "Daily Page — Monday" → "Daily Page")
+function nbtTodayLabelName(lb){
+  const s=String(lb||"").replace(/\s+/g," ").trim(); if(!s) return "";
+  const u=s.match(/^Unit Study — (.+?)(?: \([^)]*\))?$/);
+  return (u?u[1]:s.split(" — ")[0]).slice(0,40);
+}
+// each page → {days:[weekday…] or ["week"], name, tagged}; "last" = the last weekday any page names. Never throws.
+function nbtTodayMeta(doc,days){
+  try{
+    const pages=nbtPages(doc);
+    const meta=pages.map((p,i)=>{
+      const t=(p.getAttribute&&p.getAttribute("data-nb-day"))||"";
+      if(t.trim()) return {days:t.trim().split(/\s+/),name:String(p.getAttribute("data-nb-name")||"").trim()||("Page "+(i+1)),tagged:true};
+      const g=(days&&days[i])||"any";   // the label guess (nbtPageDays, "last" already resolved)
+      return {days:[g==="any"?"week":g],name:nbtTodayLabelName(nbtPageLabel(p))||("Page "+(i+1)),tagged:false};
+    });
+    let last="";
+    const see=d=>{ if(NBT_DAYS.indexOf(d)>NBT_DAYS.indexOf(last)) last=d; };
+    meta.forEach(m=>m.days.forEach(see)); (days||[]).forEach(see);
+    meta.forEach(m=>{ m.days=m.days.map(d=>d==="last"?(last||"week"):d).filter((d,k,a)=>(NBT_DAYS.indexOf(d)>=0||d==="week")&&a.indexOf(d)===k); if(!m.days.length) m.days=["week"]; });
+    return meta;
+  }catch(e){ return []; }
+}
+// the list for a day: {day, mine:[page numbers], week:[page numbers]} — 1-based, book order
+function nbtTodayList(meta,day){
+  const mine=[], week=[];
+  (meta||[]).forEach((m,i)=>{ if(m.days.indexOf(day)>=0) mine.push(i+1); else if(m.days.indexOf("week")>=0) week.push(i+1); });
+  return {day:day,mine:mine,week:week};
+}
+function nbtTodayHas(v,d){ return !!(v&&v.meta&&v.meta.some(m=>m.days.indexOf(d)>=0)); }
+function nbtTodayFirst(v,d){ return nbtTodayList(v&&v.meta,d).mine[0]||0; }
+// ✓: writing on the page on screen, or saved writing on any other page
+function nbtTodayIsInked(v,p){ return !!v&&((p===v.page&&(v.strokes||[]).length>0)||!!(v.inked&&v.inked[p])); }
+function nbtTodayDone(v,L){ return !!(L&&L.mine.length)&&L.mine.every(p=>nbtTodayIsInked(v,p)); }
+function nbtTodayInked(v,p,has){ if(!v) return; v.inked=v.inked||{}; v.inked[p]=!!has; }
+// which listed pages have writing saved: one stroke per page, each page asked once per open (the page's own read wins)
+function nbtTodayPeek(v,pages){
+  if(!v||typeof db==="undefined"||!db) return; v.inked=v.inked||{}; v._tdAsk=v._tdAsk||{};
+  pages.forEach(p=>{ if((p in v.inked)||v._tdAsk[p]) return; v._tdAsk[p]=1;
+    db.ref(nbtInkPath(v.kid,v.wk,p)+"/s/0").once("value").then(s=>{ if(nbtView!==v) return; if(!(p in v.inked)) v.inked[p]=s.val()!=null; nbtTodayRender(); }).catch(()=>{ delete v._tdAsk[p]; });
+  });
+}
+// open / folded: this device's last choice, else open (on a narrow screen the strip only pushes the page down, never shrinks it)
+function nbtTodayOpen(v){
+  if(!v) return false;
+  if(v._tdOpen==null){ let o=null; try{ o=HA_LS.getItem("ha_nbt_today"); }catch(e){} v._tdOpen=(o!=="0"); }
+  return v._tdOpen;
+}
+function nbtTodayToggle(){ const v=nbtView; if(!v) return; v._tdOpen=!nbtTodayOpen(v); try{ HA_LS.setItem("ha_nbt_today",v._tdOpen?"1":"0"); }catch(e){} nbtBarRender(); }
+async function nbtTodayGo(n){ const v=nbtView; if(!v||!v.ready||n===v.page) return; await nbtGo(n-v.page); }   // nbtGo saves the page first
+function nbtTodayFitCheck(){ const v=nbtView; if(!v) return; const w=(window.innerWidth||0)>=NBT_TODAY_WIDE; if(v._tdWide!==w){ v._tdWide=w; nbtTodayRender(); } }
+function nbtTodayRender(){
+  const v=nbtView, el=document.getElementById("nbt-today"), body=document.getElementById("nbt-body"); if(!v||!el||!body) return;
+  const wide=(window.innerWidth||0)>=NBT_TODAY_WIDE; v._tdWide=wide;
+  body.style.flexDirection=wide?"row":"column";
+  if(!(nbtTodayOpen(v)&&v.ready&&(v.meta||[]).length)){ el.style.display="none"; el.innerHTML=""; return; }
+  el.style.cssText="display:block;flex:none;background:#fff;box-sizing:border-box;font-family:'DM Sans',sans-serif;overflow-y:auto;-webkit-overflow-scrolling:touch;"+
+    (wide?"width:214px;border-right:1px solid #e2e8f0;padding:10px 8px":"max-height:24vh;border-bottom:1px solid #e2e8f0;padding:8px 10px");
+  const e=x=>String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const isDay=NBT_DAYS.indexOf(v.day)>=0, L=nbtTodayList(v.meta,isDay?v.day:""), all=L.mine.concat(L.week);
+  nbtTodayPeek(v,all);
+  const nameN={}; all.forEach(p=>{ const nm=v.meta[p-1].name; nameN[nm]=(nameN[nm]||0)+1; });
+  const seen={};
+  const row=(p,num)=>{ const m=v.meta[p-1], nm=m.name, k=(seen[nm]=(seen[nm]||0)+1), on=p===v.page, done=nbtTodayIsInked(v,p);
+    const lbl=e(nm)+(nameN[nm]>1?' <span style="color:#64748b;font-weight:600">'+k+'/'+nameN[nm]+'</span>':'');
+    return '<button onclick="nbtTodayGo('+p+')" style="'+(wide?'display:flex;width:100%;margin:0 0 4px':'display:inline-flex;margin:0 5px 5px 0')+';align-items:center;gap:7px;text-align:left;padding:6px 8px;border-radius:9px;border:1.5px solid '+(on?'#1d4ed8':'#e2e8f0')+';background:'+(on?'#dbeafe':(done?'#f0fdf4':'#fff'))+';font-size:12.5px;font-weight:700;color:#0f172a;cursor:pointer;font-family:inherit;line-height:1.25">'+
+      (num?'<span style="flex:none;width:20px;height:20px;border-radius:50%;background:'+(done?'#16a34a':'#e2e8f0')+';color:'+(done?'#fff':'#334155')+';font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center">'+(done?'✓':num)+'</span>':'')+
+      '<span style="flex:1;min-width:0">'+lbl+'</span>'+(!num&&done?'<span style="color:#16a34a;font-weight:900">✓</span>':'')+'</button>'; };
+  const head=t=>'<div style="font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#475569;margin:'+(wide?'2px 2px 6px':'0 0 5px')+'">'+t+'</div>';
+  let h='';
+  if(isDay){
+    const today=v.day===nbtTodayDay();
+    h+=head(today?'Today · '+e(cap(v.day)):e(cap(v.day)));
+    if(!L.mine.length) h+='<div style="font-size:12px;color:#b45309;font-weight:700;margin:0 2px 8px">No pages for '+e(cap(v.day))+'</div>';
+    else{
+      if(nbtTodayDone(v,L)) h+='<div style="font-size:13px;font-weight:800;color:#166534;background:#dcfce7;border:1.5px solid #86efac;border-radius:10px;padding:7px 9px;margin:0 0 7px">🎉 All done for '+(today?'today':e(cap(v.day)))+'!</div>';
+      h+=(wide?'':'<div>')+L.mine.map((p,i)=>row(p,i+1)).join("")+(wide?'':'</div>');
+    }
+  }
+  if(L.week.length) h+='<div style="margin-top:'+(isDay?'10px':'0')+'">'+head('Any time this week')+(wide?'':'<div>')+L.week.map(p=>row(p,0)).join("")+(wide?'':'</div>')+'</div>';
+  el.innerHTML=h;
+}
+// NBT_TODAY_END
 // ── the cards: a Tablet kid's Morning / Closing Notebook card opens the notebook on that day's page (Mom's device: + the answer key) ──
 function nbtCardRows(t){
   try{

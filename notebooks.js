@@ -284,6 +284,36 @@
       '<span style="font-size:12px;">📌</span><span><b>' + head + '</b> ' + items + ' — find them in this notebook and do them!</span></div>';
   }
 
+  // NBT_TODAY_START — 📱 every page says which day it belongs to and what it is, so the tablet can list today's pages (study
+  // PLAN_notebooks_study_2026-11-23 §16 / step 3; her words 2026-11-23: "they have all the pages that they need to do that day,
+  // maybe with like little buttons off to the side so it switches to the right things that they should be doing that day so
+  // they're not just doing the one school day thing"). Only when the app asks — ctx.nbPageTags, set by the tablet send alone —
+  // so Print / Look / PDF are byte for byte what they were (her rule the same day: paper is the base, the tablet only adds a
+  // layer). Each page's opening tag gets two attributes and nothing visible changes:
+  //   data-nb-day  = the weekday(s) it belongs to ("friday", "monday friday"), "week" (any time this week) or "last" (end of week)
+  //   data-nb-name = a short kid-facing name ("Daily page", "Daily Grams", "🐍 Snakes", "Spelling", "Brain break", …)
+  // The days come from the builder itself — its own day loop, and the day ticks Mom already sets per kid (extra pages
+  // ctx.extraPages[key].days, units ins.days) — never from the printed label. Strip the two attributes and the HTML is the same.
+  var NB_TAG_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+  function nbTagDays(map) {   // {friday:true, monday:true} → "monday friday"; nothing ticked → "week"
+    if (!map || typeof map !== "object") return "week";
+    var d = NB_TAG_DAYS.filter(function (k) { return !!map[k]; });
+    return d.length ? d.join(" ") : "week";
+  }
+  function nbTagAttr(v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  // every untagged page opening in `html` (a page, or a run of pages) gets this day and name; off unless ctx.nbPageTags
+  function nbTag(ctx, html, day, name) {
+    if (!ctx || !ctx.nbPageTags || typeof html !== "string" || !html) return html;
+    var a = ' data-nb-day="' + nbTagAttr(day || "week") + '" data-nb-name="' + nbTagAttr(name || "Page") + '"';
+    return html.replace(/<div class="page"(?! data-nb-day=)/g, function (m) { return m + a; });
+  }
+  function nbTagXp(ctx, html, key, name) { return nbTag(ctx, html, nbTagDays(xpConf(ctx, key).days), name); }   // an extra page: its own day ticks
+  function nbTagUnit(ctx, ins, pages) {   // a unit's pages (cover, this week, activities, US Path): the unit's day ticks, its own name
+    var nm = ((ins && ins.emoji) || "📘") + " " + ((ins && ins.title) || "Unit Study");
+    return (pages || []).map(function (p) { return nbTag(ctx, p, nbTagDays(ins && ins.days), nm); });
+  }
+  // NBT_TODAY_END
+
   // ── Daily Grams (Easy Grammar) — one workbook page per school day printed straight into the
   // notebook after that day's page; the answer-key page(s) covering those days print at the end
   // of the parent book. The app passes ctx.dailyGrams:
@@ -1560,17 +1590,17 @@
     var P = Object.assign({}, T.P, { lowerFirst: !!lv.nbLowercase });   // little letters: the ABC cards show the little one big
 
     var parts = [juHtmlHead(weekNum, T.book, css, T.fonts)];
-    parts.push(juPageCover(weekNum, weekDates, curSum, T, picks, lv));
-    if (xpOn(ctx, "abc")) parts.push(juPageAbc(weekNum, weekDates, coverWk ? { letters: (picks.letters || []).map(function (s) { return curWk.letters[s.idx]; }) } : cur, P));
-    if (xpOn(ctx, "daysSeasons")) parts.push(juPageDaysSeasons(weekNum, weekDates, cur, P));
-    if (xpOn(ctx, "thisMonth")) { var _jym = /\b(\d{4})\b/.exec(weekDates || ""); var _jmp = juPageMonth(weekNum, weekDates, dates, _jym ? _jym[1] : "", P); if (_jmp) parts.push(_jmp); }
+    parts.push(nbTag(ctx, juPageCover(weekNum, weekDates, curSum, T, picks, lv), "week", "Cover"));   // NBT_TODAY: each page's day + name (tablet only)
+    if (xpOn(ctx, "abc")) parts.push(nbTagXp(ctx, juPageAbc(weekNum, weekDates, coverWk ? { letters: (picks.letters || []).map(function (s) { return curWk.letters[s.idx]; }) } : cur, P), "abc", "ABC"));
+    if (xpOn(ctx, "daysSeasons")) parts.push(nbTagXp(ctx, juPageDaysSeasons(weekNum, weekDates, cur, P), "daysSeasons", "Days & Seasons"));
+    if (xpOn(ctx, "thisMonth")) { var _jym = /\b(\d{4})\b/.exec(weekDates || ""); var _jmp = juPageMonth(weekNum, weekDates, dates, _jym ? _jym[1] : "", P); if (_jmp) parts.push(nbTagXp(ctx, _jmp, "thisMonth", "This Month")); }
     for (var i = 0; i < days.length; i++) {
-      parts.push(juPageDaily(weekNum, days[i], dates[days[i]] || "", i, curWk, juDayPick(curWk, picks, i),
-        xpStrip(pagesForDay(ctx, null, days[i], PREK_EXTRA_PAGES), T.xpColors[0], T.xpColors[1], T.xpColors[2]), T, lv, ctx.countEmoji));
+      parts.push(nbTag(ctx, juPageDaily(weekNum, days[i], dates[days[i]] || "", i, curWk, juDayPick(curWk, picks, i),
+        xpStrip(pagesForDay(ctx, null, days[i], PREK_EXTRA_PAGES), T.xpColors[0], T.xpColors[1], T.xpColors[2]), T, lv, ctx.countEmoji), days[i], "Daily page"));
     }
     var uT = UNIT_INSERT_THEMES[T.unitTheme];
-    (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, weekNum, uT).forEach(function (p) { parts.push(p); }); });
-    spellNbPages(ctx, uT).forEach(function (p) { parts.push(p); });   // 📝 SPELLPAGE
+    (ctx.units || []).forEach(function (ins) { nbTagUnit(ctx, ins, unitInsertPages(ins, weekNum, uT)).forEach(function (p) { parts.push(p); }); });
+    spellNbPages(ctx, uT).forEach(function (p) { parts.push(nbTag(ctx, p, "week", "Spelling")); });   // 📝 SPELLPAGE
     parts.push("</body>\n</html>");
     var student = parts.join("\n");
 
@@ -4390,20 +4420,21 @@ ${extraStrip || ""}
     // Full page order: weekly · bb0 · 4 enrichment · (day · bb)×4 · day5 · creative · eow
     var T = LN_EXTRA.enrich.theme_lincoln;
     var bbOn = xpOn(ctx, "brainBreaks");   // Notebook tab ▸ Extra Pages toggle; missing config = on
-    var parts = bbOn ? [weeklyH, lnBrainBreakPage(0, wn)] : [weeklyH];
-    if (xpOn(ctx, "allAboutMe")) parts.push(enPageAllAboutMe(T, ctx.personal || null, wn));
-    if (xpOn(ctx, "moneyLife")) parts.push(enPageMoneyLife(T, wn));
-    if (xpOn(ctx, "wilderness")) parts.push(enPageWilderness(T, wn));
-    if (xpOn(ctx, "memoryCivics")) parts.push(enPageMemoryCivics(T, wn));
-    (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn, UNIT_INSERT_THEMES.lincoln).forEach(function (p) { parts.push(p); }); });
-    spellNbPages(ctx, UNIT_INSERT_THEMES.lincoln).forEach(function (p) { parts.push(p); });   // 📝 SPELLPAGE
+    var day0 = schoolDays[0] || "monday";   // NBT_TODAY: the week's overview and the first brain break go with the first school day
+    var parts = bbOn ? [nbTag(ctx, weeklyH, day0, "Week overview"), nbTag(ctx, lnBrainBreakPage(0, wn), day0, "Brain break")] : [nbTag(ctx, weeklyH, day0, "Week overview")];
+    if (xpOn(ctx, "allAboutMe")) parts.push(nbTagXp(ctx, enPageAllAboutMe(T, ctx.personal || null, wn), "allAboutMe", "All About Me"));
+    if (xpOn(ctx, "moneyLife")) parts.push(nbTagXp(ctx, enPageMoneyLife(T, wn), "moneyLife", "Money & Life Skills"));
+    if (xpOn(ctx, "wilderness")) parts.push(nbTagXp(ctx, enPageWilderness(T, wn), "wilderness", "Wilderness Skills"));
+    if (xpOn(ctx, "memoryCivics")) parts.push(nbTagXp(ctx, enPageMemoryCivics(T, wn), "memoryCivics", "Memory & Civics"));
+    (ctx.units || []).forEach(function (ins) { nbTagUnit(ctx, ins, unitInsertPages(ins, wn, UNIT_INSERT_THEMES.lincoln)).forEach(function (p) { parts.push(p); }); });
+    spellNbPages(ctx, UNIT_INSERT_THEMES.lincoln).forEach(function (p) { parts.push(nbTag(ctx, p, "week", "Spelling")); });   // 📝 SPELLPAGE
     dailyPages.forEach(function (dp, i) {
-      parts.push(dp);
+      parts.push(nbTag(ctx, dp, schoolDays[i], "Daily page"));
       var dgd = dgPlan && dgPlan.byDay[schoolDays[i]];
-      if (dgd) parts.push(dgStudentPage("lincoln", dgd, wn, dgTitle));   // the day's Daily Grams page rides right behind the daily page
-      if (i < dailyPages.length - 1) { if (bbOn) parts.push(lnBrainBreakPage(i + 1, wn)); } else parts.push(lnCreativePage(wn));
+      if (dgd) parts.push(nbTag(ctx, dgStudentPage("lincoln", dgd, wn, dgTitle), schoolDays[i], dgTitle));   // the day's Daily Grams page rides right behind the daily page
+      if (i < dailyPages.length - 1) { if (bbOn) parts.push(nbTag(ctx, lnBrainBreakPage(i + 1, wn), schoolDays[i], "Brain break")); } else parts.push(nbTag(ctx, lnCreativePage(wn), schoolDays[i], "Creative page"));
     });
-    parts.push(eowH);
+    parts.push(nbTag(ctx, eowH, "last", "End of week"));
     var student_html = lnFullHtml(cfg.student_short + "'s Notebook — Week " + weekNum, parts.join("\n\n\n"));
 
     var cp1 = lnCompanionP1(weekNum, weekDates, cfg, dayAssignments, ctx.weekNotes || []);
@@ -5106,14 +5137,15 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
     var T = ELLIS_DATA.theme;
 
     var pages = [];
-    pages.push(ellWeeklyPage(wn, weekDates, weekData, paceRows, summary, prevWeek));
-    pages.push(ellBrainBreakPage(0, wn));
-    if (xpOn(ctx, "allAboutMe")) pages.push(enPageAllAboutMe(T, ctx.personal || null, wn));
-    if (xpOn(ctx, "moneyLife")) pages.push(enPageMoneyLife(T, wn));
-    if (xpOn(ctx, "memoryCivics")) pages.push(enPageMemoryCivics(T, wn));
-    if (xpOn(ctx, "notes")) pages.push(enPageNotes(T));
-    (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn, UNIT_INSERT_THEMES.ellis).forEach(function (p) { pages.push(p); }); });
-    spellNbPages(ctx, UNIT_INSERT_THEMES.ellis).forEach(function (p) { pages.push(p); });   // 📝 SPELLPAGE
+    var day0 = orderedDays[0] || "monday";   // NBT_TODAY: the week's briefing and the first brain break go with the first school day
+    pages.push(nbTag(ctx, ellWeeklyPage(wn, weekDates, weekData, paceRows, summary, prevWeek), day0, "Week overview"));
+    pages.push(nbTag(ctx, ellBrainBreakPage(0, wn), day0, "Brain break"));
+    if (xpOn(ctx, "allAboutMe")) pages.push(nbTagXp(ctx, enPageAllAboutMe(T, ctx.personal || null, wn), "allAboutMe", "All About Me"));
+    if (xpOn(ctx, "moneyLife")) pages.push(nbTagXp(ctx, enPageMoneyLife(T, wn), "moneyLife", "Money & Life Skills"));
+    if (xpOn(ctx, "memoryCivics")) pages.push(nbTagXp(ctx, enPageMemoryCivics(T, wn), "memoryCivics", "Memory & Civics"));
+    if (xpOn(ctx, "notes")) pages.push(nbTagXp(ctx, enPageNotes(T), "notes", "Notes"));
+    (ctx.units || []).forEach(function (ins) { nbTagUnit(ctx, ins, unitInsertPages(ins, wn, UNIT_INSERT_THEMES.ellis)).forEach(function (p) { pages.push(p); }); });
+    spellNbPages(ctx, UNIT_INSERT_THEMES.ellis).forEach(function (p) { pages.push(nbTag(ctx, p, "week", "Spelling")); });   // 📝 SPELLPAGE
 
     var dayAssignments = [];
     var dgPlan = dgWeekPlan(ctx.dailyGrams, wn, orderedDays, datesMap), dgTitle = (ctx.dailyGrams && ctx.dailyGrams.title) || "Daily Grams";
@@ -5127,12 +5159,12 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
       var word = ellPick(ELLIS_DATA.banks.words, wn, i);
       var bank = ellBankFor(bankPlans, i);
       if (bank && bank.word) word = ellBankWord(bank.word);
-      pages.push(ellDailyPage(day, dateStr, wn, dayTasks, passage, lang, mathQ, word,
-        xpStrip(pagesForDay(ctx, "ellis", day), "#c41e1e", "#fdf2f2", "#0e2038"), bank));
+      pages.push(nbTag(ctx, ellDailyPage(day, dateStr, wn, dayTasks, passage, lang, mathQ, word,
+        xpStrip(pagesForDay(ctx, "ellis", day), "#c41e1e", "#fdf2f2", "#0e2038"), bank), day, "Daily page"));
       dayAssignments.push({ day: day, date: dateStr, day_tasks: dayTasks, passage: passage, lang: lang, math_q: mathQ, word: word, bank: bank });
       var dgd = dgPlan && dgPlan.byDay[day];
-      if (dgd) pages.push(dgStudentPage("ellis", dgd, wn, dgTitle));   // the day's Daily Grams page rides right behind the daily page
-      pages.push(i < orderedDays.length - 1 ? ellBrainBreakPage(i + 1, wn) : ellCreativePage(wn, weekDates));
+      if (dgd) pages.push(nbTag(ctx, dgStudentPage("ellis", dgd, wn, dgTitle), day, dgTitle));   // the day's Daily Grams page rides right behind the daily page
+      pages.push(i < orderedDays.length - 1 ? nbTag(ctx, ellBrainBreakPage(i + 1, wn), day, "Brain break") : nbTag(ctx, ellCreativePage(wn, weekDates), day, "Creative page"));
     });
 
     var cp1 = ellParentPage1(wn, weekDates, dayAssignments, ctx.weekNotes || []);
@@ -6205,35 +6237,35 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     var ym = /\b(\d{4})\b/.exec(weekDates || ""); var year = ym ? ym[1] : "";
 
     var parts = [];
-    parts.push(luPageWeeklyReview(wn, weekDates, days, dates, tasks, prevStats, pace, focus));
-    if (xpOn(ctx, "months")) parts.push(luPageMonths(wn, weekDates, curMonth));
-    if (xpOn(ctx, "thisMonth")) { var _lmp = luPageMonth(wn, weekDates, dates, year, days); if (_lmp) parts.push(_lmp); }
-    if (xpOn(ctx, "allAboutMe")) parts.push(luPageAllAboutMe(wn, weekDates, ctx.personal || null)); // personal info from the Notebook tab (or blank)
-    (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn, UNIT_INSERT_THEMES.lucy).forEach(function (p) { parts.push(p); }); });
-    spellNbPages(ctx, UNIT_INSERT_THEMES.lucy).forEach(function (p) { parts.push(p); });   // 📝 SPELLPAGE
+    parts.push(nbTag(ctx, luPageWeeklyReview(wn, weekDates, days, dates, tasks, prevStats, pace, focus), days[0] || "monday", "Week overview"));   // NBT_TODAY: each page's day + name (tablet only)
+    if (xpOn(ctx, "months")) parts.push(nbTagXp(ctx, luPageMonths(wn, weekDates, curMonth), "months", "Months of the Year"));
+    if (xpOn(ctx, "thisMonth")) { var _lmp = luPageMonth(wn, weekDates, dates, year, days); if (_lmp) parts.push(nbTagXp(ctx, _lmp, "thisMonth", "This Month")); }
+    if (xpOn(ctx, "allAboutMe")) parts.push(nbTagXp(ctx, luPageAllAboutMe(wn, weekDates, ctx.personal || null), "allAboutMe", "All About Me")); // personal info from the Notebook tab (or blank)
+    (ctx.units || []).forEach(function (ins) { nbTagUnit(ctx, ins, unitInsertPages(ins, wn, UNIT_INSERT_THEMES.lucy)).forEach(function (p) { parts.push(p); }); });
+    spellNbPages(ctx, UNIT_INSERT_THEMES.lucy).forEach(function (p) { parts.push(nbTag(ctx, p, "week", "Spelling")); });   // 📝 SPELLPAGE
     days.forEach(function (day, i) {
       var dateStr = dates[day] || "";
       var blend = (i < blends.length) ? blends[i] : blends[blends.length - 1];
       var subPrbs = subtraction[i] || [];
       var badge = LUCY_DATA.day_badges[day] || "🦄 Great Work!";
-      parts.push(luPageDaily(wn, day, dateStr, tasks, blend, subPrbs, badge, year,
-        xpStrip(pagesForDay(ctx, "lucy", day), "#f472b6", "#fdf2f8", "#be185d"), words ? words.days[i] : null));
-      if (day === "monday") parts.push(luPageBb1(wn, ctx.dotdot || null));
-      else if (day === "tuesday") parts.push(luPageBb2Coloring(wn, ctx.coloring || null, category));
-      else if (day === "wednesday") parts.push(luPageBb3(wn, ctx.symmetry || null, ctx.pattern || null));
-      else if (day === "thursday") parts.push(luPageBb4(wn, ctx.maze || null));
-      else if (day === "friday") parts.push(luPageCreative(wn));
+      parts.push(nbTag(ctx, luPageDaily(wn, day, dateStr, tasks, blend, subPrbs, badge, year,
+        xpStrip(pagesForDay(ctx, "lucy", day), "#f472b6", "#fdf2f8", "#be185d"), words ? words.days[i] : null), day, "Daily page"));
+      if (day === "monday") parts.push(nbTag(ctx, luPageBb1(wn, ctx.dotdot || null), day, "Brain break"));
+      else if (day === "tuesday") parts.push(nbTag(ctx, luPageBb2Coloring(wn, ctx.coloring || null, category), day, "Brain break"));
+      else if (day === "wednesday") parts.push(nbTag(ctx, luPageBb3(wn, ctx.symmetry || null, ctx.pattern || null), day, "Brain break"));
+      else if (day === "thursday") parts.push(nbTag(ctx, luPageBb4(wn, ctx.maze || null), day, "Brain break"));
+      else if (day === "friday") parts.push(nbTag(ctx, luPageCreative(wn), day, "Creative page"));
     });
-    parts.push(luPageEndOfWeek(wn, weekDates, blends, subtraction, days, tasks));
-    luMyWordsPages(ctx, words, wn).forEach(function (p) { parts.push(p); });   // LU_WORDS: after End of Week, so the day/back pairs don't move
+    parts.push(nbTag(ctx, luPageEndOfWeek(wn, weekDates, blends, subtraction, days, tasks), "last", "End of week"));
+    luMyWordsPages(ctx, words, wn).forEach(function (p) { parts.push(nbTagXp(ctx, p, "myWords", "My Words")); });   // LU_WORDS: after End of Week, so the day/back pairs don't move
 
     // Paper dolls — doll figure (always) + this week's outfit, each on its OWN sheet with a blank
     // back so Lucy can cut them out without losing anything on the reverse. Goes last in the book.
     var dolls = ctx.dolls;
     if (dolls && (dolls.doll || dolls.outfit)) {
-      if (parts.length % 2 === 1) parts.push(luBlankPage()); // pad so the first doll lands on a sheet FRONT
-      if (dolls.doll) { parts.push(luPageDoll(dolls.doll, "Paper doll — cut me out!")); parts.push(luBlankPage()); }
-      if (dolls.outfit) { parts.push(luPageDoll(dolls.outfit, "Outfit — cut me out!")); parts.push(luBlankPage()); }
+      if (parts.length % 2 === 1) parts.push(nbTag(ctx, luBlankPage(), "week", "Blank page")); // pad so the first doll lands on a sheet FRONT
+      if (dolls.doll) { parts.push(nbTag(ctx, luPageDoll(dolls.doll, "Paper doll — cut me out!"), "week", "Paper doll")); parts.push(nbTag(ctx, luBlankPage(), "week", "Blank page")); }
+      if (dolls.outfit) { parts.push(nbTag(ctx, luPageDoll(dolls.outfit, "Outfit — cut me out!"), "week", "Paper doll outfit")); parts.push(nbTag(ctx, luBlankPage(), "week", "Blank page")); }
     }
 
     var luCss = (phono ? LU_PHONO_CSS : "") + (words ? LU_WORDS_CSS : "");   // LU_WORDS
@@ -6257,12 +6289,12 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     ctx = ctx || {};
     var esc = function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
     var name = ctx.nbKidName || "Student", wn = ctx.weekNum || "", T = UNIT_INSERT_THEMES.generic, parts = [];
-    (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn, T).forEach(function (p) { parts.push(p); }); });
-    spellNbPages(ctx, T).forEach(function (p) { parts.push(p); });
+    (ctx.units || []).forEach(function (ins) { nbTagUnit(ctx, ins, unitInsertPages(ins, wn, T)).forEach(function (p) { parts.push(p); }); });   // NBT_TODAY: each page's day + name (tablet only)
+    spellNbPages(ctx, T).forEach(function (p) { parts.push(nbTag(ctx, p, "week", "Spelling")); });
     var hdr = function (t) { return '<div style="background:' + T.GD + ';padding:14px 40px;display:flex;justify-content:space-between;align-items:flex-end">' +
       '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#fff">' + esc(t) + '</div><div style="font-family:\'Fraunces\',serif;font-size:14px;color:' + T.GOLD + '">Week ' + esc(wn) + '</div></div><div style="height:5px;background:' + T.GM + '"></div>'; };
-    if (!parts.length) parts.push('<div class="page-label">' + esc(name) + ' — Week ' + esc(wn) + '</div>\n<div class="page">\n' + hdr("📓 " + name + "’s Notebook") +
-      '<div style="padding:30px 40px;font-size:14px;line-height:1.6;color:#334155">Nothing to print yet this week.<br><br>Pages land here as they’re turned on — for example <b>📝 Spelling</b> (Units ▸ All About Spelling ▸ ' + esc(name) + ' ▸ 📓 Notebook). When ' + esc(name) + '’s own notebook is built, these pages move into it.</div>\n</div>');
+    if (!parts.length) parts.push(nbTag(ctx, '<div class="page-label">' + esc(name) + ' — Week ' + esc(wn) + '</div>\n<div class="page">\n' + hdr("📓 " + name + "’s Notebook") +
+      '<div style="padding:30px 40px;font-size:14px;line-height:1.6;color:#334155">Nothing to print yet this week.<br><br>Pages land here as they’re turned on — for example <b>📝 Spelling</b> (Units ▸ All About Spelling ▸ ' + esc(name) + ' ▸ 📓 Notebook). When ' + esc(name) + '’s own notebook is built, these pages move into it.</div>\n</div>', "week", "My notebook"));
     var guide = '<div class="page-label">Parent guide — Week ' + esc(wn) + '</div>\n<div class="page">\n' + hdr("📓 " + name + " — this week’s pages") +
       '<div style="padding:24px 40px;font-size:13px;line-height:1.6;color:#334155">' + (ctx.spelling ? 'Spelling: ' + (ctx.spelling.sections || []).map(function (s) { return esc(s.label) + (s.lesson != null ? " (Lesson " + esc(s.lesson) + ")" : ""); }).join(" · ") + ((ctx.spelling.practice || []).length ? " · " + ctx.spelling.practice.length + " practice words" : "") : "No add-on pages this week.") + '</div>\n</div>';
     return { student: lnFullHtml(name + "'s Notebook — Week " + wn, parts.join("\n\n\n")), parent: lnFullHtml(name + "'s Parent Guide — Week " + wn, guide) };
@@ -6332,6 +6364,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     var juLike = !!sp;
     if (juLike) juResetUnknownShapes();   // count only THIS build's unknown shapes
     var out = g.build(ctx);
+    if (ctx && ctx.nbPageTags && out && out.student) out = Object.assign({}, out, { student: nbTag(ctx, out.student, "week", "Page") });   // NBT_TODAY: a page no builder named is an any-time page
     if (ctx && ctx.bindingMargin && out) {
       out = Object.assign({}, out, { student: applyBindingMargin(out.student), parent: applyBindingMargin(out.parent) });
     }
