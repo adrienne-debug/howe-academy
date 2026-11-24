@@ -13,7 +13,8 @@
 //   gifts/people/<pid>      {name, group, kid?, paper?, birthday?, note?, gone?, ts}   kids are k_<roster id>, drawn from the
 //                            family list until something about them is saved
 //   gifts/plan/<oid>/<pid>  {budget?, sec?:{<sid>:$}}           a person's budget for one occasion (+ optional per section)
-//   gifts/plan/<oid>/g_<gid> {budget?}                          a group's budget for one occasion
+//   gifts/plan/<oid>/g_<gid> {budget?, secEach?:{<sid>:$}}      a group's budget for one occasion (+ GIFTTUNE: each person's budget
+//                            per section — used where that person has no section budget of their own; never adds to any money)
 //   gifts/items/<iid>       {occ, pids:[…], sec, name, status, plan?, paid?, store?, link?, where?, paper?, note?, ts}
 //   gifts/log/<push>        {at, text}
 // GIFTS slice 2 (her "Yes, slice 2" 2026-11-20) — the Christmas views, read from the same presents:
@@ -122,7 +123,9 @@ function tally(list,w){   // w(it) = this item's weight for whoever we're adding
     T.count++;if(pidsOf(it).length>1)T.shared++;T.by[it.status||"idea"]=(T.by[it.status||"idea"]||0)+1;});
   return T;
 }
-function personTot(oid,pid,sid){const T=tally(items(oid).filter(it=>!sid||it.sec===sid),it=>share(it,pid));const p=plan(oid,pid);T.budget=sid?num((p.sec||{})[sid]):num(p.budget);return T;}
+function personTot(oid,pid,sid){const T=tally(items(oid).filter(it=>!sid||it.sec===sid),it=>share(it,pid));const p=plan(oid,pid);T.budget=sid?secBudget(oid,pid,sid):num(p.budget);return T;}
+function secEachOf(oid,pid){const pr=person(pid);return pr?(plan(oid,"g_"+(pr.group||"other")).secEach||{}):{};}   // GIFTTUNE 4 (worksheet: "a budget for each category … the same for every kid")
+function secBudget(oid,pid,sid){const own=num((plan(oid,pid).sec||{})[sid]);return own!=null?own:num(secEachOf(oid,pid)[sid]);}   // their own number always wins
 function groupTot(oid,gid){
   const ids=people().filter(p=>(p.group||"other")===gid).map(p=>p.id);
   const T=tally(items(oid),it=>pidsOf(it).reduce((a,pid)=>a+(ids.indexOf(pid)>=0?share(it,pid):0),0));
@@ -658,7 +661,11 @@ function personSheet(){
 }
 function budgetSheet(){
   const f=gfEdit.form,o=occ(f.occ);let h='<div class="gf-form">'+field("budget","Budget for "+esc((o||{}).name||"this occasion"),"","money");
-  if(f.secs)secsFor(o,[f.key]).forEach(s=>{h+='<label class="gf-f"><span>'+esc((s.emoji||"")+" "+s.name)+' (optional)</span><input inputmode="decimal" value="'+esc(f.secs[s.id]||"")+'" oninput="gfSecBudget(\''+esc(s.id)+'\',this.value)"></label>';});   // GIFTS_GROUPS: a person in a group gets that group's sections
+  const ge=f.secs?secEachOf(f.occ,f.key):{},gk=((person(f.key)||{}).group||"other")==="kids";   // GIFTTUNE 4: the group's "each person" amount shows as the placeholder
+  if(f.secs)secsFor(o,[f.key]).forEach(s=>{const e=num(ge[s.id]);h+='<label class="gf-f"><span>'+esc((s.emoji||"")+" "+s.name)+' (optional)</span><input inputmode="decimal" value="'+esc(f.secs[s.id]||"")+'"'+(e!=null?' placeholder="'+esc(money(e)+" — the same for "+(gk?"each kid":"each person"))+'"':'')+' oninput="gfSecBudget(\''+esc(s.id)+'\',this.value)"></label>';});   // GIFTS_GROUPS: a person in a group gets that group's sections
+  if(f.each){const gk2=f.gid==="kids",S=gk2?secsOf(o):grpSecs(f.gid);   // GIFTTUNE 4: one amount per section for everyone in the group
+    if(S.length)h+='<div class="gf-sub wide" style="margin:0">The same amount for everyone in this group. Anyone with their own section budget keeps theirs.</div>';
+    S.forEach(s=>{h+='<label class="gf-f"><span>'+(gk2?"Each kid's ":"Each person's ")+esc((s.emoji||"")+" "+s.name)+' budget</span><input inputmode="decimal" value="'+esc(f.each[s.id]||"")+'" oninput="gfEachBudget(\''+esc(s.id)+'\',this.value)"></label>';});}
   return h+'</div>';
 }
 function evenSheet(){return '<div class="gf-form"><div class="gf-sub wide">Flag a kid as behind when they are more than…</div>'+field("pct","% behind in dollars","15","money")+field("n","gifts behind","2","money")+'</div>';}
@@ -721,6 +728,7 @@ function gfSetDraw(k,v){if(!gfEdit)return;const f=gfEdit.form;
 function gfTogglePid(pid){if(!gfEdit)return;const f=gfEdit.form;const auto=gfEdit.kind==="item"&&!gfEdit.id&&(!f.paper||f.paper===defaultPaper(f.pids,f.sec,f.occ));
   const i=f.pids.indexOf(pid);if(i>=0)f.pids.splice(i,1);else f.pids.push(pid);grpSecFix(f);if(auto)f.paper=defaultPaper(f.pids,f.sec,f.occ);gfDraw();}
 function gfSecBudget(sid,v){if(gfEdit&&gfEdit.form.secs)gfEdit.form.secs[sid]=v;}
+function gfEachBudget(sid,v){if(gfEdit&&gfEdit.form.each)gfEdit.form.each[sid]=v;}   // GIFTTUNE 4
 function gfSecEdit(i,k,v){if(gfEdit&&gfEdit.form.secs[i])gfEdit.form.secs[i][k]=v;}
 function gfSecAdd(){if(!gfEdit)return;gfEdit.form.secs.push({id:null,emoji:"🎁",name:""});gfDraw();}
 function gfCancel(){gfEdit=null;gfDraw();}
@@ -767,6 +775,7 @@ function gfSave(){
   }else if(kind==="budget"){
     const b=num(f.budget),rec={};if(b!=null)rec.budget=b;
     if(f.secs){const s={};Object.keys(f.secs).forEach(k=>{const v=num(f.secs[k]);if(v!=null)s[k]=v;});if(Object.keys(s).length)rec.sec=s;}
+    if(f.each){const s={};Object.keys(f.each).forEach(k=>{const v=num(f.each[k]);if(v!=null)s[k]=v;});if(Object.keys(s).length)rec.secEach=s;}   // GIFTTUNE 4: in the group plan's ONE set, as sec is for a person
     (node("plan")[f.occ]=node("plan")[f.occ]||{})[f.key]=rec;write("gifts/plan/"+f.occ+"/"+f.key,Object.keys(rec).length?rec:null,Object.keys(rec).length?"set":"remove");
     log("Budget "+f.label+" → "+(b!=null?money(b):"none"));
   }else if(kind==="group"){
@@ -822,8 +831,8 @@ function gfNewPerson(){gfEdit={kind:"person",id:null,form:{name:"",group:curGrp(
 function gfEditPerson(pid){const p=person(pid);if(!p)return;gfEdit={kind:"person",id:pid,form:{name:p.name||"",group:p.group||"other",paper:p.paper||"",birthday:p.birthday||"",sizes:p.sizes||"",note:p.note||""}};gfDraw();}
 function gfBudget(pid){const oid=curOcc(),p=plan(oid,pid),secs={};Object.keys(p.sec||{}).forEach(k=>{secs[k]=String(p.sec[k]);});
   gfEdit={kind:"budget",id:pid,form:{occ:oid,key:pid,label:(person(pid)||{}).name||pid,budget:p.budget==null?"":String(p.budget),secs}};gfDraw();}
-function gfGroupBudget(gid){const oid=curOcc(),p=plan(oid,"g_"+gid),g=groups().find(x=>x.id===gid)||{};
-  gfEdit={kind:"budget",id:"g_"+gid,form:{occ:oid,key:"g_"+gid,label:g.name||gid,budget:p.budget==null?"":String(p.budget),secs:null}};gfDraw();}
+function gfGroupBudget(gid){const oid=curOcc(),p=plan(oid,"g_"+gid),g=groups().find(x=>x.id===gid)||{},each={};Object.keys(p.secEach||{}).forEach(k=>{each[k]=String(p.secEach[k]);});   // GIFTTUNE 4
+  gfEdit={kind:"budget",id:"g_"+gid,form:{occ:oid,key:"g_"+gid,gid,label:g.name||gid,budget:p.budget==null?"":String(p.budget),secs:null,each}};gfDraw();}
 function gfNewGroup(){gfEdit={kind:"group",id:null,form:{name:"",emoji:"👥"}};gfDraw();}
 function gfNewOcc(){gfEdit={kind:"occ",id:null,form:{kind:"birthday",name:"",date:"",budget:"",autoName:true}};gfSetDraw("kind","birthday");}
 function gfOccEdit(){const o=occ(curOcc());if(!o)return;gfEdit={kind:"occ",id:o.id,form:{kind:o.kind||"other",for:o.for||null,name:o.name||"",date:o.date||"",budget:o.budget==null?"":String(o.budget),orderBy:o.orderBy||"",closed:!!o.closed,secs:secsOf(o).map(s=>({id:s.id,emoji:s.emoji||"",name:s.name||""}))}};gfDraw();}
@@ -1824,7 +1833,7 @@ window.renderGifts=function(el,ah){
   grpOpen(el);   // GIFTS_GROUPS: a fresh visit opens on 👧 Kids
   gfRoot=el;gfAh=ah||"";gfListen();gfDraw();
 };
-Object.assign(window,{gfFromPick,gfFromFormTick,gfFromTick,gfFromText,gfFromToldAll,gfFromTextNo,gfTagsToggle,gfSplitMode,gfSplitSet,gfPack,gfOpened,gfGivenAt,gfSpotPick,gfSendTo,gfBringIn,gfShareSet,gfShareSize,gfGo,gfSelToggle,gfPick,gfBulk,gfBulkIds,gfGather,gfEveTick,gfLineAdd,gfLineTick,gfLineDel,gfLinesCopy,gfEvenEdit,gfNeed,gfStartOcc,gfPickOcc,gfOpenPerson,gfBack,gfNewItem,gfEditItem,gfMove,gfSet,gfSetDraw,gfTogglePid,gfSecBudget,gfSecEdit,gfSecAdd,gfCancel,gfSave,gfDelete,gfNext,gfNewPerson,gfEditPerson,gfBudget,gfGroupBudget,gfNewGroup,gfNewOcc,gfOccEdit});
+Object.assign(window,{gfFromPick,gfFromFormTick,gfFromTick,gfFromText,gfFromToldAll,gfFromTextNo,gfTagsToggle,gfSplitMode,gfSplitSet,gfPack,gfOpened,gfGivenAt,gfSpotPick,gfSendTo,gfBringIn,gfShareSet,gfShareSize,gfGo,gfSelToggle,gfPick,gfBulk,gfBulkIds,gfGather,gfEveTick,gfLineAdd,gfLineTick,gfLineDel,gfLinesCopy,gfEvenEdit,gfNeed,gfStartOcc,gfPickOcc,gfOpenPerson,gfBack,gfNewItem,gfEditItem,gfMove,gfSet,gfSetDraw,gfTogglePid,gfSecBudget,gfEachBudget,gfSecEdit,gfSecAdd,gfCancel,gfSave,gfDelete,gfNext,gfNewPerson,gfEditPerson,gfBudget,gfGroupBudget,gfNewGroup,gfNewOcc,gfOccEdit});
 window._gfTest={allItems,ours,fromOthers,othersFor,tally,giveAt,atHome,nextOf,reminders:(t,h)=>giftReminders(t,h),held,evenData,behind,evenSet,sel:()=>gfSel,selOn:()=>gfSelOn,data:()=>gfData,setData:d=>{gfData=d||{};gfLoaded=true;},people,groups,occs,secsOf,items,personTot,groupTot,occTot,left,share,curOcc,
   setOcc:o=>{gfOcc=o;},view:()=>gfView,edit:()=>gfEdit,draw:gfDraw,setRoot:(el,ah)=>{gfRoot=el;gfAh=ah||"";},reset:()=>{gfTextOffer=null;gfGrp="kids";gfOcc=null;gfView="people";gfPid=null;gfEdit=null;gfRcOpen=null;gfOthersOpen=null;},rc:RC_TEST,oc:OCC_TEST,gr:GRP_TEST};
 })();

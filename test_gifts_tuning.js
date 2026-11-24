@@ -241,6 +241,67 @@ const setNav = o => { delete navigator.share; delete navigator.clipboard; Object
   setNav({});
 }
 
+console.log("\n# 4 · one section budget for everyone in a group (secEach)");
+{
+  reset(BASE()); W.renderGifts(root, "<nav/>"); W.gfGroupBudget("kids"); let h = root.innerHTML;
+  ok("the group's 💲 sheet: its own budget first, then one box per section — \"Each kid's 🧦 Stocking budget\"", /Budget for Christmas 2026[\s\S]*Each kid's ⭐ Special budget[\s\S]*Each kid's 🎁 From Mom &amp; Dad budget[\s\S]*Each kid's 🧦 Stocking budget/.test(h) && /gfEachBudget\('stocking',this.value\)/.test(h), h.match(/Each[^<]*/g));
+  ok("…with a line saying it's the same for everyone and their own number wins", /The same amount for everyone in this group\. Anyone with their own section budget keeps theirs\./.test(h));
+  writes.length = 0; W.gfEachBudget("stocking", "25"); W.gfSave();
+  const s = nonLog();
+  ok("save = the group plan's ONE set: {budget: 900, secEach: {stocking: 25}}", s.length === 1 && s[0].op === "set" && s[0].path === "gifts/plan/x/g_kids" && J(s[0].val) === '{"budget":900,"secEach":{"stocking":25}}', s);
+  ok("a kid with no section budget of their own gets it (Ben 🧦 $25)", T.personTot("x", "k_ben", "stocking").budget === 25);
+  ok("NEVER beats a person's own number (Ava keeps her $20)", T.personTot("x", "k_ava", "stocking").budget === 20);
+  ok("…only for that section (Ben ⭐ Special has none)", T.personTot("x", "k_ben", "special").budget === null);
+  ok("…never changes a person's whole budget or the group's (Ben none, Ava $300, Kids $900)", T.personTot("x", "k_ben").budget === null && T.personTot("x", "k_ava").budget === 300 && T.groupTot("x", "kids").budget === 900);
+  ok("…not another group's people (Uncle Pat) and not another occasion", T.personTot("x", "p-pat", "stocking").budget === null && T.personTot("y", "k_ben", "stocking").budget === null);
+  W.gfGo("people"); h = root.innerHTML;
+  ok("the People pills pick it up (Ben: 🧦 Stocking / $25 · Cal too, though he has nothing in it)", /onclick="gfOpenPerson\('k_ben'\)">[\s\S]*?🧦 Stocking <b>\$0<\/b> <b style="color:#16a34a">\/ \$25<\/b>/.test(h) && /onclick="gfOpenPerson\('k_cal'\)">[\s\S]*?🧦 Stocking <b>\$0<\/b> <b style="color:#16a34a">\/ \$25<\/b>/.test(h));
+  W.gfOpenPerson("k_ben"); h = root.innerHTML;
+  ok("Ben's page: the 🧦 Stocking card says $0 / $25 with a bar", /🧦 Stocking<\/span><span class="gf-gsum">\$0 \/ \$25<\/span>[\s\S]{0,200}<div class="gf-bar">/.test(h), h.match(/🧦 Stocking<\/span>[^]{0,200}/));
+  W.gfBudget("k_ben"); h = root.innerHTML;
+  ok("Ben's 💲 sheet: the box is empty with '$25 — the same for each kid' as the placeholder", /value="" placeholder="\$25 — the same for each kid" oninput="gfSecBudget\('stocking',this.value\)"/.test(h), h.match(/Stocking \(optional\)[^]{0,200}/));
+  W.gfSecBudget("stocking", "0"); writes.length = 0; W.gfSave();
+  ok("Ben types his own $0: saved on HIS plan only, and his own number wins", nonLog().length === 1 && nonLog()[0].path === "gifts/plan/x/k_ben" && T.personTot("x", "k_ben", "stocking").budget === 0, nonLog());
+  W.gfBudget("k_ava"); h = root.innerHTML;
+  ok("Ava's sheet: her own $20 in the box, the group's amount behind it as placeholder", /value="20" placeholder="\$25 — the same for each kid"/.test(h));
+  W.gfCancel(); W.gfGroupBudget("kids");
+  ok("reopening the group's sheet shows 25 in its box", /value="25" oninput="gfEachBudget\('stocking',this.value\)"/.test(root.innerHTML));
+  W.gfEachBudget("stocking", ""); writes.length = 0; W.gfSave();
+  ok("clearing it: ONE set with no secEach ({budget: 900})", nonLog().length === 1 && J(nonLog()[0].val) === '{"budget":900}' && T.personTot("x", "k_cal", "stocking").budget === null, nonLog());
+  W.gfGroupBudget("kids"); W.gfSet("budget", ""); writes.length = 0; W.gfSave();
+  ok("clearing everything removes the group plan record, as before", nonLog().length === 1 && nonLog()[0].op === "remove" && nonLog()[0].path === "gifts/plan/x/g_kids", nonLog());
+}
+{
+  reset(BASE()); W.renderGifts(root, "<nav/>"); W.gfGroupBudget("mom"); const h = root.innerHTML;
+  ok("another group: \"Each person's 🎁 Big gift budget\" — that group's own sections", /Each person's 🎁 Big gift budget[\s\S]*Each person's 💌 Card budget/.test(h) && !/Each [^<]*Stocking/.test(h) && !/gfEachBudget\('stocking'/.test(h), h.match(/Each[^<]*/g));
+  W.gfEachBudget("big", "50"); W.gfSave();
+  ok("…applies to its people (Uncle Pat 🎁 Big gift $50), never the kids", T.personTot("x", "p-pat", "big").budget === 50 && T.personTot("x", "k_ava", "big").budget === null);
+  W.gfBudget("p-pat");
+  ok("…his sheet's placeholder says '$50 — the same for each person'", /placeholder="\$50 — the same for each person"/.test(root.innerHTML));
+}
+{
+  const d = BASE(); reset(d); const kidsP = ["k_ava", "k_ben", "k_cal"];
+  const money = () => J({ occ: T.occTot("x"), per: kidsP.map(p => T.personTot("x", p)), grp: T.groupTot("x", "kids"), even: T.evenData("x"),
+    secPaid: kidsP.map(p => { const t = T.personTot("x", p, "stocking"); return [t.paid, t.toBuy, t.count]; }) });
+  const mb = money(); S.dadOpen = true; W.renderGiftsDad(droot, ""); W.gdOpen("k_ava"); const dadB = droot.innerHTML; W.gdOpen("k_ben"); const dadB2 = droot.innerHTML; S.dadOpen = false;
+  d.plan.x.g_kids.secEach = { stocking: 25, special: 100 }; reset(d); const mf = money();
+  ok("secEach adds NOTHING to money: occasion, people, group total + budget, ⚖️ Even, section paid / to buy all the same", mf === mb, [mf, mb]);
+  S.dadOpen = true; W.renderGiftsDad(droot, ""); W.gdOpen("k_ava"); const dadF = droot.innerHTML; W.gdOpen("k_ben"); const dadF2 = droot.innerHTML; S.dadOpen = false;
+  ok("Dad's side is exactly the same (he never sees section budgets)", dadF === dadB && dadF2 === dadB2);
+  S.dry = true; writes.length = 0; W.renderGifts(root, "<nav/>"); W.gfGroupBudget("kids"); W.gfEachBudget("stocking", "30"); W.gfSave(); S.dry = false;
+  ok("dry run (?dryrun=1): saving the group sheet writes nothing", writes.length === 0, writes);
+}
+
+console.log("\n# Q2 · a wish handed to a relative still shows on the wish row with who is buying it");
+{
+  reset(WITH()); W.renderGifts(root, "<nav/>");
+  WT.setWishes({ cal: { w1: { text: "Jigsaw", ts: 1 }, w2: { text: "Skates", ts: 2 } } }); W.gfOpenPerson("k_cal");
+  ok("Cal's wish 'Jigsaw' (Gma Rose is buying it): '✓ on your list · 🎁 from Gma Rose'", /✓ on your list · 🎁 from Gma Rose/.test(root.innerHTML));
+  W.gfWishAdd("cal", "w2"); W.gfSave(); const iid = Object.keys(T.data().items).find(k => T.data().items[k].wish === "cal/w2");
+  W.gfEditItem(iid); W.gfFromPick("p-pat"); writes.length = 0; W.gfSave(); W.gfOpenPerson("k_cal");
+  ok("a wish made into Mom's present, then handed to Uncle Pat: the wish row says '🎁 from Uncle Pat'", /Skates[\s\S]*?✓ on your list · 🎁 from Uncle Pat/.test(root.innerHTML) && nonLog().every(w => !/^wish/.test(w.path)), nonLog());
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
 })();
