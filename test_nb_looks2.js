@@ -53,7 +53,7 @@ op = NB.notebookOptions("kid9", { isPreK: true });
 ok(op.looks.map(l => l.key).join() === ",dino,construction,shark,space,farm,forest" && op.current === "", "a Pre-K kid on the starter notebook: Starter + the six");
 op = NB.notebookOptions("kid9", { notebookTheme: "farm" });
 ok(op.current === "farm" && op.prek && op.levels.length === 5 && op.extraPages.length === 3, "picking a new look gives the level switches and the three extra pages, as any Pre-K look");
-ok(NB.notebookOptions("lincoln", {}).looks.length === 1 && NB.notebookOptions("lucy", {}).looks.length === 1 && NB.notebookOptions("kid9", {}).looks.length === 1, "an older kid's picker is untouched (one look each)");
+ok(NB.notebookOptions("lincoln", {}).looks.length === 1 && NB.notebookOptions("lucy", {}).looks.every(l => !NEW.includes(l.key)) && NB.notebookOptions("kid9", {}).looks.length === 1, "an older kid's picker gets none of the new Pre-K looks (the 1st-grade colour sets: test_lu_looka.js)");
 const rn = html.slice(html.indexOf("function renderNotebook("));
 ok(/const looks=lookOpts\.looks\.map\(l=>pill\(l\.key===lookOpts\.current,esc\(l\.label\),"nbSetLook\('"\+sel\+"','"\+l\.key\+"'\)"/.test(rn), "the picker card builds its pills from the notebook's own list — no look is named in index.html");
 ok(!/['"](space|farm|forest)['"]/.test(html.slice(html.indexOf("// PREKLEVEL_WIRE_START"), html.indexOf("// PREKLEVEL_WIRE_START") + 4000)), "…and the look wiring names none of the new looks");
