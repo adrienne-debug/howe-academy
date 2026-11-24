@@ -106,6 +106,7 @@ ok("msgOnValue: the listener asks to combine, ✓ Got it / a reply paint at once
 ok("pagesApply: the settings/pages listener combines, pagesToggle (a tap) paints at once",/db\.ref\("settings\/pages"\)\.on\("value",s=>\{ pagesApply\(s\.val\(\),true\); \}\)/.test(html)&&/pagesApply\(next\);/.test(fnSrc("pagesToggle"))&&/else if\(soon\) renderAllSoon\(\); else renderAll\(\);/.test(fnSrc("pagesApply")));
 // every renderAllSoon() call sits in the block, a listener callback, or one of the listener helpers above
 const ALLOWED_FN=["cpuWatch",   // 📦 CPUNIT (2026-10-28): a unit's catalog entry arriving (units/<id>/index listener)
+  "_lsAsk",   // 🔥 LISTSTREAK (P2, 2026-11-23): an earlier week's ticks arriving (<week>/sl, read once, only for an unbroken streak)
   "cpceKidLoad",   // 📚 CPCARDSEDIT (2026-10-28): the class's card layer arriving (classCards/<cid>, read once at a kid's boot)
   "cpphKidRepaint",   // 🖼 CPPHOTOS (2026-10-29): the class's and the unit's photo layers arriving (read once at a kid's boot)
   "cptrKidLoad",   // ✂️ CPTRIM (2026-10-29): Adrienne's unit trims arriving (units/<id>/trim, read once at a kid's boot)
