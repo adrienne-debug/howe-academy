@@ -36,7 +36,7 @@ const scode = sblock.split("\n").filter(l => !/^\s*\/\//.test(l)).map(l => l.rep
 ok("no kid names / Howe subject keys in the RMXS code (comments excepted)", !/lincoln|ellis|lucy|julian|eggspress|hwt|singapore|read_detect/i.test(scode));
 ok("every db call in RMXS is a set or remove on config/rules/headsUp/ + a path (never the node itself)", (sblock.match(/db\.ref\(/g) || []).length === 2 && /db\.ref\("config\/rules\/headsUp\/"\+seg\.concat\(fp\)\.join\("\/"\)\)\.set\(v\)/.test(sblock) && /db\.ref\("config\/rules\/headsUp\/"\+seg\.concat\(fp\|\|\[\]\)\.join\("\/"\)\)\.remove\(\)/.test(sblock));
 ok("both writes sit behind _rmxWrite() = db && !_dryRun()", /function _rmxWrite\(\)\{ return typeof db!=="undefined"&&db&&!\(typeof _dryRun==="function"&&_dryRun\(\)\); \}/.test(sblock) && (sblock.match(/if\(_rmxWrite\(\)\) db\.ref/g) || []).length === 2);
-ok("never cbRemainingContent / ceQuickPause / a whole-node set in RMXS", !/cbRemainingContent\(|ceQuickPause|\.set\(rulesData|\.set\(h\)|\.update\(/.test(sblock));
+ok("never cbRemainingContent / a whole-node set in RMXS", !/cbRemainingContent\(|\.set\(rulesData|\.set\(h\)|\.update\(/.test(sblock));
 ok("autoDone is in the panel since step 6 (family + per kid)", /cF\("autoDone"\)/.test(sblock) && /_rmxCtl\(scope,"autoDone",C,raw\)/.test(sblock));
 
 // ── context: the derive test's miniature helpers + Mom / dry-run switches + a write recorder that snapshots local state ──
@@ -71,7 +71,7 @@ const ctx = {
   gvDerivedColumn(kid, sk) { projCalls.push(sk); const p = ctx.proj[sk]; return p === undefined ? null : p; },
   gvFilled: v => !!(v && v !== "—" && v !== "nan" && String(v).trim()),
   gvDealtDates(kid, sk) { return ctx.dealt[sk] || {}; },
-  cbRemainingContent() { throw new Error("never"); }, ceQuickPause() { throw new Error("never"); },
+  cbRemainingContent() { throw new Error("never"); },
   ceOpenEdit(kid, sk) { opened.push(kid + "/" + sk); },
   fxIsClass(s) { return !!(s && s.fixedTime); }, fxDateList(s) { return (s && Array.isArray(s.fixedDates) && s.fixedDates.length) ? s.fixedDates : null; },
   famProgress: {}, famBlocks: {}, famMaps: {},

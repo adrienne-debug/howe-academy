@@ -25,6 +25,7 @@
  */
 const fs = require("fs"), path = require("path"), vm = require("vm"), cp = require("child_process");
 const { stripPoint } = require("./test_drill_pointer.js");   // DRILLPOINT (slice 6): the panel's save is numbers only now — compared regions strip it on both sides
+const { stripCoop } = require("./test_drill_coop.js");      // DRILLCOOP: the co-op laying rule — compared regions and the reader pins strip it (its own test pins it)
 
 // ── stripThree: the slice taken out again. The block (inside RETRWEEK) goes; every other edit is put back to its old text.
 // [new text, old text] — exactly what the slice changed outside its block (each new text occurs exactly once).
@@ -95,7 +96,7 @@ console.log("0. stripThree undoes the slice exactly");
     const regions = [["// RETRWEEK_START", "// RETRWEEK_END"], ["// GWRETR_START", "// GWRETR_END"], ["// RETRLIVE_START", "// RETRLIVE_END"],
       ["// SCHOOLEND_START", "// SCHOOLEND_END"], ["// DRILLROWS_START", "// DRILLROWS_END"], ["// DRILLDAYS_START", "// DRILLDAYS_END"],
       ["// DRILLADD_START", "// DRILLADD_END"], ["// RETRSAVE_START", "// RETRSAVE_END"]];
-    const P0 = stripPoint(SRC0), PM = stripPoint(M0);   // DRILLPOINT (slice 6) taken out the same way on both sides (a no-op without it)
+    const P0 = stripPoint(stripCoop(SRC0)), PM = stripPoint(stripCoop(M0));   // DRILLCOOP taken out the same way on both sides too   // DRILLPOINT (slice 6) taken out the same way on both sides (a no-op without it)
     const diff = regions.filter(r => sliceIn(P0, r[0], r[1]) !== sliceIn(PM, r[0], r[1])).map(r => r[0]);
     ok("stripped, RETRWEEK / GWRETR / RETRLIVE / SCHOOLEND / DRILLROWS / DRILLDAYS / DRILLADD / RETRSAVE equal origin/main's (stripped the same way)", diff.length === 0, diff);
   } else console.log("  (origin/main not readable here — compare skipped)");
@@ -388,9 +389,11 @@ console.log("4. readers");
   ok("…and a third-row kind the child can't run shows greyed (saved side)", J(rb) === J(["drill:Tue", "sprint:Wed(grey)"]), rb);
   const w0 = uiWorld({ plan: { kida: { week: wk("sprint", "off", "off", "off", "off"), week2: { mon: "drill" } } } });
   ok("no week3 → retrDayKinds as before", J(w0.retrDayKinds("kida", "mon")) === J(["sprint", "drill"]));
-  ok("the Grid's Min column adds retrDayKinds' kinds (so a third card's minutes count)", /retrDayKinds\(gvKid,DOWS\[d\.getDay\(\)\]\.toLowerCase\(\)\)\.filter\([^)]*\)\);?\s*retrievalMins=_rks\.reduce/.test(src) || /const _rks=retrDayKinds\(gvKid,[^;]*;\s*retrievalMins=_rks\.reduce\(/.test(src));
-  ok("the Day page's brain-work strip reads retrTodayKinds → retrDayKinds", /function retrTodayKinds\(kid\)\{[\s\S]{0,120}return retrDayKinds\(kid,RETR_DAYS\[d-1\]\);/.test(src) && /const kinds=retrTodayKinds\(kid\);/.test(fnIn(src, "retrSchedStripHtml")));
-  ok("the builder and the live pass read the day's kinds only through retrDayKinds", /const kinds=\(typeof retrDayKinds==="function"\)\?retrDayKinds\(kid,dn\.slice\(0,3\)\)/.test(src) && /kinds:dk=>retrDayKinds\(kid,dk\)/.test(src));
+  const SC = stripCoop(src);   // DRILLCOOP: these readers now go retrDayKindsOn → retrDayKinds (the co-op filter, pinned in test_drill_coop.js)
+  ok("the Grid's Min column adds retrDayKinds' kinds (so a third card's minutes count)", /retrDayKinds\(gvKid,DOWS\[d\.getDay\(\)\]\.toLowerCase\(\)\)\.filter\([^)]*\)\);?\s*retrievalMins=_rks\.reduce/.test(SC) || /const _rks=retrDayKinds\(gvKid,[^;]*;\s*retrievalMins=_rks\.reduce\(/.test(SC));
+  ok("the Day page's brain-work strip reads retrTodayKinds → retrDayKinds", /function retrTodayKinds\(kid\)\{[\s\S]{0,120}return retrDayKinds\(kid,RETR_DAYS\[d-1\]\);/.test(src) && /const kinds=retrTodayKinds\(kid\);/.test(fnIn(SC, "retrSchedStripHtml")));
+  ok("the builder and the live pass read the day's kinds only through retrDayKinds", /const kinds=\(typeof retrDayKinds==="function"\)\?retrDayKinds\(kid,dn\.slice\(0,3\)\)/.test(SC) && /kinds:dk=>retrDayKinds\(kid,dk\)/.test(SC)
+    && /function retrDayKindsOn\(kid,dk,ds\)\{ return retrDayKinds\(kid,dk\)\.filter\(/.test(src));   // DRILLCOOP's reader is a filter on retrDayKinds
 }
 
 // ───────────────────────────────────────────────────────────────────────────────────────────────

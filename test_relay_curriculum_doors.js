@@ -40,7 +40,7 @@ console.log("0. shape");
   ok("db.ref is stamped once at init, the globals sit beside lastTasksWrite",/\|\|firebase\.database\(\);[^\n]*\n\s*if\(typeof currStampDb==="function"\) currStampDb\(db\);/.test(src)&&/let lastTasksWrite = 0;\nlet lastCurrWrite = 0; const CURR_ECHO_MS = 3000;/.test(src));
   ok("relayWeek marks a curriculum run as 'today' (behind the constant) and caps an Undo value",/_rlwPend\.today=true/.test(fn("relayWeek"))&&/RLW_UNDO_MAX_JSON/.test(fn("relayWeek")));
   ok("_rlwChain takes the today mode for such a run",/pend\.today&&typeof RLW_CURR_TODAY!=="undefined"&&RLW_CURR_TODAY&&typeof _rlwModeToday==="function"\)\?_rlwModeToday\(\):_rlwModeNoAsk\(\)/.test(fn("_rlwChain")));
-  const DOORS=["gvCommitCell","gvAddMissingDays","gvRecountTotal","lmSaveSlotText","ceEditLesson","ceAddSave","ceDeleteSubject","cbCopyTo","psApply","lnEditSave","lnRetire","lnDelete","lnUndoLast","cbSetCap","ceSetTargetEnd","llSetOverride","cwdUseMonThu","ceAddToggleRule","_ceRelayAfterMark"];
+  const DOORS=["gvCommitCell","gvAddMissingDays","gvRecountTotal","ceEditLesson","ceAddSave","ceDeleteSubject","cbCopyTo","psApply","lnEditSave","lnRetire","lnDelete","lnUndoLast","cbSetCap","ceSetTargetEnd","llSetOverride","cwdUseMonThu","ceAddToggleRule","_ceRelayAfterMark"];
   const missing=DOORS.filter(d=>!/_rlwCurrDoor\(/.test(fn(d)));
   ok("every door in the plan's table ends in _rlwCurrDoor ("+DOORS.length+")",!missing.length,missing);
   ok("every door guards the call (typeof) so a sandbox without the door still saves",DOORS.every(d=>/typeof _rlwCurrDoor==="function"/.test(fn(d))));
@@ -176,11 +176,8 @@ const undoStr=d=>d?d.u.map(u=>u.p+(u.gone?"=∅":"="+JSON.stringify(u.was))).joi
   ok("gvRecountTotal: 2 cells counted where total said 2 → no door call",w.log.door.length===0);
   w.ctx.currData.subjects.kid_a.math.total=7; w.call('gvRecountTotal("kid_a","math")');
   ok("…a changed count → one door call, Undo total=7, no word (the caller has its own)",w.log.door.length===1&&w.log.door[0].l==="📚 Math: lesson count"&&undoStr(w.log.door[0])==="curriculum/subjects/kid_a/math/total=7"&&w.log.door[0].o.toast===false); }
-{ const w=doorWorld({lmEditSlot:{}},fn("lmSaveSlotText"));
-  w.call('lmSaveSlotText("kid_a",3,"math","L3 — pages 4-5")');
-  const d=one(w.log); ok("Lesson Map slot text → the door for kid_a/math, Undo = the old text",d&&pairStr(d)==="kid_a/math"&&d.l==="📚 Math: lesson text"&&undoStr(d)==='curriculum/lessons/kid_a/3/math="L3"',w.log.door);
-  w.log.door.length=0; w.call('lmSaveSlotText("kid_a",9,"math","x")');
-  ok("…a slot that does not exist: nothing",w.log.door.length===0); }
+// (the Lesson Map's slot-text editor, lmSaveSlotText, was unreachable and went in LMCLEANUP slice 3b; the card's lesson list,
+//  ceEditLesson below, is the live door for lesson text)
 { const w=doorWorld({ceEditKid:"kid_a",ceEditKey:"math"},fn("ceEditLesson"));
   w.call('ceEditLesson(5,"L5")');
   const d=one(w.log); ok("the subject card's lesson list (ceEditLesson) → the door, Undo = the cell gone (it was new)",d&&pairStr(d)==="kid_a/math"&&undoStr(d)==="curriculum/lessons/kid_a/5/math=∅"&&w.log.writes[0][0]==="curriculum/lessons/kid_a/5/math",w.log.door);

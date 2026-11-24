@@ -75,8 +75,9 @@ console.log("── the Admin hub's links follow her to the School pages ──"
 
 console.log("── Curriculum with no Grid bar ──");
 { const cv=fn("renderCurriculumView");
-  ok("bare on Mom's Day: the one-chip bar is skipped on the grid, kept as the way back from the Builder", /const _cvBare=\(typeof mpCurrBare==="function"\)&&mpCurrBare\(\);/.test(cv)&&/const _cvBar=!\(_cvBare&&currInnerTab==="grid"\);/.test(cv)&&/if\(_cvBar\)\{\n  h\+='<div style="position:sticky;top:calc\('\+_cvTop\+'\);z-index:89;/.test(cv)&&/  h\+='<\/div>';\n  \}   \/\/ SCHOOLPAGES: _cvBar/.test(cv));
-  ok("its stickies sit right under the menu there (no Admin-bar pixels), under the Admin tab row as before on the Schedule", /const _cvTop='var\(--hdr-h\) \+ var\(--nav-h\) \+ var\(--mp-h\)'\+\(_cvBare\?'':' \+ var\(--sub-h\) \+ 38px'\);/.test(cv)&&/top:calc\('\+_cvTop\+\(_cvBar\?' \+ 38px':''\)\+'\);z-index:88/.test(cv));
+  // LMCLEANUP (slice 3b, 2026-11-23): the one-chip bar was only the way back from the Builder tab; both are gone, on Mom's Day
+  // and on the Schedule alike, and with them the bar's sticky offset. The page is the plan bar + the grid.
+  ok("no one-chip Grid bar on either page (slice 3b) — the page is the plan bar + the grid", cv.length > 0 && !/_cvBar|_cvTop|setCurrInnerTab|forEach\(tab=>/.test(cv) && /el\.innerHTML=h;[\s\S]*planBarHTML\([\s\S]*renderCurrGrid\(el\);\n\}$/.test(cv));
   ok("the Admin hub still draws it with the bar (nothing changes on the Schedule until slice C)", /else if\(adminSubTab==="curriculum"\)\{ renderCurriculumView\(el,ah\); \}/.test(src)); }
 
 console.log("── the pages' live hooks follow them ──");
