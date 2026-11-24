@@ -18,7 +18,8 @@
  *   run:  node test_drill_add.js
  */
 const fs = require("fs"), path = require("path"), vm = require("vm"), cp = require("child_process");
-const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const { stripPause } = require("./test_drill_pause.js");   // DRILLPAUSE (slice 5): this test pins its own slice on the tree with the pause taken out (both sides); test_drill_pause.js pins the pause
+const src = stripPause(fs.readFileSync(path.join(__dirname, "index.html"), "utf8"));   // DRILLPAUSE
 let pass = 0, fail = 0;
 function ok(n, c, x) { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + String(typeof x === "string" ? x : JSON.stringify(x)).slice(0, 700) + ")" : "")); } }
 function fnIn(s, name) { const sig = "function " + name + "("; const i = s.indexOf(sig); if (i < 0) throw new Error("not found " + name); let d = 0; for (let k = s.indexOf("{", i); k < s.length; k++) { if (s[k] === "{") d++; else if (s[k] === "}") { d--; if (!d) return s.slice(i, k + 1); } } throw new Error("unbalanced " + name); }
@@ -47,8 +48,10 @@ const deck = (subject, n, status) => Array.from({ length: n }, () => card(subjec
 const { stripThree } = require("./test_drill_three.js");
 // CURRSIMPLE (slice 6) touches the ADDFLOW sheet (More options): taken out first too, the same way on both sides (a no-op without it).
 const { stripSimple } = require("./test_curr_simple.js");
+// DRILLCOOP (the co-op laying rule) adds a block to RETRWEEK: taken out first, the same way on both sides (a no-op without it).
+const { stripCoop } = require("./test_drill_coop.js");
 function strip(s) {
-  s = stripThree(stripSimple(s));
+  s = stripThree(stripSimple(stripCoop(s)));
   const a = s.indexOf("// DRILLADD_START"), b = s.indexOf("// DRILLADD_END");
   if (a >= 0 && b > a) s = s.slice(0, a) + s.slice(b + "// DRILLADD_END\n".length);
   return s
@@ -142,7 +145,7 @@ console.log("0. the block and its hooks");
   ok("stripped: no trace of the feature left", !/DRILLADD|daOpen|daReset|daSheetHTML|daChoiceHTML/.test(S0));
   ok("stripped: the regions it touches are whole again (the hooks' own test pins still hold)", /function afReset\(\)\{ afStep=1;/.test(S0) && /class="dr-empty" onclick="'\+go\+'"/.test(S0));
   // Against origin/main, the same strip on both sides (still true after this branch is merged).
-  let main = ""; try { main = cp.execSync("git show origin/main:index.html", { cwd: __dirname, encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { main = ""; }
+  let main = ""; try { main = cp.execSync("git show origin/main:index.html", { cwd: __dirname, encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { main = ""; } main = stripPause(main);   // DRILLPAUSE: the same on origin/main's side
   if (main) {
     const M0 = strip(main);
     const regions = [["// ADDFLOW_START", "// ADDFLOW_END"], ["// DRILLROWS_START", "// DRILLROWS_END"], ["// DRILLDAYS_START", "// DRILLDAYS_END"], ["// DRILLSAVE_START", "// DRILLSAVE_END"], ["// RETRWEEK_START", "// RETRWEEK_END"]];
