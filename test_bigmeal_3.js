@@ -86,6 +86,7 @@ console.log("\n# before the day — the plan's Thanksgiving (§4.5, §4.6 A)");
   ok("no day → the lines still list, with no date", fmtB(B.before(D_(A3), "")) === "- t Turkey|- a Cranberry sauce|- a Mashed potatoes");
   ok("pounds → days: 16 lb → 4 · 12 → 3 · 20 → 5 · 3 → 1 · 41 → 10 (never more) · 0 or 61 or words → none", B.thawDays(16) === 4 && B.thawDays(12) === 3 && B.thawDays(20) === 5 && B.thawDays(3) === 1 && B.thawDays(41) === 10 && [0, 61, "x", ""].every(v => B.thawDays(v) === null));
   const P = B.plan(960, D_(A3)), S = B.steps(960, P), e = S[S.length - 1];
+  ok("pounds round UP, never down: 13 lb → 4 · 14 → 4 · 17 → 5 · 5 → 2 · 1 → 1 · 4 → 1 · 40 → 10", B.thawDays(13) === 4 && B.thawDays(14) === 4 && B.thawDays(17) === 5 && B.thawDays(5) === 2 && B.thawDays(1) === 1 && B.thawDays(4) === 1 && B.thawDays(40) === 10);
   ok("a made-ahead dish with a warm-up is on the day's list as a warm-up", S.some(x => x.k === "i" && x.d.name === "Mashed potatoes" && B.fmtClock(x.at) === "2:00 PM"));
   ok("…one without a warm-up is only in “Put out” (with the brought dishes)", e.put.join() === "Cranberry sauce,Pumpkin pie,Drinks" && !S.some(x => x.d && x.d.name === "Cranberry sauce"));
   ok("…and none of them is “Not timed yet”", B.notTimed(P).length === 0);
