@@ -476,6 +476,7 @@ console.log("\n(h) no new Firebase write path in the curriculum region");
   "\"notebookPersonal\"",
   "\"notebookSettings/\"+k+\"/juPicks/\"+wk",
   "\"notebookSettings/\"+kid+\"/\"+node+\"/\"+path",
+  "\"notebookSettings/\"+kid+\"/countPic\"",   // NB_COUNTPIC (2026-11-24): 🔢 what the Pre-K number card counts — Mom only, one targeted set / remove
   "\"notebookSettings/\"+kid+\"/dailyGrams/\"+key",
   "\"notebookSettings/\"+kid+\"/dailyGrams/cursor\"",
   "\"notebookSettings/\"+kid+\"/extraPages/\"+key",
@@ -573,8 +574,10 @@ console.log("\n(h) no new Firebase write path in the curriculum region");
   "pr[1]",
   "\"unitStudies/\"+unitId",   // PICFOLDER 2026-11-23: ＋ Add cards' 📷 pictures — ONE targeted update of the unit's visuals/<deck>_<card name> after Add (Mom only; outside the curriculum)
   "\"seasonJobs/\"+k",   // SEASONJOBS 2026-11-21: Kids' Corner ✨ Our plans button — ONE once-read of a kid's planner jobs (not a write; outside the curriculum)
+  "\"notebookSettings/\"+kid+\"/looksAllowed/\"+key",   // NB_LOOKPICK 2026-11-24: Mom's tick list on the Notebook tab — ONE targeted set(true)/remove() per tick (Mom only; outside the curriculum)
   "uxPdfPath(uid,dayId,file.name)",
   "pth=uapPdfPath(uid,key,file.name)",   // UACTPRINT (2026-11-22): 🖨 a Printable activity's PDF → Storage pictures/units/<id>/activities/<key>/ (Mom only)
+  "k",   // WBLINK 2026-11-24: workbookPlace/<kid>/<bookId> = {p,ts} — ONE targeted set when a reading book's page changes or it closes, one once-read when a card opens it (outside the curriculum)
   "wbInkPath(v.kid,v.bookId,v.page)",
   "wbdBoardPath(k,uid,key)",   // WBDKID 2026-11-22: a kid's saved whiteboard, unitWork/<kid>/<unitId>/<key>/board — one set (his Save) + one listener (Mom's 🖼 Board)
   "wk+\"/supplies\"",
