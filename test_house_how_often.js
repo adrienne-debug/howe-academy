@@ -253,8 +253,8 @@ console.log("\n── the rest of the three pages and the chore card: byte for b
     for (const rid of ["kitchen", "living", "entry", ""]) { const a = roomPage(N, rid), b = roomPage(O, rid);
       ok(name + ": " + (rid || "🏠 Whole house") + " = before, apart from the 📊 card", a !== b && cut(N, a) === b, [a.length, b.length]); }
     for (const who of ["ben", "mom"]) { const a = person(N, who), b = person(O, who); ok(name + ": 👤 By person " + who + " = before, apart from the 📊 card", a !== b && cut(N, a) === b); }
-    for (const id of ["k_mop", "k_oven", "m_fridge"]) { N.get("hcId=" + J(id)); O.get("hcId=" + J(id)); const a = N.hcCardHTML(), b = O.hcCardHTML(), l = N.hoHistHTML(id);
-      ok(name + ": the chore card (" + id + ") = before, apart from its 📊 line", a.indexOf(l) > 0 && a.replace(l, "") === b); }
+    for (const id of ["k_mop", "k_oven", "m_fridge"]) { N.get("hcId=" + J(id)); O.get("hcId=" + J(id)); const a = N.hcCardHTML(), b = O.hcCardHTML(), l = N.hoHistHTML(id), m = N.get("typeof cdrCardHTML==='function'?cdrCardHTML(" + J(id) + "):''");   // CARDRULES (slice D): the card's "If it is missed" part is new since
+      ok(name + ": the chore card (" + id + ") = before, apart from its 📊 line (and slice D's \"If it is missed\")", a.indexOf(l) > 0 && a.replace(l, "").replace(m, "") === b); }
     roomPage(N, "kitchen"); roomPage(O, "kitchen"); ok(name + ": the 📅 Schedule card's chips are unchanged (Everything · 🧺 Laundry · Room · Person)", N.hwChips({ k: "room", id: "kitchen" }) === O.hwChips({ k: "room", id: "kitchen" }));
   }
 }
