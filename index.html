@@ -56445,8 +56445,9 @@ const PDFC_BTN="display:inline-flex;align-items:center;gap:4px;min-height:40px;p
 function pdfCardsSheetBarHTML(S){
   return '<div data-pdfc-bar="1" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">'+
     '<label style="'+PDFC_BTN+'"><input type="file" id="card-sheet-pdf" accept="application/pdf,.pdf" onchange="pdfCardsSheetPick(this)" style="display:none">\u{1F4C4} PDF</label>'+
+    (typeof sheetCardsBtnHTML==="function"?sheetCardsBtnHTML():"")+   // SHEETCARDS: 📄 File — Excel / CSV read on this device
     (typeof photoCardsBtnHTML==="function"?photoCardsBtnHTML():"")+   // PHOTOCARDS: 📸 Photo (Claude, only with a key)
-    '</div><div id="card-sheet-file">'+pdfCardsSheetNoteHTML(S)+'</div>'; }
+    '</div><div id="card-sheet-file">'+pdfCardsSheetNoteHTML(S)+'</div>'+(typeof sheetCardsPanelHTML==="function"?sheetCardsPanelHTML(S):""); }   // SHEETCARDS: tabs + columns
 function pdfCardsSheetNoteHTML(S){ const F=S&&S.file; if(!F) return "";
   const line=(t,c,b)=>'<div style="font-size:12px;line-height:1.5;color:'+c+';background:'+b+';border-radius:9px;padding:7px 10px;margin-top:6px">'+t+'</div>';
   if(F.busy) return line(pdfcEsc(F.busyText||"⏳ Reading the PDF on this device…"),"#15803d","#f0fdf4");
@@ -56564,6 +56565,278 @@ function photoCardsNoteHTML(S){ const n=photoCardsWaiting(S); if(!n) return "";
   return '<div style="font-size:11px;color:#92400e;margin-top:3px;line-height:1.45">'+pdfcPl(n,"row")+' Claude read '+(n>1?"wait":"waits")+' for your look — tap ✓ on each one that’s right (fix it first if not).</div>'; }
 function photoCardsSeen(id){ const S=(typeof cardSheet!=="undefined")?cardSheet:null; const r=S&&cfRow(S,id); if(!r||!r.drafted) return; r.seen=true; cfRedraw(); }
 // PHOTOCARDS_END
+// SHEETCARDS_START — 📄 File on ＋ Add cards: an Excel workbook, a CSV / TSV or a .txt list, read on Mom's device — no key, no
+//   AI, nothing uploaded (her ask 2026-11-19: "Mom could import an Excel sheet"; her go 2026-11-22/23: "build as many in as many
+//   sessions you need … go with her answers and build"; PLAN_unit_easy_import_2026-11-19.md §3 Files, §6, slice C).
+//   · "📄 File" sits beside 📄 PDF and 📸 Photo on a saved unit's ＋ Add cards sheet (one sheet). .xlsx/.xls/.ods: the SheetJS
+//     library the app already loads on demand — haNeedXlsx() is awaited on EVERY pick before XLSX is touched (a second file
+//     picked while it loads shares the same wait). .csv: kitCsvParse (quoted cells, commas and line breaks inside cells); a ";"
+//     CSV from a European Excel and a .tsv / a .txt with tabs are split the same way at their own mark. A plain .txt list goes
+//     straight into the paste box, like a paste. A PDF picked here goes to the PDF reader (PDFCARDS), unchanged.
+//   · A workbook shows a chip per tab. One tab is read at a time, because the check screen sends its cards to ONE deck; the
+//     tab's name (or a one-cell title row) is offered as the new deck's name ("Make it a new deck"). Then "Card name" and
+//     "Meaning" dropdowns, pre-picked by the pure guesser sheetGuess(): the header row is the first row with 2+ filled cells;
+//     it is the column names when a cell says Word / Meaning / Definition / Notes / Picture…, or when its cells are short Title
+//     words over a column of long ones; Name = the header's word column, else the first text column; Meaning = the header's
+//     meaning column, else the longest text column left; a column of links or picture file names is never guessed (pictures
+//     are slice E) and is listed as not used. "Row N is a card / is the column names" flips the guess.
+//   · The picked columns become "name<TAB>meaning" lines in the paste box, and the SAME check screen reads them (split at tab,
+//     green rows, no per-row tick — her Q1 answer). A name with no meaning arrives amber with the meaning blank — nothing is
+//     invented; a row with no name is left out and counted. A new pick (another tab, column, or file) replaces the file's
+//     lines in the box and leaves what she typed. Add = CHECKFIX's writes, unchanged; this block writes nothing.
+//   · Caps: 15 MB (the app's file cap — unpacking a bigger workbook can freeze an iPad), 500 rows from a tab (far more than any
+//     deck; the check screen draws a row of boxes for each one), 60,000 characters (the paste cap). Each says so when hit.
+//   · Mom-only; phone width; finger-sized controls (16px dropdowns so an iPad doesn't zoom); no kid's name.
+const SC_MAX_BYTES=15*1024*1024, SC_MAX_ROWS=500, SC_MAX_CHARS=60000, SC_SLACK=20;   // SC_SLACK: title / header rows read beyond the 500
+const SC_MSG={
+  big:"That file is over 15 MB — too big to read here. Copy the cells and paste them in the box.",
+  empty:"That file is empty — there’s nothing in it to read.",
+  open:"Couldn’t open that file. Save it again (Excel: .xlsx) and pick it, or copy the cells and paste them in the box.",
+  noLib:"The spreadsheet reader couldn’t load (offline?). Save the sheet as CSV and pick that, or copy the cells and paste them in the box.",
+  locked:"That spreadsheet is locked with a password. Open it, copy the cells and paste them in the box.",
+  numbers:"That’s a Numbers file — in Numbers, Share ▸ Export ▸ Excel, then pick the Excel file. Or copy the cells and paste them in the box.",
+  type:"The app reads Excel (.xlsx, .xls), CSV, TSV, .txt, Word (.docx) and PDF files here. For this one, copy the list and paste it in the box."};   // DOCXCARDS: + Word
+const SC_ACCEPT=".xlsx,.xlsm,.xls,.ods,.csv,.tsv,.txt,.pdf,text/csv,text/tab-separated-values,text/plain,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"+
+  ",.docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword";   // DOCXCARDS: Word files too (.doc only to say it can't be read)
+const SC_BACK_MORE=/^(?:notes?|info|details?|about|examples?|fun facts?|what it is|what it means)$/i;
+const SC_PIC_WORDS=/^(?:pictures?|images?|photos?|pics?|picture files?|image files?|file ?names?|links?|urls?)$/i;
+const SC_PIC_CELL=/^(?:https?:\/\/\S+|[^\s\/\\]+\.(?:jpe?g|png|gif|webp|heic|heif|bmp|svg))$/i;
+function scCell(x){ return String(x==null?"":x).replace(/\s+/g," ").trim(); }
+function scNum(x){ return /^[-+]?[\d.,]+%?$/.test(x)||/^\d{1,4}[\/.-]\d{1,2}[\/.-]\d{1,4}$/.test(x); }
+function scLetter(c){ let s=""; c++; while(c>0){ const m=(c-1)%26; s=String.fromCharCode(65+m)+s; c=Math.floor((c-1)/26); } return s; }
+function scFilled(r){ return (r||[]).filter(Boolean).length; }
+function scTitleWords(x){ return String(x).split(" ").every(w=>/^[A-Z0-9#]/.test(w)); }
+// a tab's rows (arrays of cell text) → {head, start, title, width, cols:[{letter, head, sample}], name, back, pic, headLike} (pure)
+function sheetGuess(rows){
+  const R=(rows||[]).map(r=>(Array.isArray(r)?r:[]).map(scCell));
+  const width=R.reduce((m,r)=>{ let w=r.length; while(w&&!r[w-1]) w--; return Math.max(m,w); },0);
+  const out={head:-1,start:0,title:"",width:width,cols:[],name:-1,back:-1,pic:-1,headLike:false};
+  if(!width) return out;
+  let h=R.findIndex(r=>scFilled(r)>=2); if(h<0||h>9){ h=R.findIndex(r=>scFilled(r)>=1); }
+  else { const t=R.slice(0,h).find(r=>scFilled(r)===1); if(t) out.title=t.find(Boolean); }
+  const stats=from=>{ const D=R.slice(from); const st=[]; for(let c=0;c<width;c++){ const v=D.map(r=>r[c]||"").filter(Boolean), n=v.length||1;
+    st.push({n:v.length,num:v.filter(scNum).length/n,pic:v.filter(x=>SC_PIC_CELL.test(x)).length/n,len:v.reduce((a,x)=>a+x.length,0)/n,words:v.reduce((a,x)=>a+csWords(x),0)/n}); } return st; };
+  const top=R[h]||[], hc=[]; for(let c=0;c<width;c++) hc.push(top[c]||"");
+  const wordHead=x=>CS_FRONT_WORDS.test(x)||CS_BACK_WORDS.test(x)||SC_BACK_MORE.test(x)||SC_PIC_WORDS.test(x);
+  let headLike=hc.some(x=>x&&wordHead(x));
+  if(!headLike&&scFilled(hc)>=2&&R.length-h>=3){ const below=stats(h+1);
+    headLike=hc.every(x=>!x||(csWords(x)<=2&&scTitleWords(x)&&!scNum(x)))&&hc.some((x,c)=>x&&below[c].words>=5&&below[c].words>=2.5*csWords(x)); }
+  out.headLike=headLike; out.head=h; out.start=headLike?h+1:h;
+  const st=stats(out.start);
+  for(let c=0;c<width;c++) out.cols.push({letter:scLetter(c),head:headLike?hc[c]:"",sample:((R.slice(out.start).find(r=>r[c])||[])[c])||""});
+  const textCol=c=>st[c].n>0&&st[c].num<0.5&&st[c].pic<0.5;
+  if(headLike){ out.name=hc.findIndex(x=>x&&CS_FRONT_WORDS.test(x)); out.back=hc.findIndex((x,c)=>x&&c!==out.name&&(CS_BACK_WORDS.test(x)||SC_BACK_MORE.test(x)));
+    out.pic=hc.findIndex(x=>x&&SC_PIC_WORDS.test(x)); if(out.pic>=0){ if(out.name===out.pic) out.name=-1; if(out.back===out.pic) out.back=-1; } }
+  if(out.pic<0) out.pic=st.findIndex(s=>s.n>0&&s.pic>=0.5);
+  if(out.name<0){ for(let c=0;c<width;c++) if(c!==out.back&&c!==out.pic&&textCol(c)){ out.name=c; break; } }
+  if(out.name<0){ for(let c=0;c<width;c++) if(c!==out.back&&c!==out.pic&&st[c].n){ out.name=c; break; } }
+  if(out.name<0) out.name=0;
+  if(out.back<0){ let bl=0; for(let c=0;c<width;c++) if(c!==out.name&&c!==out.pic&&textCol(c)&&st[c].len>bl){ bl=st[c].len; out.back=c; } }
+  return out;
+}
+// the picked columns → "name<TAB>meaning" lines (pure). pick = {start, name, back (-1 = none)}
+function sheetLines(rows,pick){
+  const R=rows||[], lines=[]; let noName=0, more=0, cut=false, chars=0;
+  for(let i=Math.max(0,pick.start|0);i<R.length;i++){ const r=R[i]||[], n=scCell(r[pick.name]), b=pick.back>=0&&pick.back!==pick.name?scCell(r[pick.back]):"";
+    if(!n&&!b) continue; if(!n){ noName++; continue; }
+    if(lines.length>=SC_MAX_ROWS){ more++; continue; }
+    const l=b?n+"\t"+b:n; if(chars+l.length+1>SC_MAX_CHARS){ cut=true; continue; } chars+=l.length+1; lines.push(l); }
+  return {lines:lines,noName:noName,more:more,cut:cut}; }
+// what kind of file, by its name (then its type)
+function scKind(name,type){ const n=String(name||"").toLowerCase(), m=String(type||"").toLowerCase(), ext=(/\.([a-z0-9]+)$/.exec(n)||[])[1]||"";
+  if(/^(?:xlsx|xlsm|xls|ods)$/.test(ext)) return "book";
+  if(ext==="csv") return "csv"; if(ext==="tsv"||ext==="tab") return "tsv"; if(ext==="txt"||ext==="text") return "txt"; if(ext==="pdf") return "pdf";
+  if(ext==="docx"||ext==="docm") return "docx"; if(ext==="doc") return "doc"; if(ext==="numbers") return "numbers"; if(ext==="pages") return "pages";
+  if(ext) return "other";
+  if(/spreadsheetml|ms-excel|opendocument\.spreadsheet/.test(m)) return "book"; if(m==="text/csv") return "csv"; if(m==="text/tab-separated-values") return "tsv";
+  if(m==="text/plain") return "txt"; if(m==="application/pdf") return "pdf"; if(/wordprocessingml/.test(m)) return "docx"; if(m==="application/msword") return "doc";
+  return "other"; }
+// bytes → text: UTF-8, or UTF-16 with its mark (Excel's "Unicode text"), or Windows-1252 when UTF-8 can't read it (an old Excel CSV)
+function scDecode(bytes){ const b=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes||[]);
+  if(b.length>=2&&b[0]===0xFF&&b[1]===0xFE) return new TextDecoder("utf-16le").decode(b.subarray(2));
+  if(b.length>=2&&b[0]===0xFE&&b[1]===0xFF) return new TextDecoder("utf-16be").decode(b.subarray(2));
+  let t=new TextDecoder("utf-8").decode(b); if(t.indexOf("�")>=0){ try{ t=new TextDecoder("windows-1252").decode(b); }catch(e){} }
+  return t.replace(/^﻿/,""); }
+// a CSV's mark: ";" (a European Excel) or a tab when they outnumber commas on the first lines (quoted text not counted)
+function scCsvDelim(text){ const head=String(text||"").split(/\r?\n/).filter(l=>l.trim()).slice(0,5).map(l=>l.replace(/"[^"]*"/g,""));
+  const n=ch=>head.reduce((a,l)=>a+l.split(ch).length-1,0), c=n(","), s=n(";"), t=n("\t"); return (t>c&&t>=s)?"\t":(s>c?";":","); }
+function scTabbed(text){ const L=String(text||"").split(/\r?\n/).filter(l=>l.trim()); return L.length>0&&L.filter(l=>l.indexOf("\t")>=0).length*2>=L.length; }
+// cells split at a mark, quotes kept together (a comma file goes through kitCsvParse, the app's own CSV reader)
+function scDelimRows(text,d){ let rows;
+  if(d===","&&typeof kitCsvParse==="function") rows=kitCsvParse(text);
+  else { rows=[]; let row=[], cell="", q=false; const t=String(text||"").replace(/^﻿/,"");
+    for(let i=0;i<t.length;i++){ const c=t[i];
+      if(q){ if(c==='"'){ if(t[i+1]==='"'){ cell+='"'; i++; } else q=false; } else cell+=c; }
+      else if(c==='"'&&cell==="") q=true; else if(c===d){ row.push(cell); cell=""; }
+      else if(c==="\n"||c==="\r"){ if(c==="\r"&&t[i+1]==="\n") i++; row.push(cell); rows.push(row); row=[]; cell=""; } else cell+=c; }
+    if(cell!==""||row.length){ row.push(cell); rows.push(row); }
+    rows=rows.filter(r=>r.some(x=>String(x).trim())); }
+  return rows.map(r=>r.map(scCell)); }
+// a workbook → its tabs [{name, rows, total, cut}] with the library handed in (hidden tabs left out; 520 rows read per tab)
+function sheetBookTabs(X,bytes){ const wb=X.read(bytes,{type:"array",sheetRows:SC_MAX_ROWS+SC_SLACK}), hid=(wb.Workbook&&wb.Workbook.Sheets)||[];
+  return (wb.SheetNames||[]).map((n,i)=>{ const ws=wb.Sheets&&wb.Sheets[n]; if(!ws||(hid[i]&&hid[i].Hidden)) return null;
+    const rows=X.utils.sheet_to_json(ws,{header:1,raw:false,defval:"",blankrows:false}).map(r=>(r||[]).map(scCell)).filter(r=>r.some(Boolean));
+    let total=rows.length; const cut=!!(ws["!fullref"]&&ws["!fullref"]!==ws["!ref"]);
+    try{ const ref=ws["!fullref"]||ws["!ref"]; if(ref){ const g=X.utils.decode_range(ref); total=Math.max(total,g.e.r-g.s.r+1); } }catch(e){}
+    return {name:String(n),rows:rows,total:total,cut:cut}; }).filter(Boolean); }
+function scBytes(file){ if(file&&typeof file.arrayBuffer==="function") return file.arrayBuffer();
+  return new Promise((res,rej)=>{ try{ const rd=new FileReader(); rd.onload=()=>res(rd.result); rd.onerror=()=>rej(new Error("read")); rd.readAsArrayBuffer(file); }catch(e){ rej(e); } }); }
+function scMom(){ return !(typeof momHere==="function"&&!momHere()); }
+function scPl(n,w){ return n+" "+w+(n===1?"":"s"); }
+// ── the sheet's state: its own, never parked on the ＋ Add cards sheet's object ──
+let sheetCards=null;   // {S (the cardSheet it belongs to), seq, busy, name, err, msg, tabs, tab, guess, pick, res, last (the lines it put in the box)}
+let _scSeq=0;
+function scSheet(){ return (typeof cardSheet!=="undefined")?cardSheet:null; }
+function scMine(S){ return !!(S&&sheetCards&&sheetCards.S===S&&scSheet()===S); }
+function sheetTitle(K){ const T=K.tabs&&K.tabs[K.tab]; if(K.guess&&K.guess.title) return K.guess.title; const n=T&&String(T.name||"").trim();
+  return (n&&!/^(?:sheet|tab|blad|feuil|hoja|tabelle|foglio)\s*\d*$/i.test(n))?n:""; }
+// put the file's lines in the paste box: they replace the lines the last pick put there; what she typed stays
+function sheetCardsPut(S,build){ const K=sheetCards, el=(typeof document!=="undefined")?document.getElementById("unit-batch-txt"):null;
+  const cur=(el&&typeof el.value==="string")?el.value:(S.text||""); let pre=cur, post="";
+  if(K.last){ const i=cur.lastIndexOf(K.last); if(i>=0){ pre=cur.slice(0,i); post=cur.slice(i+K.last.length); } }
+  const typed=!!String(pre).trim(), b=build(typed);
+  const next=(typed?String(pre).replace(/\s+$/,"")+"\n":"")+b.text+post;
+  K.last=b.text; if(el) el.value=next;
+  S.opts=Object.assign({},S.opts||{}); delete S.opts.sep; delete S.opts.heading; Object.assign(S.opts,b.opts||{});
+  cardSheetInput(next); sheetCardsDraw(); }
+function sheetCardsApply(S){ const K=sheetCards, T=K.tabs[K.tab]; K.res=sheetLines(T.rows,K.pick); const title=sheetTitle(K);
+  sheetCardsPut(S,typed=>{ const head=!typed&&title&&K.res.lines.length; return {text:(head?title+"\n":"")+K.res.lines.join("\n"),opts:{sep:"tab",heading:!!head}}; }); }
+async function sheetCardsPick(input){
+  const S=scSheet(), file=input&&input.files&&input.files[0]; if(input) input.value=""; if(!S||!file||!scMom()) return null;
+  const kind=scKind(file.name,file.type);
+  if(kind==="pdf"&&typeof pdfCardsSheetPick==="function") return pdfCardsSheetPick({files:[file],value:""});   // PDFCARDS reads it, unchanged
+  const seq=++_scSeq, name=String(file.name||"the file"), last=(sheetCards&&sheetCards.S===S)?sheetCards.last:"";
+  sheetCards={S:S,seq:seq,busy:true,name:name,last:last}; sheetCardsDraw();
+  const mine=()=>scMine(S)&&sheetCards.seq===seq;
+  const say=m=>{ if(mine()){ sheetCards.busy=false; sheetCards.err=m; sheetCardsDraw(); } return null; };
+  if(kind==="numbers") return say(SC_MSG.numbers);
+  if((kind==="doc"||kind==="pages")&&typeof DXC_MSG!=="undefined") return say(DXC_MSG[kind]);   // DOCXCARDS: old Word / Pages — said plainly
+  const word=kind==="docx"&&typeof docxReadText==="function";   // DOCXCARDS
+  if(!word&&!/^(?:book|csv|tsv|txt)$/.test(kind)) return say(SC_MSG.type);
+  if((+file.size||0)>SC_MAX_BYTES) return say(SC_MSG.big);
+  let bytes; try{ bytes=new Uint8Array(await scBytes(file)); }catch(e){ return say(SC_MSG.open); }
+  if(!bytes.length) return say(SC_MSG.empty);
+  let tabs=null, text=null;
+  if(word){ try{ text=await docxReadText(bytes); }catch(e){ return say(String(e&&e.message||e)); } }   // DOCXCARDS: paragraphs + tables → lines
+  else if(kind==="book"){ let X=null; try{ X=(typeof haNeedXlsx==="function")?await haNeedXlsx():null; }catch(e){ X=null; }
+    if(!X||!X.utils||typeof X.read!=="function") return say(SC_MSG.noLib);
+    try{ tabs=sheetBookTabs(X,bytes); }catch(e){ return say(/password|encrypt/i.test(String(e&&e.message||e))?SC_MSG.locked:SC_MSG.open); } }
+  else { const t=scDecode(bytes), d=kind==="tsv"?"\t":kind==="csv"?scCsvDelim(t):(scTabbed(t)?"\t":"");
+    if(d) tabs=[{name:"",rows:scDelimRows(t,d),total:0,cut:false}]; else text=t; }
+  if(!mine()) return null;   // she closed the sheet, or picked another file, while it read
+  const K=sheetCards; K.busy=false;
+  if(text!=null){ let s=String(text).replace(/\r\n?/g,"\n").trim(), cut=false; if(!s) return say(SC_MSG.empty);
+    if(s.length>SC_MAX_CHARS){ s=s.slice(0,SC_MAX_CHARS); const j=s.lastIndexOf("\n"); if(j>0) s=s.slice(0,j); cut=true; }
+    K.msg="✓ Read “"+name+"” on this device — nothing was uploaded; check the cards below."+(cut?" The text was long, so only the first part was read.":"");
+    sheetCardsPut(S,()=>({text:s,opts:{}})); return K; }
+  tabs.forEach(T=>{ T.n=T.rows.length?Math.max(0,T.rows.length-sheetGuess(T.rows).start):0; });   // the cards each tab holds (its header row not counted)
+  K.tabs=tabs; const first=tabs.findIndex(T=>T.n); if(first<0) return say(SC_MSG.empty);
+  sheetCardsUseTab(K,first); sheetCardsApply(S); return K; }
+function sheetCardsUseTab(K,i){ K.tab=i; K.guess=sheetGuess(K.tabs[i].rows); K.pick={start:K.guess.start,name:K.guess.name,back:K.guess.back}; }
+// ── the controls ──
+function sheetCardsTab(i){ const S=scSheet(), K=sheetCards; if(!scMine(S)||!K.tabs||!K.tabs[i]||!K.tabs[i].n||!scMom()) return; sheetCardsUseTab(K,i); sheetCardsApply(S); }
+function sheetCardsCol(which,v){ const S=scSheet(), K=sheetCards; if(!scMine(S)||!K.pick||!scMom()) return; const c=parseInt(v,10); if(isNaN(c)) return;
+  if(which==="name"){ if(c<0||c>=K.guess.width) return; if(c===K.pick.back) K.pick.back=K.pick.name; K.pick.name=c; }
+  else if(which==="back"){ if(c>=K.guess.width) return; if(c>=0&&c===K.pick.name) return; K.pick.back=c<0?-1:c; } else return;
+  sheetCardsApply(S); }
+function sheetCardsHead(on){ const S=scSheet(), K=sheetCards; if(!scMine(S)||!K.guess||K.guess.head<0||!scMom()) return; K.pick.start=on?K.guess.head+1:K.guess.head; sheetCardsApply(S); }
+// ── what it draws (under the 📄 PDF / 📄 File / 📸 Photo row) ──
+const SC_BTN="display:inline-flex;align-items:center;gap:4px;min-height:40px;padding:8px 14px;border-radius:10px;border:1.5px solid #a7f3d0;background:#f0fdf4;color:#15803d;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;box-sizing:border-box";
+const SC_CHIP=on=>"padding:8px 12px;min-height:40px;border-radius:999px;border:1.5px solid "+(on?"#2d6a4f":"var(--border)")+";background:"+(on?"#2d6a4f":"#fff")+";color:"+(on?"#fff":"#374151")+";font-size:12.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif";
+const SC_SEL="flex:1 1 150px;min-width:0;max-width:100%;min-height:44px;box-sizing:border-box;padding:6px 8px;border:1.5px solid var(--border);border-radius:9px;background:#fff;font-size:16px;font-family:'DM Sans',sans-serif";
+function sheetCardsBtnHTML(){ return '<label data-sc-door="1" style="'+SC_BTN+'"><input type="file" id="card-sheet-xfile" accept="'+SC_ACCEPT+'" onchange="sheetCardsPick(this)" style="display:none">\u{1F4C4} File <span style="font-weight:600;font-size:11.5px">(Excel · CSV'+(typeof docxReadText==="function"?" · Word":"")+')</span></label>'; }   // DOCXCARDS: + Word
+function sheetCardsPanelHTML(S){ return '<div id="card-sheet-cols">'+sheetCardsPanelInner(S)+'</div>'; }
+function sheetCardsDraw(){ if(typeof document==="undefined") return; const el=document.getElementById("card-sheet-cols"); if(el) el.innerHTML=sheetCardsPanelInner(scSheet()); }
+function scColLabel(c){ return c.letter+(c.head?" · "+c.head:(c.sample?" · e.g. "+c.sample.slice(0,24)+(c.sample.length>24?"…":""):"")); }
+function sheetCardsPanelInner(S){ const K=sheetCards; if(!K||!S||K.S!==S) return "";
+  const line=(t,ok)=>'<div style="font-size:12px;line-height:1.5;color:'+(ok?"#15803d":"#b45309")+';background:'+(ok?"#f0fdf4":"#fffbeb")+';border-radius:9px;padding:7px 10px;margin-top:6px">'+t+'</div>';
+  if(K.busy) return line("⏳ Reading “"+csEsc(K.name)+"” on this device…",true);
+  if(K.err) return line(csEsc(K.err),false);
+  if(!K.tabs) return K.msg?line(csEsc(K.msg),true):"";
+  const T=K.tabs[K.tab], g=K.guess, p=K.pick, r=K.res||{lines:[],noName:0,more:0};
+  let h=line("✓ Read “"+csEsc(K.name)+"” on this device — nothing was uploaded. "+scPl(r.lines.length,"row")+" below; check the cards.",true);
+  h+='<div data-sc-panel="1" style="margin-top:8px;padding:10px;border:1.5px solid var(--border);border-radius:11px;background:#fafaf9">';
+  if(K.tabs.length>1) h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="font-size:11.5px;font-weight:700;color:var(--muted)">Tab:</span>'+
+    K.tabs.map((x,i)=>{ const n=x.n; return '<button data-sc-tab="'+i+'" onclick="sheetCardsTab('+i+')" '+(n?"":"disabled ")+'style="'+SC_CHIP(i===K.tab)+(n?"":";opacity:.5;cursor:default")+'">'+csEsc(x.name||("Tab "+(i+1)))+' · '+(n?(x.cut?n+"+":n):"empty")+'</button>'; }).join("")+'</div>';
+  const opts=(sel,none)=>(none?'<option value="-1"'+(sel<0?" selected":"")+'>(none — names only)</option>':"")+g.cols.map((c,i)=>'<option value="'+i+'"'+(i===sel?" selected":"")+'>'+csEsc(scColLabel(c))+'</option>').join("");
+  const lab="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:12.5px;font-weight:700;color:#1f2937";
+  h+='<label style="'+lab+'"><span style="min-width:84px">Card name</span><select data-sc-col="name" aria-label="Card name column" onchange="sheetCardsCol(\'name\',this.value)" style="'+SC_SEL+'">'+opts(p.name,false)+'</select></label>';
+  h+='<label style="'+lab+'"><span style="min-width:84px">Meaning</span><select data-sc-col="back" aria-label="Meaning column" onchange="sheetCardsCol(\'back\',this.value)" style="'+SC_SEL+'">'+opts(p.back,true)+'</select></label>';
+  if(g.head>=0&&g.width>=1){ const rowN=g.head+1, isHead=p.start>g.head, cells=(T.rows[g.head]||[]).filter(Boolean).slice(0,4).map(csEsc).join(", ");
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:12px;color:#1f2937">'+(isHead?'Row '+rowN+' (<b>'+cells+'</b>) is the column names — not a card.':'Row '+rowN+' is a card.')+
+      (isHead?'<button data-sc-head="card" onclick="sheetCardsHead(false)" style="'+SC_CHIP(false)+'">It’s a card</button>':'<button data-sc-head="names" onclick="sheetCardsHead(true)" style="'+SC_CHIP(false)+'">It’s the column names</button>')+'</div>'; }
+  const notes=[], unused=g.cols.map((c,i)=>i).filter(i=>i!==p.name&&i!==p.back&&g.cols[i].head);
+  if(unused.length) notes.push("Not used: "+unused.map(i=>csEsc(scColLabel(g.cols[i]))).join(", ")+(unused.indexOf(g.pic)>=0?" (pictures come later)":"")+".");
+  if(p.back<0) notes.push("No meaning column — the names come in with the meanings blank; type them in the boxes.");
+  if(r.noName) notes.push(scPl(r.noName,"row")+" with no card name "+(r.noName===1?"was":"were")+" left out.");
+  if(T.cut||r.more) notes.push("Only the first "+SC_MAX_ROWS+" rows were read"+(T.cut&&T.total?" — this tab has about "+T.total:"")+". A deck that big is hard to learn; split it into smaller tabs.");
+  if(r.cut) notes.push("The text was long, so only the first part was read.");
+  h+=notes.map(t=>'<div style="font-size:11px;color:#92400e;margin-top:5px;line-height:1.45">'+t+'</div>').join("");
+  return h+'</div>'; }
+// SHEETCARDS_END
+// DOCXCARDS_START — 📄 File also reads a Word file (.docx) on Mom's device — no key, no AI, nothing uploaded (her ask 2026-11-19:
+//   "Mom could import … an Excel sheet"; her go 2026-11-22/23: "go with her answers and build"; PLAN_unit_easy_import_2026-11-19.md
+//   §1.6, §3 Files, slice D).
+//   · A .docx IS a zip: kitZipEntries (the zip reader the recipe import uses) opens it and word/document.xml is walked by
+//     docxXmlLines (pure): each paragraph is a line (a soft line break starts a new one; a tab stays a tab); a Heading / Title
+//     paragraph gets "# " so the splitter sees a heading; each table row is ONE line with its cells joined by a tab, so a
+//     2-column table arrives as name | meaning and its "Word | Meaning" row as the column names. Deleted (tracked) text, field
+//     codes, the fallback copy of a text box and paragraph settings are left out. Word's list numbers are formatting, so the
+//     lines come through clean.
+//   · The text lands in the paste box like a .txt list and the SAME check screen reads it (green rows, no per-row tick);
+//     Add = CHECKFIX's writes, unchanged. The 60,000-character cap and the 15 MB cap are SHEETCARDS's.
+//   · An old binary Word file (.doc) can't be read this way: she is told so plainly, with what to do (Save As .docx, or copy and
+//     paste). A password-locked .docx, a file that isn't really a Word file, or one with no text (only pictures) → one line.
+//     Pages / .odt / .rtf are not read (out of scope): the plain "copy and paste" line; Pages gets its own Export ▸ Word line.
+//   · Mom-only (SHEETCARDS checks); no kid's name; no database writes.
+const DXC_MSG={
+  doc:"That’s an older Word file (.doc), which the app can’t read. In Word, File ▸ Save As ▸ Word Document (.docx) and pick that — or copy the text and paste it in the box.",
+  pages:"That’s a Pages file — in Pages, Share ▸ Export ▸ Word, then pick the Word file. Or copy the text and paste it in the box.",
+  open:"Couldn’t open that Word file. Save it again in Word as .docx, or copy the text and paste it in the box.",
+  locked:"That Word file is locked with a password. Open it, copy the text and paste it in the box.",
+  none:"That Word file has no text the app can read (only pictures?). Copy the text and paste it in the box."};
+const DXC_SKIP={"w:instrText":1,"w:delText":1,"w:del":1,"w:moveFrom":1,"mc:Fallback":1,"w:pPr":1,"w:rPr":1,"w:sectPr":1,"w:tblPr":1,"w:tcPr":1,"w:trPr":1};
+function docxUnesc(s){ return String(s).replace(/&(?:#(\d+)|#x([0-9a-f]+)|(amp|lt|gt|quot|apos));/gi,(m,d,h,n)=>{ try{ return d?String.fromCodePoint(+d):h?String.fromCodePoint(parseInt(h,16)):({amp:"&",lt:"<",gt:">",quot:'"',apos:"'"})[n.toLowerCase()]; }catch(e){ return ""; } }); }
+// word/document.xml → its lines (pure): paragraphs, and each table row as cells joined by a tab
+function docxXmlLines(xml){
+  const out=[], P=[], T=[], re=/<(\/?)([A-Za-z][\w.:-]*)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>|([^<]+)/g; let m, skip=0, inT=false;
+  const push=(text,head)=>{ String(text).split("\n").forEach(l=>{ l=l.replace(/[  ]+/g," ").replace(/^\s+|\s+$/g,""); if(l) out.push((head?"# ":"")+l); }); };
+  const deliver=p=>{ const tb=T[T.length-1]; if(tb&&tb.cell) tb.cell.push(p.buf.replace(/\s+/g," ").trim()); else push(p.buf,p.head); };
+  while((m=re.exec(String(xml||"")))){
+    const close=m[1]==="/", tag=m[2], self=m[4]==="/";
+    if(m[5]!==undefined){ if(!skip&&inT&&P.length) P[P.length-1].buf+=docxUnesc(m[5]); continue; }
+    if(tag==="w:pStyle"&&P.length&&/\bw:val="(?:heading\s*\d*|title|subtitle)"/i.test(m[3])) P[P.length-1].head=true;
+    if(skip){ if(!self) skip+=close?-1:1; continue; }
+    if(!close&&!self&&DXC_SKIP[tag]){ skip=1; continue; }
+    if(tag==="w:t"){ inT=!close&&!self; continue; }
+    if(!close){
+      if(tag==="w:p"){ if(!self) P.push({buf:"",head:false}); }
+      else if(P.length&&(tag==="w:tab"||tag==="w:ptab")) P[P.length-1].buf+="\t";
+      else if(P.length&&(tag==="w:br"||tag==="w:cr")) P[P.length-1].buf+="\n";
+      else if(P.length&&tag==="w:noBreakHyphen") P[P.length-1].buf+="-";
+      else if(tag==="w:tbl"&&!self) T.push({rows:[],row:null,cell:null});
+      else if(tag==="w:tr"&&T.length&&!self) T[T.length-1].row=[];
+      else if(tag==="w:tc"&&T.length&&!self) T[T.length-1].cell=[];
+      continue; }
+    if(tag==="w:p"){ const p=P.pop(); if(p) deliver(p); }
+    else if(tag==="w:tc"&&T.length){ const t=T[T.length-1]; if(t.row&&t.cell) t.row.push(t.cell.filter(Boolean).join(" ")); t.cell=null; }
+    else if(tag==="w:tr"&&T.length){ const t=T[T.length-1]; if(t.row&&t.row.some(Boolean)) t.rows.push(t.row); t.row=null; }
+    else if(tag==="w:tbl"&&T.length){ const t=T.pop(), lines=t.rows.map(r=>r.map(c=>c.replace(/\t/g," ")).join("\t").replace(/^\t+|\t+$/g,"")).filter(Boolean);
+      const up=T[T.length-1]; if(up&&up.cell) up.cell.push(lines.join(" ").replace(/\t/g," ")); else lines.forEach(l=>out.push(l)); }
+  }
+  return out; }
+// a .docx's bytes → its text (lines joined). Throws Error(plain line).
+async function docxReadText(bytes){
+  const b=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes||[]);
+  if(b.length>=4&&b[0]===0xD0&&b[1]===0xCF&&b[2]===0x11&&b[3]===0xE0) throw new Error(DXC_MSG.locked);   // an encrypted .docx is an OLE box, not a zip
+  if(!(b.length>=4&&b[0]===0x50&&b[1]===0x4B)||typeof kitZipEntries!=="function") throw new Error(DXC_MSG.open);
+  let ents; try{ ents=await kitZipEntries(b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength)); }catch(e){ throw new Error(DXC_MSG.open); }
+  const main=(ents||[]).find(e=>e.name==="word/document.xml")||(ents||[]).find(e=>/^word\/document\d*\.xml$/i.test(e.name));
+  if(!main) throw new Error(DXC_MSG.open);   // a zip, but not a Word file
+  let xml; try{ xml=new TextDecoder("utf-8").decode(main.data); }catch(e){ throw new Error(DXC_MSG.open); }
+  const lines=docxXmlLines(xml); if(!lines.length) throw new Error(DXC_MSG.none);
+  return lines.join("\n"); }
+// DOCXCARDS_END
 // ── Unit card editor: edit shared photo + bio (applies to every enrolled kid) ──
 // ── Batch add: paste many cards into a unit deck at once ("front | back" per line) ────
 // New cards append to the registry deck AND flow immediately to every enrolled kid:
