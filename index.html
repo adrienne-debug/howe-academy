@@ -45333,6 +45333,11 @@ function coopToggleMomDay(ds){
     });
   });
   // 🔁 RELAY3: one run through the door, chained, the banner line says what moved; Undo puts the flag and the cards back
+  // DRILLCOOP: + pass R (RETRLIVE) for the co-op children on the practice plan when ds is an open day of this week, so their
+  // Mom-run practice cards follow the flip like the subjects. Queued as its own "retrieval" reason: alone it is a practice-only
+  // run (nothing else is re-laid); with the subjects below the door merges both into ONE run (same label, same Undo path).
+  const _retr=(typeof retrCoopFlipKids==="function")?retrCoopFlipKids(ds,kids):[];
+  if(_retr.length&&typeof relayWeek==="function") relayWeek("retrieval",{label:on?("👩 Mom's here "+ds):("🏫 Co-op rule "+ds),retr:_retr,undo:[on?{p:"calendar/coopMomDays/"+ds,gone:true}:{p:"calendar/coopMomDays/"+ds,was:true}]});
   if(_pairs.length){ if(typeof relayWeek==="function") relayWeek("coop-mom",{label:on?("👩 Mom's here "+ds):("🏫 Co-op rule "+ds),subjects:_pairs,undo:[on?{p:"calendar/coopMomDays/"+ds,gone:true}:{p:"calendar/coopMomDays/"+ds,was:true}]}); else _pairs.forEach(function(p){ try{ if(typeof reprojectSubjectWeek==="function") reprojectSubjectWeek(p.kid,p.sk,on?"coop-mom-on":"coop-mom-off"); }catch(e){ if(typeof dbg==="function") dbg("coop mom-day relay skip "+p.kid+"/"+p.sk+": "+e); } }); }
   if(typeof gwShowToast==="function") gwShowToast(on?("👩 Mom's available on "+ds+" — Mom-required lessons can land there again"):("🏫 Back to the co-op rule for "+ds+" — no Mom-required lessons laid there"));
   if(typeof renderAll==="function") renderAll();
@@ -65145,7 +65150,7 @@ function renderCurrGrid(el){
     // Retrieval slots (🎯 Daily Drill / 🏃 Sprint / 🎯 Match) — generation adds one ~15-min
     // Mom-required slot per template day; it's not a grid subject, so add it to the load too.
     let retrievalMins=0;
-    if(!offReason&&!mapOff&&((typeof retrOn==="function")?retrOn(gvKid):(typeof retrTracks==="function"&&retrTracks(gvKid).length))&&typeof retrDayKinds==="function"){ const _rks=retrDayKinds(gvKid,DOWS[d.getDay()].toLowerCase()).filter(k=>typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[k]); retrievalMins=_rks.reduce((n,k)=>n+((typeof retrSlotMinutes==="function")?retrSlotMinutes(gvKid,k):15),0); }   // 🧠 RETRFAM: a ladder OR a saved rhythm
+    if(!offReason&&!mapOff&&((typeof retrOn==="function")?retrOn(gvKid):(typeof retrTracks==="function"&&retrTracks(gvKid).length))&&typeof retrDayKinds==="function"){ const _rks=((typeof retrDayKindsOn==="function")?retrDayKindsOn(gvKid,DOWS[d.getDay()].toLowerCase(),l.date):retrDayKinds(gvKid,DOWS[d.getDay()].toLowerCase())).filter(k=>typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[k]); retrievalMins=_rks.reduce((n,k)=>n+((typeof retrSlotMinutes==="function")?retrSlotMinutes(gvKid,k):15),0); }   // 🧠 RETRFAM: a ladder OR a saved rhythm · DRILLCOOP: not the Mom-run kinds on a ticked co-op day
     const cardMins=(!offReason&&!mapOff)?(_cardMinByDate[l.date]||0):0;
     const famMins=(!offReason&&!mapOff&&typeof famMinOn==="function")?famMinOn(gvKid,famDayOfISO(l.date),l.date):0;   // 🏡 family time
     const mins=gridMins+dailyMins+retrievalMins+cardMins+famMins;
@@ -88196,6 +88201,35 @@ function retrTodayKinds(kid){
   if(d===0||d===6) return [];
   return retrDayKinds(kid,RETR_DAYS[d-1]);
 }
+// DRILLCOOP_START — 🏫 Mom-run practice cards stay off a "No Mom-required lessons" co-op day (her decision 2026-11-22 on the
+// design's co-op question, DESIGN_drill_rows_curriculum_2026-11-19.md Q6: "Leave them off"). Until now the week builder never
+// asked about co-op, so a 🃏 Daily Drill / 🏃 Sprint / 📅 Sprint Re-checks card was laid after co-op although Mom is away and
+// the child's Mom-required subjects were left off that day. The test is the subjects' own, not a second one: coopNoMomBaseFor
+// (kid, date) — a timed co-op of this child on this date with the box ticked, unless Mom flipped that ONE date back to "Mom's
+// available" (calendar/coopMomDays) — applied to the kinds retrSlotMom calls "required". 🎯 Match & Play (the child's own) is
+// still laid. A laying rule only: the saved plan is never changed. The week builder (gwInjectRetrieval), the live-week pass
+// (RETRLIVE), the Grid's Min column and the brain-work strip read the day's kinds through retrDayKindsOn; Mom's one-date flip
+// (coopToggleMomDay) runs the live pass for the co-op's children whose plan is on, when the date is an open day of this week.
+// Test: test_drill_coop.js.
+function retrCoopOff(kid,ds,kind){
+  if(!ds||typeof retrSlotMom!=="function"||typeof coopNoMomBaseFor!=="function") return false;
+  try{ return retrSlotMom(kind)==="required"&&!!coopNoMomBaseFor(kid,ds); }catch(e){ return false; }
+}
+// the kinds laid for this child on weekday dk (mon…fri) of date ds (YYYY-MM-DD); no date = the plan's kinds, as before
+function retrDayKindsOn(kid,dk,ds){ return retrDayKinds(kid,dk).filter(function(k){ return !retrCoopOff(kid,ds,k); }); }
+// the co-op children whose practice cards the one-date flip re-lays: plan on, and ds is today or later in the active week
+function retrCoopFlipKids(ds,kids){
+  const out=[];
+  (kids||[]).forEach(function(kid){
+    try{
+      if(!kid||out.indexOf(kid)>=0||typeof retrLiveCtx!=="function"||!retrOn(kid)) return;
+      const c=retrLiveCtx(kid); if(!c||!c.dayISO||!ds||ds<c.todayISO) return;
+      if(RETR_LIVE_DAYS.some(function(dn){ return c.dayISO(dn)===ds; })) out.push(kid);
+    }catch(e){}
+  });
+  return out;
+}
+// DRILLCOOP_END
 // RETRWEEK_END
 // P3 Match heat-map: per-deck accuracy over the last heatmap_window calendar days of
 // drill history; suggest the WORST deck among those Match can actually play (≥4 pairs).
@@ -88475,7 +88509,7 @@ function retrSchedStripHtml(kid,day){
     const sprintToday=retrEntries(kid).some(e=>e&&e.date===today);
     let ml=(masteryData.matchLog||{})[kid]||[]; if(!Array.isArray(ml)) ml=Object.values(ml);
     const matchDone=ml.some(e=>e&&e.date===today);
-    const kinds=retrTodayKinds(kid);
+    const kinds=retrTodayKinds(kid).filter(k=>!(typeof retrCoopOff==="function"&&retrCoopOff(kid,(typeof calToday==="function")?calToday():today,k)));   // DRILLCOOP: no Mom-run chip on a ticked co-op day
     const chip=(icon,label,done,view)=>'<button onclick="retrSchedGo(\''+kid+'\',\''+view+'\')" '
       +'style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;border:1.5px solid '+(done?'#86efac':'#e2ddd6')
       +';background:'+(done?'#f0fdf4':'#fff')+';color:'+(done?'#15803d':'#57534e')
@@ -94421,7 +94455,9 @@ function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear
       // Row 1 + optional Row 2 (retrievalPlan/{kid}/week2) — up to two slots that day,
       // never the same kind twice (retrDayKinds dedupes). Template keys are mon/tue/….
       // DRILLTHREE: + optional Row 3 (…/week3) — up to three; each laid by this same loop, after the one before it.
-      const kinds=(typeof retrDayKinds==="function")?retrDayKinds(kid,dn.slice(0,3))
+      // DRILLCOOP: minus the Mom-run kinds on a ticked "No Mom-required lessons" co-op day of this child (retrDayKindsOn).
+      const kinds=(typeof retrDayKindsOn==="function")?retrDayKindsOn(kid,dn.slice(0,3),dk)
+                  :(typeof retrDayKinds==="function")?retrDayKinds(kid,dn.slice(0,3))
                   :[((retrWeek(kid)||{})[dn.slice(0,3)]||"off")];
       for(const kind of kinds){
       if(kind==="off"||!RETR_SLOT_TITLE[kind]) continue;
@@ -94510,7 +94546,7 @@ function retrLiveFlush(){
 function retrLiveDoy(dt){ const jan1=new Date(dt.getFullYear(),0,0); return Math.floor((dt-jan1)/86400000); }
 function retrLiveId(kid,kind,iso){ const d=gwParseDate(iso); return d.getFullYear()+"d"+retrLiveDoy(d)+"_retr_"+kind+"_"+kid; }
 // ── pure: what this kid's retrieval cards should be on the open days of the week ──
-// o = {dayISO(dn), todayISO, todayOpen, nowMin, win(dn,iso), kidOff(kid,dn), checked, claimed, on, kinds(dn3)→[kind],
+// o = {dayISO(dn), todayISO, todayOpen, nowMin, win(dn,iso), kidOff(kid,dn), checked, claimed, on, kinds(dn3,iso)→[kind],
 //      minutes(kind), mom(kind), toMin, fromMin, slot(tasks,card,W,x)}
 // → {upd:{<id>:card|null, <closingId>/time:t}, added:[card], removed:[id], retimed:[{id,from,to}]} — week<N>/tasks children only
 function retrLiveDiff(kid,tasks,o){
@@ -94522,7 +94558,7 @@ function retrLiveDiff(kid,tasks,o){
     const iso=o.dayISO?o.dayISO(dn):null; if(!iso||!o.todayISO) return;
     if(iso<o.todayISO) return;                                   // a past day never changes
     const isToday=(iso===o.todayISO); if(isToday&&!o.todayOpen) return;
-    const want=(o.on?(o.kinds(dn.slice(0,3))||[]):[]).filter(k=>k&&k!=="off"&&RETR_SLOT_TITLE[k]);
+    const want=(o.on?(o.kinds(dn.slice(0,3),iso)||[]):[]).filter(k=>k&&k!=="off"&&RETR_SLOT_TITLE[k]);   // DRILLCOOP: the date too
     // 1. off / changed kind → the open card goes
     RETR_DAY_KINDS.forEach(function(kind){
       if(kind==="off"||want.indexOf(kind)>=0) return;
@@ -94567,7 +94603,7 @@ function retrLiveCtx(kid){
     win:(dn,ds)=>g?g.win(dn,ds):null, kidOff:(k,dn)=>!!(g&&g.kidOff(k,dn)),
     checked:(typeof checked!=="undefined"&&checked)||{}, claimed:(typeof claimed!=="undefined"&&claimed)||{},
     on:(typeof retrTracks==="function")&&((typeof retrOn==="function")?retrOn(kid):retrTracks(kid).length>0),
-    kinds:dk=>retrDayKinds(kid,dk), minutes:k=>((typeof retrSlotMinutes==="function")?retrSlotMinutes(kid,k):15),
+    kinds:(dk,ds)=>((typeof retrDayKindsOn==="function")?retrDayKindsOn(kid,dk,ds):retrDayKinds(kid,dk)), minutes:k=>((typeof retrSlotMinutes==="function")?retrSlotMinutes(kid,k):15),
     mom:k=>((typeof retrSlotMom==="function")?retrSlotMom(k):"required"),
     toMin:toMin, fromMin:fromMin, slot:(ts,c,W,x)=>seRetrSlot(ts,c,W,x)};
 }
