@@ -84,7 +84,10 @@ const NAVBTN = '<button class="gf-vw" onclick="gfGo(\'others\')">🎁 From other
 const stripNav = h => h.split(NAVBTN).join("");
 const MARK = '<div class="gf-card"><div class="gf-ghd"><span>🎁 From others</span>';
 // with the 🎁 From others card taken out (it's the last thing on a person page), is the page the same as without?
-function sameButCard(withH, baseH) { const i = withH.indexOf(MARK); if (i < 0) return withH === baseH; const tail = baseH.slice(i); return withH.slice(0, i) === baseH.slice(0, i) && withH.endsWith(tail) && withH.length > baseH.length; }
+// GIFTTUNE (2026-11-24): a from-others present now counts as a GIFT (how many) — never money. Pages are compared with the counts
+// taken out on both sides (cnt); the counts themselves are pinned in test_gifts_tuning.js.
+const cnt = h => h.replace(/ · 🎁 \d+ from others/g, "").replace(/\d+ presents?/g, "#p").replace(/\d+ gifts?/g, "#g").replace(/ A present someone else is buying counts as a gift, never in the dollars\./, "");
+function sameButCard(withH, baseH) { withH = cnt(withH); baseH = cnt(baseH); const i = withH.indexOf(MARK); if (i < 0) return withH === baseH; const tail = baseH.slice(i); return withH.slice(0, i) === baseH.slice(0, i) && withH.endsWith(tail) && withH.length > baseH.length; }
 
 console.log("\n# 3 · none of it counts: every view drawn with and without presents someone else is buying");
 const B = drawAll(BASE()), F = drawAll(WITH());
@@ -99,15 +102,15 @@ ok("🌙 Eve: the Bike's 'AA x4' batteries job is not there", !/AA x4/.test(F.ev
 ok("📍 Where: the Bike's 'Garage' spot is not there", !/Garage/.test(F.where));
 ok("🛍 Shop: the 'Toy shop' store is not there", !/Toy shop/.test(F.shop));
 ok("🚗 Going: still one present for the lake house (the Scarf)", /🚗 the lake house<\/span><span class="gf-gsum">1 ·/.test(F.going), F.going.match(/🚗 the lake house[^<]*<\/span><span class="gf-gsum">[^<]*/));
-const peopleStrip = h => stripNav(h).replace(/ · 🎁 \d+ from others/g, "").replace(/<span class="gf-pc">🎁 \d+ from others<\/span>/g, '<span class="gf-pc">nothing yet</span>');
-ok("👨‍👩‍👧 People (occasion card, group total + bar, rows, money, budgets, section chips): same once the '· 🎁 N from others' bits are taken out", peopleStrip(F.people) === B.people);
+const peopleStrip = h => cnt(stripNav(h).replace(/<span class="gf-pc">\d+ presents? · 🎁 \d+ from others<\/span>/g, '<span class="gf-pc">nothing yet</span>'));
+ok("👨‍👩‍👧 People (occasion card, group total + bar, rows, money, budgets, section chips): same once the counts are taken out", peopleStrip(F.people) === peopleStrip(B.people));
 ok("…group 'Mom's side' view the same (givers have no presents of their own)", stripNav(F.groupMom) === B.groupMom);
-const evenStrip = h => stripNav(h).replace(/<tr><th>🎁 From others<\/th>.*?<\/tr>/, "");
-ok("⚖️ Even: dollars, counts, amber flags and the behind / even note the same once the count row is taken out", evenStrip(F.even) === B.even);
+const evenStrip = h => cnt(stripNav(h).replace(/<tr><th>🎁 From others<\/th>.*?<\/tr>/, ""));
+ok("⚖️ Even: dollars, amber flags and the behind / even note the same once the count row and the gift counts are taken out", evenStrip(F.even) === evenStrip(B.even));
 { const note = h => (h.match(/⚖️ [^<]*(behind|even\.)/) || [""])[0];
-  ok("⚖️ Even behind / even note unchanged", note(F.even) === note(B.even) && / behind$/.test(note(B.even)), [note(F.even), note(B.even)]); }
+  ok("⚖️ Even behind note: the dollar part unchanged (gift counts now include them)", cnt(note(F.even)) === cnt(note(B.even)) && / behind$/.test(note(B.even)), [note(F.even), note(B.even)]); }
 ["k_ava", "k_ben", "k_cal", "p-pat"].forEach(pid => ok("person page " + pid + ": totals, sections, section totals the same — From others is only an extra card at the bottom", sameButCard(stripNav(F["p:" + pid]), B["p:" + pid])));
-ok("📜 Past occasion (money, counts) unchanged by the old from-others present — only Ava's row gains its count", peopleStrip(F.past) === B.past && /Ava<span class="gf-pc">1 present · <span title="✅ Given">✅1<\/span> · 🎁 1 from others/.test(F.past));
+ok("📜 Past occasion (money) unchanged by the old from-others present — only Ava's row gains its count", peopleStrip(F.past) === peopleStrip(B.past) && /Ava<span class="gf-pc">2 presents · <span title="✅ Given">✅1<\/span> · 🎁 1 from others/.test(F.past));
   ok("📜 …her page there: same, + the From others card", sameButCard(stripNav(F["past:k_ava"]), B["past:k_ava"]));
 {
   reset(BASE()); const tb = { occ: T.occTot("x"), ava: T.personTot("x", "k_ava"), avaSt: T.personTot("x", "k_ava", "stocking"), ben: T.personTot("x", "k_ben"), kids: T.groupTot("x", "kids"), even: T.evenData("x"),
@@ -121,7 +124,8 @@ ok("📜 Past occasion (money, counts) unchanged by the old from-others present 
   ok("a kid's paid / to buy / count / budget (personTot) the same", J(tf.ava) === J(tb.ava) && J(tf.ben) === J(tb.ben));
   ok("a kid's section total + section budget (personTot by section) the same", J(tf.avaSt) === J(tb.avaSt));
   ok("group total + group budget (groupTot) the same", J(tf.kids) === J(tb.kids));
-  ok("⚖️ Even dollars AND count (evenData) the same", J(tf.even) === J(tb.even));
+  const dollars = e => J([e.all].concat(e.secs.map(s => s.cells)).map(r => r.map(c => [c.pid, c.amt, c.paid])));
+  ok("⚖️ Even dollars (evenData amt / paid) the same — the count now includes them (GIFTTUNE)", dollars(tf.even) === dollars(tb.even) && tf.even.all[0].count === tb.even.all[0].count + 2);
   ok("⏰ reminders (late order, return window, order-by) the same", J(tf.rem) === J(tb.rem) && tb.rem.length >= 3, tf.rem.map(r => r.kind));
   ok("🔴 NOW lines for Home Base (giftNowLines) the same", J(tf.now) === J(tb.now));
   ok("🗄 Stash on hold (held) the same", J(tf.held) === J(tb.held));
@@ -146,8 +150,8 @@ console.log("\n# 4 · where it shows");
 {
   const h = F.people;
   const row = pid => { const m = h.match(new RegExp('<button class="gf-prow" onclick="gfOpenPerson\\(\'' + pid + '\'\\)">([\\s\\S]*?)</button>')); return m ? m[1] : ""; };
-  ok("People row: Ava '… · 🎁 2 from others' right after her own count", /<span class="gf-pc">4 presents · 👤 3 own · 🤝 1 shared · (<span title="[^"]*">[^<]*<\/span> ?)+ · 🎁 2 from others<\/span>/.test(row("k_ava")), row("k_ava"));
-  ok("…the count before it is still Mom's own (4 presents, $185 paid)", /4 presents/.test(row("k_ava")) && /<span class="gf-amt">\$185<small> \/ \$300<\/small>/.test(row("k_ava")), row("k_ava"));
+  ok("People row: Ava '6 presents … · 🎁 2 from others' (GIFTTUNE: 4 of hers + 2 from others)", /<span class="gf-pc">6 presents · 👤 3 own · 🤝 1 shared · (<span title="[^"]*">[^<]*<\/span> ?)+ · 🎁 2 from others<\/span>/.test(row("k_ava")), row("k_ava"));
+  ok("…her money is still Mom's own ($185 paid)", /<span class="gf-amt">\$185<small> \/ \$300<\/small>/.test(row("k_ava")), row("k_ava"));
   ok("Ben: 🎁 1 from others (the shared Board game counts for him too)", /🎁 1 from others/.test(row("k_ben")));
   ok("Cal: 🎁 1 from others", /🎁 1 from others/.test(row("k_cal")));
   const ava = stripNav(F["p:k_ava"]), card = ava.slice(ava.indexOf(MARK));
@@ -249,7 +253,7 @@ console.log("\n# 6 · Dad's side");
 {
   reset(BASE()); S.dadOpen = true; W.renderGiftsDad(droot, ""); W.gdBack(); const listB = droot.innerHTML; W.gdOpen("k_ava"); const avaB = droot.innerHTML; const totB = JSON.stringify(DT.dadTot("x", "k_ava")); W.gdOpen("k_ben"); const benB = droot.innerHTML;
   W.gdBack(); reset(WITH()); S.dadOpen = true; W.renderGiftsDad(droot, ""); const listF = droot.innerHTML; W.gdOpen("k_ava"); const avaF = droot.innerHTML;
-  ok("his list page (totals, counts) is unchanged", listF === listB);
+  ok("his list page (totals) is unchanged — counts now include the ones he may see (GIFTTUNE)", cnt(listF) === cnt(listB) && listF !== listB);
   ok("his totals never include them (dadTot)", JSON.stringify(DT.dadTot("x", "k_ava")) === totB);
   ok("Ava (✏️ edit): same page + a 🎁 From others card at the bottom", sameButCard(avaF, avaB));
   const card = avaF.slice(avaF.indexOf(MARK));

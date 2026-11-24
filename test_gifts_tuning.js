@@ -119,5 +119,64 @@ console.log("\n# 1 · 👍 They said yes");
   S.dadOpen = false;
 }
 
+console.log("\n# 2 · a present someone else is buying counts as a GIFT for that kid — never as money");
+{
+  reset(WITH()); W.renderGifts(root, "<nav/>"); const h = root.innerHTML;
+  const row = pid => { const m = h.match(new RegExp('<button class="gf-prow" onclick="gfOpenPerson\\(\'' + pid + '\'\\)">([\\s\\S]*?)</button>')); return m ? m[1] : ""; };
+  ok("People row: Ava '6 presents · 👤 2 own · 🤝 1 shared · … · 🎁 3 from others' (3 of hers + 3 from others)", /<span class="gf-pc">6 presents · 👤 2 own · 🤝 1 shared · (<span title="[^"]*">[^<]*<\/span> ?)+ · 🎁 3 from others<\/span>/.test(row("k_ava")), row("k_ava"));
+  ok("…Ben 3 presents (the shared Board game counts for him too)", /<span class="gf-pc">3 presents · 👤 1 own · 🤝 1 shared · .* · 🎁 1 from others<\/span>/.test(row("k_ben")), row("k_ben"));
+  ok("…Cal 2 presents · 🎁 1 from others", /<span class="gf-pc">2 presents · <span title="📦 Here">📦1<\/span> · 🎁 1 from others<\/span>/.test(row("k_cal")), row("k_cal"));
+  W.gfOpenPerson("k_ava");
+  ok("Ava's page header: '6 presents · 👤 2 just theirs · 🤝 1 shared · 🎁 3 from others'", /<div class="gf-line" style="color:#475569">6 presents · 👤 2 just theirs · 🤝 1 shared · 🎁 3 from others<\/div>/.test(root.innerHTML), root.innerHTML.match(/\d+ presents?[^<]*/));
+  const d = WITH(); delete d.items.g; reset(d); W.renderGifts(root, "<nav/>");
+  ok("a kid with ONLY a relative's present: '1 present · 🎁 1 from others', not 'nothing yet'", /Cal<span class="gf-pc">1 present · 🎁 1 from others<\/span>/.test(root.innerHTML), root.innerHTML.match(/Cal<span class="gf-pc">[^]*?<\/span>/));
+  W.gfOpenPerson("k_cal");
+  ok("…their page: '1 present · 🎁 1 from others'", /color:#475569">1 present · 🎁 1 from others/.test(root.innerHTML));
+  reset(BASE()); W.renderGifts(root, "<nav/>");
+  ok("no relatives' presents: rows read exactly as before ('3 presents · 👤 2 own …', no 🎁)", /Ava<span class="gf-pc">3 presents · 👤 2 own · 🤝 1 shared · /.test(root.innerHTML) && !/from others/.test(root.innerHTML));
+  ok("drawing wrote nothing", writes.length === 0, writes);
+}
+{
+  reset(WITH()); const E = T.evenData("x");
+  ok("⚖️ Even count = own + from others: Ava 6, Ben 3, Cal 2", J(E.all.map(c => c.count)) === "[6,3,2]", E.all);
+  const st = E.secs.find(s => s.sec.id === "stocking");
+  ok("…per section too (🧦 Stocking: Ava 2 + Mittens + Board game = 4, Ben 1)", J(st.cells.map(c => c.count)) === "[4,1,0]", st.cells);
+  const noC = { occasions: BASE().occasions, people: BASE().people, items: { a: BASE().items.a, b: BASE().items.b, c: BASE().items.c, d: BASE().items.d, g: BASE().items.g } };
+  reset(noC); const before = T.behind(T.evenData("x").all);
+  noC.items.x1 = { occ: "x", pids: ["k_cal"], sec: "parents", name: "Kite", status: "idea", from: "p-gma", ts: 20 };
+  noC.items.x2 = { occ: "x", pids: ["k_cal"], sec: "parents", name: "Yo-yo", status: "idea", from: "p-pat", ts: 21 };
+  reset(noC); const after = T.behind(T.evenData("x").all);
+  ok("'gifts behind': Cal is 2 gifts behind on her own presents, and not behind once two relatives' presents count", before[2].count === true && after[2].count === false, [before[2], after[2]]);
+  W.renderGifts(root, "<nav/>"); W.gfGo("even"); const ev = root.innerHTML;
+  ok("⚖️ Even cells show the count, the 🎁 From others row tells them apart, the intro says how they count", /3 gifts/.test(ev) && /<tr><th>🎁 From others<\/th>/.test(ev) && /A present someone else is buying counts as a gift, never in the dollars\./.test(ev));
+  reset(BASE()); W.renderGifts(root, "<nav/>"); W.gfGo("even");
+  ok("…with none, the intro has no such sentence", !/someone else is buying/.test(root.innerHTML));
+}
+{
+  reset(BASE()); const kidsP = ["k_ava", "k_ben", "k_cal"];
+  const money = () => J({ occ: T.occTot("x"), per: kidsP.map(p => T.personTot("x", p)), sec: kidsP.map(p => T.personTot("x", p, "stocking")), grp: T.groupTot("x", "kids"), mom: T.groupTot("x", "mom"),
+    even: [T.evenData("x").all].concat(T.evenData("x").secs.map(s => s.cells)).map(r => r.map(c => [c.amt, c.paid])), tally: T.tally(T.allItems("x"), () => 1) });
+  const mb = money(); W.renderGifts(root, "<nav/>"); const amtB = root.innerHTML.match(/<span class="gf-amt">[\s\S]*?<\/span>/g);
+  reset(WITH()); const mf = money(); W.renderGifts(root, "<nav/>"); const amtF = root.innerHTML.match(/<span class="gf-amt">[\s\S]*?<\/span>/g);
+  ok("NEVER money: occasion, each kid, each section, groups, ⚖️ dollars and tally() identical with or without relatives' presents", mf === mb, [mf, mb]);
+  ok("…personTot's own count is still Mom's own (Ava 3)", T.personTot("x", "k_ava").count === 3);
+  ok("…every People row amount the same", J(amtF) === J(amtB), [amtF, amtB]);
+}
+{
+  reset(WITH()); S.dadOpen = true; const dtB = J([DT.dadTot("x", "k_ava"), DT.dadTot("x", "k_ben")]);
+  W.renderGiftsDad(droot, ""); W.gdBack(); let h = droot.innerHTML;
+  ok("Dad's list: Ava '6 presents · … · 🎁 3 from others' (✏️ edit)", /Ava [\s\S]*?<span class="gf-pc">6 presents · (<span title="[^"]*">[^<]*<\/span> ?)+ · 🎁 3 from others<\/span>/.test(h), h.match(/gf-pc">[^]*?<\/span><\/span>/g));
+  ok("…Ben (👀 look) '3 presents · … · 🎁 1 from others'", /Ben [\s\S]*?<span class="gf-pc">3 presents · (<span title="[^"]*">[^<]*<\/span> ?)+ · 🎁 1 from others<\/span>/.test(h));
+  ok("…Cal isn't shared: not there, and his Jigsaw counts nowhere on Dad's side", !/Cal/.test(h) && !/Jigsaw/.test(h));
+  W.gdOpen("k_ava"); h = droot.innerHTML;
+  ok("Dad's Ava page header: '6 presents · 🎁 3 from others · ✏️ you can edit'", /color:#475569">6 presents · 🎁 3 from others · <span class="gf-chip"[^>]*>✏️ you can edit/.test(h), h.match(/\d+ presents?[^<]*/));
+  ok("…his money (dadTot) unchanged", J([DT.dadTot("x", "k_ava"), DT.dadTot("x", "k_ben")]) === dtB);
+  reset(BASE()); S.dadOpen = true; const dt0 = J([DT.dadTot("x", "k_ava"), DT.dadTot("x", "k_ben")]); S.dadOpen = false;
+  ok("…and the same as with no relatives' presents at all", dt0 === dtB);
+  const dd = WITH(); dd.items.o6 = { occ: "x", pids: ["k_ava", "p-sam"], sec: "special", name: "Surprise for Ava and Dad", status: "idea", from: "p-gma", ts: 30 };
+  reset(dd); S.dadOpen = true; W.renderGiftsDad(droot, ""); W.gdBack(); h = droot.innerHTML; W.gdOpen("k_ava"); h += droot.innerHTML; S.dadOpen = false;
+  ok("…a relative's present that is partly FOR Dad is never shown or counted on his side (Ava still 6)", !/Surprise/.test(h) && /6 presents · 🎁 3 from others · </.test(h) && !/7 presents/.test(h), h.match(/\d+ presents?[^<]*/g));
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

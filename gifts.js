@@ -47,6 +47,8 @@
 //   struggle about who did I tell which things to and forgetting if they are buying it or I am") — see FROMOTHERS_START:
 //   gifts/items/<iid>.from = <pid>  someone else is buying it (absent = us) · .told / .yes / .got = "YYYY-MM-DD" (🗣 told them · 👍 they said yes · ✅ they've got it)
 //   A from-others present never counts in Mom's money or lists (items() leaves it out; tally() too). Its status is kept, unused.
+//   GIFTTUNE: it DOES count as a gift for that kid — "N presents · 🎁 M from others" on the People row, their page, Dad's rows, and
+//   ⚖️ Even's gift count / "gifts behind" (never its dollars).
 // Totals are COMPUTED here, never stored (the esa.js rule). A gift for several people splits its cost evenly between them and
 // counts once for each (🤝). Every write = one set/update/remove of ONE record (+ a log line). Nothing here touches schedules.
 (function(){
@@ -177,9 +179,9 @@ function peopleView(o){
     const T=groupTot(o.id,g.id);
     h+='<div class="gf-card"><div class="gf-ghd"><span>'+esc(g.emoji||"")+' '+esc(g.name)+'</span><span class="gf-gsum">'+money(T.paid)+(T.budget!=null?' / '+money(T.budget):'')+'</span>'+
       '<button class="gf-tool" onclick="gfGroupBudget(\''+esc(g.id)+'\')">💲</button></div>'+(T.budget!=null?'<div style="padding:0 14px">'+bar(T)+'</div>':'')+grpSecLine(g)+dadGroupRow(o,g)+'<div class="gf-bd">';   // GIFTS_GROUPS · GIFTS_DAD: 👨 share the whole group
-    ps.forEach(p=>{const PT=personTot(o.id,p.id),FN=othersFor(o.id,p.id).length;   // FROMOTHERS: their count of presents someone else is buying
+    ps.forEach(p=>{const PT=personTot(o.id,p.id),FN=othersFor(o.id,p.id).length,N=PT.count+FN;   // FROMOTHERS: their count of presents someone else is buying · GIFTTUNE: they count as gifts (N), never money
       h+='<button class="gf-prow" onclick="gfOpenPerson(\''+esc(p.id)+'\')"><span class="gf-dot" style="background:'+esc(p.color||"#94a3b8")+'"></span>'+
-        '<span class="gf-pn">'+esc(p.name)+'<span class="gf-pc">'+(PT.count?PT.count+' present'+(PT.count===1?'':'s')+(PT.shared?' · 👤 '+(PT.count-PT.shared)+' own · 🤝 '+PT.shared+' shared':'')+' · '+counts(PT):(FN?'':'nothing yet'))+(FN?(PT.count?' · ':'')+'🎁 '+FN+' from others':'')+'</span>'+bar(PT)+secChips(o,p.id,PT)+'</span>'+   // SECTOTALS: money by section under the row
+        '<span class="gf-pn">'+esc(p.name)+'<span class="gf-pc">'+(N?N+' present'+(N===1?'':'s')+(PT.shared?' · 👤 '+(PT.count-PT.shared)+' own · 🤝 '+PT.shared+' shared':'')+(PT.count?' · '+counts(PT):''):'nothing yet')+(FN?' · 🎁 '+FN+' from others':'')+'</span>'+bar(PT)+secChips(o,p.id,PT)+'</span>'+   // SECTOTALS: money by section under the row
         '<span class="gf-amt">'+money(PT.paid)+(PT.budget!=null?'<small> / '+money(PT.budget)+'</small>':'')+'</span></button>';});
     h+='</div></div>';
   });
@@ -219,10 +221,10 @@ function itemRow(it,pid){
 }
 function personView(o,pid){
   const p=person(pid);if(!p){gfView="people";return peopleView(o);}
-  const T=personTot(o.id,pid),S=secsFor(o,[pid]),mine=items(o.id).filter(it=>pidsOf(it).indexOf(pid)>=0);
+  const T=personTot(o.id,pid),S=secsFor(o,[pid]),mine=items(o.id).filter(it=>pidsOf(it).indexOf(pid)>=0),FN=othersFor(o.id,pid).length,N=T.count+FN;   // GIFTTUNE: someone else's present counts as a gift, never money
   let h='<button class="gf-tool" style="margin-bottom:8px" onclick="gfBack()">← Everyone</button>';
   h+='<div class="gf-card"><div class="gf-hd" style="background:'+esc(p.color||"#475569")+'"><span>'+esc(p.name)+' · '+esc(o.name)+'</span><button class="gf-tool gf-hdb" onclick="gfEditPerson(\''+esc(pid)+'\')">✏️</button></div>'+
-    '<div class="gf-bd">'+bar(T)+'<div class="gf-line">'+sumLine(T)+'</div><div class="gf-line" style="color:#475569">'+T.count+' present'+(T.count===1?'':'s')+(T.shared?' · 👤 '+(T.count-T.shared)+' just theirs · 🤝 '+T.shared+' shared':'')+(p.paper?' · 🎀 '+esc(p.paper):'')+'</div>'+
+    '<div class="gf-bd">'+bar(T)+'<div class="gf-line">'+sumLine(T)+'</div><div class="gf-line" style="color:#475569">'+N+' present'+(N===1?'':'s')+(T.shared?' · 👤 '+(T.count-T.shared)+' just theirs · 🤝 '+T.shared+' shared':'')+(FN?' · 🎁 '+FN+' from others':'')+(p.paper?' · 🎀 '+esc(p.paper):'')+'</div>'+
     (p.sizes?'<div class="gf-line">👕 '+esc(p.sizes)+'</div>':'')+   // GIFTS_OCC
     '<div style="margin-top:6px"><button class="gf-tool" onclick="gfBudget(\''+esc(pid)+'\')">💲 Budget</button></div></div></div>';
   h+=dadShareCard(o,pid);   // GIFTS_DAD: 👨 Share with Dad — off · look · edit, this holiday
@@ -355,7 +357,7 @@ function kids(){return people().filter(p=>p.group==="kids");}
 function evenSet(){const e=((gfData.settings||{}).even)||{};return {pct:e.pct!=null?+e.pct:15,n:e.n!=null?+e.n:2};}
 function evenData(oid){
   const K=kids(),S=secsOf(occ(oid));
-  const row=sid=>K.map(p=>{const T=personTot(oid,p.id,sid);return {pid:p.id,amt:T.paid+T.toBuy,paid:T.paid,count:T.count};});
+  const row=sid=>K.map(p=>{const T=personTot(oid,p.id,sid),fo=othersFor(oid,p.id).filter(it=>!sid||it.sec===sid).length;return {pid:p.id,amt:T.paid+T.toBuy,paid:T.paid,count:T.count+fo};});   // GIFTTUNE: someone else's present counts in how many (and "gifts behind"), never in the dollars
   return {kids:K,all:row(null),secs:S.map(s=>({sec:s,cells:row(s.id)}))};
 }
 function behind(cells){   // which kids are behind the one furthest ahead, by dollars and by count (her pick: both)
@@ -365,11 +367,11 @@ function behind(cells){   // which kids are behind the one furthest ahead, by do
 function evenView(o){
   const D=evenData(o.id),E=evenSet();if(!D.kids.length)return intro("No kids on the family list.");
   const cell=(c,b)=>'<td class="'+(b.amt||b.count?"gf-behind":"")+'"><b>'+money(c.amt)+'</b><br><span>'+c.count+' gift'+(c.count===1?'':'s')+'</span></td>';
-  let h=intro("Each kid's presents — what's paid plus what's still planned, and how many. A shared present counts for each kid it's for, with their share of the cost. <b style=\"color:#b45309\">Amber</b> = more than "+E.pct+"% or "+E.n+" gifts behind. <button class=\"gf-tool gf-mini\" onclick=\"gfEvenEdit()\">✏️</button>");
+  let h=intro("Each kid's presents — what's paid plus what's still planned, and how many. A shared present counts for each kid it's for, with their share of the cost."+(D.kids.some(p=>othersFor(o.id,p.id).length)?" A present someone else is buying counts as a gift, never in the dollars.":"")+" <b style=\"color:#b45309\">Amber</b> = more than "+E.pct+"% or "+E.n+" gifts behind. <button class=\"gf-tool gf-mini\" onclick=\"gfEvenEdit()\">✏️</button>");
   h+='<div class="gf-card" style="overflow-x:auto"><table class="gf-even"><tr><th></th>'+D.kids.map(p=>'<th><span class="gf-dot" style="display:inline-block;background:'+esc(p.color||"#94a3b8")+'"></span> '+esc(p.name)+'</th>').join("")+'</tr>';
   const bA=behind(D.all);h+='<tr class="gf-tot"><th>All</th>'+D.all.map((c,i)=>cell(c,bA[i])).join("")+'</tr>';
   D.secs.forEach(r=>{const b=behind(r.cells);h+='<tr><th>'+esc((r.sec.emoji||"")+" "+r.sec.name)+'</th>'+r.cells.map((c,i)=>cell(c,b[i])).join("")+'</tr>';});
-  {const FO=D.kids.map(p=>othersFor(o.id,p.id).length);   // FROMOTHERS: how many someone else is buying — a count to know, never part of behind / ahead
+  {const FO=D.kids.map(p=>othersFor(o.id,p.id).length);   // FROMOTHERS: how many someone else is buying — GIFTTUNE: already inside each kid's gift count; this row tells them apart
     if(FO.some(Boolean))h+='<tr><th>🎁 From others</th>'+FO.map(n=>'<td><span>'+(n?'🎁 '+n+' from others':'—')+'</span></td>').join("")+'</tr>';}
   h+='</table></div>';
   const notes=[];D.all.forEach((c,i)=>{const b=bA[i],p=D.kids[i];if(b.amt||b.count)notes.push(esc(p.name)+' is '+[b.amt?money(b.gapA):"",b.count?b.gapN+" gift"+(b.gapN===1?"":"s"):""].filter(Boolean).join(" and ")+' behind');});
@@ -1344,6 +1346,7 @@ function dadSees(it,oid){const D=dadIds(),P=pidsOf(it);return !!it&&it.occ===oid
 function dadItems(oid,pid){return items(oid).filter(it=>dadSees(it,oid)&&(!pid||pidsOf(it).indexOf(pid)>=0));}
 function dadCanEdit(it,pid){   // on <pid>'s page: only when THAT person is shared as ✏️ edit — a 👀 look page is read-only all the way down
   const o=it&&occ(it.occ);return !!o&&!o.closed&&dadSees(it,it.occ)&&!!pid&&pidsOf(it).indexOf(pid)>=0&&shareMode(it.occ,pid)==="edit";}
+function dadOthers(oid,pid){return allItems(oid).filter(it=>!ours(it)&&dadSees(it,oid)&&pidsOf(it).indexOf(pid)>=0);}   // FROMOTHERS: the ones someone else is buying that he may see — same sharing rule, never in his totals
 function dadTot(oid,pid){const T=tally(dadItems(oid,pid),it=>share(it,pid));T.budget=num(plan(oid,pid).budget);return T;}   // only what he can see + that person's own budget
 function dadModeChip(m){return m==="edit"?chip("✏️ you can edit","#2C5F8A"):chip("👀 look only","#64748b");}
 function dadRow(it,pid,oid){
@@ -1360,24 +1363,23 @@ function dadOccBar(){const O=dadOccs(),cur=dadCurOcc();if(O.length<2)return "";
 function dadListView(o){
   const P=sharedPeople(o.id);
   let h='<div class="gf-card"><div class="gf-hd"><span>'+esc(o.name)+'</span>'+(o.date&&!o.closed?'<span class="gf-days">'+daysTo(o.date)+'</span>':'')+'</div><div class="gf-bd"><div class="gf-line" style="color:#475569">Mom shared '+P.length+' '+(P.length===1?'person':'people')+' with you'+(o.closed?' — this one is over, so it\'s look only':'')+'. Everything else stays a surprise.</div></div></div>';
-  h+='<div class="gf-card"><div class="gf-bd">'+P.map(p=>{const T=dadTot(o.id,p.id),m=o.closed?"look":shareMode(o.id,p.id);
+  h+='<div class="gf-card"><div class="gf-bd">'+P.map(p=>{const T=dadTot(o.id,p.id),m=o.closed?"look":shareMode(o.id,p.id),FN=dadOthers(o.id,p.id).length,N=T.count+FN;   // GIFTTUNE: counts as a gift, never money
     return '<button class="gf-prow" onclick="gdOpen(\''+esc(p.id)+'\')"><span class="gf-dot" style="background:'+esc(p.color||"#94a3b8")+'"></span>'+
-      '<span class="gf-pn">'+esc(p.name)+' '+dadModeChip(m)+'<span class="gf-pc">'+(T.count?T.count+' present'+(T.count===1?'':'s')+' · '+counts(T):'nothing yet')+'</span>'+bar(T)+'</span>'+
+      '<span class="gf-pn">'+esc(p.name)+' '+dadModeChip(m)+'<span class="gf-pc">'+(N?N+' present'+(N===1?'':'s')+(T.count?' · '+counts(T):'')+(FN?' · 🎁 '+FN+' from others':''):'nothing yet')+'</span>'+bar(T)+'</span>'+
       '<span class="gf-amt">'+money(T.paid)+(T.budget!=null?'<small> / '+money(T.budget)+'</small>':'')+'</span></button>';}).join("")+'</div></div>';
   return h;
 }
 function dadPersonView(o,pid){
   const p=person(pid),m0=shareMode(o.id,pid);if(!p||!m0){gdPid=null;return dadListView(o);}
-  const m=o.closed?"look":m0,T=dadTot(o.id,pid),S=secsFor(o,[pid]),mine=dadItems(o.id,pid),known=S.map(s=>s.id);
+  const m=o.closed?"look":m0,T=dadTot(o.id,pid),S=secsFor(o,[pid]),mine=dadItems(o.id,pid),known=S.map(s=>s.id),oth=dadOthers(o.id,pid),N=T.count+oth.length;
   let h='<button class="gf-tool" style="margin-bottom:8px" onclick="gdBack()">← Everyone shared</button>';
   h+='<div class="gf-card"><div class="gf-hd" style="background:'+esc(p.color||"#475569")+'"><span>'+esc(p.name)+' · '+esc(o.name)+'</span></div><div class="gf-bd">'+bar(T)+'<div class="gf-line">'+sumLine(T)+'</div>'+
-    '<div class="gf-line" style="color:#475569">'+T.count+' present'+(T.count===1?'':'s')+' · '+dadModeChip(m)+'</div>'+
+    '<div class="gf-line" style="color:#475569">'+N+' present'+(N===1?'':'s')+(oth.length?' · 🎁 '+oth.length+' from others':'')+' · '+dadModeChip(m)+'</div>'+
     (m==="edit"?'<div class="gf-sub" style="margin:6px 0 0">Tap a present to change its status, spot, paper or what was paid. ＋ adds one for '+esc(p.name)+'.</div>':'')+'</div></div>';
   S.concat(mine.some(it=>known.indexOf(it.sec)<0)?[{id:"",emoji:"📦",name:"No section"}]:[]).forEach(s=>{
     const L=mine.filter(it=>s.id?it.sec===s.id:known.indexOf(it.sec)<0);if(!L.length&&m!=="edit")return;
     h+='<div class="gf-card"><div class="gf-ghd"><span>'+esc(s.emoji||"")+' '+esc(s.name)+'</span><span class="gf-gsum"></span>'+(m==="edit"&&s.id?'<button class="gf-tool" onclick="gdNew(\''+esc(pid)+'\',\''+esc(s.id)+'\')">＋</button>':'')+'</div>'+
       '<div class="gf-bd">'+(L.length?L.map(it=>dadRow(it,pid,o.id)).join(""):'<div class="gf-empty">Nothing here yet.</div>')+'</div></div>';});
-  const oth=allItems(o.id).filter(it=>!ours(it)&&dadSees(it,o.id)&&pidsOf(it).indexOf(pid)>=0);   // FROMOTHERS: same sharing rule, never in his totals
   if(!mine.length&&!oth.length&&m!=="edit")h+='<div class="gf-card"><div class="gf-empty">No presents for '+esc(p.name)+' yet.</div></div>';
   if(oth.length){h+='<div class="gf-card"><div class="gf-ghd"><span>🎁 From others</span><span class="gf-gsum">'+oth.length+'</span></div><div class="gf-bd">';
     byGiver(oth).forEach(g=>{h+='<div class="gf-spot">🎁 '+esc(g.name)+'</div>'+g.items.map(it=>dadFromRow(it,pid,o.id)).join("");});h+='</div></div>';}
