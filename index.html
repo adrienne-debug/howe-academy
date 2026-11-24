@@ -72695,7 +72695,7 @@ function mastBankAddBatch(){ if(!momHere()&&!mastAdminPinOk) return;
   const raw=(document.getElementById("mast-curr-add-batch")||{}).value||"";
   const lines=raw.split(/\n/).map(l=>l.trim()).filter(Boolean);
   if(!lines.length){ alert("Paste at least one line (Name | definition)."); return; }
-  const entries=lines.map(line=>{
+  const entries=(typeof mastBatchSplit==="function")?mastBatchSplit(raw,mastBankAddMode||mastGetCatMode(kid,cat)):lines.map(line=>{   // ONESPLIT: a Flip deck's list splits like ＋ Add cards
     const pi=line.indexOf("|");
     return {name:(pi>=0?line.slice(0,pi):line).trim(), def:pi>=0?line.slice(pi+1).trim():""};
   });
@@ -81809,8 +81809,28 @@ function mhqImpSplitLine(line, sepChar) {
   return [mhqImpCleanField(line.slice(0, at)), mhqImpCleanField(line.slice(at + 1))];
 }
 
+// ONESPLIT_START — 📥 Import and the Database box split a pasted list with the SAME rules as ＋ Add cards (cardSplit), so a
+//   list that works on a unit works here too (PLAN_unit_easy_import_2026-11-19.md §2.2, §6, slice H; her go 2026-11-22: "build
+//   as many in as many sessions you need … go with her answers"). Before this, "Guppy - a tiny, colorful fish" came in split at
+//   the comma ("Guppy - a tiny" → "colorful fish"), a dash or colon list came in as whole-line names with no meaning, a ChatGPT
+//   table came in with empty names and its header and ---|--- rows as cards, and bullets / numbers / **bold** stayed in names.
+//   · cardSplit is NOT changed. This is a thin adapter over it; the old splitter is kept (mhqImpSplitOld) and still answers
+//     every paste in the shape it was built for, so an Anki / Quizlet / CSV / TSV file imports EXACTLY as before:
+//       – every line carries the old mark (a tab; a | with no table edges; a comma that comes first on the line, or a quoted
+//         CSV cell) → the old result, word for word (3+ columns, "" quotes, Anki HTML, a name pasted twice, a first row
+//         "Word ⇥ Meaning" — all as before; the preview shows that row and she can take it out of the paste)
+//       – the rules find nothing better (a names list; a CSV whose meanings carry commas; name / meaning on two lines with no
+//         indent — ambiguous with a plain names list; a list of sums, "5 - 3", where the dash is a minus) → the old result
+//       – otherwise cardSplit's rows, with Mastery's own field clean-up (HTML, quotes) on top; a name pasted twice (cardSplit
+//         keeps the first) comes back as its own row so the preview counts it as before and "Essen" / "essen" stay two cards;
+//         a 3-column line in the old shape keeps the old joined back.
+//   · The Database box (Add to Mastery ▸ Batch) takes the same rules only for a 🔄 Flip deck — the only mode whose box asks
+//     for a meaning — and never splits at a comma ("Albany, New York" stays one name, as before). Other modes: as before.
+//   · Same writes, same places: 📥 Import still hands mastBankAddMany its rows; the Database box still calls mastBankAddMany.
+//     Screens, preview, buttons unchanged; the preview's "separator:" can now also say dash / colon / equals / arrow /
+//     next line. No new state, no db writes here. test_one_split.js holds the old-vs-new proof.
 // {rows:[{name,def}], sep} — sep is "tab"|"pipe"|"comma"|"none".
-function mhqImpSplit(text) {
+function mhqImpSplitOld(text) {
   const lines = String(text == null ? "" : text)
     .split(/\r\n|\r|\n/)
     .map(function (l) { return l; })
@@ -81835,7 +81855,128 @@ function mhqImpSplit(text) {
 
   return { rows: rows, sep: sep };
 }
-
+const OS_CH = { tab: "\t", pipe: "|", comma: "," };
+function osUp() { return typeof cardSplit === "function" && typeof csNorm === "function" && typeof CS_SEPS !== "undefined"; }
+// a column header row nobody keeps as a card: both cells are header words ("Word | Meaning", "English ⇥ German")
+function osHeaderRow(r) { return !!(r && CS_FRONT_WORDS.test(String(r.name || "").trim()) && CS_BACK_WORDS.test(String(r.def || "").trim())); }
+// a markdown table line: an edge pipe, or a ---|--- rule
+function osEdge(l) { const t = String(l).trim(); return t.charAt(0) === "|" || t.charAt(t.length - 1) === "|" || csIsRule(t); }
+// a CSV row: the comma is the line's first mark ("Hund,the dog - a pet"), or the line opens a quoted cell; a list with commas
+// inside its meanings has its dash / colon first ("Guppy - a tiny, colorful fish")
+function osCommaFirst(l) {
+  const t = String(l).trim(); if (t.charAt(0) === '"') return true;
+  const c = t.indexOf(","); if (c < 1) return false;
+  return CS_ORDER.every(function (k) { const m = CS_SEPS[k].re.exec(t); return !m || m.index > c; });
+}
+// Anki's HTML tags off before the rules look for marks (tabs and line starts kept); the old clean-up still runs on each field
+function osNoTags(l) { const s = String(l).replace(/<\/?[a-z][^>]*>/gi, " "); return /^\s/.test(l) ? s : s.replace(/^ +/, ""); }
+// a list of sums ("5 - 3", "12 - 5 = 7", "6×7"): the dash is a minus, not a separator — the old result
+function osSums(lines) { return lines.every(function (l) { return /^[\d\s+\-–—−×x*÷\/=.,()%]+$/.test(String(l).trim()); }); }
+// name / meaning on two lines counts only when every meaning line is indented AND reads like a meaning (4+ words, longer than
+// its name) — anything less could be a plain names list
+function osIndentPairs(lines, cs) {
+  let P = lines.filter(function (l) { return !csIsRule(l.trim()); }); if (cs.heading) P = P.slice(1);
+  if (P.length < 2 || P.length % 2) return false;
+  for (let i = 0; i < P.length; i += 2) if (/^[ \t]/.test(P[i]) || !/^[ \t]+\S/.test(P[i + 1]) || csWords(P[i + 1]) < 4 || csWords(P[i + 1]) <= csWords(P[i])) return false;
+  return true;
+}
+// each of cardSplit's rows next to the line it came from; a line cardSplit left out as a second copy of a name comes back as
+// its own row. null when the lines can't be matched one to one (then cardSplit's rows are used as they are).
+function osAlign(lines, cs) {
+  if (cs.paired) {   // name / meaning pairs: each pair on its own gives its row back, a repeated name too
+    let P = lines.filter(function (l) { return !csIsRule(l.trim()); }); if (cs.heading) P = P.slice(1);
+    const out = [];
+    for (let i = 0; i + 1 < P.length; i += 2) { const r = cardSplit(P[i] + "\n" + P[i + 1], { heading: false }).rows[0]; if (!r || !r.back) return null; out.push({ row: r, line: P[i] }); }
+    return out.length === cs.rows.length + cs.dupInPaste ? out : null;
+  }
+  const o = { heading: false }; if (cs.sep) o.sep = cs.sep;
+  const out = [], seen = new Set(); let p = 0, extra = 0, skip = !!(cs.heading || cs.columns);   // cardSplit took the first line as a heading / header row
+  lines.forEach(function (l) {
+    const one = cardSplit(l, o).rows[0]; if (!one) return;
+    if (skip) { skip = false; return; }
+    const k = csNorm(one.name), want = cs.rows[p];
+    if (want && k === csNorm(want.name)) { out.push({ row: want, line: l }); seen.add(k); p++; }
+    else if (seen.has(k)) { out.push({ row: { name: one.name, back: one.back, how: one.how }, line: l }); extra++; }
+  });
+  return (p === cs.rows.length && extra === cs.dupInPaste) ? out : null;
+}
+// cardSplit's rows for these lines; oldSep/oldDef keep the old joined back on a 3+ column line in the old shape
+function osRows(lines, cs, oldSep, oldDef) {
+  const ch = OS_CH[cs.sep];
+  const wide = ch && cs.sep === oldSep && cs.sep !== "comma" && lines.some(function (l) { return !osEdge(l) && l.split(ch).length > 2; });
+  if (!cs.dupInPaste && !wide) return cs.rows.map(function (r) { return { name: r.name, back: r.back }; });
+  const A = osAlign(lines, cs); if (!A) return cs.rows.map(function (r) { return { name: r.name, back: r.back }; });
+  return A.map(function (a) {
+    const r = { name: a.row.name, back: a.row.back };
+    if (wide && a.row.how === "sep" && !osEdge(a.line) && a.line.split(ch).length > 2) r.back = oldDef(a.line, ch);
+    return r;
+  });
+}
+// the first line cardSplit took as a heading or a header row stays a card, as before, when the paste is in the old mark ("die
+// Katze" over "der Hund | the dog" lines; "front ⇥ back" — test_study_import.js pins it as a card), or when the "header" reads
+// like a card ("Word ⇥ das Wort" in the Database box) — never a markdown table's header (a ---|--- rule under it), and in a new
+// mark only when its cells are not both header words. oldRows line up with lines. → {at, row, fromOld} or null
+function osKeepFirst(lines, cs, oldSep, oldRows) {
+  if (!cs.heading && !cs.columns) return null;
+  const o = { heading: false }; if (cs.sep) o.sep = cs.sep;
+  let i = 0; while (i < lines.length && !cardSplit(lines[i], o).rows[0]) i++;   // past ChatGPT's chat lines, as cardSplit reads it
+  if (i >= lines.length) return null;
+  const same = !!oldRows[i] && cs.sep === oldSep && !!OS_CH[oldSep];
+  if (cs.heading) return same ? { at: i, row: oldRows[i], fromOld: true } : null;
+  if (i + 1 < lines.length && csIsRule(lines[i + 1].trim())) return null;
+  if (same) return { at: i, row: oldRows[i], fromOld: true };
+  const one = cardSplit(lines[i], o).rows[0];
+  return !osHeaderRow({ name: one.name, def: one.back }) ? { at: i, row: { name: one.name, def: one.back }, fromOld: false } : null;
+}
+// 📥 Import (Mastery HQ): {rows:[{name,def}], sep}
+function mhqImpSplit(text) {
+  const old = mhqImpSplitOld(text);
+  if (!osUp()) return old;
+  const lines = String(text == null ? "" : text).split(/\r\n|\r|\n/).filter(function (l) { return l.trim() !== "" && l.trim().charAt(0) !== "#"; });
+  if (!lines.length) return old;
+  const ch = OS_CH[old.sep];
+  if (ch && lines.every(function (l) { return l.indexOf(ch) >= 0; }) &&
+      !(old.sep === "pipe" && lines.some(osEdge)) && !(old.sep === "comma" && !lines.every(osCommaFirst)))
+    return old;
+  if (osSums(lines)) return old;
+  const L = lines.map(osNoTags);
+  const cs = cardSplit(L.join("\n"));
+  if (!cs.sep && (old.sep !== "none" || (cs.paired && !osIndentPairs(L, cs)))) return old;
+  if (old.sep === "comma" && cs.sep !== "comma" &&
+      lines.filter(osCommaFirst).length >= cs.rows.filter(function (r) { return r.how === "sep"; }).length) return old;
+  const rows = osRows(L, cs, old.sep, function (l, c) { return mhqImpSplitLine(l, c)[1]; }).map(function (r) {
+    return { name: mhqImpCleanField(r.name), def: mhqImpCleanField(r.back || "") }; });
+  const k1 = osKeepFirst(L, cs, old.sep, old.rows);
+  if (k1) rows.unshift(k1.fromOld ? k1.row : { name: mhqImpCleanField(k1.row.name), def: mhqImpCleanField(k1.row.def) });
+  return { rows: rows, sep: cs.sep || (cs.paired ? "next line" : "none") };
+}
+// the Database box (Add to Mastery ▸ Batch) before: one line, one card, split at its first |
+function mastBatchSplitOld(raw) {
+  return String(raw == null ? "" : raw).split(/\n/).map(function (l) { return l.trim(); }).filter(Boolean).map(function (line) {
+    const pi = line.indexOf("|");
+    return { name: (pi >= 0 ? line.slice(0, pi) : line).trim(), def: pi >= 0 ? line.slice(pi + 1).trim() : "" };
+  });
+}
+// the Database box: [{name,def}] — the shared rules for a 🔄 Flip deck, the old split for every other mode
+function mastBatchSplit(raw, mode) {
+  const old = mastBatchSplitOld(raw);
+  if (mode !== "flip" || !osUp()) return old;
+  const lines = String(raw == null ? "" : raw).split(/\n/).map(function (l) { return l.replace(/\s+$/, ""); }).filter(function (l) { return l.trim(); });
+  if (!lines.length) return old;
+  if (lines.every(function (l) { return l.indexOf("|") >= 0; }) && !lines.some(osEdge))
+    return old;
+  if (osSums(lines)) return old;
+  const cs = cardSplit(lines.join("\n"));
+  if (cs.sep === "comma") return old;
+  if (!cs.sep && cs.paired && !osIndentPairs(lines, cs)) return old;
+  const oldSep = lines.some(function (l) { return l.indexOf("|") >= 0; }) ? "pipe" : "none";
+  const rows = osRows(lines, cs, oldSep, function (l) { const t = l.trim(); return t.slice(t.indexOf("|") + 1).trim(); })
+    .map(function (r) { return { name: String(r.name || "").trim(), def: String(r.back || "").trim() }; });
+  const k1 = osKeepFirst(lines, cs, oldSep, old);
+  if (k1) rows.unshift(k1.fromOld ? k1.row : { name: String(k1.row.name).trim(), def: String(k1.row.def || "").trim() });
+  return rows;
+}
+// ONESPLIT_END
 // {name, changed, why} — front must avoid Firebase-illegal key chars . # $ [ ] /
 // (mastDefKeyOk checks exactly these). Order matters: trailing period first,
 // then slash, then quote normalization, then the remaining illegal set.
