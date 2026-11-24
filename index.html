@@ -37642,8 +37642,10 @@ function luWordsPersistCursor(kid,out){
 async function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
   try{ await nbDgPrefetch(kid); }catch(e){}   // Daily Grams pages for this week (usually already warm from the tab render)
+  const lrMsg=(typeof nbLadReadReady==="function")?await nbLadReadReady(kid):"";   // 📖 NBLADREAD: the reading passages first (a failure → built as before + a note)
   try{
     const out=lib.generate(kid, haNbContext(kid));
+    if(typeof nbLadReadNote==="function") nbLadReadNote(out,lrMsg);   // 📖 NBLADREAD
     if(out&&out.warnings&&out.warnings.length) alert("⚠ "+cap(kid)+"'s notebook:\n\n"+out.warnings.join("\n\n"));   // e.g. a shape with no drawing
     // Julian letters: remember where this week's window landed so next week CONTINUES
     // instead of re-deriving from the (growing) bank size — the growth kept rewinding
@@ -37657,6 +37659,7 @@ async function haNbOpen(kid,which){
     nbQbPersistCursor(kid,out);   // number-reasoning bank: same idea
     nbCvPersistCursor(kid,out);   // conventions bank: same idea
     luWordsPersistCursor(kid,out);   // LU_WORDS_WIRE: Lucy's sight words, same idea
+    if(typeof nbLadReadPersist==="function") nbLadReadPersist(kid,out);   // 📖 NBLADREAD: the reading ladder's place, same idea
     const html=(which==="parent")?(out.parent||out.student):out.student;
     const fname=kid+"_"+nbTargetWk()+"_"+(which==="parent"?"parent":"notebook")+".html";
     lib.openHtml(html, fname);
@@ -37671,8 +37674,10 @@ async function haNbPdf(kid,which){
   _haNbPdfBusy=true;
   const say=m=>{ if(typeof gwShowToast==="function") gwShowToast(m); };
   try{ await nbDgPrefetch(kid); }catch(e){}
+  const lrMsg=(typeof nbLadReadReady==="function")?await nbLadReadReady(kid):"";   // 📖 NBLADREAD: the reading passages first
   try{
     const out=lib.generate(kid, haNbContext(kid));
+    if(typeof nbLadReadNote==="function") nbLadReadNote(out,lrMsg);   // 📖 NBLADREAD
     if(out&&out.warnings&&out.warnings.length) alert("⚠ "+cap(kid)+"'s notebook:\n\n"+out.warnings.join("\n\n"));   // e.g. a shape with no drawing
     // Julian letters: remember where this week's window landed so next week CONTINUES
     // instead of re-deriving from the (growing) bank size — the growth kept rewinding
@@ -37686,6 +37691,7 @@ async function haNbPdf(kid,which){
     nbQbPersistCursor(kid,out);
     nbCvPersistCursor(kid,out);
     luWordsPersistCursor(kid,out);   // LU_WORDS_WIRE
+    if(typeof nbLadReadPersist==="function") nbLadReadPersist(kid,out);   // 📖 NBLADREAD
     const html=(which==="parent")?(out.parent||out.student):out.student;
     const fname=kid+"_"+nbTargetWk()+"_"+(which==="parent"?"parent":"notebook")+".pdf";
     say("📄 Building "+cap(kid)+"'s PDF…");
@@ -37698,6 +37704,7 @@ async function haNbPdf(kid,which){
 async function haNbCombinedParent(){
   const lib=window.HoweNotebooks; if(!lib||!lib.combinedParent){ alert("Combined parent guide needs the latest builder — reload the page and try again."); return; }
   try{ await Promise.all(["lincoln","ellis","lucy","julian"].map(k=>nbDgPrefetch(k).catch(()=>{}))); }catch(e){}
+  try{ const lrMsg=(typeof nbLadReadReadyAll==="function")?await nbLadReadReadyAll():""; if(lrMsg) alert("⚠ "+lrMsg); }catch(e){}   // 📖 NBLADREAD: the reading answers are in the guide
   try{
     const ctxByKid={}; ["lincoln","ellis","lucy","julian"].forEach(k=>{ try{ ctxByKid[k]=haNbContext(k); }catch(e){} });
     const html=lib.combinedParent(ctxByKid);
@@ -50155,12 +50162,13 @@ function nbLevelCardHtml(kid){
 //   · Saved per kid per ladder at notebookSettings/<kid>/ladders/<number|reading> = { on, lv, opt, cur }. Nothing saved = OFF.
 //     Only Mom's taps on the card write (momHere), one targeted field per write, behind db && !_dryRun(), mirrored to the same
 //     local copy as every notebook setting (ha_nb_settings). A new level drops cur, so the child starts at that level's first item.
-//     Nothing writes cur yet — the slices that print the pages save it after a print, like the notebook's other saved places.
+//     cur is saved after a print by the slice that prints that ladder's pages (NBLADREAD below: reading, the 1st-grade notebook).
 //   · The level: the one Mom picked (lv), else the kid's notebook grade (nbLevelGrade — Mom's override or the Family grade, not
 //     today's fallback) through HoweNotebooks.ladders.defaultLevel; neither → "Pick a level".
 //   · ctx.ladders (haNbContext): { reading|number: { on, lv, lvFrom, opt, cur, ready, next } } for the kid's saved ladders, or
-//     null. next = ladders.next(…) for the target week when the ladder is on and loaded. NO generator reads it yet.
-//   · Switching a ladder on prints nothing yet (NBLADDER_PAGES_NOTE says so on the card — change that line when the pages land).
+//     null. next = ladders.next(…) for the target week when the ladder is on and loaded. Only the 1st-grade notebook reads it
+//     (reading, NBLADREAD); every other notebook and the number ladder print nothing yet.
+//   · The card's note says per notebook what prints (NBLADREAD's note); NBLADDER_PAGES_NOTE is the "not yet" wording.
 const NBLADDER_FILES={reading:"ladders/read_and_answer.json",number:"ladders/number_thinking.json"};
 const NBLADDER_KINDS=["reading","number"];
 const NBLADDER_NAMES={reading:"📖 Reading passages",number:"🔢 Number thinking"};
@@ -50197,8 +50205,9 @@ function nbLadderLevelOf(kid,kind){
   const d=nbLadderDefault(kid,kind);
   return d?{lv:d,from:"grade"}:{lv:"",from:""};
 }
-function nbLadderState(kid,kind){ const s=nbLadderSaved(kid,kind), lv=nbLadderLevelOf(kid,kind); return {on:s.on===true, lv:lv.lv||null, lvFrom:lv.from||null, opt:s.opt===true, cur:(s.cur&&typeof s.cur==="object")?s.cur:null}; }
-// For haNbContext: the kid's saved ladders + this week's items when on and loaded; null when nothing is saved. No generator reads it yet.
+function nbLadderState(kid,kind){ const s=nbLadderSaved(kid,kind), lv=nbLadderLevelOf(kid,kind); return {on:s.on===true, lv:lv.lv||null, lvFrom:lv.from||null, opt:s.opt===true, cur:(s.cur&&typeof s.cur==="object")?s.cur:null, days:(typeof s.days==="string"&&s.days)?s.days:null}; }   // 📖 NBLADREAD: days = the reading pages' day ticks
+// For haNbContext: the kid's saved ladders + this week's items when on and loaded; null when nothing is saved. Only the 1st-grade
+// notebook reads it (reading — NBLADREAD).
 function nbLadderCtx(kid){
   try{
     const L=nbLadderLib(), out={}; let any=false;
@@ -50214,7 +50223,7 @@ function nbLadderCtx(kid){
 }
 // The one writer: ONE targeted field of notebookSettings/<kid>/ladders/<kind>. false / "" / null = remove (nothing saved = off).
 function nbLadderWrite(kid,kind,field,val){
-  if(!momHere()||!NBLADDER_FILES[kind]||["on","lv","opt","cur"].indexOf(field)<0) return false;
+  if(!momHere()||!NBLADDER_FILES[kind]||["on","lv","opt","cur","days"].indexOf(field)<0) return false;   // 📖 NBLADREAD: + days (the reading pages' day ticks)
   if(!notebookSettings[kid]) notebookSettings[kid]={};
   const ns=notebookSettings[kid]; if(!ns.ladders||typeof ns.ladders!=="object") ns.ladders={};
   if(!ns.ladders[kind]||typeof ns.ladders[kind]!=="object") ns.ladders[kind]={};
@@ -50268,6 +50277,7 @@ function nbLadderRowHtml(kid,kind){
     '<label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;font-weight:700;color:#1f2937">Level:'+
       '<select onchange="nbLadderSetLevel(\''+kid+'\',\''+kind+'\',this.value)" style="padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:11.5px;background:#fff;'+F+'">'+first+opts+'</select></label>'+
     '<div style="font-size:11.5px;color:#374151;margin-top:5px">'+nbLadderWhereText(kid,kind,t,st)+'</div>'+optHtml+
+    ((kind==="reading"&&typeof nbLadReadDaysHtml==="function")?nbLadReadDaysHtml(kid):"")+   // 📖 NBLADREAD: the day ticks (a notebook that prints reading)
     '<div style="margin-top:7px">'+place+'</div></div>';
 }
 // The one home: this kid's section of the Notebook tab, Mom only, after the Notebook level card. Closed, it reads only the saved
@@ -50282,7 +50292,7 @@ function nbLadderCardHtml(kid){
       '<span style="font-weight:600;color:var(--muted);margin-left:6px">'+sum+'</span></summary>'+
     '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin:6px 0 4px">Two step-by-step ladders for the notebook: a reading passage with questions, and number-thinking questions. Each starts at the level you pick and climbs from there.</div>'+
     (nbLadderLib()?NBLADDER_KINDS.map(k=>nbLadderRowHtml(kid,k)).join(""):'<div style="font-size:11.5px;color:var(--muted);padding:6px 0">Getting the ladders…</div>')+
-    '<div style="font-size:11px;color:#4338ca;font-weight:700;line-height:1.45;margin-top:4px">'+NBLADDER_PAGES_NOTE+'</div>'+
+    '<div style="font-size:11px;color:#4338ca;font-weight:700;line-height:1.45;margin-top:4px">'+((typeof nbLadReadNoteHtml==="function")?nbLadReadNoteHtml(kid):NBLADDER_PAGES_NOTE)+'</div>'+   // 📖 NBLADREAD: what prints, per notebook
   '</details>';
 }
 // 🖨 Print placement: the window opens inside the tap (Safari blocks a pop-up opened after a wait — as ucPrintWin), then gets the
@@ -50298,6 +50308,90 @@ function nbLadderPlacement(kid,kind){
   p.then(r=>{ let doc=""; try{ doc=r[0].ladders.placementDoc(kind,r[1],{lv:lv,kidName:cap(kid)}); }catch(e){ doc=""; } if(doc) put(doc); else fail(); },fail);
 }
 // NBLADDER_END
+// NBLADREAD_START — 📖 "Read and answer" in the 1st-grade notebook, slice 2 of the notebook ladders (notebooks study, her words
+// 2026-11-23/24: "Build it"; reading "twice a week sounds great"; 1st grade "She reads them"). notebooks.js NBLADREAD prints the
+// pages from the reading ladder haNbContext hands it; this block is the app's side of it:
+//   · Which notebooks print it: asked of notebooks.js (HoweNotebooks.ladderPages), never a list of kids here. The card's note
+//     says "Prints in the notebook on …" for the reading row of such a notebook, and the "not yet" wording for every other
+//     notebook and for the number row.
+//   · The days: the reading row gets day ticks (Mon–Fri, at most two), saved as ONE field — the reading ladder's "days", e.g.
+//     "tuesday thursday" — through nbLadderWrite (Mom only, one targeted field, inert under ?dryrun=1). Nothing ticked = the
+//     week's 2nd and 4th school day.
+//   · Every Mom build (🖨 Print / Parent / 👁 Look, 📄 PDF, 📱 Send to tablet, the combined parent guide) waits for the reading
+//     file first when that kid's reading ladder is on and the notebook prints it. If it can't load, the notebook builds exactly
+//     as before (no reading pages) and Mom gets a plain note saying so, pointing at the Ladders card.
+//   · The place: the builder reports out.readingCursor only when reading pages print; it is saved as the reading ladder's "cur"
+//     at the same moment as the notebook's other saved places (the sight-word, letter and number cursors) — after the build,
+//     only when it changed, Mom only, one field, never under ?dryrun=1. The same week built again writes nothing; next week
+//     picks up after these passages.
+const NBLADREAD_WEEK=["monday","tuesday","wednesday","thursday","friday"];
+const NBLADREAD_DAY={monday:"Monday",tuesday:"Tuesday",wednesday:"Wednesday",thursday:"Thursday",friday:"Friday"};
+const NBLADREAD_NUM_NOTE="Number thinking doesn’t print anything in the notebook yet — those pages are still being built. For now it keeps the level and the child’s place ready.";
+const NBLADREAD_LOAD_FAIL="The reading passages couldn’t load (check the internet), so the Read and answer pages and their answers aren’t in this build — everything else is as usual. Build it again once you’re online; the Ladders card on the Notebook tab shows when they’re back.";
+// Does this kid's notebook print the reading ladder? (notebooks.js decides from the kid's look and level.)
+function nbLadReadPrints(kid){
+  try{ const N=window.HoweNotebooks; if(!N||typeof N.ladderPages!=="function") return false;
+    const r=N.ladderPages(kid,{notebookTheme:nbThemeOf(kid),nbLevel:nbLevelOf(kid)}); return !!(r&&r.reading); }catch(e){ return false; }
+}
+// The saved ticks → weekdays in week order (at most two); none = the default.
+function nbLadReadDaysOf(kid){
+  const v=nbLadderSaved(kid,"reading").days, seen={};
+  return String(typeof v==="string"?v:"").toLowerCase().split(/[\s,]+/).filter(d=>NBLADREAD_WEEK.indexOf(d)>=0&&!seen[d]&&(seen[d]=1))
+    .sort((a,b)=>NBLADREAD_WEEK.indexOf(a)-NBLADREAD_WEEK.indexOf(b)).slice(0,2);
+}
+function nbLadReadDaysWord(kid){
+  const d=nbLadReadDaysOf(kid);
+  return d.length?d.map(x=>NBLADREAD_DAY[x]).join(" and "):"the 2nd and 4th school day of the week (Tuesday and Thursday in a full week)";
+}
+// A tick: Mom only, at most two days, ONE field. Unticking the last one removes the field (back to the default).
+function nbLadReadSetDay(kid,day,on){
+  if(!momHere()||NBLADREAD_WEEK.indexOf(day)<0) return;
+  let d=nbLadReadDaysOf(kid).filter(x=>x!==day);
+  if(on){ if(d.length>=2) return; d.push(day); }
+  d.sort((a,b)=>NBLADREAD_WEEK.indexOf(a)-NBLADREAD_WEEK.indexOf(b));
+  nbLadderWrite(kid,"reading","days",d.length?d.join(" "):null);
+  nbLadderRepaint();
+}
+// The reading row's day ticks — only for a notebook that prints reading.
+function nbLadReadDaysHtml(kid){
+  if(!nbLadReadPrints(kid)) return "";
+  const d=nbLadReadDaysOf(kid), full=d.length>=2;
+  const box=k=>{ const on=d.indexOf(k)>=0;
+    return '<label style="display:inline-flex;align-items:center;gap:3px;font-size:11.5px;font-weight:700;color:'+((full&&!on)?'#9ca3af':'#1f2937')+'"><input type="checkbox"'+(on?' checked':'')+((full&&!on)?' disabled':'')+
+      ' onchange="nbLadReadSetDay(\''+kid+'\',\''+k+'\',this.checked)">'+NBLADREAD_DAY[k].slice(0,3)+'</label>'; };
+  return '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;font-weight:700;color:#1f2937">Days:'+NBLADREAD_WEEK.map(box).join("")+
+    '<span style="font-weight:600;font-size:10.5px;color:var(--muted)">'+(d.length?'Untick both to go back to the 2nd and 4th school day.':'None ticked: the 2nd and 4th school day. Tick up to two to choose.')+'</span></div>';
+}
+// The card's note: what this kid's notebook prints.
+function nbLadReadNoteHtml(kid){
+  if(!nbLadReadPrints(kid)) return NBLADDER_PAGES_NOTE;
+  const st=nbLadderState(kid,"reading"), t=nbLadderTrack("reading"), L=nbLadderLib(), w=(st.lv&&t&&L)?L.where(t,st):null;
+  const read=(w&&w.end)?"📖 Reading passages: the last level is finished, so no reading page prints."
+    :st.on?"📖 Reading passages: prints in the notebook on "+nbLadReadDaysWord(kid)+" — one passage a day, with the answers on a Teaching Companion page."
+    :"📖 Reading passages: when it’s on, it prints in the notebook on "+nbLadReadDaysWord(kid)+".";
+  return read+'<div style="margin-top:3px">🔢 '+NBLADREAD_NUM_NOTE+'</div>';
+}
+// Before a Mom build: the reading file is here when this kid's notebook will print it. → "" or the plain note for Mom.
+async function nbLadReadReady(kid){
+  if(nbLadderSaved(kid,"reading").on!==true||!nbLadReadPrints(kid)) return "";
+  try{ await nbLadderLoad("reading"); return ""; }catch(e){ return NBLADREAD_LOAD_FAIL; }
+}
+async function nbLadReadReadyAll(){   // the combined parent guide: any kid whose notebook prints reading
+  const any=Object.keys(notebookSettings||{}).some(k=>nbLadderSaved(k,"reading").on===true&&nbLadReadPrints(k));
+  if(!any) return "";
+  try{ await nbLadderLoad("reading"); return ""; }catch(e){ return NBLADREAD_LOAD_FAIL; }
+}
+function nbLadReadNote(out,msg){ if(out&&msg) out.warnings=(out.warnings||[]).concat([msg]); }
+// After a Mom build: save where this week's passages landed (the reading ladder's "cur"), only when it changed.
+function nbLadReadPersist(kid,out){
+  try{
+    if(!out||!out.readingCursor||!momHere()||typeof db==="undefined"||!db||_dryRun()) return;
+    const oc=nbLadderSaved(kid,"reading").cur||{}, nc=out.readingCursor;
+    if(oc.week===nc.week&&oc.lv===nc.lv&&oc.from===nc.from&&oc.adv===nc.adv&&oc.opt===nc.opt) return;
+    nbLadderWrite(kid,"reading","cur",nc);
+  }catch(e){}
+}
+// NBLADREAD_END
 // NBNAME_START — the name in a Pre-K notebook, set on the Notebook tab (her ask 2026-11-10: "can we also have the option on
 // notebooks for caleb 3d and julian to edit the name, so 3d will be David in his notebook"). Mom only. Save writes ONE targeted
 // path, notebookSettings/<kid>/notebookName (removed by "Use the family name"); dry-run inert; the local notebookSettings is kept
@@ -51537,6 +51631,7 @@ function nbtPersistCursors(kid,out){
   try{ nbQbPersistCursor(kid,out); }catch(e){}
   try{ nbCvPersistCursor(kid,out); }catch(e){}
   try{ luWordsPersistCursor(kid,out); }catch(e){}   // LU_WORDS_WIRE
+  try{ if(typeof nbLadReadPersist==="function") nbLadReadPersist(kid,out); }catch(e){}   // 📖 NBLADREAD: the reading ladder's place
 }
 let _nbtSendBusy=false;
 async function nbtSend(kid){
@@ -51547,12 +51642,14 @@ async function nbtSend(kid){
   let lib; try{ lib=await haLoadNotebooksLib(); }catch(e){ alert("Couldn't load the notebook builder ("+e.message+")."); return; }
   _nbtSendBusy=true;
   try{ await nbDgPrefetch(kid); }catch(e){}
+  const lrMsg=(typeof nbLadReadReady==="function")?await nbLadReadReady(kid):"";   // 📖 NBLADREAD: the reading passages first
   try{
     const wk=nbTargetWk(), wn=nbTargetWkNum();
     say("📱 Building "+cap(kid)+"'s notebook…");
     const ctx=haNbContext(kid); ctx.bindingMargin=false;   // no prongs on a tablet
     ctx.nbPageTags=true;   // NBT_TODAY: every page says its day(s) and a short name (data-nb-day / data-nb-name) — the tablet copy only, paper is untouched
     const out=lib.generate(kid,ctx);
+    if(typeof nbLadReadNote==="function") nbLadReadNote(out,lrMsg);   // 📖 NBLADREAD
     if(out&&out.warnings&&out.warnings.length) alert("⚠ "+cap(kid)+"'s notebook:\n\n"+out.warnings.join("\n\n"));
     nbtPersistCursors(kid,out);
     const student=(out&&out.student)||""; if(!student) throw new Error("the builder made no pages");
