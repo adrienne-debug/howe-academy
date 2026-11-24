@@ -49,6 +49,7 @@ const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.ht
   R('const off=typeof starTakeOk==="function"&&!starTakeOk(kid), who=', "const off=false, who=", "the Click-off Log's gate (FLAGWHO: Take off marks with no stars)");
   R("+starTakeWhy(kid)+", "+", "FLAGWHO's words");
   R(', off=typeof starTakeOk==="function"&&!starTakeOk(kid);   // FLAGWHO', ", off=false;   // FLAGWHO", "🧾's gate (FLAGWHO: Take off marks with no stars)");
+  R("  const no=starTakeAt(kid,iso); if(no) return {n:0,why:no};   // the 📒 ⚙ switches, as they are at the drop\n", "", "C3's drop (CHOREDROP): its read of the switches");   // C3 reads L4's switches; without L4 a drop takes as if they were on
   if (/STARRULES|starTake|starFallFrom|starRules|arguments\[2\]\)/.test(s)) throw new Error("test_ledger_rules: the app before still mentions STARRULES");
   const t = path.join(os.tmpdir(), "ledger_rules_before_" + process.pid + ".html"); fs.writeFileSync(t, s); return t; })();
 const BASE_HJS = (() => { let s = fs.readFileSync(path.join(__dirname, "house.js"), "utf8");
@@ -161,7 +162,7 @@ console.log("\n── B · each switch's default, and each flip's one write ─�
   f = flip("lgRuleTake('kid_c')", SR + "/take/kid_c");
   ok("Take stars away, kid_c Off: one set of " + SR + "/take/kid_c = false", J(f.w) === J(["set " + SR + "/take/kid_c"]) && f.v === false, f);
   f = flip("lgRuleTake('kid_c')", SR + "/take/kid_c");
-  ok("…On again: that one path removed (missing = as before)", J(f.w) === J(["remove " + SR + "/take/kid_c"]) && f.v == null, f);
+  ok("…On again: that one path set to {from: today} (C3: \"On: it starts clean\" — a drop of a turn due before today takes nothing; starTakeOk reads it as On)", J(f.w) === J(["set " + SR + "/take/kid_c"]) && J(f.v) === J({ from: isoN(10) }) && A.run("starTakeOk('kid_c')") === true, f);
   f = flip("lgRulePause()", SR + "/pause");
   ok("⏸ Pause On: one set of " + SR + "/pause = {on:true}", J(f.w) === J(["set " + SR + "/pause"]) && J(f.v) === J({ on: true }), f);
   f = flip("lgRulePause()", SR + "/pause");
@@ -320,8 +321,8 @@ console.log("\n── I · Dad's link and a kid's device ──");
 
 console.log("\n── J · dryrun writes nothing ──");
 { const Dr = w.boot("Dr", "devDr", { mom: true }); await w.flush(); Dr.run(CAP); Dr.run("HA_LS.setItem('ha_dryrun','1');1"); loadH(Dr, HJS);
-  const m = w.mark(); Dr.run("lgRuleTake('kid_c')"); Dr.run("lgRuleFall('kid_c')"); Dr.run("lgRulePause()");
-  ok("?dryrun=1: the flips show on that screen (kid_c Off, Off, paused) and nothing reaches the database", Dr.run("_dryRun()") === true && w.since(m).length === 0 && w.get(SR + "/take/kid_c") == null && /Kid C Stars fall when late Off Take stars away Off/.test(txt(LG(Dr, "lgShow();lgRulesOpen=true;lgDraw()"))) && /paused for everyone/.test(txt(Dr.run("__pop"))));
+  const tk0 = J(w.get(SR + "/take/kid_c")), m = w.mark(); Dr.run("lgRuleTake('kid_c')"); Dr.run("lgRuleFall('kid_c')"); Dr.run("lgRulePause()");   // C3: kid_c's take is {from} since B's On again
+  ok("?dryrun=1: the flips show on that screen (kid_c Off, Off, paused) and nothing reaches the database", Dr.run("_dryRun()") === true && w.since(m).length === 0 && J(w.get(SR + "/take/kid_c")) === tk0 && tk0 !== "false" && /Kid C Stars fall when late Off Take stars away Off/.test(txt(LG(Dr, "lgShow();lgRulesOpen=true;lgDraw()"))) && /paused for everyone/.test(txt(Dr.run("__pop"))));
   ok("…every other device still reads the house as it was", A.run("starTakeOk('kid_c')") === true && B.run("(starRules().pause||{}).on") !== true);
 }
 

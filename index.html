@@ -2023,7 +2023,7 @@ function mrIndividualHTML(kid){
   const isOpen=mrOpen[kid]!==false;
   let h='<div class="sl-check-row'+(allDone?" done":"")+'" onclick="toggleMrOpen(\''+kid+'\')" style="cursor:pointer">'+
     '<div class="sl-checkbox'+(allDone?" done":"")+'">'+(allDone?"✓":"")+'</div>'+
-    '<div style="flex:1"><div class="sl-slot-name">Morning <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+(_dueIdx.length+_am.length)+'</span></div>'+
+    '<div style="flex:1"><div class="sl-slot-name">Morning <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+(_dueIdx.length+_am.length)+'</span>'+((typeof lsBadgeHTML==="function")?lsBadgeHTML("morning",kid):"")+'</div>'+
     '<div class="sl-slot-sub">'+((allDone||morningComplete(kid,day))?(gateClockHeld(day)?'✓ Done — school starts at '+fromMin(gateStartMin(day)):'✓ Schedule unlocked'):'Finish all to unlock your schedule')+'</div></div>'+
     '<div style="font-size:14px;color:var(--muted)">'+(isOpen?"▾":"▸")+'</div></div>';
   if(isOpen){
@@ -2762,6 +2762,94 @@ function rtDoneOnWk(wk,slot,kid,d,i){
   const s=map[wk+"_"+d+"_"+kid+"_"+RT_ABBR[slot]+"step"+i];
   return !!(s&&s.done);
 }
+// LISTSTREAK_START — 🔥 one streak per list (missed-chores design §4.1, slice P2; her words 11/20: "every list but each by itself at its
+// title"; what it earns: "Nothing at first"). Morning, Afternoon, Chores and Evening each count the days in a row on which every row due
+// on that list was ticked ON ITS OWN DAY (the tick's stamp "02:15 PM Nov 23" names the day; a row done later in its wait breaks it).
+// Not breaking it: ✕ today / ➖ Excuse (waved), 😷 Kid Off, 🌅 sent to the next morning, a break that hid the list. A day with nothing
+// due (or all of it excused) is passed over. Today joins once its list is fully ticked; until then the count runs to yesterday.
+// Where the ticks come from: this week (slState), last week (prevSlState — the app's own read, _loadPrevSl), and only when a list is
+// still unbroken at the start of last week, ONE earlier week at a time (<week>/sl, read once per device per session, one read in flight,
+// none on ?dryrun=1, nothing written; the hub's ask 11/23: a kid at 🔥 14 on Saturday must not read 🔥 7 on Sunday). It stops at a miss,
+// at LS_CAP counted days, at LS_REACH weeks back, at a week that is not there (null), at week 1, or where the plan's weeks are not back
+// to back (a break: gwWeekDateRange's Monday is not 7 days before the next one). Week keys step back as _prevWkKey does: week<N-1>.
+// Earlier weeks' rows are read with today's list (as last week's always were). Until a read lands it shows the count so far, and never
+// less than it showed earlier the same day for that reason (_lsHi).
+// Not counted: the plan's own rows (st.house), the laundry line's rows (they follow today's laundry, not the day's), as-needed, ☑️ once.
+// Shown from 2 (at 0 or 1 nothing), on today's tab only. Writes nothing, saves nothing, pays nothing. The days before today are cached
+// per list and kid for 15 s or until the ticks / waves / carries / calendar / lists are replaced; today is worked out on each draw.
+let _lsM={}, _lsHi={}, _lsOld={}, _lsBusy=null, _lsV=0, LS_CAP=60, LS_REACH=12;   // LS_CAP counted days · LS_REACH weeks back (last week = 1)
+const _LS_MO=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function _lsOnDay(r,iso){ if(!r||!r.done) return false; const m=/([A-Z][a-z]{2})\s(\d{1,2})\s*$/.exec(String(r.ts||"")); return !m||(m[1]===_LS_MO[+iso.slice(5,7)-1]&&+m[2]===+iso.slice(8)); }
+function _lsDue(st,dn,iso,back){
+  if(!st||st.house||st.line||st.laundry||st.hdHidden||st.llHidden) return false;
+  const cad=st.cad||"daily"; if(cad==="asneeded"||cad==="none"||cad==="once") return false;
+  if((st.from&&iso<st.from)||(st.to&&iso>st.to)||(st.cycW&&!stepCycleOk(st,iso))) return false;
+  if(back&&(/^\d+d$/.test(cad)||cad==="2w")){ const n=cadDateNum(dn), g=(cad==="2w")?14:parseInt(cad,10); return n==null||((n-7*back)%g+g)%g===0; }   // an earlier week: 7 days a week before this week's date
+  return cadDueOn(cad,dn);
+}
+// "kid" = 😷 Kid Off that day (unticked rows excused) · "hid" = a holiday / vacation that took this list off the day · "" otherwise.
+function _lsOff(slot,kid,iso){
+  const C=(typeof calendarData!=="undefined"&&calendarData)||{}, o=((C.kidOverrides||{})[kid]||{})[iso]; let p="";
+  [C.holidays,C.vacations].forEach(function(c){ Object.values(c||{}).forEach(function(v){ const s=calNormDate(v.start||v.date), e=calNormDate(v.end||v.start||v.date); if(!p&&s&&iso>=s&&iso<=e) p=v.pause||"school"; }); });
+  if(p==="all"||(p==="chores"&&slot!=="morning"&&slot!=="evening")) return "hid";
+  return (o&&o.school===false)?"kid":"";
+}
+// One day of one list: 1 = every due row ticked on its day · 0 = passed over · -1 = a row missed (today: not finished yet).
+function _lsDay(slot,kid,wk,dn,iso,map,back){
+  const off=_lsOff(slot,kid,iso); if(off==="hid") return 0;
+  const steps=rtStepsFor(slot,kid,false,dn)||[], wv=((((typeof wavedData!=="undefined"&&wavedData)||{})[wk]||{})[dn]||{})[kid]||{}, am=((typeof amCarry!=="undefined"&&amCarry)||{})[kid]||{};
+  let ok=0;
+  for(let i=0;i<steps.length;i++){ if(!_lsDue(steps[i],dn,iso,back)) continue;
+    if(_lsOnDay(map&&map[wk+"_"+dn+"_"+kid+"_"+(slot==="morning"?"m":RT_ABBR[slot])+"step"+i],iso)){ ok++; continue; }
+    if(off||wv[slot+"step"+i]||(slot!=="morning"&&am[iso+"_"+RT_ABBR[slot]+"step"+i])) continue;
+    return -1; }
+  return ok?1:0;
+}
+// One earlier week's ticks, read once (the same kind of read _loadPrevSl makes); a week not there lands as null and is never asked again.
+function _lsAsk(wk){
+  if(_lsBusy||wk in _lsOld||typeof db==="undefined"||!db||(typeof _dryRun==="function"&&_dryRun())) return;
+  _lsBusy=wk; const done=function(v){ if(_lsBusy!==wk) return; _lsOld[wk]=v||null; _lsBusy=null; _lsV++; if(typeof renderAllSoon==="function") renderAllSoon(); };
+  try{ db.ref(wk+"/sl").once("value",function(x){ done(x.val()); },function(){ done(null); }); }catch(e){ done(null); }
+}
+// The days before today, newest first, until a miss or the end of the ticks: [n, why] — why "" a miss · "cap" · "end" (no older ticks:
+// week 1, a week not there, a break between weeks, LS_REACH) · "load" (a read still out, or this week's dates not in yet).
+function _lsPast(slot,kid,wk,ti){
+  let n=0; const N=+((/^week(\d+)$/.exec(wk)||[])[1]||0), mon=amIso("monday");
+  for(let p=_rtPos(ti)-1;p>=-1;p--){ const dn=DAYS_ALL[_rtIdx(p)], iso=amIso(dn); if(!iso) return [n,"load"]; const r=_lsDay(slot,kid,wk,dn,iso,slState,0); if(r<0) return [n,""]; n+=r; if(n>=LS_CAP) return [LS_CAP,"cap"]; }
+  if(!mon) return [n,"load"];
+  for(let k=1;k<=LS_REACH;k++){
+    if(N-k<1) return [n,"end"];
+    const kw="week"+(N-k), R=(typeof gwWeekDateRange==="function")?gwWeekDateRange(N-k):null;
+    if(R&&R.start&&R.start!==_amIsoAdd(mon,-7*k)) return [n,"end"];   // not the week before: a break sits between
+    let map=_lsOld[kw];
+    if(k===1){ if(typeof _loadPrevSl==="function") _loadPrevSl(); if(prevSlState&&_prevSlWk===kw){ map=prevSlState; _lsOld[kw]=map; } else if(map===undefined) return [n,"load"]; }   // last week: the app's own read (kept for when it is two weeks back)
+    if(map===undefined){ _lsAsk(kw); return [n,"load"]; }
+    if(map===null) return [n,"end"];
+    for(let p=5;p>=-1;p--){ const dn=DAYS_ALL[_rtIdx(p)], iso=_amIsoAdd(mon,p-7*k); const r=_lsDay(slot,kid,kw,dn,iso,map,k); if(r<0) return [n,""]; n+=r; if(n>=LS_CAP) return [LS_CAP,"cap"]; }
+  }
+  return [n,"end"];
+}
+function lsStreak(slot,kid){
+  const ti=DAYS_ALL.indexOf(_todayDay), wk=activeWk(), today=(ti>=0)?amIso(_todayDay):null; if(!today||!wk||SL_SLOTS.indexOf(slot)<0) return 0;
+  const k=slot+"|"+kid, m=_lsM[k], t=Date.now(), C=(typeof calendarData!=="undefined")?calendarData:null;
+  let past; _lsOld[wk]=slState;   // this week's ticks as this device has them: next week they are "last week" at once, with no read
+  if(m&&t-m.t<15000&&m.d===today&&m.wk===wk&&m.s===slState&&m.p===prevSlState&&m.w===wavedData&&m.a===amCarry&&m.c===C&&m.r===routineCfg2&&m.o===_lsV) past=m.v;
+  else { past=_lsPast(slot,kid,wk,ti); const h=_lsHi[k]; if(past[1]==="load"&&h&&h.d===today&&h.v[0]>past[0]) past=h.v;   // a read still out never shows less than before today
+    _lsHi[k]={d:today,v:past}; _lsM[k]={t:t,d:today,wk:wk,s:slState,p:prevSlState,w:wavedData,a:amCarry,c:C,r:routineCfg2,o:_lsV,v:past}; }
+  return Math.min(LS_CAP,past[0]+(_lsDay(slot,kid,wk,_todayDay,today,slState,0)===1?1:0));
+}
+function lsAtEdge(slot,kid){ const m=_lsM[slot+"|"+kid]; return !!(m&&m.v[1]); }   // at least this many: the cap, the oldest ticks there are, or a read still out
+// The kid's list title: " 🔥 6" after "Chores 2/4", from 2 days up, on today's tab. Anything else: "" (the title as before, byte for byte).
+function lsBadgeHTML(slot,kid){ if(typeof day==="undefined"||day!==_todayDay) return ""; let n=0; try{ n=lsStreak(slot,kid); }catch(e){ return ""; }
+  return n>=2?' <span class="ls-fire" style="color:#ea580c;font-weight:800;white-space:nowrap">\u{1F525} '+n+'</span>':''; }
+// Mom's and Dad's line (Kids today pop-up, 👤 By person): all four numbers, 0 and 1 too; "60+" = at least: it ran into the cap (or the
+// oldest ticks there are, or a read still out — a pop-up is not redrawn when a read lands). "" for a kid's own device.
+function lsFourHTML(kid,st){
+  if(!((typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD())||(typeof dadAwardOk==="function"&&dadAwardOk()))) return "";
+  let h=""; try{ h=SL_SLOTS.map(function(s){ const n=lsStreak(s,kid); return SL_SLBL[s]+' <b>'+n+(n&&lsAtEdge(s,kid)?'+':'')+'</b>'; }).join(' · '); }catch(e){ return ""; }   // "3+": at least 3
+  return '<div class="ls-four" style="font-size:11.5px;font-weight:600;color:#9a3412;'+(st||'')+'">\u{1F525} Days in a row: '+h+'</div>';
+}
+// LISTSTREAK_END
 // How many days overdue this step is. The lookback used to run on the weekday INDEX only
 // (0=Mon..6=Sun) and required a due day strictly before today, so it could never cross a
 // Monday: a Saturday chore (wk:5) missed on Saturday showed on Sunday and then silently
@@ -2886,6 +2974,7 @@ function rtWaitOwn(st){ const id=st&&st._hh, j=(id&&typeof hhJobs==="function")?
 // 100% on its day, then 80 \u00b7 60 \u00b7 40 \u00b7 20 \u00b7 0%. Nothing is ever taken from a bank here; un-check takes back the stored amount, as always.
 // Blank slate (hub's call 2026-11-20): only a turn due on or after RT_FALL_FROM falls; an older one pays in full for as long as it waits.
 const RT_FALL_FROM="2026-11-22";
+const RT_TAKE_FROM="2026-11-30";   // CHOREDROP (C3): the blank slate for the drop's −20% — only a turn due on or after it can cost anything
 // What a step pays n days late, given its original stars: a step is 20% of the original, to the nearest whole star, at least 1.
 // 10 \u2b50: 8 6 4 2 0 \u00b7 15 \u2b50: 12 9 6 3 0 \u00b7 22 \u2b50: 18 13 9 4 0 \u00b7 5 \u2b50: 4 3 2 1 0. The one function every payer and display calls.
 function rtFallPts(pts,n){ pts=pts||0; if(!(n>0)||!(pts>0)) return pts; return Math.max(0,pts-Math.max(n,Math.round(pts*n/5))); }
@@ -2974,6 +3063,9 @@ function starRules(){ try{ return householdData.meta.starRules||{}; }catch(e){ r
 function starFallFrom(kid){ const R=starRules(), f=(R.fall||{})[kid]||{}, p=R.pause||{}; return p.on||f.on===false?"~":[f.from||"",p.from||""].sort()[1]; }
 function starTakeOk(kid){ const R=starRules(); return !(R.pause||{}).on&&(R.take||{})[kid]!==false; }
 function starTakeWhy(kid){ return (starRules().pause||{}).on?"⏸ Star rules are paused for everyone":"Taking stars away is off for "+cap(kid); }
+// CHOREDROP (C3): why the drop of a turn due on iso takes nothing — "pause" (paused, or due before the pause ended) · "off" (Take stars away
+// off, or due before it came back on: "On: it starts clean") — or "" (it may take).
+function starTakeAt(kid,iso){ const R=starRules(), t=(R.take||{})[kid], p=R.pause||{}; return (p.on||iso<(p.from||""))?"pause":(t===false||iso<((t&&t.from)||""))?"off":""; }
 function starTakeNo(kid){ if(starTakeOk(kid)) return false; if(typeof gwShowToast==="function") gwShowToast(starTakeWhy(kid)+", so nothing was taken. 📒 Ledger ⚙ changes it."); return true; }
 // STARRULES_END
 function rtLateDays(slot,kid,i,raw){   // raw (CHOREWAIT): the days since it was missed, wait or not — rtSlotHTML's drop check
@@ -3046,11 +3138,61 @@ function _rtLogLateMiss(slot,kid,i,cad,label,pts){
   if(!ds.length) return;
   const _st=(typeof rtStepsFor==="function")?(rtStepsFor(slot,kid)||[])[i]:null;   // LATE_FROM: never file a miss for a day before the step began
   const _bf=function(dn,prev){ return (typeof _rtBeforeFrom==="function"&&_rtBeforeFrom(_st,dn,prev))||(typeof rtWaved==="function"&&rtWaved(slot,kid,dn,i,prev?_prevWkKey():activeWk())); };   // WAVE: a waved day is handled
-  const due=_rtLastDueIdx(ds,DAYS_ALL.indexOf(_todayDay));
-  if(due>=0){ if(_bf(DAYS_ALL[due],false)) return; _rtLogMiss(kid,slot,i,DAYS_ALL[due],label,pts); return; }
+  const due=_rtLastDueIdx(ds,DAYS_ALL.indexOf(_todayDay)), tp=_rtPos(DAYS_ALL.indexOf(_todayDay)), _rtDropFile=(typeof _rtDropFileC3==="function")?_rtDropFileC3:function(k,s,j,d,l,p,w){ return _rtLogMiss(k,s,j,d,l,p,w); };   // CHOREDROP (a slice without it files as before)
+  if(due>=0){ if(_bf(DAYS_ALL[due],false)) return; _rtDropFile(kid,slot,i,DAYS_ALL[due],label,pts,undefined,tp-_rtPos(due)); return; }   // CHOREDROP: the drop, and what it costs
   const pd=_rtPrevDueIdx(ds), pw=_prevWkKey();
-  if(pd>=0&&pw){ if(_bf(DAYS_ALL[pd],true)) return; _rtLogMiss(kid,slot,i,DAYS_ALL[pd],label,pts,pw); }
+  if(pd>=0&&pw){ if(_bf(DAYS_ALL[pd],true)) return; _rtDropFile(kid,slot,i,DAYS_ALL[pd],label,pts,pw,tp+7-_rtPos(pd)); }
 }
+// CHOREDROP_START — her rule 2026-11-19 (missed-chores design §2.2, slice C3; ledger design §2–§4): "it starts deducting from their point"
+// → "A chore with a wait is still dropped at the end of its wait, and the drop takes 20% of its stars, once"; an empty bank: "Can go below
+// zero". The first slice that ever takes stars by itself. When a turn drops undone (rtSlotHTML → _rtLogLateMiss, the one place a drop is
+// noticed), the "— not done" line it files carries the decision, made ONCE, there: drop = {n: stars taken, bid: the bank line's id, due:
+// its own day, job: its chore} or {n:0, why:"zero"|"away"|"off"|"pause"} (0 ⭐ chore · a day off in its wait · Take stars away off for that kid or the turn was due before
+// it came back on · ⏸ paused or due before the pause ended). n = the chore's stars − rtFallPts(stars,1): 20%, nearest whole star, at least 1.
+// Exactly once: the line is created by a transaction that only writes if NO line is on the server, and only the device whose transaction
+// commits writes the one bank line, bank/<kid>/adjustments/cdrop_<wk>_<due day>_<kid>_<a|c|e>step<i> ("🧹 Vacuum the den · not done",
+// −2, src "drop"). A fixed id per kid, chore and due day; never through the 📮 outbox (obSet), so nothing replays it later. A redraw, a
+// reload, a second device, a flip of a switch or a give-back (📒 Ledger, house.js LEDGERDROP: gb on that line) never decide again.
+// A turn due before RT_TAKE_FROM, a plan row (st.house) and every row that never drops (daily, as needed, ✕ / ➖, 🌅, ticked) file
+// exactly as before: no decision, nothing taken. Writes only when db && !_dryRun(); dry-run and no-db keep it on this screen.
+// Days off (hub's rule 2026-11-23, "nothing is ever taken by accident", until Mom says otherwise): {n:0, why:"away"} when, for that kid,
+// its due day or any day of its wait (up to the day before it dropped) was 😷 Kid Off (calendar/kidOverrides/<kid>/<iso>.school ===
+// false) or a family-calendar holiday / vacation that paused this list (calendar/holidays|vacations/<id> .start–.end, .pause "all", or
+// "chores" for the Afternoon and Chores lists). A plain weekend or a school-only break changes nothing. The wait itself is C1's, as before.
+function rtDropAway(kid,slot,st,iso,n){
+  const C=(typeof calendarData!=="undefined"&&calendarData)||{}, o=(C.kidOverrides||{})[kid]||{}, W=rtWaitDays(st), cad=(st&&st.cad)||"daily";
+  for(let k=0;k<n;k++){ const d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+k);
+    const q=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    if(k>0&&(k>W||cadDueOn(cad,DAYS_ALL[(d.getDay()+6)%7])||(st.cycW&&!stepCycleOk(st,q)))) break;   // it dropped that day
+    if(o[q]&&o[q].school===false) return true;
+    let p=""; [C.holidays,C.vacations].forEach(function(c){ Object.values(c||{}).forEach(function(v){ const a=calNormDate(v&&(v.start||v.date)), b=calNormDate(v&&(v.end||v.start||v.date)); if(!p&&a&&q>=a&&q<=b) p=v.pause||"school"; }); });
+    if(p==="all"||(p==="chores"&&slot!=="evening")) return true; }
+  return false;
+}
+function rtDropTake(kid,st,iso,slot,n){
+  if(!st||st.house||!(iso>=RT_TAKE_FROM)) return null;
+  const s=st.pts||0; if(!(s>0)) return {n:0,why:"zero"};
+  if(slot&&n>0&&rtDropAway(kid,slot,st,iso,n)) return {n:0,why:"away"};
+  const no=starTakeAt(kid,iso); if(no) return {n:0,why:no};   // the 📒 ⚙ switches, as they are at the drop
+  return {n:s-rtFallPts(s,1)};
+}
+function _rtDropFileC3(kid,slot,i,dueDay,label,pts,wkIn,n){
+  const st=(rtStepsFor(slot,kid)||[])[i], t=new Date(), d=new Date(t.getFullYear(),t.getMonth(),t.getDate()-n,12);
+  const iso=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"), tk=n>0&&RT_ABBR[slot]?rtDropTake(kid,st,iso,slot,n):null;
+  if(!tk) return _rtLogMiss(kid,slot,i,dueDay,label,pts,wkIn);   // as before
+  const wk=wkIn||activeWk(), key="miss_"+slot+"_"+i, L=(routineLog[kid]=routineLog[kid]||{}), W=(L[wk]=L[wk]||{}), D=(W[dueDay]=W[dueDay]||{});
+  if(D[key]) return;
+  const bid="cdrop_"+wk+"_"+dueDay+"_"+kid+"_"+RT_ABBR[slot]+"step"+i;
+  tk.due=iso; tk.job=st._hh||("rt_"+slot+"_"+kid+"_"+hhSlug(st.label)); if(tk.n>0) tk.bid=bid;
+  const rec={label:(label||"Chore")+" — not done",slot:slot,act:"miss",ts:nowTs(),at:Date.now(),pts:pts||0,missed:true,drop:tk};
+  const ln=tk.n>0?{amount:-tk.n,note:(st.emoji?st.emoji+" ":"")+(label||"Chore")+" · not done",ts:rec.ts,iso:new Date().toISOString(),src:"drop",wk:wk,day:dueDay}:null;
+  const put=function(){ if(!ln) return; bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{}; bank[kid].adjustments[bid]=ln; };
+  D[key]=rec;
+  if(!db||_dryRun()){ put(); return; }
+  try{ db.ref("routineLog/"+kid+"/"+wk+"/"+dueDay+"/"+key).transaction(function(cur){ return cur?undefined:rec; },function(err,ok){
+    if(err||!ok||!ln) return; put(); db.ref("bank/"+kid+"/adjustments/"+bid).set(ln); },false); }catch(e){}   // the bank listener redraws
+}
+// CHOREDROP_END
 function rtSlotHTML(slot,kid){
   const steps=rtStepsFor(slot,kid,false,day), label=SL_SLBL[slot];
   if(!steps.length){
@@ -3060,7 +3202,7 @@ function rtSlotHTML(slot,kid){
       '<div><div class="sl-slot-name">'+label+'</div><div class="sl-slot-sub">'+(SL_STIM[slot]||"")+'</div>'+
       (s.done&&s.ts?'<div class="sl-slot-ts">Checked '+s.ts+'</div>':'')+'</div></div>';
   }
-  const avail=rtAvailable(slot,kid,day);
+  const avail=rtAvailable(slot,kid,day), _ls=(typeof lsBadgeHTML==="function")?lsBadgeHTML(slot,kid):"";   // LISTSTREAK: " 🔥 6" at the list's title
   // Due today OR carried over from a day it was missed — a skipped chore must not just vanish.
   // stepWindowOk is an AND, not an OR: a course that has ended must not come back as "late".
   const wavedIdx=steps.map((st,i)=>i).filter(i=>typeof rtWaved==="function"&&rtWaved(slot,kid,day,i));   // WAVE: shown greyed, never due
@@ -3080,17 +3222,17 @@ function rtSlotHTML(slot,kid){
     const msg=_lockMsg;
     return '<div class="sl-check-row" style="opacity:.6">'+
       '<div class="sl-checkbox" style="background:none;border-color:var(--border);color:var(--muted)">&#128274;</div>'+
-      '<div style="flex:1"><div class="sl-slot-name">'+label+' <span style="color:var(--muted);font-weight:700">0/'+total+'</span></div>'+
+      '<div style="flex:1"><div class="sl-slot-name">'+label+' <span style="color:var(--muted);font-weight:700">0/'+total+'</span>'+_ls+'</div>'+
       '<div class="sl-slot-sub">'+msg+'</div></div></div>';
   }
   if(total===0&&!optIdx.length){
-    return '<div class="sl-check-row done"><div class="sl-checkbox done">✓</div><div><div class="sl-slot-name">'+label+'</div><div class="sl-slot-sub">Nothing due today</div></div></div>'+((wavedIdx.length&&typeof rtWavedRowHTML==="function")?'<div class="mr-steps">'+wavedIdx.map(i=>rtWavedRowHTML(steps[i])).join('')+'</div>':'');   // WAVE
+    return '<div class="sl-check-row done"><div class="sl-checkbox done">✓</div><div><div class="sl-slot-name">'+label+_ls+'</div><div class="sl-slot-sub">Nothing due today</div></div></div>'+((wavedIdx.length&&typeof rtWavedRowHTML==="function")?'<div class="mr-steps">'+wavedIdx.map(i=>rtWavedRowHTML(steps[i])).join('')+'</div>':'');   // WAVE
   }
   const isOpen=rtIsOpen(slot,kid,allDone);
   const sub=allDone?('✓ '+label+' done'):(!avail?('\u{1F512} '+_lockMsg):(SL_STIM[slot]||''));
   let h='<div class="sl-check-row'+(allDone?" done":"")+'" onclick="toggleRtOpen(\''+slot+'\',\''+kid+'\','+(isOpen?'true':'false')+')" style="cursor:pointer">'+
     '<div class="sl-checkbox'+(allDone?" done":"")+'">'+(allDone?"✓":"")+'</div>'+
-    '<div style="flex:1"><div class="sl-slot-name">'+label+' <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+total+'</span></div>'+
+    '<div style="flex:1"><div class="sl-slot-name">'+label+' <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+total+'</span>'+_ls+'</div>'+
     '<div class="sl-slot-sub">'+sub+'</div></div>'+
     '<div style="font-size:14px;color:var(--muted)">'+(isOpen?"▾":"▸")+'</div></div>';
   if(isOpen){
@@ -7147,7 +7289,7 @@ function chSettingsClickoffLogHTML(){
       var slbl=(typeof SL_SLBL!=="undefined"&&SL_SLBL[e.slot])||e.slot||"";
       var dlbl=(typeof DAY_LBL!=="undefined"&&DAY_LBL[e._day])||e._day||"";
       h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)'+(e.flagged?';opacity:.6':'')+'">';
-      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">'+((typeof flagMarkTxt==="function"&&flagMarkTxt(e))||'−100')+'</span>':'')+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
+      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">'+((typeof flagMarkTxt==="function"&&flagMarkTxt(e))||'−100')+'</span>':'')+((e.drop&&e.drop.n)?' <span style="color:#b91c1c;font-weight:800">'+(e.drop.gb?'−'+e.drop.n+' ⭐ given back':'−'+e.drop.n+' ⭐')+'</span>':'')/* CHOREDROP: what the drop took */+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
       if(on&&!e.flagged) h+='<button onclick="rlogFlag(\''+kid+'\',\''+_rlwk+'\',\''+e._day+'\',\''+e._key+'\')" title="Didn\'t actually do it — dock 100 points" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ −100</button>';
       h+='</div>';
     });
@@ -9706,7 +9848,7 @@ function boardStatPop(kid,slot,d){
   const html='<div id="board-stat-pop" onclick="boardStatPopClose()" style="position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:9000;display:flex;align-items:center;justify-content:center;padding:20px">'+
     '<div onclick="event.stopPropagation()" style="background:#fff;border-radius:16px;max-width:420px;width:100%;max-height:75vh;overflow:auto;padding:16px 18px;box-shadow:0 20px 50px rgba(0,0,0,0.3)">'+
     '<div style="display:flex;align-items:center;margin-bottom:8px"><div style="font-family:\'Fraunces\',serif;font-weight:700;font-size:16px;flex:1">'+cap(kid)+' — '+title+' <span style="color:var(--muted);font-size:13px">('+hdrCount+')</span></div>'+
-    '<button onclick="boardStatPopClose()" style="border:none;background:#f3f4f6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer">✕</button></div>'+inner+((_tapOk&&typeof amPopFootHTML==="function")?amPopFootHTML(kid,slot,_d):'')+'</div></div>';   // SENDAM: 🌅 Send all
+    '<button onclick="boardStatPopClose()" style="border:none;background:#f3f4f6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer">✕</button></div>'+((SL_SLOTS.indexOf(slot)>=0&&day===_todayDay&&typeof lsFourHTML==="function")?lsFourHTML(kid,"margin:-2px 0 6px"):"")+inner+((_tapOk&&typeof amPopFootHTML==="function")?amPopFootHTML(kid,slot,_d):'')+'</div></div>';   // SENDAM: 🌅 Send all
   document.body.insertAdjacentHTML("beforeend",html);
 }
 // ── T2: read-only peek at the week that's built but hasn't started ──────────
@@ -37525,8 +37667,10 @@ function luWordsPersistCursor(kid,out){
 async function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
   try{ await nbDgPrefetch(kid); }catch(e){}   // Daily Grams pages for this week (usually already warm from the tab render)
+  const lrMsg=(typeof nbLadReadReady==="function")?await nbLadReadReady(kid):"";   // 📖 NBLADREAD: the reading passages first (a failure → built as before + a note)
   try{
     const out=lib.generate(kid, haNbContext(kid));
+    if(typeof nbLadReadNote==="function") nbLadReadNote(out,lrMsg);   // 📖 NBLADREAD
     if(out&&out.warnings&&out.warnings.length) alert("⚠ "+cap(kid)+"'s notebook:\n\n"+out.warnings.join("\n\n"));   // e.g. a shape with no drawing
     // Julian letters: remember where this week's window landed so next week CONTINUES
     // instead of re-deriving from the (growing) bank size — the growth kept rewinding
@@ -37540,6 +37684,7 @@ async function haNbOpen(kid,which){
     nbQbPersistCursor(kid,out);   // number-reasoning bank: same idea
     nbCvPersistCursor(kid,out);   // conventions bank: same idea
     luWordsPersistCursor(kid,out);   // LU_WORDS_WIRE: Lucy's sight words, same idea
+    if(typeof nbLadReadPersist==="function") nbLadReadPersist(kid,out);   // 📖 NBLADREAD: the reading ladder's place, same idea
     const html=(which==="parent")?(out.parent||out.student):out.student;
     const fname=kid+"_"+nbTargetWk()+"_"+(which==="parent"?"parent":"notebook")+".html";
     lib.openHtml(html, fname);
@@ -37554,8 +37699,10 @@ async function haNbPdf(kid,which){
   _haNbPdfBusy=true;
   const say=m=>{ if(typeof gwShowToast==="function") gwShowToast(m); };
   try{ await nbDgPrefetch(kid); }catch(e){}
+  const lrMsg=(typeof nbLadReadReady==="function")?await nbLadReadReady(kid):"";   // 📖 NBLADREAD: the reading passages first
   try{
     const out=lib.generate(kid, haNbContext(kid));
+    if(typeof nbLadReadNote==="function") nbLadReadNote(out,lrMsg);   // 📖 NBLADREAD
     if(out&&out.warnings&&out.warnings.length) alert("⚠ "+cap(kid)+"'s notebook:\n\n"+out.warnings.join("\n\n"));   // e.g. a shape with no drawing
     // Julian letters: remember where this week's window landed so next week CONTINUES
     // instead of re-deriving from the (growing) bank size — the growth kept rewinding
@@ -37569,6 +37716,7 @@ async function haNbPdf(kid,which){
     nbQbPersistCursor(kid,out);
     nbCvPersistCursor(kid,out);
     luWordsPersistCursor(kid,out);   // LU_WORDS_WIRE
+    if(typeof nbLadReadPersist==="function") nbLadReadPersist(kid,out);   // 📖 NBLADREAD
     const html=(which==="parent")?(out.parent||out.student):out.student;
     const fname=kid+"_"+nbTargetWk()+"_"+(which==="parent"?"parent":"notebook")+".pdf";
     say("📄 Building "+cap(kid)+"'s PDF…");
@@ -37581,6 +37729,7 @@ async function haNbPdf(kid,which){
 async function haNbCombinedParent(){
   const lib=window.HoweNotebooks; if(!lib||!lib.combinedParent){ alert("Combined parent guide needs the latest builder — reload the page and try again."); return; }
   try{ await Promise.all(["lincoln","ellis","lucy","julian"].map(k=>nbDgPrefetch(k).catch(()=>{}))); }catch(e){}
+  try{ const lrMsg=(typeof nbLadReadReadyAll==="function")?await nbLadReadReadyAll():""; if(lrMsg) alert("⚠ "+lrMsg); }catch(e){}   // 📖 NBLADREAD: the reading answers are in the guide
   try{
     const ctxByKid={}; ["lincoln","ellis","lucy","julian"].forEach(k=>{ try{ ctxByKid[k]=haNbContext(k); }catch(e){} });
     const html=lib.combinedParent(ctxByKid);
@@ -44377,15 +44526,16 @@ function wbdFit(){
   const c=(w/WBD_GRID).toFixed(2)+"px";
   hold.style.backgroundImage=v.bg==="grid"?"linear-gradient(#bfdbfe 1px,transparent 1px),linear-gradient(90deg,#bfdbfe 1px,transparent 1px)":"none";
   hold.style.backgroundSize=v.bg==="grid"?c+" "+c:"auto";
+  if(v.bg==="lines"&&typeof wbdLinesCss==="function") wbdLinesCss(hold.style,Math.round(w));   // WBDLINES: ▤ Lines
   if(typeof wbFit==="function") wbFit(); if(typeof wbPaint==="function") wbPaint();
   return true;
 }
-function wbdBg(k){ const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!v.scratch) return; v.bg=_wbdBg=(k==="grid"?"grid":"blank"); wbdFit(); wbBarRender(); }
+function wbdBg(k){ const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!v.scratch) return; v.bg=_wbdBg=(k==="grid"||k==="lines"?k:"blank"); wbdFit(); wbBarRender(); }   // WBDLINES: + lines
 // wbBarRender's hook: the board's bar, drawn with the viewer's own button
 function wbdBarHTML(v,btn){
   return btn("\u2715","wbClose()")+'<span style="font-weight:800;font-size:13px;color:#0f172a">\u270D\uFE0F Whiteboard</span>'+
     '<span style="font-size:11px;color:#64748b">scratch \u00B7 \u2715 wipes it</span><span style="flex:1"></span>'+
-    btn("\u25A2 Blank","wbdBg(\'blank\')",v.bg!=="grid")+btn("\u25A6 Grid","wbdBg(\'grid\')",v.bg==="grid")+
+    btn("\u25A2 Blank","wbdBg(\'blank\')",v.bg!=="grid"&&v.bg!=="lines")+btn("\u25A6 Grid","wbdBg(\'grid\')",v.bg==="grid")+btn("\u25A4 Lines","wbdBg(\'lines\')",v.bg==="lines")+   // WBDLINES
     btn("\u270F\uFE0F","wbTool(\'pen\')",v.tool==="pen")+btn("\u{1FA79} Erase","wbTool(\'erase\')",v.tool==="erase")+
     btn("\u21A9\uFE0E Undo","wbUndo()")+btn("\u{1F9FD} Clear","wbClear()")+btn(v.penOnly?"\u270D\uFE0F Pencil only":"\u{1F446} Finger too","wbTogglePen()",v.penOnly)+
     ((typeof wbdSaveBtnHTML==="function")?wbdSaveBtnHTML(v,btn):"");   // WBDSAVE: 💾 Save — Mom, from Today's card on a unit day
@@ -44397,6 +44547,28 @@ function wbdDoorHTML(g){
 }
 try{ window.addEventListener("resize",function(){ if(typeof wbView!=="undefined"&&wbView&&wbView.scratch) wbdFit(); }); }catch(e){}   // a device with no ResizeObserver (the LG) still re-fits on a turn
 // WBOARD_END
+// WBDLINES_START — ▤ Lines on the whiteboard (Adrienne's yes 2026-11-24): handwriting rows for a beta family starting Logic of
+//   English Foundations A — Lesson 1 teaches the top line, the dotted midline and the baseline, and Mom writes big on a lined
+//   board for the child to trace; they have no physical board. Each row: a solid top line, a dashed midline, a darker, heavier
+//   baseline (where letters sit). Top→base = 1/8 of the board's width, half that again between rows (room for tails). Every size
+//   is a share of the width, so a turned iPad shows the same rows under the same ink. Drawn as the board's CSS (wbdFit) and on
+//   the 💾 Save picture (wbdJpeg). Stores nothing: the pick lives in _wbdBg for the sitting, like ▦ Grid. Blank stays the default.
+const WBD_LC="#94a3b8", WBD_BC="#475569";   // top + midline · baseline
+function wbdLn(w){ const x=w/8, lw=Math.max(1,w/600); return {x:x,p:x*1.5,t:x/4,lw:lw,bw:lw*2,d:w/96}; }
+function wbdLinesCss(s,w){
+  const L=wbdLn(w), f=n=>n.toFixed(2)+"px", P=f(L.p), ln=(y,h,c)=>"linear-gradient(transparent "+f(y-h/2)+","+c+" "+f(y-h/2)+","+c+" "+f(y+h/2)+",transparent "+f(y+h/2)+")";
+  s.backgroundImage=[ln(L.t,L.lw,WBD_LC),ln(L.t+L.x,L.bw,WBD_BC),"linear-gradient(90deg,transparent 50%,#fff 50%)",ln(L.t+L.x/2,L.lw,WBD_LC)].join(",");   // white gaps over the midline make its dashes
+  s.backgroundSize="100% "+P+",100% "+P+","+f(2*L.d)+" "+P+",100% "+P;
+}
+function wbdLinesDraw(g,W,H){
+  const L=wbdLn(W);
+  g.strokeStyle=WBD_LC; g.lineWidth=L.lw; g.beginPath();
+  for(let y=L.t;y<H;y+=L.p){ g.moveTo(0,y); g.lineTo(W,y); const m=y+L.x/2; if(m<H) for(let a=0;a<W-1;a+=2*L.d){ g.moveTo(a,m); g.lineTo(Math.min(W,a+L.d),m); } }
+  g.stroke(); g.strokeStyle=WBD_BC; g.lineWidth=L.bw; g.beginPath();
+  for(let y=L.t+L.x;y<H;y+=L.p){ g.moveTo(0,y); g.lineTo(W,y); }
+  g.stroke();
+}
+// WBDLINES_END
 // WBDSAVE_START — 💾 Save on the whiteboard (Sara's answer 2026-11-20: a board is kept only "when someone taps Save"; PLAN §7.2;
 //   Adrienne's "go with her answers and build" 2026-11-22). Scratch stays the default — nothing is written until Save is tapped.
 //   · WHO: Mom (momHere()), on a board opened from Today's card with a unit day (wbdOpen({uid, dayId})). Not on a board opened
@@ -44425,6 +44597,7 @@ function wbdJpeg(v){
   g.fillStyle="#fff"; g.fillRect(0,0,W,H);
   if(v.bg==="grid"){ const st=W/WBD_GRID; g.strokeStyle="#bfdbfe"; g.lineWidth=Math.max(1,W/800); g.beginPath();
     for(let x=st;x<W-1;x+=st){ g.moveTo(x,0); g.lineTo(x,H); } for(let y=st;y<H-1;y+=st){ g.moveTo(0,y); g.lineTo(W,y); } g.stroke(); }
+  if(v.bg==="lines"&&typeof wbdLinesDraw==="function") wbdLinesDraw(g,W,H);   // WBDLINES
   g.drawImage(ink,0,0,W,H);
   return c.toDataURL("image/jpeg",0.85);
 }
@@ -46548,6 +46721,7 @@ function kcTodayHTML(k){
 // days live on their calendar.
 function _kcTodayCards(k){
   try{
+    if(typeof scheduleBreakToday==="function"&&scheduleBreakToday()) return [];   // 🏖 KC_BREAK (her report 2026-11-24: "if they're on break, there shouldn't be anything there"): a break day (holiday, vacation, cleaning day) has no school cards — the Schedule tab's own rule. On a break week the active week is still last week's, whose cards matched today's day name. The list, the 📖 School line and the 🙋 picker all follow from here.
     const dn=_todayDay;
     const srcTasks=(typeof displacedResult!=="undefined"&&displacedResult)?displacedResult.tasks:((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
     const laid=dsDoneAtTime(mlQueueLay(dsRetime(srcTasks)));   // ✓ done cards at their real time
@@ -46576,7 +46750,8 @@ function kcSchoolHTML(k){
         +((morningComplete(k,dn)||(typeof tab!=="undefined"&&tab!=="kids"))?'':'<button onclick="kcOpenList(\''+k+'\',\'morning\')" style="border:none;background:#f97316;color:#fff;border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F4CB} Open my Morning list</button>')+'</div>';
     }
     if(!times.length){
-      h+='<div style="padding:22px 14px;text-align:center;font-size:15px;font-weight:700;color:var(--muted)">No school cards today \u{1F389}</div>';
+      let _brk=null; try{ _brk=(typeof scheduleBreakToday==="function")?scheduleBreakToday():null; }catch(e){}   // 🏖 KC_BREAK: a break day names the break
+      h+='<div style="padding:22px 14px;text-align:center;font-size:15px;font-weight:700;color:var(--muted)">'+(_brk?(_brk.type==="cleaning"?'No school today \u2014 it\u2019s cleaning day \u{1F9FD}':'No school today \u2014 '+esc(_brk.name)+' \u{1F389}'):'No school cards today \u{1F389}')+'</div>';
     } else {
       const paused=!!bbActive(k);
       h+='<div class="time-slots"'+((paused||!unlocked)?' style="opacity:.35;pointer-events:none;filter:grayscale(.4)'+(unlocked?'':';filter:blur(2px)')+'"':'')+'>';
@@ -50034,12 +50209,13 @@ function nbLevelCardHtml(kid){
 //   · Saved per kid per ladder at notebookSettings/<kid>/ladders/<number|reading> = { on, lv, opt, cur }. Nothing saved = OFF.
 //     Only Mom's taps on the card write (momHere), one targeted field per write, behind db && !_dryRun(), mirrored to the same
 //     local copy as every notebook setting (ha_nb_settings). A new level drops cur, so the child starts at that level's first item.
-//     Nothing writes cur yet — the slices that print the pages save it after a print, like the notebook's other saved places.
+//     cur is saved after a print by the slice that prints that ladder's pages (NBLADREAD below: reading, the 1st-grade notebook).
 //   · The level: the one Mom picked (lv), else the kid's notebook grade (nbLevelGrade — Mom's override or the Family grade, not
 //     today's fallback) through HoweNotebooks.ladders.defaultLevel; neither → "Pick a level".
 //   · ctx.ladders (haNbContext): { reading|number: { on, lv, lvFrom, opt, cur, ready, next } } for the kid's saved ladders, or
-//     null. next = ladders.next(…) for the target week when the ladder is on and loaded. NO generator reads it yet.
-//   · Switching a ladder on prints nothing yet (NBLADDER_PAGES_NOTE says so on the card — change that line when the pages land).
+//     null. next = ladders.next(…) for the target week when the ladder is on and loaded. Only the 1st-grade notebook reads it
+//     (reading, NBLADREAD); every other notebook and the number ladder print nothing yet.
+//   · The card's note says per notebook what prints (NBLADREAD's note); NBLADDER_PAGES_NOTE is the "not yet" wording.
 const NBLADDER_FILES={reading:"ladders/read_and_answer.json",number:"ladders/number_thinking.json"};
 const NBLADDER_KINDS=["reading","number"];
 const NBLADDER_NAMES={reading:"📖 Reading passages",number:"🔢 Number thinking"};
@@ -50076,8 +50252,9 @@ function nbLadderLevelOf(kid,kind){
   const d=nbLadderDefault(kid,kind);
   return d?{lv:d,from:"grade"}:{lv:"",from:""};
 }
-function nbLadderState(kid,kind){ const s=nbLadderSaved(kid,kind), lv=nbLadderLevelOf(kid,kind); return {on:s.on===true, lv:lv.lv||null, lvFrom:lv.from||null, opt:s.opt===true, cur:(s.cur&&typeof s.cur==="object")?s.cur:null}; }
-// For haNbContext: the kid's saved ladders + this week's items when on and loaded; null when nothing is saved. No generator reads it yet.
+function nbLadderState(kid,kind){ const s=nbLadderSaved(kid,kind), lv=nbLadderLevelOf(kid,kind); return {on:s.on===true, lv:lv.lv||null, lvFrom:lv.from||null, opt:s.opt===true, cur:(s.cur&&typeof s.cur==="object")?s.cur:null, days:(typeof s.days==="string"&&s.days)?s.days:null}; }   // 📖 NBLADREAD: days = the reading pages' day ticks
+// For haNbContext: the kid's saved ladders + this week's items when on and loaded; null when nothing is saved. Only the 1st-grade
+// notebook reads it (reading — NBLADREAD).
 function nbLadderCtx(kid){
   try{
     const L=nbLadderLib(), out={}; let any=false;
@@ -50093,7 +50270,7 @@ function nbLadderCtx(kid){
 }
 // The one writer: ONE targeted field of notebookSettings/<kid>/ladders/<kind>. false / "" / null = remove (nothing saved = off).
 function nbLadderWrite(kid,kind,field,val){
-  if(!momHere()||!NBLADDER_FILES[kind]||["on","lv","opt","cur"].indexOf(field)<0) return false;
+  if(!momHere()||!NBLADDER_FILES[kind]||["on","lv","opt","cur","days"].indexOf(field)<0) return false;   // 📖 NBLADREAD: + days (the reading pages' day ticks)
   if(!notebookSettings[kid]) notebookSettings[kid]={};
   const ns=notebookSettings[kid]; if(!ns.ladders||typeof ns.ladders!=="object") ns.ladders={};
   if(!ns.ladders[kind]||typeof ns.ladders[kind]!=="object") ns.ladders[kind]={};
@@ -50147,6 +50324,7 @@ function nbLadderRowHtml(kid,kind){
     '<label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;font-weight:700;color:#1f2937">Level:'+
       '<select onchange="nbLadderSetLevel(\''+kid+'\',\''+kind+'\',this.value)" style="padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:11.5px;background:#fff;'+F+'">'+first+opts+'</select></label>'+
     '<div style="font-size:11.5px;color:#374151;margin-top:5px">'+nbLadderWhereText(kid,kind,t,st)+'</div>'+optHtml+
+    ((kind==="reading"&&typeof nbLadReadDaysHtml==="function")?nbLadReadDaysHtml(kid):"")+   // 📖 NBLADREAD: the day ticks (a notebook that prints reading)
     '<div style="margin-top:7px">'+place+'</div></div>';
 }
 // The one home: this kid's section of the Notebook tab, Mom only, after the Notebook level card. Closed, it reads only the saved
@@ -50161,7 +50339,7 @@ function nbLadderCardHtml(kid){
       '<span style="font-weight:600;color:var(--muted);margin-left:6px">'+sum+'</span></summary>'+
     '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin:6px 0 4px">Two step-by-step ladders for the notebook: a reading passage with questions, and number-thinking questions. Each starts at the level you pick and climbs from there.</div>'+
     (nbLadderLib()?NBLADDER_KINDS.map(k=>nbLadderRowHtml(kid,k)).join(""):'<div style="font-size:11.5px;color:var(--muted);padding:6px 0">Getting the ladders…</div>')+
-    '<div style="font-size:11px;color:#4338ca;font-weight:700;line-height:1.45;margin-top:4px">'+NBLADDER_PAGES_NOTE+'</div>'+
+    '<div style="font-size:11px;color:#4338ca;font-weight:700;line-height:1.45;margin-top:4px">'+((typeof nbLadReadNoteHtml==="function")?nbLadReadNoteHtml(kid):NBLADDER_PAGES_NOTE)+'</div>'+   // 📖 NBLADREAD: what prints, per notebook
   '</details>';
 }
 // 🖨 Print placement: the window opens inside the tap (Safari blocks a pop-up opened after a wait — as ucPrintWin), then gets the
@@ -50177,6 +50355,90 @@ function nbLadderPlacement(kid,kind){
   p.then(r=>{ let doc=""; try{ doc=r[0].ladders.placementDoc(kind,r[1],{lv:lv,kidName:cap(kid)}); }catch(e){ doc=""; } if(doc) put(doc); else fail(); },fail);
 }
 // NBLADDER_END
+// NBLADREAD_START — 📖 "Read and answer" in the 1st-grade notebook, slice 2 of the notebook ladders (notebooks study, her words
+// 2026-11-23/24: "Build it"; reading "twice a week sounds great"; 1st grade "She reads them"). notebooks.js NBLADREAD prints the
+// pages from the reading ladder haNbContext hands it; this block is the app's side of it:
+//   · Which notebooks print it: asked of notebooks.js (HoweNotebooks.ladderPages), never a list of kids here. The card's note
+//     says "Prints in the notebook on …" for the reading row of such a notebook, and the "not yet" wording for every other
+//     notebook and for the number row.
+//   · The days: the reading row gets day ticks (Mon–Fri, at most two), saved as ONE field — the reading ladder's "days", e.g.
+//     "tuesday thursday" — through nbLadderWrite (Mom only, one targeted field, inert under ?dryrun=1). Nothing ticked = the
+//     week's 2nd and 4th school day.
+//   · Every Mom build (🖨 Print / Parent / 👁 Look, 📄 PDF, 📱 Send to tablet, the combined parent guide) waits for the reading
+//     file first when that kid's reading ladder is on and the notebook prints it. If it can't load, the notebook builds exactly
+//     as before (no reading pages) and Mom gets a plain note saying so, pointing at the Ladders card.
+//   · The place: the builder reports out.readingCursor only when reading pages print; it is saved as the reading ladder's "cur"
+//     at the same moment as the notebook's other saved places (the sight-word, letter and number cursors) — after the build,
+//     only when it changed, Mom only, one field, never under ?dryrun=1. The same week built again writes nothing; next week
+//     picks up after these passages.
+const NBLADREAD_WEEK=["monday","tuesday","wednesday","thursday","friday"];
+const NBLADREAD_DAY={monday:"Monday",tuesday:"Tuesday",wednesday:"Wednesday",thursday:"Thursday",friday:"Friday"};
+const NBLADREAD_NUM_NOTE="Number thinking doesn’t print anything in the notebook yet — those pages are still being built. For now it keeps the level and the child’s place ready.";
+const NBLADREAD_LOAD_FAIL="The reading passages couldn’t load (check the internet), so the Read and answer pages and their answers aren’t in this build — everything else is as usual. Build it again once you’re online; the Ladders card on the Notebook tab shows when they’re back.";
+// Does this kid's notebook print the reading ladder? (notebooks.js decides from the kid's look and level.)
+function nbLadReadPrints(kid){
+  try{ const N=window.HoweNotebooks; if(!N||typeof N.ladderPages!=="function") return false;
+    const r=N.ladderPages(kid,{notebookTheme:nbThemeOf(kid),nbLevel:nbLevelOf(kid)}); return !!(r&&r.reading); }catch(e){ return false; }
+}
+// The saved ticks → weekdays in week order (at most two); none = the default.
+function nbLadReadDaysOf(kid){
+  const v=nbLadderSaved(kid,"reading").days, seen={};
+  return String(typeof v==="string"?v:"").toLowerCase().split(/[\s,]+/).filter(d=>NBLADREAD_WEEK.indexOf(d)>=0&&!seen[d]&&(seen[d]=1))
+    .sort((a,b)=>NBLADREAD_WEEK.indexOf(a)-NBLADREAD_WEEK.indexOf(b)).slice(0,2);
+}
+function nbLadReadDaysWord(kid){
+  const d=nbLadReadDaysOf(kid);
+  return d.length?d.map(x=>NBLADREAD_DAY[x]).join(" and "):"the 2nd and 4th school day of the week (Tuesday and Thursday in a full week)";
+}
+// A tick: Mom only, at most two days, ONE field. Unticking the last one removes the field (back to the default).
+function nbLadReadSetDay(kid,day,on){
+  if(!momHere()||NBLADREAD_WEEK.indexOf(day)<0) return;
+  let d=nbLadReadDaysOf(kid).filter(x=>x!==day);
+  if(on){ if(d.length>=2) return; d.push(day); }
+  d.sort((a,b)=>NBLADREAD_WEEK.indexOf(a)-NBLADREAD_WEEK.indexOf(b));
+  nbLadderWrite(kid,"reading","days",d.length?d.join(" "):null);
+  nbLadderRepaint();
+}
+// The reading row's day ticks — only for a notebook that prints reading.
+function nbLadReadDaysHtml(kid){
+  if(!nbLadReadPrints(kid)) return "";
+  const d=nbLadReadDaysOf(kid), full=d.length>=2;
+  const box=k=>{ const on=d.indexOf(k)>=0;
+    return '<label style="display:inline-flex;align-items:center;gap:3px;font-size:11.5px;font-weight:700;color:'+((full&&!on)?'#9ca3af':'#1f2937')+'"><input type="checkbox"'+(on?' checked':'')+((full&&!on)?' disabled':'')+
+      ' onchange="nbLadReadSetDay(\''+kid+'\',\''+k+'\',this.checked)">'+NBLADREAD_DAY[k].slice(0,3)+'</label>'; };
+  return '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;font-weight:700;color:#1f2937">Days:'+NBLADREAD_WEEK.map(box).join("")+
+    '<span style="font-weight:600;font-size:10.5px;color:var(--muted)">'+(d.length?'Untick both to go back to the 2nd and 4th school day.':'None ticked: the 2nd and 4th school day. Tick up to two to choose.')+'</span></div>';
+}
+// The card's note: what this kid's notebook prints.
+function nbLadReadNoteHtml(kid){
+  if(!nbLadReadPrints(kid)) return NBLADDER_PAGES_NOTE;
+  const st=nbLadderState(kid,"reading"), t=nbLadderTrack("reading"), L=nbLadderLib(), w=(st.lv&&t&&L)?L.where(t,st):null;
+  const read=(w&&w.end)?"📖 Reading passages: the last level is finished, so no reading page prints."
+    :st.on?"📖 Reading passages: prints in the notebook on "+nbLadReadDaysWord(kid)+" — one passage a day, with the answers on a Teaching Companion page."
+    :"📖 Reading passages: when it’s on, it prints in the notebook on "+nbLadReadDaysWord(kid)+".";
+  return read+'<div style="margin-top:3px">🔢 '+NBLADREAD_NUM_NOTE+'</div>';
+}
+// Before a Mom build: the reading file is here when this kid's notebook will print it. → "" or the plain note for Mom.
+async function nbLadReadReady(kid){
+  if(nbLadderSaved(kid,"reading").on!==true||!nbLadReadPrints(kid)) return "";
+  try{ await nbLadderLoad("reading"); return ""; }catch(e){ return NBLADREAD_LOAD_FAIL; }
+}
+async function nbLadReadReadyAll(){   // the combined parent guide: any kid whose notebook prints reading
+  const any=Object.keys(notebookSettings||{}).some(k=>nbLadderSaved(k,"reading").on===true&&nbLadReadPrints(k));
+  if(!any) return "";
+  try{ await nbLadderLoad("reading"); return ""; }catch(e){ return NBLADREAD_LOAD_FAIL; }
+}
+function nbLadReadNote(out,msg){ if(out&&msg) out.warnings=(out.warnings||[]).concat([msg]); }
+// After a Mom build: save where this week's passages landed (the reading ladder's "cur"), only when it changed.
+function nbLadReadPersist(kid,out){
+  try{
+    if(!out||!out.readingCursor||!momHere()||typeof db==="undefined"||!db||_dryRun()) return;
+    const oc=nbLadderSaved(kid,"reading").cur||{}, nc=out.readingCursor;
+    if(oc.week===nc.week&&oc.lv===nc.lv&&oc.from===nc.from&&oc.adv===nc.adv&&oc.opt===nc.opt) return;
+    nbLadderWrite(kid,"reading","cur",nc);
+  }catch(e){}
+}
+// NBLADREAD_END
 // NBNAME_START — the name in a Pre-K notebook, set on the Notebook tab (her ask 2026-11-10: "can we also have the option on
 // notebooks for caleb 3d and julian to edit the name, so 3d will be David in his notebook"). Mom only. Save writes ONE targeted
 // path, notebookSettings/<kid>/notebookName (removed by "Use the family name"); dry-run inert; the local notebookSettings is kept
@@ -51456,6 +51718,7 @@ function nbtPersistCursors(kid,out){
   try{ nbQbPersistCursor(kid,out); }catch(e){}
   try{ nbCvPersistCursor(kid,out); }catch(e){}
   try{ luWordsPersistCursor(kid,out); }catch(e){}   // LU_WORDS_WIRE
+  try{ if(typeof nbLadReadPersist==="function") nbLadReadPersist(kid,out); }catch(e){}   // 📖 NBLADREAD: the reading ladder's place
 }
 let _nbtSendBusy=false;
 async function nbtSend(kid){
@@ -51466,12 +51729,14 @@ async function nbtSend(kid){
   let lib; try{ lib=await haLoadNotebooksLib(); }catch(e){ alert("Couldn't load the notebook builder ("+e.message+")."); return; }
   _nbtSendBusy=true;
   try{ await nbDgPrefetch(kid); }catch(e){}
+  const lrMsg=(typeof nbLadReadReady==="function")?await nbLadReadReady(kid):"";   // 📖 NBLADREAD: the reading passages first
   try{
     const wk=nbTargetWk(), wn=nbTargetWkNum();
     say("📱 Building "+cap(kid)+"'s notebook…");
     const ctx=haNbContext(kid); ctx.bindingMargin=false;   // no prongs on a tablet
     ctx.nbPageTags=true;   // NBT_TODAY: every page says its day(s) and a short name (data-nb-day / data-nb-name) — the tablet copy only, paper is untouched
     const out=lib.generate(kid,ctx);
+    if(typeof nbLadReadNote==="function") nbLadReadNote(out,lrMsg);   // 📖 NBLADREAD
     if(out&&out.warnings&&out.warnings.length) alert("⚠ "+cap(kid)+"'s notebook:\n\n"+out.warnings.join("\n\n"));
     nbtPersistCursors(kid,out);
     const student=(out&&out.student)||""; if(!student) throw new Error("the builder made no pages");
