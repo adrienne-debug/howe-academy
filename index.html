@@ -30291,6 +30291,36 @@ let scOpen={}, ntEdit=null, ntOpen={};
 function scList(kid){ const o=(roadmapData&&roadmapData[kid]&&roadmapData[kid].scores)||{}; return Object.keys(o).sort().map(function(k){ return Object.assign({key:k},o[k]); }); }
 function scNprCol(n){ if(n==null) return "#94a3b8"; return n>=75?"#16a34a":n>=40?"#475569":n>=25?"#d97706":"#b5394a"; }
 function scArrow(prev,cur){ if(prev==null||cur==null) return ""; const d=cur-prev; if(Math.abs(d)<5) return '<span style="color:#94a3b8">·</span>'; return '<span style="color:'+(d>0?"#16a34a":"#b5394a")+'">'+(d>0?"▲":"▼")+Math.abs(d)+'</span>'; }
+// SCSTRANDS_START — 📊 skill areas by year (her ask 2026-11-23, after Lincoln's November Iowa: "can we also add the things
+// that were below average like spelling from this year and other years … or maybe all the areas"). Every Iowa report already
+// keeps its strands under plans/<kid>/scores/<date>/domains; the strip only showed the latest report's 4 weakest. This draws
+// one row per area and one column per test (latest first): % right + the gap from the national average, red when below.
+// It opens on the areas below average on the latest test; "Show all areas" lists every one. Read-only: no write, no listener.
+// The 2023–24 forms print spelling / capitalization / punctuation under "Language", later forms under "Conventions" — one row.
+let scAll={};
+const SC_GROUPS=[["reading","Reading"],["written_expression","Written Expression"],["conventions","Conventions"],["vocabulary","Vocabulary"],["mathematics","Math"],["computation","Computation"],["social_studies","Social Studies"],["science","Science"],["information_literacy","Information Literacy"],["language","Language"],["listening","Listening"],["word_analysis","Word Analysis"]];
+const SC_ALIAS={language_spelling:"conventions_spelling",language_capitalization:"conventions_capitalization",language_punctuation:"conventions_punctuation"};
+const SC_NAMES={usage_grammar:"Usage & Grammar",planning_organization:"Planning & Organization",authors_craft:"Author's Craft",civics_government:"Civics & Government",earth_space_science:"Earth & Space Science",number_sense_operations:"Number Sense & Operations",alg_patterns_connections:"Algebra & Patterns",data_analysis_prob_stats:"Data, Probability & Statistics",phono_awareness_decoding:"Phonics & Decoding",identify_analyze_word_parts:"Word Parts"};
+function scStrandLabel(k){ let gi=SC_GROUPS.length, g="", rest=k;
+  SC_GROUPS.some(function(p,i){ if(k.indexOf(p[0]+"_")!==0) return false; gi=i; g=p[1]; rest=k.slice(p[0].length+1); return true; });
+  return {gi:gi, group:g, name:SC_NAMES[rest]||rest.replace(/_/g," ").replace(/\b\w/g,function(c){ return c.toUpperCase(); })}; }
+function scStrandsHTML(kid,iowa){
+  const cols=iowa.filter(function(r){ return r.domains; }).reverse(); if(!cols.length) return "";
+  const last=cols[0], rows={};
+  cols.forEach(function(r,ci){ Object.keys(r.domains).forEach(function(k){ const d=r.domains[k]; if(!d||d.pct==null) return; const key=SC_ALIAS[k]||k; (rows[key]=rows[key]||{k:key,c:{}}).c[ci]={pct:d.pct,diff:d.diff==null?null:+d.diff}; }); });
+  let R=Object.keys(rows).map(function(k){ return Object.assign(rows[k],scStrandLabel(k)); });
+  const below=R.filter(function(r){ return r.c[0]&&r.c[0].diff<0; }), all=!!scAll[kid];
+  if(all) R.sort(function(a,b){ return a.gi-b.gi||(a.k<b.k?-1:1); }); else R=below.sort(function(a,b){ return a.c[0].diff-b.c[0].diff; });
+  let h='<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:12px"><span style="font-weight:800;font-size:12.5px">Skill areas by year</span><span style="font-size:11.5px;color:var(--muted)">'+(all?'every area':below.length+' below the national average on the latest test ('+esc(last.date||last.key)+')')+' · % right (gap from the national average) · <b style="color:#b5394a">red</b> = below</span><span style="flex:1"></span><a href="#" onclick="scAll[\''+kid+'\']=!scAll[\''+kid+'\'];renderAll();return false" style="font-size:11.5px;color:var(--muted)">'+(all?"Show below average only":"Show all areas")+'</a></div>';
+  if(!R.length) return h+'<div style="font-size:12px;color:#334155;margin-top:4px">Nothing below the national average on the latest test.</div>';
+  h+='<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;font-size:12px;min-width:100%"><thead><tr><th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:700">Area</th>'+cols.map(function(r){ return '<th style="text-align:right;padding:4px 6px;white-space:nowrap">'+esc(r.date||r.key)+'</th>'; }).join("")+'</tr></thead><tbody>';
+  R.forEach(function(r){ h+='<tr style="border-top:1px solid #f1f5f9"><td style="padding:4px 6px;white-space:nowrap">'+(r.group&&r.group!==r.name?'<span style="color:var(--muted)">'+esc(r.group)+' · </span>':'')+'<b style="color:#334155">'+esc(r.name)+'</b></td>';
+    cols.forEach(function(c,ci){ const d=r.c[ci], lo=d&&d.diff<0;
+      h+='<td style="padding:4px 6px;text-align:right;white-space:nowrap">'+(d?'<span style="color:'+(lo?'#b5394a;font-weight:700':'#334155')+'">'+esc(d.pct)+'%</span>'+(d.diff!=null?' <span style="color:'+(lo?'#b5394a':'#94a3b8')+';font-size:10.5px">('+(d.diff>0?'+':'')+d.diff+')</span>':''):'<span style="color:#cbd5e1">—</span>')+'</td>'; });
+    h+='</tr>'; });
+  return h+'</tbody></table></div>';
+}
+// SCSTRANDS_END
 function scStripHTML(kid){
   const L=scList(kid); if(!L.length&&!scOpen[kid]) return "";
   const iowa=L.filter(function(r){ return r.tests; }), cog=L.filter(function(r){ return r.batteries; });
@@ -30310,6 +30340,7 @@ function scStripHTML(kid){
     const last=iowa[iowa.length-1]; if(last.domains){ const D=Object.keys(last.domains).map(function(k){ return Object.assign({k:k},last.domains[k]); }).filter(function(d){ return d.diff!=null; }).sort(function(a,b){ return a.diff-b.diff; });
       const nm=function(k){ return k.replace(/_/g," ").replace(/\b\w/g,function(c){ return c.toUpperCase(); }); };
       h+='<div style="font-size:11.5px;color:var(--muted);margin-top:8px">'+esc(last.date||"")+' strands vs. nation — <b style="color:#b5394a">weakest</b>: '+D.slice(0,4).map(function(d){ return esc(nm(d.k))+' '+d.pct+'% ('+(d.diff>0?'+':'')+d.diff+')'; }).join(" · ")+' · <b style="color:#16a34a">strongest</b>: '+D.slice(-3).reverse().map(function(d){ return esc(nm(d.k))+' '+d.pct+'% (+'+d.diff+')'; }).join(" · ")+(last.lexile?' · Lexile '+esc(last.lexile):'')+(last.quantile?' · Quantile '+esc(last.quantile):'')+'</div>'; }
+    h+=scStrandsHTML(kid,iowa);   // SCSTRANDS
   }
   cog.forEach(function(r){ const B=r.batteries||{}; h+='<div style="font-size:12px;margin-top:8px"><b>CogAT '+esc(r.date||"")+'</b>'+(r.level?' · Level '+esc(r.level):'')+(r.profile?' · profile '+esc(r.profile):'')+': '+["verbal","quantitative","nonverbal","composite"].filter(function(k){ return B[k]; }).map(function(k){ return k+' <b style="color:'+scNprCol(B[k].npr)+'">'+(B[k].sas!=null?B[k].sas:'')+(B[k].npr!=null?' ('+B[k].npr+')':'')+'</b>'; }).join(" · ")+'</div>'; });
   h+='<div style="font-size:11px;color:var(--muted);margin-top:8px">Typed from the report PDFs — a new report is added by Claude on your ask, one record per test date.</div></div>';
