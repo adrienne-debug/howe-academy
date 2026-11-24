@@ -47340,6 +47340,7 @@ function relayWeek(why,info){
   (info.subjects||[]).forEach(function(s){ if(s&&s.kid&&s.sk&&!_rlwPend.subjects.some(x=>x.kid===s.kid&&x.sk===s.sk)) _rlwPend.subjects.push({kid:s.kid,sk:s.sk}); });   // 🔁 RELAY3: pass B — the subjects re-laid after the sweep, one after another
   if(info.mvt){ if(!_rlwPend.mvt) _rlwPend.mvt=[]; _rlwPend.mvt.push(info.mvt); }   // 📅 MVTRELAY: the moved card and the slot it left
   (info.retr||[]).forEach(function(k){ if(!k) return; if(!_rlwPend.retr) _rlwPend.retr=[]; if(_rlwPend.retr.indexOf(k)<0) _rlwPend.retr.push(k); });   // 🃏 RETRLIVE: pass R — the kids whose practice days changed
+  if(info.from) _rlwPend.from=(info.from==="tomorrow"||_rlwPend.from==="tomorrow")?"tomorrow":"clock";   // 🃏 DRILLSWITCH: one clock rule for pass B and pass R (_rlwFromMode); no other caller sets it
   (info.fams||[]).forEach(function(f){ if(!f||!f.id||!f.key) return; if(!_rlwPend.fams) _rlwPend.fams=[]; if(!_rlwPend.fams.some(x=>x.id===f.id&&x.key===f.key)) _rlwPend.fams.push({id:f.id,key:f.key}); });   // UNITFT: pass F — family items laid into the board week
   try{ clearTimeout(_rlwTimer); }catch(e){}
   _rlwTimer=setTimeout(function(){ _rlwFire(0); },RLW_WAIT_MS);
@@ -47423,10 +47424,11 @@ function _rlwWords(e){
   const nm=(e.moves||[]).length, nr=(e.removed||[]).length;
   const nSat=(String(e.why||"").split(",").indexOf("saturday")>=0)?(e.removed||[]).filter(function(c){ return c&&c.day==="saturday"&&!c.lid; }).length:0;   // 📅 TWSSAT: a Saturday daily taken off is not "to next week"
   const nRetr=(String(e.why||"").split(",").indexOf("retrieval")>=0)?(e.removed||[]).filter(function(c){ return c&&c.subjectKey==="retrieval"; }).length:0;   // 🃏 RETRLIVE: a practice card taken off is not "to next week"
+  const nSw=(String(e.why||"").split(",").indexOf("drillswitch")>=0)?(e.removed||[]).filter(function(c){ return c&&/^drills(_|$)/.test(String(c.subjectKey||"")); }).length:0;   // 🃏 DRILLSWITCH: nor is an old drills card the switch took off
   let s=(e.label||"Re-laid")+" → "+nm+" card"+(nm===1?"":"s")+" moved"+(kids?" ("+kids+")":"");
-  if(nr-nSat-nRetr) s+=" · "+(nr-nSat-nRetr)+" to next week";
+  if(nr-nSat-nRetr-nSw) s+=" · "+(nr-nSat-nRetr-nSw)+" to next week";
   if(nSat) s+=" · "+nSat+" off Saturday";
-  if(nRetr) s+=" · "+nRetr+" taken off";
+  if(nRetr+nSw) s+=" · "+(nRetr+nSw)+" taken off";
   const na=(e.added||[]).length; if(na) s+=" · "+na+" added";   // RELAY3D
   const nb=(e.boxed||[]).length; if(nb) s+=" · "+nb+" didn't fit (in the day's box)";   // 🃏🎯 DMSLOT
   if(e.locked&&e.locked.length) s+=" · ⚠ "+e.locked.length+" held card"+(e.locked.length===1?"":"s")+" changed";
@@ -47516,6 +47518,7 @@ function _rlwApplyLocal(p,v){
   const parts=String(p).split("/");
   if((parts[0]==="weekConfig"||parts[1]==="babysitter"||parts[1]==="meta")&&typeof _twsApplyLocal==="function"){ _twsApplyLocal(p,v); return; }   // 📅 THISWEEK (TWSSAT: the board's Saturday tab)
   if(parts[0]==="calendar"&&typeof calendarData!=="undefined"&&calendarData){ let o=calendarData; for(let i=1;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=="object") o[parts[i]]={}; o=o[parts[i]]; } if(v===null) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=v; return; }
+  if(parts[0]==="mastery"&&parts.length>1&&typeof masteryData!=="undefined"&&masteryData){ let o=masteryData; for(let i=1;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=="object") o[parts[i]]={}; o=o[parts[i]]; } if(v===null) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=JSON.parse(JSON.stringify(v)); return; }   // 🃏 DRILLSWITCH: a plan leaf (no other caller lists a mastery path)
   if(typeof stApplyLocal==="function") stApplyLocal(p,v);
 }
 function relayUndo(at){
@@ -47566,7 +47569,7 @@ function _rlwModeNoAsk(){
 }
 function _rlwChain(list,pend,fin){
   const _mvt=(typeof _rlwMvtOnly==="function"&&_rlwMvtOnly(pend));   // 📅 MVTRELAY: today stays as the move left it, from tomorrow on
-  const q=(list||[]).slice(); const mode=_mvt?"tomorrow":(pend&&pend.today&&typeof RLW_CURR_TODAY!=="undefined"&&RLW_CURR_TODAY&&typeof _rlwModeToday==="function")?_rlwModeToday():_rlwModeNoAsk(); const why=(pend&&pend.whys&&pend.whys[0])||"relay";   // 🔁 RELAY4: a curriculum run may take today too
+  const q=(list||[]).slice(); const mode=_mvt?"tomorrow":((typeof _rlwFromMode==="function"&&_rlwFromMode(pend))||((pend&&pend.today&&typeof RLW_CURR_TODAY!=="undefined"&&RLW_CURR_TODAY&&typeof _rlwModeToday==="function")?_rlwModeToday():_rlwModeNoAsk())); const why=(pend&&pend.whys&&pend.whys[0])||"relay";   // 🔁 RELAY4: a curriculum run may take today too
   const next=function(){
     const s=q.shift(); if(!s){ fin(); return; }
     let pb=false, dl=false; try{ pb=(typeof planBacked==="function")&&planBacked(s.kid,s.sk); dl=!pb&&_rlwDailyOk(s.kid,s.sk); }catch(e){ pb=false; dl=false; }
@@ -64712,7 +64715,7 @@ function drStripChips(kid){
   const name=(typeof cap==="function")?cap(kid):kid, nm=esc(name), arg=String(kid).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
   const go='drGo(\''+esc(arg)+'\')';
   const base='margin:2px 4px 2px 0;padding:3px 10px;border-radius:12px;background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;max-width:100%;text-align:left;white-space:normal;';
-  let h='';
+  let h=(typeof drSwOfferHtml==="function")?drSwOfferHtml(kid):'';   // DRILLSWITCH: the one-tap offer for an old-style drills subject ("" for every other child)
   rows.forEach(function(r){
     h+='<button class="dr-row" onclick="'+(r.ok?'drDaysOpen(\''+esc(arg)+'\',\''+r.kind+'\')':go)+'" title="'+(r.ok?'Card practice — tap to see or change the days':'This kind makes no card for '+nm+' — tap to change the plan')+'" style="'+base+'border:1px solid #c4b5fd;color:'+((r.ok&&!r.paused)?'#6d28d9':'#9ca3af')+'">'+esc(drLineText(r,name))+'</button>';   // DRILLPAUSE: greyed while paused
   });
@@ -65105,6 +65108,219 @@ function daSheetHTML(kid,col){
   return h+'</div></div>';
 }
 // DRILLADD_END
+// DRILLSWITCH_START — 🃏 the one-tap switch for an old-style "Drills" daily subject (slice 7 of
+// DESIGN_drill_rows_curriculum_2026-11-19.md, §5; her answers 2026-11-22: question 4 "Yes, offer it", question 5 "Use the usual
+// time"). Spotting (§5.1, data only — the same test DRILLADD's daOldDrills uses): a subject of the child whose key is `drills`
+// or starts with `drills_`, with no study-session link, every-day tracking, not paused. The offer is one line in the purple
+// strip right after the subject chips: Switch · What changes?. "What changes?" opens the plain list under the line; Switch
+// opens an in-page confirm (no dialog) with the same list for THIS child, and nothing is written until ✓ Switch there.
+// The tap writes (Mom only — the gate of the day buttons beside it — and only when db && !_dryRun()):
+//   1. the plan days: 🃏 Daily Drill on the subject's Mon–Fri days (fewer times a week than days → the days the week builder
+//      itself would pick, its own spread), each placed by drDaysMap (daPlan) in the first free slot, week → week2 → week3; a
+//      day that already holds three other kinds is skipped and named — through drPlanWrite as ONE update (week, week2, and
+//      week3 only when used — drThreeIn), never settings. The card takes the usual Daily Drill length (retrSlotMinutes: the
+//      default, then the child's measured time), so settings/slot_min_drill is NOT written (question 5);
+//   2. the subject's paused:true + pausedSince through ceSaveField, the writer the card's ⏸ uses — paused, never deleted (its
+//      record, history and Workflow Order entry stay);
+//   3. ONE run through the re-lay door, relayWeek("drillswitch"): pass B takes the paused daily's open cards off (RELAY3D,
+//      _rlwDailyDiff) and pass R lays the Daily Drill cards (RETRLIVE, retrLiveDiff) — past days and checked / claimed /
+//      started cards never change, and a card today with Mom's part done keeps today whole (the clock rule below). ↩ Undo on the day banner
+//      (the door's own) puts the plan leaves, the two subject leaves and this week's cards back.
+// Never two drill cards on one day (§5.6). Before school (the door's own _rlwModeNoAsk = "fresh") the switch takes today too:
+// the open old card leaves and the Daily Drill card comes. Mid-day and after school it takes effect from TOMORROW on both
+// sides: mid-day the two passes cannot meet the rule — _rlwDailyDiff keeps a started (time passed), checked or claimed old
+// card while retrLiveDiff would still lay today's Daily Drill from now — so today keeps its old card and gets no Daily Drill.
+// A before-school tap whose card today is already checked, claimed, Mom's-part-done or started starts tomorrow as well. The
+// door is told once (info.from: "clock" | "tomorrow") and _rlwFromMode works the mode out ONCE, when the run fires, for both
+// passes — a tap a second before school starts can never split them. Daily Drill already on some of those days stays as it
+// is; a Daily Drill ⏸ pause (DRILLPAUSE) is never lifted — the confirm says so. Two running old-style subjects: no switch,
+// one line says why (switching one would leave the other beside a Daily Drill). Test: test_drill_switch.js.
+const DR_SW_AB={mon:"Mon",tue:"Tue",wed:"Wed",thu:"Thu",fri:"Fri"};
+let drSwWhatKey=null, drSwKid=null, drSwSk=null, drSwMsg="", _drSwTimer=null;
+// the child's running old-style subjects (§5.1), in key order
+function drSwSubs(kid){
+  const subs=((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid]||{};
+  return Object.keys(subs).sort().filter(function(k){ const s=subs[k]; return !!s&&typeof s==="object"&&/^drills(_|$)/.test(k)&&!s.study&&s.tracking==="daily"&&!s.paused; });
+}
+// Pure. The weekdays an old subject runs: its allowedDays (none = every day), Mon–Fri; timesPerWeek under that → the week
+// builder's own spread (resolveWeekSlots: matchDates[round(i·(n−1)/(tpw−1))]) over a Mon–Fri week with no day off.
+function drSwDays(s){
+  const all=["mon","tue","wed","thu","fri"], al=(Array.isArray(s&&s.allowedDays)?s.allowedDays:[]).map(String);
+  const base=al.length?all.filter(function(d){ return al.indexOf(DR_SW_AB[d])>=0; }):all.slice();
+  const n=parseInt(s&&s.timesPerWeek,10)||0; let days=base;
+  if(n>0&&n<base.length){ days=[]; for(let i=0;i<n;i++){ const d=base[(n===1)?0:Math.round(i*(base.length-1)/(n-1))]; if(days.indexOf(d)<0) days.push(d); } }
+  const nc=(typeof noCoopDaysOf==="function")?noCoopDaysOf(s):null;
+  return {base:base,days:days,tpw:(n>0&&n<base.length)?n:0,sat:al.indexOf("Sat")>=0,noCoop:nc?all.filter(function(d){ return nc.indexOf(DR_SW_AB[d])>=0; }):null};
+}
+// Today or tomorrow, by the door's own clock rule (see above) → {today, held, mode, left:[the week's days that will change]}
+function drSwFrom(kid,sk){
+  let mode="tomorrow"; try{ if(typeof _rlwModeNoAsk==="function") mode=_rlwModeNoAsk(); }catch(e){}
+  const td=(typeof _todayDay==="string")?_todayDay:"";
+  const tasks=(typeof weekData!=="undefined"&&weekData&&Array.isArray(weekData.tasks))?weekData.tasks:[];
+  const ck=(typeof checked!=="undefined"&&checked)||{}, cl=(typeof claimed!=="undefined"&&claimed)||{};
+  const n=new Date(), nowMin=n.getHours()*60+n.getMinutes();
+  const held=tasks.some(function(t){ if(!t||t.who!==kid||t.subjectKey!==sk||t.day!==td||String(t.id||"").endsWith("_c")) return false;
+    let st=false; try{ st=t.time!=null&&toMin(t.time)!=null&&toMin(t.time)<=nowMin; }catch(e){}
+    return !!ck[t.id]||!!cl[t.id]||!!t.momPartDone||st; });
+  const today=(mode==="fresh")&&!held;
+  let left=[]; try{ const c=retrLiveCtx(kid); left=RETR_LIVE_DAYS.filter(function(dn){ const iso=c.dayISO(dn); return !!iso&&(iso>c.todayISO||(today&&iso===c.todayISO)); }); }catch(e){ left=[]; }
+  return {today:today,held:held,mode:mode,left:left};
+}
+// how the Daily Drill minutes are set: "set" (typed in Mastery), "measured" (the child's timed sittings), "usual" (the default)
+function drSwMinHow(kid){
+  const rp=((typeof masteryData!=="undefined"&&masteryData&&masteryData.retrievalPlan)||{});
+  if(((rp._defaults||{}).slot_min_drill!==undefined)||(((rp[kid]||{}).settings||{}).slot_min_drill!==undefined)) return "set";
+  return ((typeof mastMeasuredDrillMin==="function")&&mastMeasuredDrillMin(kid))?"measured":"usual";
+}
+// Everything the confirm shows and the tap writes, worked out once (null = no such subject)
+function drSwPlan(kid,sk){
+  const s=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{})[sk]; if(!s||typeof s!=="object") return null;
+  const sd=drSwDays(s), w1=retrWeek(kid), w2=retrWeek2(kid), w3=retrWeek3(kid);
+  const before={}; RETR_DAYS.forEach(function(d){ before[d]=retrDayKinds(kid,d); });
+  const pl=daPlan(w1,w2,"drill",sd.days,w3);
+  return {disp:String(s.display||sk),sd:sd,week:pl.week,week2:pl.week2,week3:pl.week3,on:pl.on,
+    full:pl.full.map(function(d){ return {day:d,kinds:(drDaysMap(w1,w2,d,"drill",true,w3).full||[]).slice()}; }),
+    already:sd.days.filter(function(d){ return (before[d]||[]).indexOf("drill")>=0; }),
+    oldMin:parseInt(s.minutes,10)||20, newMin:retrSlotMinutes(kid,"drill"), minHow:drSwMinHow(kid),
+    oldReq:s.mom==="required", oldSkip:(typeof coopDayRule==="function")&&coopDayRule(s)==="skip", newReq:retrSlotMom("drill")==="required",
+    pause:(typeof drPauseState==="function")?drPauseState(kid,"drill"):null, from:drSwFrom(kid,sk),
+    others:drSwSubs(kid).filter(function(k){ return k!==sk; })};
+}
+function drSwCan(p){ return !!p&&!p.others.length&&p.on.length>0; }
+// The plain list, for THIS child (what "What changes?" and the confirm both show)
+function drSwLines(kid,p){
+  const name=(typeof cap==="function")?cap(kid):kid, old="“"+p.disp+"”", DD="\u{1F0CF} Daily Drill";
+  const dl=function(ds){ return ds.map(function(d){ return DR_DAY_SHORT[d]||d; }).join(" "); };
+  const L=[];
+  if(!p.sd.days.length) L.push(old+" runs on no weekday, so there are no days to carry over.");
+  else if(!p.on.length) L.push("Every one of "+old+"’s days already has three kinds of card practice, so "+DD+" would go on no day.");
+  else if(p.sd.tpw) L.push("Days: "+old+" runs "+p.sd.tpw+" times a week on "+dl(p.sd.base)+", and the week builder spreads that to "+dl(p.sd.days)+" — so "+DD+" goes on "+dl(p.on)+".");
+  else L.push("Days: "+DD+" goes on "+dl(p.on)+(p.full.length?".":" — the days "+old+" runs now."));
+  p.full.forEach(function(f){ const dn=DR_DAY_LONG[f.day]||f.day;
+    L.push(dn+" is skipped — it already has three: "+drAnd(f.kinds.map(function(k){ return (typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[k])||k; }))+". Turn one off on its line, then turn "+DD+" on for "+dn+"."); });
+  if(p.already.length) L.push(DD+" is already on "+dl(p.already)+" — "+(p.already.length===1?"that day stays":"those days stay")+" as "+(p.already.length===1?"it is":"they are")+".");
+  if(p.sd.sat) L.push("Saturday isn’t carried over — card practice runs Mon–Fri.");
+  if(p.sd.noCoop&&dl(p.sd.noCoop)!==dl(p.sd.base)) L.push("In weeks without co-op "+old+" uses "+dl(p.sd.noCoop)+"; card practice keeps the same days every week.");
+  L.push("Length: "+p.newMin+" min, the usual "+DD+" time"+(p.minHow==="measured"?" ("+name+"’s own measured drill time)":p.minHow==="set"?" (the minutes set in Mastery)":"")
+    +" — "+old+" is "+p.oldMin+" min now."+(p.minHow==="usual"?" After "+name+"’s timed drill sittings it follows "+name+"’s own measured time.":""));
+  L.push("Time of day: it moves to the end of "+name+"’s school day, just before the Closing Notebook (or an earlier free gap if the end is full). "+old+" sits in the day’s order now.");
+  if(p.oldSkip) L.push("Co-op days: "+old+" skips co-op days now; "+DD+" stays off a co-op day only when “No Mom-required lessons” is ticked.");
+  else if(p.oldReq===p.newReq) L.push("Co-op days: no change — like "+old+" now, it stays off a co-op day when “No Mom-required lessons” is ticked.");
+  else L.push("Co-op days: "+old+" isn’t Mom-required, so it runs on co-op days now; "+DD+" is done with Mom, so it stays off a co-op day when “No Mom-required lessons” is ticked.");
+  if(p.pause) L.push("⏸ "+DD+" is "+(p.pause.now?"paused for "+name+(p.pause.back?" until "+drMD(drIsoAdd(p.pause.back,-1)):""):"set to pause ("+drPauseWords(p.pause)+")")
+    +". Switching doesn’t lift that: no drill card goes on "+name+"’s paused days — "+(p.pause.back?"it comes back by itself on "+drMD(p.pause.back):"▶ Resume on its line brings it back")+".");
+  const f=p.from, first=f.left.length?(DR_DAY_LONG[DR_SW_D3[f.left[0]]]||f.left[0]):"";
+  const isSchool=(typeof _todayDay==="string")&&RETR_LIVE_DAYS.indexOf(_todayDay)>=0;
+  if(f.today) L.push("Starts today: today’s "+old+" card comes off and "+DD+" takes its place (school hasn’t started yet).");
+  else if(!f.left.length) L.push("Nothing changes on this week’s cards — it starts with next week’s.");
+  else L.push("Starts "+first+(isSchool?": today keeps its "+old+" card ("+(f.held&&f.mode==="fresh"?"it’s already started or done":"school has started")+"), so "+name+" never gets two drill cards in one day.":"."));
+  L.push(old+" is paused, not deleted — its card, its history and its place in the Workflow Order stay; it rests in the strip as ⏸ "+p.disp+".");
+  L.push((f.left.length?"Changed your mind? ↩ Undo on the day banner puts it all back for 15 minutes. Later: ":"To go back: ")+"▶ Resume "+old+" on its card, and turn "+DD+" off (or ⏸ pause it) on its line.");
+  return L;
+}
+const DR_SW_D3={monday:"mon",tuesday:"tue",wednesday:"wed",thursday:"thu",friday:"fri"};
+function _drSwArg(x){ return esc(String(x).replace(/\\/g,"\\\\").replace(/'/g,"\\'")); }
+function _drSwBtn(cls,lbl,fn,on){ return '<button class="'+cls+'" onclick="'+fn+'" style="min-height:44px;padding:8px 14px;border-radius:10px;border:1.5px solid #c4b5fd;background:'+(on?'#5b21b6':'#fff')+';color:'+(on?'#fff':'#5b21b6')+';font-size:12.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; }
+function _drSwList(kid,p){ return '<ul style="margin:0;padding-left:18px">'+drSwLines(kid,p).map(function(l){ return '<li style="margin:3px 0">'+esc(l)+'</li>'; }).join('')+'</ul>'; }
+// The offer line (and, opened, the list) at the head of the strip's card-practice chips — "" for a child with no running
+// old-style subject, or when Mom isn't here
+function drSwOfferHtml(kid){
+  if(!_drMom()) return "";
+  const subs=drSwSubs(kid); if(!subs.length) return "";
+  const all=((currData&&currData.subjects)||{})[kid]||{}, q=function(k){ return "“"+String((all[k]||{}).display||k)+"”"; };
+  const box='margin:4px 0 6px;padding:6px 10px;border-radius:10px;background:#fff;border:1.5px dashed #a78bfa;font-size:12px;color:#5b21b6;line-height:1.4;';
+  if(subs.length>1) return '<div class="dr-sw" style="'+box+'">'+esc(drAnd(subs.map(q))+" are set up the older way. The switch to \u{1F0CF} Daily Drill moves one at a time, when it is the only one running — ⏸ pause the others first (tap a chip, then ⏸ on its card).")+'</div>';
+  const sk=subs[0], p=drSwPlan(kid,sk); if(!p) return "";
+  const open=drSwWhatKey===kid+"|"+sk, same=!p.full.length&&!p.sd.tpw&&p.on.length>0;
+  let h='<div class="dr-sw" style="'+box+'display:flex;flex-wrap:wrap;align-items:center;gap:6px"><span style="flex:1 1 200px;min-width:0">'
+    +esc(q(sk)+" is set up the older way. Switch it to \u{1F0CF} Daily Drill"+(same?" — same days.":"."))+'</span>'
+    +_drSwBtn('dr-sw-go','Switch',"drSwOpen('"+_drSwArg(kid)+"','"+_drSwArg(sk)+"')",true)
+    +_drSwBtn('dr-sw-what',open?'Hide':'What changes?',"drSwWhat('"+_drSwArg(kid)+"','"+_drSwArg(sk)+"')",false)+'</div>';
+  if(open) h+='<div class="dr-sw-list" style="'+box+'border-style:solid;border-color:#ddd6fe">'+_drSwList(kid,p)+'</div>';
+  return h;
+}
+function drSwWhat(kid,sk){
+  if(!kid||!sk||!_drMom()) return false;
+  drSwWhatKey=(drSwWhatKey===kid+"|"+sk)?null:kid+"|"+sk;
+  if(typeof renderAll==="function") renderAll();
+  return true;
+}
+function _drSwLive(){ return typeof db!=="undefined"&&!!db&&!(typeof _dryRun==="function"&&_dryRun()); }
+// The confirm — a bottom sheet like the day sheet's; the only control that writes is ✓ Switch
+function drSwSheetHtml(kid,sk){
+  const name=(typeof cap==="function")?cap(kid):kid, p=drSwPlan(kid,sk); if(!p) return "";
+  const col=((typeof KID_COLOR!=="undefined"&&KID_COLOR)||{})[kid]||"#6d28d9", can=drSwCan(p), live=_drSwLive();
+  let h='<div class="ce-sheet dr-sw-sheet" onclick="if(event.target===this)drSwClose()"><div class="ce-sheet-box">';
+  h+='<div class="ce-sheet-title" style="margin-bottom:4px">'+esc("Switch “"+p.disp+"” to \u{1F0CF} Daily Drill?")+' <span style="font-family:\'DM Sans\',sans-serif;font-size:13px;font-weight:700;color:'+col+'">· '+esc(name)+'</span></div>';
+  h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">'+esc(can?"Here is exactly what happens for "+name+". Nothing changes until you tap ✓ Switch.":"Nothing can be switched yet:")+'</div>';
+  h+='<div style="font-size:12.5px;color:var(--text);line-height:1.45">'+_drSwList(kid,p)+'</div>';
+  if(p.others.length) h+='<div class="dr-sw-msg" style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#fef3c7;border:1px solid #fcd34d;font-size:12px;color:#92400e">'+esc("Another old-style subject is running too — ⏸ pause it first, so there are never two drill cards on a day.")+'</div>';
+  if(can&&!live) h+='<div class="dr-sw-msg" style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#fef3c7;border:1px solid #fcd34d;font-size:12px;color:#92400e">Preview mode — nothing can be saved here.</div>';
+  if(drSwMsg) h+='<div class="dr-sw-msg" style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#fef3c7;border:1px solid #fcd34d;font-size:12px;color:#92400e">'+esc(drSwMsg)+'</div>';
+  h+='<div class="ce-sheet-actions"><button class="ce-btn-cancel" onclick="drSwClose()" style="min-height:44px">Not now</button>'
+    +((can&&live)?'<button class="ce-btn-save dr-sw-do" onclick="drSwDo()" style="min-height:44px">✓ Switch</button>':'')+'</div>';
+  return h+'</div></div>';
+}
+function drSwRender(){
+  if(!drSwKid||typeof document==="undefined"||!document.body) return;
+  let w=document.getElementById("dr-sw-wrap");
+  if(!w){ w=document.createElement("div"); w.id="dr-sw-wrap"; document.body.appendChild(w); }
+  const h=drSwSheetHtml(drSwKid,drSwSk), was=!!w.querySelector(".ce-sheet.open");
+  w.innerHTML=was?h.replace('class="ce-sheet ','class="ce-sheet open '):h;
+  w.style.display="block"; document.body.style.overflow="hidden";
+  if(!was) requestAnimationFrame(function(){ const s=w.querySelector(".ce-sheet"); if(s) s.classList.add("open"); });
+}
+function drSwOpen(kid,sk){
+  if(!kid||!sk||!_drMom()||drSwSubs(kid).indexOf(sk)<0) return false;
+  if(_drSwTimer){ clearTimeout(_drSwTimer); _drSwTimer=null; }
+  drSwKid=kid; drSwSk=sk; drSwMsg="";
+  drSwRender();
+  return true;
+}
+function drSwClose(quiet){
+  drSwKid=null; drSwSk=null; drSwMsg="";
+  if(typeof document!=="undefined"&&document.body){
+    document.body.style.overflow="";
+    const w=document.getElementById("dr-sw-wrap");
+    if(w){ const s=w.querySelector(".ce-sheet"); if(s) s.classList.remove("open");
+      _drSwTimer=setTimeout(function(){ w.style.display="none"; w.innerHTML=""; _drSwTimer=null; },250); }
+  }
+  if(!quiet&&typeof renderAll==="function") renderAll();
+}
+// ✓ Switch: the plan days (one drPlanWrite, no live pass of its own — the run below carries pass R), the two subject leaves
+// (ceSaveField, as the card's ⏸ writes them), then ONE relayWeek with every leaf's old value for ↩ Undo
+function drSwDo(){
+  const kid=drSwKid, sk=drSwSk; if(!kid||!sk||!_drMom()) return false;
+  const say=function(m){ drSwMsg=m; drSwRender(); return false; };
+  if(!_drSwLive()) return say("Preview mode — nothing was saved.");
+  if(drSwSubs(kid).indexOf(sk)<0) return say("This subject isn’t running the older way any more — nothing was saved.");
+  const p=drSwPlan(kid,sk); if(!drSwCan(p)) return say("Nothing was saved.");
+  const rp=((masteryData&&masteryData.retrievalPlan)||{})[kid]||{}, base="mastery/retrievalPlan/"+kid+"/";
+  const pl={week:p.week,week2:p.week2}; if(drThreeIn(kid,p.week3)) pl.week3=p.week3;
+  const undo=Object.keys(pl).map(function(k){ return (rp[k]&&typeof rp[k]==="object")?{p:base+k,was:JSON.parse(JSON.stringify(rp[k]))}:{p:base+k,gone:true}; });
+  const P="curriculum/subjects/"+kid+"/"+sk+"/";
+  undo.push(_rlwWas(P+"paused"),_rlwWas(P+"pausedSince"));
+  if(!drPlanWrite(kid,pl)) return say("Nothing was saved.");
+  try{ if(retrAdminLocal&&retrAdminLocal.kid===kid) retrAdminLocal=null; }catch(e){}   // the Mastery panel's copy never writes old days back (§4)
+  const k0=ceEditKid, s0=ceEditKey; ceEditKid=kid; ceEditKey=sk;
+  try{ ceSaveField("paused",true); ceSaveField("pausedSince",new Date().toISOString()); }finally{ ceEditKid=k0; ceEditKey=s0; }
+  const name=(typeof cap==="function")?cap(kid):kid;
+  relayWeek("drillswitch",{label:"\u{1F0CF} "+name+"’s “"+p.disp+"” is now Daily Drill",subjects:[{kid:kid,sk:sk}],retr:[kid],undo:undo,from:p.from.today?"clock":"tomorrow"});
+  drSwWhatKey=null; drSwClose(true);
+  if(typeof gwShowToast==="function") gwShowToast("✓ “"+p.disp+"” is now \u{1F0CF} Daily Drill for "+name+" — "+p.on.map(function(d){ return DR_DAY_SHORT[d]; }).join(" ")+". "+(p.from.left.length?"This week’s cards change in a moment.":"It starts with next week’s cards."));
+  if(typeof renderAll==="function") renderAll();
+  return true;
+}
+// The re-lay door's one clock for a switch run (relayWeek info.from): worked out once per run, at the run, and used by pass R
+// (retrLiveRelay → _rlwFromCtx) and pass B (_rlwChain). "tomorrow" stays tomorrow; "clock" = the door's _rlwModeNoAsk
+// ("fresh" before school, else "tomorrow"). A run nobody marked (every other caller) → null: nothing changes.
+function _rlwFromMode(pend){
+  if(!pend||!pend.from) return null;
+  if(!pend._fm){ let m="tomorrow"; if(pend.from!=="tomorrow"){ try{ if(typeof _rlwModeNoAsk==="function") m=_rlwModeNoAsk(); }catch(e){} } pend._fm=m; }
+  return pend._fm;
+}
+function _rlwFromCtx(pend,c){ const m=_rlwFromMode(pend); if(m&&c) c.todayOpen=(m!=="tomorrow"); return c; }
+// DRILLSWITCH_END
 function renderCurrGrid(el){
   if(!currData||!currData.subjects){
     el.innerHTML+='<div style="padding:40px 20px;text-align:center;color:var(--muted)"><div style="font-size:36px;margin-bottom:8px">\u{1F4CA}</div><div style="font-weight:600;margin-bottom:4px">No curriculum yet</div><div style="font-size:12px">Upload an Excel file or build subjects first.</div></div>';
@@ -84533,7 +84749,7 @@ function _pdDayIso(day){
 function _pdLogged(kid,key){ const h=masteryData&&masteryData.history&&masteryData.history[kid]; return !!(h&&h[key]); }
 function pdOnDrillChecked(t){
   try{
-    const sk=(t&&t.subjectKey)||""; if(!t||!t.who||!(sk==="drills"||/^drills(_|$)/.test(sk))) return;
+    const sk=(t&&t.subjectKey)||""; if(!t||!t.who||!(sk==="drills"||/^drills(_|$)/.test(sk)||(sk==="retrieval"&&t.retrieval==="drill"))) return;   // 🃏 DRILLSWITCH: + a 🃏 Daily Drill practice card (never Sprint / Re-checks / Match)
     const today=(typeof calToday==="function")?calToday():_pdIso(new Date());
     const eff=(typeof effectiveDay==="function")?effectiveDay(t):t.day;
     const cands=[_pdDayIso(eff),_pdDayIso(t.day),today].filter((x,i,a)=>x&&x<=today&&a.indexOf(x)===i);
@@ -95178,7 +95394,7 @@ function retrLiveRelay(pend){
     if(typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return null;
     const all={upd:{},added:[],removed:[],retimed:[]};
     kids.forEach(function(kid){
-      const d=retrLiveDiff(kid,weekData.tasks,retrLiveCtx(kid));
+      const d=retrLiveDiff(kid,weekData.tasks,(typeof _rlwFromCtx==="function")?_rlwFromCtx(pend,retrLiveCtx(kid)):retrLiveCtx(kid));   // 🃏 DRILLSWITCH: a switch run's today follows pass B's (_rlwFromMode); any other run: unchanged
       d.removed.forEach(function(id){ const k=weekData.tasks.findIndex(t=>t&&t.id===id); if(k>=0) weekData.tasks.splice(k,1); });
       d.retimed.forEach(function(r){ const t=weekData.tasks.find(x=>x&&x.id===r.id); if(t) t.time=r.to; });
       d.added.forEach(function(c){ weekData.tasks.push(Object.assign({},c)); });
