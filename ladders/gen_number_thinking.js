@@ -194,7 +194,7 @@ function estDots(o) {
     return {
       type: "NE", text: `about how many dots? (picture: ${n} dots, scattered)`, c: o.tiers.map(fmt), ans: "ABCD"[o.tiers.indexOf(ans)],
       rule: `there are ${n} — that is about ${ans}`,
-      say: "Don't count them one by one. About how many dots are there?",
+      say: "About how many dots? Don't count them all.",
       pic: { kind: "estimate", n, as: "dots", layout: "scatter", seed: ri(1, 999999), choicesAs: "numbers" }
     };
   };
@@ -354,7 +354,7 @@ function lin(o) {
     if (!ch) return null;
     const it = { type: "NA", text: pairsText(xs, ys), c: ch.c, ans: ch.ans, rule: linName(a, b) };
     if (o.pic) it.pic = { kind: "pairs", as: "dots", pairs: xs.map((x, i) => [x, i === 2 ? null : ys[i]]), choicesAs: "numbers" };
-    if (o.say) it.say = "Each number changes the same way. What does the last one change into?";
+    if (o.say) it.say = "Do the same thing to the last number. What do you get?";
     return it;
   };
 }
@@ -388,7 +388,7 @@ function puzzle(o, make) {
     if (!ch) return null;
     const it = { type: "NP", text: p.text, c: ch.c, ans: ch.ans, rule: p.rule };
     if (p.pic) it.pic = p.pic;
-    if (o.say) it.say = "What number goes in the box to make it true?";
+    if (o.say) it.say = "What number goes in the box?";
     return it;
   };
 }
@@ -576,6 +576,10 @@ const L = {};
     ["squares and sums", [[4, either(NSK.poly({ ...base, fns: [{ f: i => i * i, i0: [1, 4], name: "square numbers (1×1, 2×2, 3×3 …) — the steps are the odd numbers" }, { f: i => i * i + 1, i0: [1, 3], name: "square numbers plus 1 (each is a number times itself, then +1)" }], n: [5, 5] }), NSK.fib({ ...base, a: [1, 5], b: [1, 6] }))], [4, bend({ ...base, fns: [{ f: x => x * x, name: "multiply the number by itself" }, { f: x => x * x + 1, name: "multiply the number by itself, then +1" }, { f: x => x * x - 1, name: "multiply the number by itself, then −1" }], x: [2, 10], max: 200 })], [4, either(NPK.timesTimes({ ...base, b: [2, 9], c: [2, 3, 4, 6] }), NPK.timesPlus({ ...base, a: [5, 20], b: [3, 9] }))]]],
     ["mixed — near the 6th-grade top", [[4, either(NSK.alt({ ...base, s: [2, 6], ops: [() => [op("×", 2), op(PLUS, ri(2, 4)), op(MINUS, 1)]], max: 300 }), NSK.inter({ ...base, A: [() => op("×", 2)], B: [() => op("+", -ri(2, 3))], sA: [1, 3], sB: [25, 40] }))], [4, lin({ ...base, a: [5, 6, 7], b: [-3, -4, -5, -6, 2, 3], x: [3, 12], max: 100 })], [4, NPK.chain({ ...base })]]]
   ] };
+  // Mom's rule 2026-11-23: the notebook is "fun not hard, kinda warm up for the day" — so every level STARTS with a
+  // confidence builder (one rule) and its last stage is a stretch, not a wall. 5th opens with one-step rules at 5th-grade
+  // size; the old "mixed — near the 6th-grade top" stage is dropped (the 6th-grade bank covers it).
+  L.g5.stages = [["warm-up — one rule, bigger numbers", [[4, either(NSK.arith({ ...base, d: [6, 7, 8, 9, 11, 12, 15, 25], s: [10, 60], n: [5, 6], max: 250 }), NSK.geo({ ...base, r: [2, 3], s: [1, 2, 3, 5], n: [4, 5], max: 300 }))], [4, either(lin({ ...base, a: [1], b: [15, 18, 21, 25, 35, -15, -18, -25], x: [30, 90] }), lin({ ...base, a: [6, 7, 8, 9], b: [0], x: [2, 12], noSelf: true }))], [4, either(NPK.mulMissing({ ...base, a: [3, 9], v: [3, 12] }), NPK.divMissing({ ...base, a: [3, 9], v: [3, 12] }))]]], ...L.g5.stages.slice(0, 4)];
 }
 // ── 7th: 5 choices — above Lincoln's top: powers, below zero, ratio and percent, growing rules ──
 {
@@ -587,6 +591,8 @@ const L = {};
     ["growing rules", [[4, either(NSK.diffgeo({ ...base, s: [1, 9], d: [1, 2, 3], r: [2] }), NSK.grow2({ ...base, s: [1, 20], d0: [2, 6], g: [3, 4], n: [5, 5], max: 300 }), NSK.affine({ ...base, pq: [[2, 1], [2, -1], [3, -1]], s: [1, 4], max: 800 }))], [4, bend({ ...base, fns: [{ f: x => x * x - x, name: "square it, then take away the number (x × x − x)" }, { f: x => 2 * x * x, name: "square it, then double (2 × x × x)" }, { f: x => x * x + x, name: "square it, then add the number (x × x + x)" }], x: [1, 10], max: 300 })], [4, NPK.bracket({ ...base, forms: ["mulBr", "divPlus"], a: [2, 9], b: [1, 9], v: [2, 12] })]]],
     ["mixed — signed, woven, proportion", [[4, either(NSK.inter({ ...base, A: [() => op("+", -ri(3, 6))], B: [() => op("×", 2)], sA: [5, 10], sB: [1, 3] }), NSK.alt({ ...base, s: [1, 5], ops: [() => [op("×", -2), op(PLUS, ri(1, 3))]] }))], [4, lin({ ...base, a: [0.5, -0.5], b: [-3, -2, 2, 3, -4], x: [-12, 12], xmul: 2, cmin: -100 })], [4, either(NPK.ratio({ ...base, cmin: 0, pq: [[2, 5], [3, 8], [4, 5]], f: [0.5, 1.5, 2.5], g: [3, 4, 6], int: false }), NPK.percent({ ...base, cmin: 0, p: [110, 120, 150, 125, 15, 35], n: [20, 40, 60, 80, 120, 200] }), NPK.signed({ ...base, forms: ["divNeg", "mulNeg"], a: [3, 9], b: [-9, 9] }))]]]
   ] };
+  // warm-up first (Mom's rule 2026-11-23); the old "mixed" last stage is dropped so the top is a stretch, not a wall.
+  L.g7.stages = [["warm-up — one rule, big steps, easy percents", [[4, either(NSK.arith({ ...base, d: [11, 12, 15, 20, 25, -11, -12, -15], s: [100, 160], n: [5, 6], min: 0 }), NSK.geo({ ...base, r: [2], s: [3, 5, 7, 9], n: [5, 5], max: 300 }))], [4, either(lin({ ...base, a: [1], b: [24, 36, 45, -24, -36], x: [50, 120], cmin: 0 }), lin({ ...base, a: [6, 7, 8, 9, 11, 12], b: [0], x: [2, 12], cmin: 0, noSelf: true }))], [4, NPK.percent({ ...base, cmin: 0, p: [10, 50], n: [40, 60, 70, 80, 90, 120, 140, 160, 180, 200, 240, 300] })]]], ...L.g7.stages.slice(0, 4)];
 }
 // ── 8th: 5 choices — exponents, signed two-step rules, proportion, unknowns on both sides ──
 {
@@ -598,6 +604,8 @@ const L = {};
     ["growing and woven", [[4, either(NSK.poly({ ...base, fns: [{ f: i => i * (i + 1) / 2, i0: [1, 4], name: "triangle numbers: the step grows by 1 each time (1, 1+2, 1+2+3 …)" }, { f: i => i * i * i - i, i0: [1, 3], name: "a number cubed, take away the number (x × x × x − x)" }], n: [5, 5] }), NSK.inter({ ...base, A: [() => op("×", 3)], B: [() => op("+", -ri(4, 7))], sA: [1, 2], sB: [5, 12] }), NSK.fib({ ...base, a: [-5, -1], b: [2, 7] }))], [4, bend({ ...base, fns: [{ f: x => x * x - 2 * x, name: "x × x − 2 × x (square it, take away double the number)" }, { f: x => 2 * x * x + 1, name: "square it, double it, then +1" }, { f: x => (x + 1) * (x + 1), name: "add 1, then square it" }], x: [1, 10], max: 300 })], [4, NPK.bothSides({ ...base, a: [4, 9], c: [1, 3], v: [2, 12], b: [1, 9] })]]],
     ["test level — mixed", [[4, either(NSK.alt({ ...base, s: [1, 6], ops: [() => [op("×", 2), op(MINUS, ri(3, 5)), op("×", -1)]] }), NSK.poly({ ...base, fns: [{ f: i => i * i * i - 10, i0: [1, 2], name: "cube numbers, each −10" }, { f: i => -(i * i) + 20, i0: [1, 2], name: "20 minus the square numbers (20 − 1, 20 − 4, 20 − 9 …)" }], n: [5, 5] }))], [4, bend({ ...base, fns: [{ f: x => x * x - 5, name: "square it, then −5 (a negative times itself is positive)" }, { f: x => 3 * x * x, name: "square it, then ×3 (a negative times itself is positive)" }], x: [-5, 5], max: 300 })], [4, either(NPK.bracket({ ...base, forms: ["mulBr", "mulBrPlus"], a: [-6, -2], b: [1, 9], v: [-9, 9] }), NPK.system({ ...base, d: [-9, 14], e: [-8, 9], fin: ["+", "−"] }), NPK.bothSides({ ...base, a: [5, 9], c: [2, 4], v: [-6, 12], b: [1, 9] }))]]]
   ] };
+  // warm-up first (Mom's rule 2026-11-23): one-step rules below zero; the old "test level — mixed" stage is dropped.
+  L.g8.stages = [["warm-up — one rule below zero", [[4, NSK.arith({ ...base, d: [-4, -5, -8, -9, -11], s: [8, 30], n: [6, 6] })], [4, lin({ ...base, a: [1], b: [-7, -8, -9, -12, -15], x: [-10, 10], cmin: -100 })], [4, NPK.signed({ ...base, forms: ["subNeg", "addTo"], a: [2, 9], b: [1, 9] })]]], ...L.g8.stages.slice(0, 4)];
 }
 
 // ══════════════════════════════════════════════════════════════════════════

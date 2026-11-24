@@ -12,16 +12,26 @@ All questions are new — made by rule from numbers, colours and shapes, not cop
 |---|---|---|---|---|
 | **Pre-K** | 3 pictures | patterns · more or fewer · growing pictures · make them the same · bead strings | none — spoken | → K stage 1 |
 | **K** | 3 pictures | the same five, numbers to 10, the missing bead in the middle | none — spoken | → 1st stage 1 |
-| **1st** | 4 | number series · number puzzles · number pairs · about how many | spoken prompt on every item | → 2nd stage 1 |
-| **2nd** | 4 | the same four, to 100; ends with "two steps taking turns" | spoken prompt on every item | → 3rd stage 1 |
+| **1st** | 4 | number series · number puzzles · number pairs · about how many | alone — one short line to read (can also be read aloud) | → 2nd stage 1 |
+| **2nd** | 4 | the same four, to 100; ends with "two steps taking turns" | alone — one short line to read | → 3rd stage 1 |
 | **3rd** | 5 | series · pairs · puzzles (the boys' three) | reads alone | stage 5 ≈ the 4th-grade bank's start |
 | 4th | 5 | *the 4th-grade bank (125, already built)* | | |
-| **5th** | 5 | series · pairs · puzzles | reads alone | starts near the 4th-grade bank's top, ends near the 6th-grade bank's stage 4 |
+| **5th** | 5 | series · pairs · puzzles | reads alone | warm-up, then from the 4th-grade bank's top to about the 6th-grade bank's stage 4 |
 | 6th | 5 | *the 6th-grade bank (125, already built)* | | |
-| **7th** | 5 | series · pairs · puzzles — powers, below zero, ratio, percent | reads alone | starts above the 6th-grade bank's top |
-| **8th** | 5 | series · pairs · puzzles — exponents, signed rules, proportion, unknowns on both sides | reads alone | top of the ladder |
+| **7th** | 5 | series · pairs · puzzles — powers, below zero, ratio, percent | reads alone | warm-up, then above the 6th-grade bank's top |
+| **8th** | 5 | series · pairs · puzzles — exponents, signed rules, proportion, unknowns on both sides | reads alone | warm-up, then the top of the ladder |
 
 Each level climbs **easy → hard** in stages (4 for Pre-K, 5 for the rest), with the kinds taking turns inside every stage. Where the right answer sits (A, B, C …) is spread out evenly, so a child can't learn "it's never A". Choices with numbers are always in order, low to high, like the boys' banks.
+
+## How each level fits what the notebook is for
+
+Your words (11/23): the notebook is "mostly done by themselves except the littlest level", "fun not hard, kinda warm up for the day", and it should "prepare and get ready for test". So:
+
+- **Who does it.** Pre-K and K are the only levels that need a grown-up or the tablet: nothing on them is read; the prompt is spoken and the child taps or points at a picture. From 1st grade up a child can do every question alone — numbers, a few symbols, and at most one short plain line ("What number comes next?", "What number goes in the box?", "Do the same thing to the last number. What do you get?", "About how many dots? Don't count them all.").
+- **Starts easy.** Every level's stage 1 is a confidence builder that uses **one rule only**: AB patterns and "which has more" with a big difference (Pre-K); counting on and patterns of three (K); count on by 1 (1st); skip-count to 100 (2nd); add the same number each time (3rd); one rule with bigger numbers (5th); one rule with big steps and 50% / 10% (7th); one rule past zero (8th). 5th, 7th and 8th used to open at the level below's hardest stage — they now open with a warm-up stage instead.
+- **The top is a stretch, not a wall.** Each level's last stage reaches about where the next level begins (3rd's last stage ≈ the 4th-grade bank's first; 2nd's last stage is 3rd's first two-step idea). The 5th, 7th and 8th "mixed / test level" stages were taken out — that work lives one level up, or in the boys' banks.
+- **Getting ready for the test.** 3rd grade and up use the test's three question kinds in the same box as the boys' banks; 1st and 2nd use the listen-or-read-and-pick format of the early test levels. Every question has one right answer and a rule line for you, so "why?" can be talked over after.
+- **A warm-up, not a lesson.** One number-thinking question a day fits in a couple of minutes; it is practice in spotting a rule, not new teaching. (Reviewing *their own drill trouble* in a new way is the job of the drill side of the notebook — this ladder doesn't read their drills.)
 
 **Pictures for the little ones.** Every Pre-K and K question carries a *picture recipe* (for example "a pattern: yellow star, green star, yellow star, green star, yellow star, then a blank"), not a drawing. A later build can draw it on the printed page or make the three choices tappable on the tablet — the same question either way. The text line you see below is only the plain-words version for this sheet. Colours are red, blue, yellow, green, purple and orange; shapes are circle, square, triangle, star and heart; beads are round, cube and tube.
 
@@ -114,7 +124,7 @@ Patterns get longer (AABB, ABCD, ABAC) and change colour **and** shape at once; 
 
 ## 1st grade
 
-**What it asks.** Four choices; every item still has a spoken prompt, so it works as "listen, then pick" (the 1st-grade test form) before a child reads well.
+**What it asks.** Four choices. From here up the child does it **alone**: each question is a row of numbers plus one short line to read ("What number comes next?", "What number goes in the box?" — never more than 11 easy words), and the same line is the spoken prompt if the tablet reads it aloud.
 Four kinds, three of each per stage: **number series** (count on, by 2s / 5s / 10s, back, a missing number in the middle), **number puzzles** (5 + ? = 7 — the first two stages carry a dot picture of the parts — then "? − 3 = 4", then **both sides balance**: 9 + 8 = ? + 8), **number pairs** ([2 → 3] [4 → 5] [6 → ?] — the first three stages carry dot pictures), and **about how many** (a scattered-dots picture; choose 5, 10, 20 or 50 without counting one by one).
 
 **Stages** (12 questions each):
@@ -132,17 +142,17 @@ Four kinds, three of each per stage: **number series** (count on, by 2s / 5s / 1
    *add 1 each time*
 
 6. **Number puzzles** (stage 1) — 5 + ? = 6  
-   🔊 “What number goes in the box to make it true?”  
+   🔊 “What number goes in the box?”  
    **✔ A 1** · B 2 · C 6 · D 11  
    *6 − 5 = 1*
 
 27. **Number pairs** (stage 3) — [5 → 3]  [4 → 2]  [10 → ?]  
-   🔊 “Each number changes the same way. What does the last one change into?”  
+   🔊 “Do the same thing to the last number. What do you get?”  
    **✔ A 8** · B 9 · C 10 · D 11  
    *subtract 2*
 
 32. **About how many** (stage 3) — about how many dots? (picture: 23 dots, scattered)  
-   🔊 “Don't count them one by one. About how many dots are there?”  
+   🔊 “About how many dots? Don't count them all.”  
    A 5 · B 10 · **✔ C 20** · D 50  
    *there are 23 — that is about 20*
 
@@ -152,13 +162,13 @@ Four kinds, three of each per stage: **number series** (count on, by 2s / 5s / 1
    *add 10 each time*
 
 54. **Number puzzles** (stage 5) — 2 + 5 = ? + 4  
-   🔊 “What number goes in the box to make it true?”  
+   🔊 “What number goes in the box?”  
    A 1 · B 2 · **✔ C 3** · D 7  
    *the left side is 7, so ? = 7 − 4 = 3*
 
 ## 2nd grade
 
-**What it asks.** Four choices, numbers to 100, spoken prompt on every item.
+**What it asks.** Four choices, numbers to 100, done alone with the same short reading lines as 1st grade.
 Series skip-count to 100, count back, take bigger jumps, then **growing steps** (1, 2, 4, 7, 11, ?) and finally **two steps taking turns** (+4, −1) — the first two-step idea, the bridge into 3rd grade. Puzzles go to two-digit numbers and balance both sides. Pairs add or take away up to 25, and double / halve. "About how many" moves from dots to **rounding**: "About how much is 42 + 28?"
 
 **Stages** (12 questions each):
@@ -176,12 +186,12 @@ Series skip-count to 100, count back, take bigger jumps, then **growing steps** 
    *add 5 each time*
 
 6. **Number puzzles** (stage 1) — ? + 10 = 14  
-   🔊 “What number goes in the box to make it true?”  
+   🔊 “What number goes in the box?”  
    **✔ A 4** · B 5 · C 14 · D 24  
    *14 − 10 = 4*
 
 27. **Number pairs** (stage 3) — [22 → 33]  [66 → 77]  [44 → ?]  
-   🔊 “Each number changes the same way. What does the last one change into?”  
+   🔊 “Do the same thing to the last number. What do you get?”  
    A 44 · B 53 · C 54 · **✔ D 55**  
    *add 11*
 
@@ -196,7 +206,7 @@ Series skip-count to 100, count back, take bigger jumps, then **growing steps** 
    *two steps taking turns: +4, then −1*
 
 54. **Number puzzles** (stage 5) — ? − 8 = 4 + 4  
-   🔊 “What number goes in the box to make it true?”  
+   🔊 “What number goes in the box?”  
    A 8 · **✔ B 16** · C 17 · D 18  
    *the right side is 8, so ? = 8 + 8 = 16*
 
@@ -240,114 +250,114 @@ Three kinds, four of each per stage: **series**, **number pairs**, **number puzz
 
 ## 5th grade
 
-**What it asks.** Five choices, boys' layout. It starts at the 4th-grade bank's top (two-step rules, woven patterns, ◆ puzzles) and climbs to roughly the 6th-grade bank's stage 4: growing steps and three-step repeats, **halves** (×2 then −0.5), three-line **chain puzzles** worked from the bottom up, **square numbers** and "each number is the sum of the two before". The bend pairs (multiply the number by itself) show **three** example pairs, never two — with two pairs a straight-line rule would also fit.
+**What it asks.** Five choices, boys' layout. It **opens with a warm-up** — one rule only, at 5th-grade size (add 15 each time, ×3 each time, multiply by 7, "? ÷ 8 = 9") — then climbs through two-step rules and ◆ puzzles (the 4th-grade bank's top: "? − 2 = 3 × ◆ / ◆ + 2 = 11"), growing steps and three-step repeats, **halves** (×2 then −0.5) and three-line **chain puzzles**, to **square numbers** and "each number is the sum of the two before" — about the 6th-grade bank's stage 4. The bend pairs (multiply the number by itself) show **three** example pairs, never two — with two pairs a straight-line rule would also fit.
 
 **Stages** (12 questions each):
-1. two-step rules
-2. growing steps and three-step repeats
-3. halves and chains
-4. squares and sums
-5. mixed — near the 6th-grade top
+1. warm-up — one rule, bigger numbers
+2. two-step rules
+3. growing steps and three-step repeats
+4. halves and chains
+5. squares and sums
 
 **Six samples** (first, middle and last stage):
 
-1. **Number series** (stage 1) — 3  6  5  10  9  18  ?  
-   A 16 · **✔ B 17** · C 18 · D 19 · E 36  
-   *two steps taking turns: ×2, then −1*
+1. **Number series** (stage 1) — 2  6  18  54  ?  
+   A 90 · **✔ B 162** · C 163 · D 164 · E 486  
+   *multiply by 3 each time*
 
-8. **Number pairs** (stage 1) — [13 → 49]  [11 → 41]  [14 → ?]  
-   **✔ A 53** · B 54 · C 55 · D 56 · E 57  
-   *two steps: ×4, then −3*
+8. **Number pairs** (stage 1) — [9 → 81]  [5 → 45]  [11 → ?]  
+   A 11 · B 51 · C 83 · D 98 · **✔ E 99**  
+   *multiply by 9*
 
-27. **Number puzzles** (stage 3) — ? = ● × 2 / ● = ◆ − 1 / ◆ + 4 = 13  
-   A 8 · B 9 · C 15 · **✔ D 16** · E 17  
-   *work from the bottom up: ◆ = 9, ● = 8, ? = 16*
+27. **Number puzzles** (stage 3) — ? − 4 = 2 × ◆ / ◆ = 6 × 4  
+   A 48 · **✔ B 52** · C 53 · D 54 · E 55  
+   *◆ = 24, so 2 × ◆ = 48, so ? = 48 + 4 = 52*
 
-31. **Number series** (stage 3) — 4  6.5  9  11.5  14  ?  
-   **✔ A 16.5** · B 17 · C 17.5 · D 19 · E 21.5  
-   *add 2.5 each time*
+31. **Number series** (stage 3) — 3  7  15  14  18  26  25  29  37  ?  
+   A 29 · B 35 · **✔ C 36** · D 41 · E 45  
+   *three steps repeat: +4, +8, −1; it is −1’s turn*
 
-50. **Number pairs** (stage 5) — [10 → 47]  [4 → 17]  [9 → ?]  
-   A 22 · **✔ B 42** · C 43 · D 45 · E 46  
-   *two steps: ×5, then −3*
+50. **Number pairs** (stage 5) — [3 → 10]  [10 → 101]  [2 → 5]  [5 → ?]  
+   A 14 · B 25 · **✔ C 26** · D 27 · E 41  
+   *multiply the number by itself, then +1*
 
-57. **Number puzzles** (stage 5) — ? = ● ÷ 2 / ● = ◆ − 1 / ◆ + 2 = 11  
-   **✔ A 4** · B 5 · C 8 · D 9 · E 16  
-   *work from the bottom up: ◆ = 9, ● = 8, ? = 4*
+57. **Number puzzles** (stage 5) — 5 × 8 = ? + 5  
+   A 34 · **✔ B 35** · C 36 · D 40 · E 45  
+   *the left side is 40, so ? = 40 − 5 = 35*
 
 ## 7th grade
 
-**What it asks.** Five choices, boys' layout, all above the 6th-grade bank's top. **Powers** (×3 each time, cube numbers, "a number times the next number"), **two-symbol puzzles** (◆ + ● = 22, ◆ − ● = 6), **below zero** (series crossing zero, ×(−2), "−5 × ? = 30", "? ÷ (−2) = 9"), **ratio and percent** ("8 : 12 = 12 : ?", "? = 30% of 160", pairs that multiply by 1.5), **growing rules** (the step doubles; ×2 then +1; square it then double), and a mixed final stage with negatives woven in.
+**What it asks.** Five choices, boys' layout. It **opens with a warm-up** — one rule, big steps (add 25 each time, multiply by 11) and easy percents ("? = 50% of 200") — then goes above the 6th-grade bank's top: **powers and two-symbol puzzles** (×3 each time, cube numbers, "◆ + ● = 10 / ◆ − ● = 4"), **below zero** (series crossing zero, ×(−2), "−6 × ? = 42", "? ÷ (−8) = 11"), **ratio and percent** ("? : 16 = 27 : 36", pairs that multiply by 1.5), and last **growing rules** (the step doubles; ×2 then +1; square it then double).
 
 **Stages** (12 questions each):
-1. powers and patterns
-2. below zero
-3. ratio and percent
-4. growing rules
-5. mixed — signed, woven, proportion
+1. warm-up — one rule, big steps, easy percents
+2. powers and patterns
+3. below zero
+4. ratio and percent
+5. growing rules
 
 **Six samples** (first, middle and last stage):
 
-1. **Number series** (stage 1) — 2  6  18  54  162  ?  
-   A 162 · B 270 · C 484 · D 485 · **✔ E 486**  
-   *multiply by 3 each time*
+1. **Number series** (stage 1) — 116  141  166  191  216  241  ?  
+   A 216 · B 241 · C 264 · D 265 · **✔ E 266**  
+   *add 25 each time*
 
-8. **Number pairs** (stage 1) — [8 → 67]  [2 → 7]  [7 → 52]  [4 → ?]  
-   **✔ A 19** · B 20 · C 25 · D 28 · E 59  
-   *square it, then +3*
+8. **Number pairs** (stage 1) — [12 → 96]  [8 → 64]  [7 → ?]  
+   **✔ A 56** · B 57 · C 63 · D 64 · E 91  
+   *multiply by 8*
 
-27. **Number puzzles** (stage 3) — ? = 30% of 160  
-   A 32 · B 46 · C 47 · **✔ D 48** · E 112  
-   *10% of 160 is 16, so 30% is 48*
+27. **Number puzzles** (stage 3) — ? + 6 = −9  
+   A −18 · B −17 · C −16 · **✔ D −15** · E −3  
+   *−9 − 6 = −15*
 
-31. **Number series** (stage 3) — 160  80  40  20  10  ?  
-   **✔ A 5** · B 6 · C 7 · D 8 · E 10  
-   *halve each time*
+31. **Number series** (stage 3) — 1  −2  4  −8  16  ?  
+   A −34 · B −33 · **✔ C −32** · D 32 · E 40  
+   *multiply by −2 each time — the sign flips every step*
 
-50. **Number pairs** (stage 5) — [−6 → 0]  [−8 → 1]  [6 → ?]  
-   A −7 · **✔ B −6** · C −3 · D 12 · E 15  
-   *two steps: ×(−0.5), then −3*
+50. **Number pairs** (stage 5) — [1 → 2]  [5 → 30]  [9 → 90]  [7 → ?]  
+   A 49 · **✔ B 56** · C 57 · D 60 · E 72  
+   *square it, then add the number (x × x + x)*
 
-57. **Number puzzles** (stage 5) — ? ÷ (−7) = −4  
-   **✔ A 28** · B 29 · C 30 · D 31 · E 32  
-   *−4 × (−7) = 28*
+57. **Number puzzles** (stage 5) — 5 × (? − 5) = 60  
+   **✔ A 17** · B 18 · C 19 · D 20 · E 21  
+   *60 ÷ 5 = 12, so ? − 5 = 12 → 17*
 
 ## 8th grade
 
-**What it asks.** Five choices, boys' layout, above 7th. **Exponents** ("? = 3⁶ ÷ 3¹", "? + 13 = 7²", ×(−3) series), **signed two-step rules** (×(−2) then +3; pairs like ×(−5) then −7 with negative inputs; two-symbol puzzles whose answers can be negative), **proportion** with decimals ("? : 7.5 = 12 : 20", "? = 65% of 240", ×2.5 and ×0.75 pairs), **growing and woven** (triangle numbers, ×3 woven with −7, unknown on both sides: "7 × ◆ − 7 = 2 × ◆ + 23"), and a test-level mix (three-step repeats with a sign flip, square-it rules on negative inputs, brackets: "−5 × (? + 2) = 40").
+**What it asks.** Five choices, boys' layout. It **opens with a warm-up** — one rule below zero (subtract 8 each time past zero, "? + 3 = −9") — then **exponents** ("? = 2⁴ × 2²", "? + 5 = 7²", ×(−3) series), **signed two-step rules** (×(−2) then +3; pairs like ×(−5) then −7 with negative inputs; two-symbol puzzles whose answers can be negative), **proportion** with decimals ("6 : 13.5 = ? : 18", "? = 35% of 280", ×2.5 and ×0.75 pairs), and last **growing and woven** (triangle numbers, ×3 woven with −7, unknown on both sides: "6 × ◆ − 9 = 3 × ◆ + 24").
 
 **Stages** (12 questions each):
-1. exponents
-2. signed two-step rules
-3. proportion
-4. growing and woven
-5. test level — mixed
+1. warm-up — one rule below zero
+2. exponents
+3. signed two-step rules
+4. proportion
+5. growing and woven
 
 **Six samples** (first, middle and last stage):
 
-1. **Number series** (stage 1) — 1  −3  9  −27  81  ?  
-   A −246 · B −245 · C −244 · **✔ D −243** · E 189  
-   *multiply by −3 each time — the sign flips every step*
+1. **Number series** (stage 1) — 23  18  13  8  3  −2  ?  
+   A −17 · B −12 · C −8 · **✔ D −7** · E −2  
+   *subtract 5 each time*
 
-8. **Number pairs** (stage 1) — [1 → 2]  [3 → 12]  [8 → 72]  [9 → ?]  
-   A 84 · **✔ B 90** · C 91 · D 92 · E 110  
-   *square it, then add the number*
+8. **Number pairs** (stage 1) — [−3 → −11]  [−1 → −9]  [7 → ?]  
+   A −5 · B −4 · C −3 · D −2 · **✔ E −1**  
+   *subtract 8*
 
-27. **Number puzzles** (stage 3) — ? : 12 = 10 : 16  
-   A 6 · B 6.5 · C 7 · **✔ D 7.5** · E 19.2  
-   *10 : 16 is the same as 5 : 8, so ? = 12 × 5 ÷ 8 = 7.5*
+27. **Number puzzles** (stage 3) — ◆ + ● = −2 / ◆ − ● = 12 / ? = ◆ × ●  
+   A −38 · B −37 · C −36 · **✔ D −35** · E −24  
+   *add the two clues: 2 × ◆ = 10, so ◆ = 5 and ● = −7; ? = −35*
 
-31. **Number series** (stage 3) — 160  −80  40  −20  10  ?  
-   A −8 · B −7 · C −6 · **✔ D −5** · E 40  
-   *multiply by −0.5 each time — the sign flips every step*
+31. **Number series** (stage 3) — 2  −4  14  −40  122  ?  
+   A −368 · B −367 · C −366 · D −365 · **✔ E −364**  
+   *each time: ×(−3), then +2*
 
-50. **Number pairs** (stage 5) — [4 → 48]  [−4 → 48]  [0 → 0]  [1 → ?]  
-   A −12 · **✔ B 3** · C 4 · D 12 · E 42  
-   *square it, then ×3 (a negative times itself is positive)*
+50. **Number pairs** (stage 5) — [3 → 16]  [9 → 100]  [7 → 64]  [8 → ?]  
+   A 64 · B 80 · **✔ C 81** · D 82 · E 100  
+   *add 1, then square it*
 
-57. **Number puzzles** (stage 5) — −5 × (? + 2) = 40  
-   A −12 · B −11 · **✔ C −10** · D −8 · E −6  
-   *40 ÷ (−5) = −8, so ? + 2 = −8 → −10*
+57. **Number puzzles** (stage 5) — 7 × ◆ − 4 = 3 × ◆ + 16 / ? = ◆ × 2  
+   A 2 · B 5 · C 6 · D 9 · **✔ E 10**  
+   *take 3 × ◆ from both sides: 4 × ◆ = 20, so ◆ = 5 and ? = 10*
 
 ## How the answers were checked
 
@@ -358,7 +368,7 @@ Three kinds, four of each per stage: **series**, **number pairs**, **number puzz
 
 ## What I was unsure about
 
-- **Whether the levels feel right for real children.** The difficulty is anchored on the boys' two banks (3rd ends where the 4th-grade bank starts; 5th sits between them; 7th starts above the 6th-grade bank's top), but nothing replaces your read. The places I'd look first: 1st-grade stage 5 (both sides balance), 2nd-grade stage 5 (two steps taking turns), 5th-grade stage 3 (halves), and 8th-grade stage 5.
+- **Whether the levels feel right for real children.** The difficulty is anchored on the boys' two banks (3rd ends where the 4th-grade bank starts; 5th sits between them; 7th starts above the 6th-grade bank's top), but nothing replaces your read. The places I'd look first: 1st-grade stage 5 (both sides balance), 2nd-grade stage 5 (two steps taking turns), 5th-grade stage 4 (halves and chains), and 8th-grade stage 5 (unknowns on both sides).
 - **"About how many" on paper.** On the tablet the dots can show briefly; on paper a child can just count them. It still works — it just becomes counting practice.
 - **Make them the same only ever adds** (to the car with fewer). A "take some away" version would be easy to add.
 - **3rd grade and up still carry choices.** The study says from 3rd grade the child should write the answer first and see choices only if stuck. The questions keep five choices (the printed box and the checker need them); when to show them is a decision for the build, not the content.
@@ -369,6 +379,7 @@ Three kinds, four of each per stage: **series**, **number pairs**, **number puzz
 ## Questions for you
 
 1. **3rd grade's top meets the 4th-grade bank's start** (stage 5 here ≈ its first stage). Is that the hand-over you want, or should 3rd stop a step lower so the 4th-grade bank feels new?
-2. **1st and 2nd: a spoken prompt on every question** ("listen, then pick"), as the 1st-grade test form does. Keep it on for 2nd grade too, or should 2nd grade start reading the questions alone?
+2. **1st and 2nd are done alone, with one short line to read** — and the tablet can read that line aloud. Should it read it aloud by itself for 1st grade (the 1st-grade test form is read aloud), or only when the child taps it?
 3. **Pre-K is 4 stages of 15; every other level is 5 stages of 12.** Fine, or should Pre-K be shorter (say 40) since it would be used a few times a week?
 4. **8th grade includes square roots, powers and unknowns on both sides.** Right for the 7th–8th rung, or hold those back for a later level?
+5. **The mixed "test level" stages were dropped from 5th, 7th and 8th** to keep the top a stretch, not a wall. Do you want a harder optional stage on top for a child who is ready for it?
