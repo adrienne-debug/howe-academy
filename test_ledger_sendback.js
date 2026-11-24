@@ -355,6 +355,40 @@ console.log("\n── Z · last: an Undo after the row was ticked again; an old 
     ok("an old −100 mark (no line id kept): \"🚩 by Mom · −100\" on the log and 🧾, no undo there; lgFlagUndo refuses it", /🚩 by Mom · −100/.test(logRow(Lo, "Toys in the bin")) && !/flagUndo/.test(logRow(Lo, "Toys in the bin")) && !/flagUndo/.test(ckRow(Co, "Toys in the bin")) && A.run("lgFlagUndo('step','kid_c'," + J(kn.join("/")) + ",0)") === false && writes(w, mo).length === 0, [logRow(Lo, "Toys in the bin").slice(-300)]);
     A.run("(function(){ const r=routineLog.kid_c[" + J(kn[0]) + "][" + J(kn[1]) + "][" + J(kn[2]) + "]; ['flagged','penalty','flagTs','flagBy'].forEach(function(f){ delete r[f]; }); })()"); }
 }
+// ── Y ── (last: the clock moves on)
+console.log("\n── Y · C3's drop and Send back ──");
+{ A.run("lgRWrite('pause',null);lgRWrite('take/kid_a',null)"); await w.flush();   // section S turned ⏸ and Take stars away off and on today ({from: today}): turns due before it would take nothing (a flip never reaches back)
+  const draw = async () => { kidLists(B); await w.flush(); kidLists(A); await w.flush(); };   // the kid's lists, drawn on a kid's device and on Mom's (where a turn's drop is noticed)
+  const vRef = "s:chores:" + I.vac, zRef = "s:chores:" + I.zone, vMiss = () => w.get("routineLog/kid_a/" + wk + "/monday/miss_chores_" + I.vac), cdV = "cdrop_" + wk + "_monday_kid_a_cstep" + I.vac;
+  const top = h => txt((/<div style="font-size:13\.5px;padding:6px 2px 2px">([\s\S]*?)<\/div>/.exec(h) || ["", ""])[1]);
+  const goneRow = (h, l) => { const i = String(h).indexOf(">Gone from "); return i < 0 ? "" : rowT(String(h).slice(i), l); };
+  // 1 · the vacuum: due Mon, its wait (2 days) ran out, ticked Tue late (paid 8). Sent back on Thu = back to "not done in time".
+  const noSp = () => canon(Object.assign({}, w.db.tree.root, { spotChecks: null }));   // a 🔎 spot check picked for kid_c by Mom's own draw is not this tap's
+  await draw(); let t0 = noSp(), b0 = bal(A, "kid_a"); A.run("lgSendBack('kid_a','" + wk + "','tuesday','" + vRef + "','m')"); await draw();   // drawn once first: Mom's device's own draw of the day (a 🔎 spot check pick) is in t0
+  const th = pop(A, "kid_a", 0), dv = vMiss() && vMiss().drop;
+  ok("Just a mistake on a turn whose wait already ran out (the vacuum, due Mon, a 10 ⭐ chore that paid 8 late): the next draw drops it — C3 takes 2 ⭐ once (cdrop_…), so −8 −2 = −10 in all", !!dv && dv.n === 2 && dv.bid === cdV && (adj(w, "kid_a")[cdV] || {}).amount === -2 && bal(A, "kid_a") === b0 - 10, [dv, bal(A, "kid_a") - b0]);
+  ok("…today's ledger: the vacuum under \"Gone from Kid A's list\" (\"… 2 ⭐ taken\", ⭐ Give stars back) with no ↩ Send back (a dropped row is not a ticked row); the top line \"taken 2 ⭐\"", /^✖ 🧹 Vacuum the den due Mon, not done in time · 2 ⭐ taken ➖ Excuse ⭐ Give stars back$/.test(goneRow(th, "Vacuum the den")) && !SBB.test(th.slice(th.indexOf(">Gone from "))) && / · taken 2 ⭐/.test(top(th)), [goneRow(th, "Vacuum the den"), top(th)]);
+  S.dump.drop = th;
+  ok("…its Undo puts the tick and its 8 back and takes the drop away again (the \"— not done\" line and the −2): the database as before (but the spot check's own pick)", A.run("lgSbUndo('kid_a','" + wk + "','tuesday','" + vRef + "')") === true && (await w.flush(), noSp() === t0) && bal(A, "kid_a") === b0, ddiff(JSON.parse(noSp()), JSON.parse(t0)));
+  b0 = bal(A, "kid_a"); A.run("lgSendBack('kid_a','" + wk + "','tuesday','" + vRef + "','w')"); await draw();
+  const th2 = pop(A, "kid_a", 0), tu2 = pop(A, "kid_a", -2), x = JSON.parse(A.run("JSON.stringify(lgDayData('kid_a',0))"));
+  ok("Wasn't done on it: −8 −100 −2 = −110 (the penalty AND, at the next draw, the drop's 20%: one turn, two lines plus the un-tick's)", bal(A, "kid_a") === b0 - 110 && (adj(w, "kid_a")[cdV] || {}).amount === -2, bal(A, "kid_a") - b0);
+  ok("…the day's \"taken\" counts the drop only (2), not the 100: the 100 is shown apart, on the row it was taken for (Tuesday: \"↩ sent back · Wasn't done · by Mom · −100\")", x.taken === 2 && / · taken 2 ⭐/.test(top(th2)) && /↩ sent back · Wasn't done · by Mom · −100 Undo/.test(rowT(tu2, "Vacuum the den")) && !/taken/.test(top(tu2)), [x.taken, top(th2), rowT(tu2, "Vacuum the den"), top(tu2)]);
+  const kv = JSON.parse(A.run("JSON.stringify(lgSbMarks('kid_a'))"))[wk + "|tuesday|" + vRef];
+  A.run("lgFlagUndo('step','kid_a'," + J(kv.ref) + ",0)"); await w.flush();
+  ok("…its Undo: everything back, the drop's −2 too", bal(A, "kid_a") === b0 && !vMiss() && !adj(w, "kid_a")[cdV]);
+  // 2 · the zoned sweep: due Wed (paid 20: bonus room double), its wait runs Thu and Fri. Sent back on Thu = open again.
+  b0 = bal(A, "kid_a"); const kz = logKey(A, "kid_a", "Zoned sweep", "wednesday"); A.run("lgSendBack('kid_a','" + wk + "','wednesday','" + zRef + "','w')"); await draw();
+  const zMiss = () => w.get("routineLog/kid_a/" + wk + "/wednesday/miss_chores_" + I.zone), zc = "cdrop_" + wk + "_wednesday_kid_a_cstep" + I.zone;
+  ok("Wasn't done on a turn still in its wait (the zoned sweep, due Wed): the row is open again today (⏳ on Thursday's list) and NO drop is filed: −20 −100 only", !zMiss() && !adj(w, "kid_a")[zc] && /^⏳ 🧹 Zoned sweep/.test(rowT(pop(A, "kid_a", 0), "Zoned sweep")) && bal(A, "kid_a") === b0 - 120, [rowT(pop(A, "kid_a", 0), "Zoned sweep"), bal(A, "kid_a") - b0]);
+  await go(w, 7, 8); await draw();
+  ok("…Friday (still in its wait): no drop", !zMiss() && !adj(w, "kid_a")[zc]);
+  await go(w, 8, 8); await draw();
+  const dz = zMiss() && zMiss().drop;
+  ok("…Saturday, its wait over and not redone: the drop takes 2 ⭐ (20% of its 10, not of the 20 the double paid), once: −20 −100 −2 = −122 in all", !!dz && dz.n === 2 && (adj(w, "kid_a")[zc] || {}).amount === -2 && bal(A, "kid_a") === b0 - 122, [dz, bal(A, "kid_a") - b0]);
+  A.run("lgFlagUndo('step','kid_a'," + J(kz.join("/")) + ",0)"); await w.flush();
+  ok("…Undo on Saturday: the tick and its 20, the 100 and the drop's 2 all back", bal(A, "kid_a") === b0 && !zMiss() && !adj(w, "kid_a")[zc] && A.run("rtDoneOn('chores','kid_a','wednesday'," + I.zone + ")") === true, bal(A, "kid_a") - b0);
+}
 if (process.env.LGS_DUMP) fs.writeFileSync(process.env.LGS_DUMP, J(S.dump));
 console.log("\n(two devices at the same moment: the un-tick itself, the pop-up's own, ran on both: kid_c's bank moved " + S.race + " — see the report)");
 console.log("\n" + pass + " passed, " + fail + " failed");

@@ -2030,10 +2030,11 @@ function lgSbList(j){ return Object.keys(j||{}).map(function(k){ const x=j[k]||{
 // Undo the un-tick: each path still as the un-tick left it goes back; the tick's own record must be, or nothing does. → the writes, or null
 function lgSbBack(kid,j,c){ const W=lgSbW(kid), L=lgSbList(j), core=L.filter(function(x){ return x[0]===c; })[0], u={}; if(!core||!lgSbEq(lgSbAt(W,c),core[2])) return null;
   L.forEach(function(x){ if(lgSbEq(lgSbAt(W,x[0]),x[2])){ lgSbAt(W,x[0],1,x[1]); u[x[0]]=x[1]; } }); return u; }
-// a "— not done" line a device filed for this turn while it was sent back (_rtLogMiss, under its own day or the day it was
-// due) goes again with the tick's return: the turn was done.
+// a "— not done" line a device filed for this turn while it was sent back (_rtLogMiss / C3's _rtDropFileC3, under its own day or the
+// day it was due) goes again with the tick's return, and C3's drop line with it (cdrop_…, −20%): the turn was done.
 function lgSbMiss(R,at,u){ if(!R||!R.slot||R.st.house) return; const D=lgSbDay(R.wk,R.dn), E=D&&lgDueBefore(R.st,D), k="miss_"+R.slot+"_"+R.i;
-  [D,E].forEach(function(T){ const L=T&&((routineLog[R.kid]||{})[T.wk]||{})[T.dn]; if(L&&L[k]&&(L[k].at||0)>=at){ delete L[k]; u["routineLog/"+R.kid+"/"+T.wk+"/"+T.dn+"/"+k]=null; } }); }
+  [D,E].forEach(function(T){ const L=T&&((routineLog[R.kid]||{})[T.wk]||{})[T.dn], x=L&&L[k], b=x&&x.drop&&x.drop.bid, A=bank[R.kid]&&bank[R.kid].adjustments;
+    if(x&&(x.at||0)>=at){ delete L[k]; u["routineLog/"+R.kid+"/"+T.wk+"/"+T.dn+"/"+k]=null; if(b&&A&&A[b]){ delete A[b]; u["bank/"+R.kid+"/adjustments/"+b]=null; } } }); }   // C3: and the drop it took
 function lgSbDone(u){ const ks=" "+Object.keys(u||{}).join(" ");
   if(/ amCarry\//.test(ks)) amOnValue(amCarry); if(/ house(Day|hold)\//.test(ks)) householdOnValue(householdData); if(/\/sl\//.test(ks)) sv(activeWk()+"_sl",slState);
   if(/ laundry\//.test(ks)) try{ HA_LS.setItem("ha_laundry",JSON.stringify(laundryData)); }catch(e){} if(/ laundryLine\//.test(ks)) llStore(); lgSbRe(); }
