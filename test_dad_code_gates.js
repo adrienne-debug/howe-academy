@@ -9,7 +9,8 @@
  * Sun 11/29 and ticked Mon 11/30 (paid 8 of 10: the one row with ⭐ Give stars back).
  * Checks: A a locked Dad: no button, the hint line, every tap refused (zero writes, the bank unchanged), the marks and notes still shown ·
  *   B an unlocked Dad = the app before's Dad (the same drawings, writes and bank; marked as Dad) · C 🔒 Lock refuses again · D Mom and a
- *   kid's device = the app before, byte for byte · E dryrun writes nothing.
+ *   kid's device = the app before, byte for byte · E dryrun writes nothing · F the Dad code alone, on a device not on Dad's link (or a kid's),
+ *   opens nothing and draws no hint line.
  * "The app before" = THIS tree with DADGATE taken out (no git, no pinned commit; each piece must match exactly once).
  * DG_INDEX / DG_HJS = other copies (a mutation check).   run: node test_dad_code_gates.js
  */
@@ -191,6 +192,35 @@ console.log("\n── E · dryrun writes nothing ──");
   const g = Dr.run("lgGive(" + N.car + ")"); const kk = (() => { const ks = JSON.parse(Dr.run("(function(){ const wk=activeWk(), dn=_todayDay, L=((routineLog.kid_a||{})[wk]||{})[dn]||{}; return JSON.stringify(Object.keys(L).filter(function(x){ return L[x]&&L[x].act==='on'&&!L[x].flagged; }).map(function(x){ return [wk,dn,x]; })); })()")); return ks[0]; })();
   if (kk) Dr.run(dockJs(kk, "kid_a", "x")); await w.flush();
   ok("?dryrun=1, his code in: ⭐ Give stars back and 🧾 −100 show on that screen, nothing reaches the database", Dr.run("_dryRun()") === true && g === true && !!kk && w.since(m).length === 0, [g, kk, w.since(m).map(l => l.path)]);
+}
+
+// ── F ──
+console.log("\n── F · the Dad code alone opens nothing: a device not on Dad's link, a kid's device ──");
+{ const { w, A, B } = N; await go(w, 14, 21);
+  const P = w.boot("P", "devP"); await w.flush(); P.run(CAP); loadH(P, HJS); loadH(B, HJS); B.run("kcKid='kid_a';1"); await w.flush();
+  ok("the plain device: not Mom, not Dad's link, not a kid's own device", P.run("momHere()") === false && P.run("_kioskD()") === false && !P.run("typeof kcKid!=='undefined'&&kcKid"));
+  // the hint lines: never on a kid's device or a plain device, his code in or not
+  const tips = d => [d.run("lgDadTip()"), d.run("(function(){ lgKid='kid_a';lgOff=0;lgWeek=false; return lgHTML(); })()"), CK(d)];
+  for (const [nm, d] of [["a kid's device", B], ["the plain device", P]]) for (const code of [false, true]) {
+    d.run("dadUnlocked=" + code + ";1"); const t = tips(d);
+    ok(nm + (code ? ", the Dad code typed" : "") + ": lgDadTip() is \"\", the ledger's drawing has no \"🔒 Put your code in\" line, 🧾 is not drawn (so no 🧾 line)", t[0] === "" && t[1].indexOf(LTIP) < 0 && t[1].indexOf("🔒 Put your code in") < 0 && t[2] === "", [t[0], t[2].slice(0, 60)]);
+  }
+  B.run("dadUnlocked=false;1");
+  // the Dad code typed on the plain device (the case test_dad_controls.js section B builds for the ⚙): every star tap refused
+  P.run("dadUnlocked=true;1");
+  const hP = P.run("(function(){ lgKid='kid_a';lgOff=0;lgWeek=false; return lgHTML(); })()");
+  ok("the plain device, the Dad code typed: the ledger's own drawing (lgHTML) has no ⭐ Give stars back on the car", !/lgGive/.test(hP) && /^✅ 🚗 Wash the car paid 8 of 10 ⭐/.test(rowT(hP, "Wash the car")), rowT(hP, "Wash the car"));
+  let m = w.mark(), b0 = J(bankOf(w, "kid_a"));
+  ok("…lgGive: no, zero writes, the bank unchanged", P.run("lgGive(" + N.car + ")") === false && (await w.flush(), w.since(m).length === 0) && J(bankOf(w, "kid_a")) === b0);
+  A.run("lgGive(" + N.car + ")"); await w.flush();
+  const gP = P.run("(function(){ lgKid='kid_a';lgOff=0;lgWeek=false; return lgHTML(); })()");
+  m = w.mark(); b0 = J(bankOf(w, "kid_a"));
+  ok("…Mom gave back: its drawing shows the note with no Undo; lgGiveUndo: no, zero writes, Mom's line still there", !/lgGiveUndo/.test(gP) && /⭐ Mom gave back \+2 ⭐$/.test(rowT(gP, "Wash the car")) && P.run("lgGiveUndo(" + N.car + ")") === false && (await w.flush(), w.since(m).length === 0) && J(bankOf(w, "kid_a")) === b0 && !!w.get("bank/kid_a/adjustments/" + N.CAR), rowT(gP, "Wash the car"));
+  A.run("lgGiveUndo(" + N.car + ")"); await w.flush();
+  tick(B, "kid_c", "Toys in the bin"); tick(B, "kid_c", "Toys in the bin"); await w.flush();
+  const k = logKey(P, "kid_c", "Toys in the bin"); m = w.mark(); const b1 = J(bankOf(w, "kid_c")); P.run("__cf=[];1"); P.run(dockJs(k, "kid_c", "Toys in the bin")); await w.flush();
+  ok("…🧾 is not drawn there (it cannot reach the −100), and ckLogDock called anyway: no ask, zero writes, the bank unchanged, no mark", CK(P) === "" && !!k && P.run("__cf.length") === 0 && w.since(m).length === 0 && J(bankOf(w, "kid_c")) === b1 && !w.get("routineLog/kid_c/" + k.join("/")).flagged);
+  P.run("dadUnlocked=false;1");
 }
 
 try { fs.unlinkSync(BASE_IDX); } catch (e) {}
