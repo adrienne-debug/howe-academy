@@ -25633,7 +25633,7 @@ async function kitCapAsk(content,tools,opt){
   const tm=ctl?setTimeout(()=>ctl.abort(),opt.timeoutMs):null;
   try{
   for(let turn=0;turn<3;turn++){   // a server tool (web fetch) can pause a long turn — continue it, at most twice
-    const body={model:"claude-sonnet-5",max_tokens:(opt&&opt.maxTokens)||3000,messages:msgs}; if(tools) body.tools=tools;
+    const body={model:(opt&&opt.model)||"claude-sonnet-5",max_tokens:(opt&&opt.maxTokens)||3000,messages:msgs}; if(tools) body.tools=tools;   // DRAFTMEAN: a caller may name the model (Q4: claude-sonnet-5-5); no other caller names one
     const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
       headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
       body:JSON.stringify(body),signal:ctl?ctl.signal:undefined});   // KITLINKHOLD
@@ -56333,7 +56333,7 @@ let cardSheet=null;   // {unitId, deckKey, text, opts, res, rows:[{id,name,back,
 let _csSeq=0;
 function csEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function cardSheetDeckNames(S){ const u=S&&(typeof unitStudies!=="undefined")&&unitStudies[S.unitId]; const d=u&&(u.decks||[]).find(x=>x&&x.key===S.deckKey); return ((d&&d.cards)||[]).map(c=>c&&c.name).filter(Boolean); }
-function cardSheetSplit(S){ S=S||cardSheet; if(!S) return null; S.res=cardSplit(S.text||"",Object.assign({have:cardSheetDeckNames(S)},S.opts||{})); S.rows=S.res.rows.map(r=>Object.assign({id:"r"+(++_csSeq)},r)).concat((S.ai||[]).filter(r=>!r.drop)); return S; }   // PHOTOCARDS: rows Claude read ride along
+function cardSheetSplit(S){ S=S||cardSheet; if(!S) return null; S.res=cardSplit(S.text||"",Object.assign({have:cardSheetDeckNames(S)},S.opts||{})); S.rows=S.res.rows.map(r=>Object.assign({id:"r"+(++_csSeq)},r)).concat((S.ai||[]).filter(r=>!r.drop)); if(typeof draftMeanAfterSplit==="function") draftMeanAfterSplit(S); return S; }   // PHOTOCARDS: rows Claude read ride along · DRAFTMEAN: drafted meanings stay on their names
 // the rows Add will write: a name and a meaning, not dropped, not already in the deck
 function cardSheetReady(S){ S=S||cardSheet; return ((S&&S.rows)||[]).filter(r=>!r.drop&&!r.dup&&String(r.name||"").trim()&&String(r.back||"").trim()&&!(r.drafted&&!r.seen)); }   // PHOTOCARDS: a drafted row waits for her ✓
 function cardSheetCounts(S){ const R=((S&&S.rows)||[]).filter(r=>!r.drop); return {ready:cardSheetReady(S).length,amber:R.filter(r=>!r.dup&&String(r.name||"").trim()&&!String(r.back||"").trim()).length,dup:R.filter(r=>r.dup).length}; }
@@ -56359,6 +56359,7 @@ function cardSheetPreviewHTML(S){ S=S||cardSheet; if(!S||!S.res||(!S.res.lines&&
   h+=checkFixToolbarHTML(S);   // CHECKFIX: Split at · heading / card
   h+=cardSheetNotesHTML(S);
   if(typeof photoCardsNoteHTML==="function") h+=photoCardsNoteHTML(S);   // PHOTOCARDS: rows Claude read wait for her look
+  if(typeof draftMeanBarHTML==="function") h+=draftMeanBarHTML(S);   // DRAFTMEAN: ✨ Draft meanings · ✨ Make cards from this text
   shown.forEach(r=>{ h+=checkFixRowHTML(S,r); });   // CHECKFIX: ↔ ⤓ ✂ ✕ on each row; doubles greyed
   h+=checkFixDestHTML(S);   // CHECKFIX: this deck or a new one · database or active learning
   return h; }
@@ -57158,6 +57159,123 @@ function picFolderPanelInner(S){ const P=picFolder; if(!pfMine(S)) return ""; if
   if(L.dup) h+=note(pdfcPl(L.dup,"picture")+" picked again — already here.");
   return h+'</div>'; }
 // PICFOLDER_END
+// DRAFTMEAN_START — ✨ Draft meanings for names that have none, and ✨ Make cards from running text — Claude, only when she taps,
+//   only with a key (her words 2026-11-19: "we really need to make it easier where the AI can help with the vocabulary of the
+//   units"; her go 2026-11-22/23: "build as many in as many sessions you need … go with her answers and build";
+//   PLAN_unit_easy_import_2026-11-19.md §2.3, §5, slice G; Q3: a button she presses; Q4: claude-sonnet-5-5).
+//   · "✨ Draft meanings" shows on the check screen when rows have a name and no meaning AND the family has a key (ubCanAsk — yes /
+//     no only; the key is never read here). ONE request for all of them (the first 80): the names, the unit's title and the deck
+//     name (with any kid's or the family's name taken out), and an age band she taps (the unit's own Ages when it is an age band,
+//     else 7–9). Nothing else goes: no kid's name, no roster, no scores, nothing from the database. The prompt: one short sentence
+//     of plain words for that age; a name it is not sure of comes back empty, never guessed. Each meaning lands on its row amber +
+//     "drafted" and waits for her ✓ — PHOTOCARDS' row state and ✓, so Add leaves it out until then. A name Claude left empty stays
+//     empty. A drafted meaning stays on its name (with her ✓ or edit) when the paste is re-read.
+//   · "✨ Make cards from this text" shows when the rules found nothing to split — running prose, which rules can't tell from a
+//     list (§2.3, §5.2) — and a key exists. The text goes with the Builder's own card prompt ("Use ONLY what is there — never
+//     invent"), as its messy paste does; the cards come back amber + drafted (as a photo's do), and the sentences themselves stop
+//     showing as cards while that same text is in the box.
+//   · No key → one plain line in place of each button. A refusal, a cut-off answer, a failed call or an answer that isn't the list
+//     → one plain line, and no row changes. Closing the sheet, or a new sheet, sets an answer still on its way aside.
+//   · Through kitCapAsk (the browser → api.anthropic.com with the family's own key), model claude-sonnet-5-5 (Q4). This block
+//     writes nothing; Add stays CHECKFIX's. Mom-only; phone width; finger-sized buttons.
+const DM_MODEL="claude-sonnet-5-5", DM_MAX_NAMES=80, DM_AGES=["4–6","7–9","10–12","13+"];
+const DM_MSG={
+  noKeyMean:"✨ Draft meanings needs a Claude key — Admin ▸ Settings ▸ ✨ AI key. Typing the meanings always works.",
+  noKeyProse:"✨ Making cards from running text needs a Claude key — Admin ▸ Settings ▸ ✨ AI key. One card per line (“word - meaning”) always works.",
+  refused:"Claude declined that one — nothing was changed. Type them in instead.",
+  cut:"Claude’s answer was cut off — nothing was changed. Try again with fewer, or type them in.",
+  failed:"Claude couldn’t do it just now — nothing was changed. Try again, or type them in.",
+  bad:"Claude’s answer wasn’t a list the app could read — nothing was changed. Try again, or type them in.",
+  noneMean:"Claude wasn’t sure of any of those names — nothing was changed. Type the meanings in.",
+  noneProse:"Claude found no cards in that text — nothing was changed. Try one card per line (“word - meaning”)."};
+let draftMean=null;   // {S (the sheet it belongs to), seq, busy, what, age, msg, ok, by:{<name>:{back, seen, row}}, prose:<the text she turned into cards>}
+function dmSheet(){ return (typeof cardSheet!=="undefined")?cardSheet:null; }
+function dmState(S){ if(!S) return null; if(!draftMean||draftMean.S!==S) draftMean={S:S,seq:0,busy:false,what:"",age:"",msg:"",ok:false,by:{},prose:null}; return draftMean; }
+// rows with a name and no meaning (not sentences the rules couldn't split, not already in the deck)
+function dmNameRows(S){ return cfRows(S).filter(r=>!r.dup&&r.how!=="none"&&String(r.name||"").trim()&&!String(r.back||"").trim()); }
+function dmProse(S){ const D=draftMean; return !!(S&&S.res&&S.res.lines&&!S.res.found&&String(S.text||"").trim())&&!(D&&D.S===S&&D.prose===csNorm(S.text)); }
+// the age band: only digits and a dash or + ever leave ("Ages 5-12" → "5–12"); anything else in the unit's Ages box is not used
+function dmAgeOf(u){ const m=/^\s*(?:ages?\s*)?(\d{1,2})\s*(?:(?:[–—-]|to)\s*(\d{1,2})|(\+))?\s*$/i.exec(String((u&&u.ages)||"")); return m?(m[2]?m[1]+"–"+m[2]:m[3]?m[1]+"+":m[1]):""; }
+function dmAge(S){ const D=dmState(S); return (D&&D.age)||dmAgeOf(cfUnit(S))||"7–9"; }
+function dmAgeChoices(S){ const own=dmAgeOf(cfUnit(S)); return (own&&DM_AGES.indexOf(own)<0?[own]:[]).concat(DM_AGES); }
+// the words that must never leave: every kid on the roster, the kids enrolled here, the family's name
+function dmPrivate(S){ const out=new Set(); try{ ((typeof ROSTER!=="undefined"&&ROSTER)||[]).forEach(k=>out.add(String(k))); }catch(e){}
+  cfKids(cfUnit(S)).forEach(k=>out.add(String(k)));
+  try{ const f=(typeof window!=="undefined"&&window.HA_FAMILY)||{}; String(f.familyName||"").split(/\s+/).forEach(w=>{ if(w&&!/^(?:the|academy|family|homeschool|school|of)$/i.test(w)) out.add(w); }); if(f.familyId) out.add(String(f.familyId)); }catch(e){}
+  return [...out].filter(s=>s&&s.length>=2); }
+function dmScrub(t,words){ let s=String(t==null?"":t); (words||[]).forEach(n=>{ const e=String(n).replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); s=s.replace(new RegExp("(^|[^A-Za-z0-9])"+e+"(?:['’]s)?(?![A-Za-z0-9])","gi"),"$1 "); });
+  return s.replace(/\s+/g," ").replace(/^[\s\-–—:,.'’]+|[\s\-–—:,'’]+$/g,"").trim(); }
+// the one prompt (pure): the names, the unit's title / deck, the age band — nothing else
+function dmPrompt(names,title,topic,age){
+  return 'A homeschool mom is making drill cards'+(title?' for a unit called "'+title+'"':'')+(topic&&topic!==title?' (deck: "'+topic+'")':'')+', for children aged '+age+'. '+
+    'For each name below, write the back of its card: what it is or what it means, in ONE short sentence of plain words a child that age can read. '+
+    'Use only well-known facts that fit the unit. If you are not sure what a name means here, leave its back empty ("") — never guess or invent. '+
+    'Give every name back exactly as written. Return ONLY strict JSON: {"items":[{"front":"","back":""}]}.\n\nNames:\n'+names.map((n,i)=>(i+1)+". "+n).join("\n"); }
+function dmBlank(b){ b=String(b==null?"":b).trim(); return !b||/^(?:not sure|unsure|unknown|n\/?a|none|\?+|-+|—)\.?$/i.test(b); }
+function dmAsk(content){ return kitCapAsk(content,null,{raw:true,withStop:true,maxTokens:8000,model:DM_MODEL}); }
+// after every re-read of the paste (cardSheetSplit): her drafted meanings stay on their names; the sentences she turned into
+// cards are not cards themselves
+function draftMeanAfterSplit(S){ const D=draftMean; if(!D||D.S!==S||!S||!S.rows) return;
+  if(D.prose!=null&&csNorm(S.text)===D.prose) S.rows=S.rows.filter(r=>r.how!=="none");
+  const used=new Set();
+  S.rows.forEach(r=>{ const k=csNorm(r.name), d=D.by[k]; if(!d||used.has(k)||r.drop) return; used.add(k);
+    if(d.row===r) return;
+    if(d.row){ if(csNorm(d.row.name)!==k||!d.row.drafted){ delete D.by[k]; return; } d.back=String(d.row.back||"").trim(); d.seen=!!d.row.seen; }   // what she did on the row it was on; her own typed meaning replaced the draft for good
+    d.row=r; if(String(r.back||"").trim()||!d.back) return;   // a meaning she typed in the paste wins
+    r.back=d.back; r.drafted=true; r.seen=!!d.seen; }); }
+function dmRun(S,what){ const D=dmState(S); const seq=++D.seq; D.busy=true; D.what=what; D.msg=""; cfRedraw();
+  const mine=()=>dmSheet()===S&&draftMean===D&&D.seq===seq;
+  const say=(m,ok)=>{ if(mine()){ D.busy=false; D.msg=m; D.ok=!!ok; cfRedraw(); } return 0; };
+  return {D:D,mine:mine,say:say}; }
+async function dmCall(run,content){ let res;
+  try{ res=await dmAsk(content); }catch(e){ if(!run.mine()) return null; const m=String(e&&e.message||e), code=/^Claude (\d{3})\b/.exec(m); run.say(/declined/i.test(m)?DM_MSG.refused:DM_MSG.failed+(code?" (Claude "+code[1]+")":"")); return null; }
+  if(!run.mine()) return null;   // she closed the sheet while Claude worked
+  const stop=res&&typeof res==="object"?res.stop:null, txt=res&&typeof res==="object"?res.text:res;
+  if(stop==="refusal"){ run.say(DM_MSG.refused); return null; }
+  if(stop==="max_tokens"){ run.say(DM_MSG.cut); return null; }
+  try{ return ubParseAI("cards",txt); }catch(e){ run.say(DM_MSG.bad); return null; } }
+// ✨ Draft meanings: one request for the name-only rows (the first 80)
+async function draftMeanGo(){ const S=dmSheet(); if(!S||!pdfcMom()) return 0; const D=dmState(S); if(D.busy) return 0;
+  if(!pdfcCanAsk()){ D.msg=DM_MSG.noKeyMean; D.ok=false; cfRedraw(); return 0; }
+  const rows=dmNameRows(S).slice(0,DM_MAX_NAMES); if(!rows.length) return 0;
+  const u=cfUnit(S), priv=dmPrivate(S), names=rows.map(r=>String(r.name).trim());
+  const run=dmRun(S,"mean"), items=await dmCall(run,[{type:"text",text:dmPrompt(names,dmScrub(u&&u.title,priv),dmScrub(S.deckKey,priv),dmAge(S))}]);
+  if(!items) return 0;
+  const asked=new Set(names.map(csNorm)), got=new Set(); let n=0;
+  items.forEach(x=>{ const k=csNorm(x.front); if(!asked.has(k)||got.has(k)||dmBlank(x.back)) return; got.add(k); D.by[k]={back:String(x.back).trim(),seen:false,row:null}; n++; });   // only names it was asked; an empty or "not sure" answer stays empty
+  if(!n) return run.say(DM_MSG.noneMean);
+  draftMeanAfterSplit(S); cfMarkDups(S);
+  const unsure=names.length-n, rest=Math.max(0,dmNameRows(S).length-unsure);
+  return run.say("✓ Claude drafted "+pdfcPl(n,"meaning")+" — each is amber until you’ve looked at it and tapped ✓."+
+    (unsure?" Claude wasn’t sure of "+unsure+" — "+(unsure===1?"it stays":"they stay")+" empty; type "+(unsure===1?"it":"them")+" in.":"")+(rest?" Tap ✨ again for the next "+rest+".":""),true); }
+// ✨ Make cards from this text: running prose → cards, with the Builder's own card prompt
+async function draftMeanProse(){ const S=dmSheet(); if(!S||!pdfcMom()) return 0; const D=dmState(S); if(D.busy) return 0;
+  if(!pdfcCanAsk()){ D.msg=DM_MSG.noKeyProse; D.ok=false; cfRedraw(); return 0; }
+  if(!dmProse(S)) return 0; const text=String(S.text||"").slice(0,60000), norm=csNorm(S.text);
+  const run=dmRun(S,"prose"), items=await dmCall(run,[{type:"text",text:"Pasted text:\n"+text},{type:"text",text:UB_PROMPTS.cards}]);
+  if(!items) return 0;
+  if(!items.length) return run.say(DM_MSG.noneProse);
+  S.ai=(S.ai||[]).concat(items.map(x=>({id:"a"+(++_csSeq),name:x.front,back:x.back||"",how:"ai",drafted:true})));   // PHOTOCARDS' drafted rows: they ride every re-read
+  D.prose=norm; cardSheetSplit(S); cfMarkDups(S);
+  return run.say("✓ Claude made "+pdfcPl(items.length,"card")+" from your text — each is amber until you’ve looked at it and tapped ✓. The sentences themselves aren’t cards.",true); }
+function draftMeanAge(a){ const S=dmSheet(); if(!S||!pdfcMom()) return; const D=dmState(S); if(dmAgeChoices(S).indexOf(String(a))<0) return; D.age=String(a); cfRedraw(); }
+// ── what it draws, on the check screen above the rows ──
+function draftMeanBarHTML(S){ if(!S) return ""; const D=dmState(S), key=pdfcCanAsk(), names=dmNameRows(S), prose=dmProse(S), h=[];
+  const line=(t,ok)=>'<div data-dm-msg="1" style="font-size:12px;line-height:1.5;color:'+(ok?"#15803d":"#92400e")+';background:'+(ok?"#f0fdf4":"#fffbeb")+';border-radius:9px;padding:7px 10px;margin-top:6px">'+t+'</div>';
+  const btn=(op,label)=>'<button type="button" data-dm="'+op+'" onclick="'+(op==="mean"?"draftMeanGo()":"draftMeanProse()")+'" style="'+PDFC_BTN+';border-color:#fcd34d;background:#fffbeb;color:#92400e">'+label+'</button>';
+  if(D.busy) h.push(line(D.what==="prose"?"⏳ Claude is making cards from your text…":"⏳ Claude is drafting meanings…",true));
+  else {
+    if(names.length){ if(!key) h.push(line(csEsc(DM_MSG.noKeyMean),false));
+      else { const age=dmAge(S);
+        h.push('<div data-dm-mean="1" style="margin-top:8px;padding:9px 10px;border:1.5px solid #fde68a;border-radius:11px;background:#fffdf5">'+
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+btn("mean","✨ Draft meanings ("+Math.min(names.length,DM_MAX_NAMES)+")")+
+          '<span style="font-size:11.5px;font-weight:700;color:var(--muted)">for ages</span>'+dmAgeChoices(S).map(a=>'<button type="button" data-dm-age="'+csEsc(a)+'" onclick="draftMeanAge(\''+csEsc(a)+'\')" style="'+CF_CHIP(a===age)+'">'+csEsc(a)+'</button>').join("")+'</div>'+
+          '<div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.45">Claude writes a one-line meaning for each name — only the names, the unit’s title and the age go out. Each waits for your ✓; a name Claude isn’t sure of stays empty.'+(names.length>DM_MAX_NAMES?" The first "+DM_MAX_NAMES+" go now; tap again for the rest.":"")+'</div></div>'); } }
+    if(prose){ if(!key) h.push(line(csEsc(DM_MSG.noKeyProse),false));
+      else h.push('<div data-dm-prose="1" style="margin-top:8px">'+btn("prose","✨ Make cards from this text")+'<div style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.45">This reads like sentences, not a list. Claude can pick out the cards — only your text goes out; each card waits for your ✓.</div></div>'); }
+    if(D.msg) h.push(line(csEsc(D.msg),D.ok)); }
+  return h.length?'<div data-dm-bar="1">'+h.join("")+'</div>':""; }
+// DRAFTMEAN_END
 // ── Unit card editor: edit shared photo + bio (applies to every enrolled kid) ──
 // ── Batch add: paste many cards into a unit deck at once ("front | back" per line) ────
 // New cards append to the registry deck AND flow immediately to every enrolled kid:
