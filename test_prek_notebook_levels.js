@@ -100,7 +100,8 @@ ok(/learn-lab">Little letters/.test(o.student) && /I know my BIG letters!/.test(
    /Little letters/.test(plain.student) === false, "nbLowercase: the little letter of the day in handwriting order (c first; name only until a sound card), cover lists little letters + a BIG-letters card");
 ok(/Trace the little c ➜/.test(o.student) && !/find-row/.test(noStyle(o.student)), "…traced the kindergarten way, no find-it rows unless that switch is on");
 o = ju({ nbLowercase: true }, { masteryItems: [].concat(mi("Lowercase", ["a", "b"]), mi("Letter Sounds", ["a"])) });
-ok(/a says \/a\/ · apple 🍎/.test(o.student) && /Sounds are on for: <strong>a<\/strong>/.test(o.parent), "…a Letter Sounds card turns the sound on (and the guide says which)");
+// NB_LOOKFIX (2026-11-24): the dinosaur look prints its own sound word here (was the construction list's "apple")
+ok(/a says \/a\/ · alligator 🐊/.test(o.student) && /Sounds are on for: <strong>a<\/strong>/.test(o.parent), "…a Letter Sounds card turns the sound on (and the guide says which)");
 o = ju({ nbFindIt: true });
 ok(/class="find-row fit"/.test(o.student) && /Circle every A/.test(o.student) && /Circle little A/.test(o.student) && /Find<br>it/.test(o.student), "nbFindIt with capitals: circle every A, find its little letter; a Find-it to-do chip");
 ok(/\.find-row \{/.test(o.student) && /\.find-row\.fit \.find-cell/.test(o.student), "…the find-it CSS rides along on a look that never had it");
@@ -122,7 +123,8 @@ ok(o.prekTheme === "construction" && /Drive to the job site!/.test(o.student) &&
    "Julian in construction: the machines, block lettering, his name, still his capitals — no other kid's words");
 ok(!("from" in o.letterCursor), "…his letter rotation stays on the school week (the look doesn't move his place)");
 o = NB.generate("caleb", base({ masteryItems: cbItems, notebookTheme: "shark", kidName: "Caleb", nbGrade: "Kindergarten" }));
-ok(o.prekTheme === "shark" && /Swim the waves!/.test(o.student) && /c says \/c\/ · cat/.test(o.student) && /Kindergarten/.test(o.student) && /class="find-row fit"/.test(o.student) && "from" in o.letterCursor,
+// NB_LOOKFIX (2026-11-24): the shark look's own sound word for c is crab (was the construction list's "cat")
+ok(o.prekTheme === "shark" && /Swim the waves!/.test(o.student) && /c says \/c\/ · crab/.test(o.student) && /Kindergarten/.test(o.student) && /class="find-row fit"/.test(o.student) && "from" in o.letterCursor,
    "Caleb in sharks: the ocean look, still his little letters, find-it, grade and own-week rotation");
 o = NB.generate("kid9", base({ masteryItems: juItems, notebookTheme: "dino", kidName: "Finn" }));
 const banned = /Julian|JULIAN|Caleb|Howe|DeWalt|Burris|I am 4!|his big brothers/;
