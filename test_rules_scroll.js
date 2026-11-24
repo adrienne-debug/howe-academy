@@ -80,10 +80,10 @@ const grid = slice("renderCurrGrid");
   ok(ih > 0 && rr > ih, "renderCurrGrid restores AFTER the panel markup is in the DOM");
   ok(grid.indexOf("kyPanelHTML(") > 0 && grid.indexOf("kyPanelHTML(") < ih, "the Rules panel (📅 Kid’s year, KIDYEAR) is part of the markup that lands before the restore");
 }
-// 7 · the Builder uses the same helper; no bare scrollTop-only save/restore is left anywhere
+// 7 · no bare scrollTop-only save/restore is left anywhere (the Builder tab, which also restored through rsRestore, went in
+//     LMCLEANUP slice 3b)
 {
-  const bld = slice("renderCurrBuilder");
-  ok(bld.indexOf("rsRestore()") > bld.lastIndexOf("el.innerHTML+=h;"), "renderCurrBuilder restores through rsRestore after its markup");
+  ok(src.indexOf("function renderCurrBuilder(") < 0, "the Builder tab is gone (slice 3b)");
   ok(!/cbDayPinScroll\s*=\s*_dp\.scrollTop/.test(src), "the old scrollTop-only saves are gone");
   ok(!/_dp\.scrollTop\s*=\s*cbDayPinScroll/.test(src), "the old scrollTop-only restore is gone");
 }
