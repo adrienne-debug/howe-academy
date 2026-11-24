@@ -2309,8 +2309,8 @@
   // it on for a child). The content is two static files beside the app — ladders/number_thinking.json (one question = one item)
   // and ladders/read_and_answer.json (one passage with all its questions = one item); index.html NBLADDER loads them lazily and
   // keeps each kid's place at notebookSettings/<kid>/ladders/<number|reading> = { on, lv, opt, cur }.
-  // Nothing here touches the DOM or Firebase, and NO generator reads ctx.ladders yet: every notebook prints what it printed
-  // before. Slices 2–6 put the items on the pages (they call ladders.next with ctx.ladders' state).
+  // Nothing here touches the DOM or Firebase. Only the 1st-grade notebook reads ctx.ladders (reading, NBLADREAD — slice 2);
+  // every other notebook prints what it printed before. Later slices put the other items on the pages.
   //  • A ladder climbs: the items of the kid's level in order (`o`), then the next level in the ladder's own order. It never wraps
   //    and never starts over; past the last level → `end`.
   //  • The number ladder's 4th- and 6th-grade rungs are not in the file — they are the question banks Mom keeps on the Notebook
@@ -2440,7 +2440,7 @@
   // This week's items. state = { lv, opt, cur } (lv = the level Mom picked, or the grade's default); wk = the notebook's week
   // number; n = how many (default LADDER_PER_WEEK). → { kind, items:[{ lv, label, i, num, of, id, item }], stop, end, cursor }
   // (cursor = { week, lv, from, adv, opt })
-  // — cursor = the place to save after the week prints (slices 2–6 save it; nothing does in slice 1), or null when there is no
+  // — cursor = the place to save after the week prints (the app saves it after a print — NBLADREAD for reading), or null when there is no
   // level to start from. A bank rung reached part-way → the items before it + stop:{ lv, label, bank:true }.
   function ladderNext(track, state, wk, n) {
     state = state || {};
@@ -7121,6 +7121,182 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     "  .lm-strip-svg { display:block; flex:1; min-width:0; }\n";
   // LU_MATH_END
 
+  // NBLADREAD_START — 📖 "Read and answer" in the 1st-grade notebook: slice 2 of the notebook ladders (notebooks study, her
+  // words 2026-11-23/24: "Build it"; the reading passage "twice a week sounds great"; for 1st grade "She reads them" — the child
+  // reads the passage AND the questions alone, so the 1st-grade questions are in easy words). The ladder engine
+  // (HoweNotebooks.ladders) picks the week's passages; index.html hands them in as ctx.ladders.reading = { on, ready, next, days, … }.
+  // This block puts them on paper, and only for this notebook:
+  //  • one page per passage, on the week's 2nd and 4th school day from the notebook's own day list (a short week uses the days
+  //    it has; one school day → one page), or on the days Mom ticks on the Ladders card (ctx.ladders.reading.days, e.g.
+  //    "tuesday thursday"; a ticked day that isn't a school day this week moves to the next school day, else the one before).
+  //  • the pages go after End of Week and My Words, so every daily page / brain-break back pair keeps its sheet, and the
+  //    paper-doll padding (counted from the pages before it) still lands the dolls on a sheet front. Each page is headed with
+  //    its day ("Tuesday — Read and answer"), and on the tablet it is tagged for that day (NBT_TODAY).
+  //  • the passage in big type, then its questions with lettered choices to circle — the same markup for every choice: no
+  //    answer, no hint, no why line on the child's page, none in an attribute. The right letters, the right choice's words and
+  //    the why lines go on a second Companion page (the first is full).
+  //  • the place the week took goes back to the app as out.readingCursor; the app saves it (…/ladders/reading/cur) after a
+  //    print, PDF or tablet send, so next week picks up after these passages and the same week built again is the same.
+  // Off, not loaded yet, or nothing left on the ladder → nothing here runs and every page is byte for byte what it was.
+  var LR_WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday"];
+  var LR_LETTERS = "ABCDEFGH";
+  function lrEsc(v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  // The saved day ticks ("tuesday thursday") → known school weekdays in week order, at most two. Anything else → [] (the default).
+  function lrSavedDays(saved) {
+    var seen = {}, out = [];
+    String(saved == null ? "" : saved).toLowerCase().split(/[\s,]+/).forEach(function (d) { if (LR_WEEK.indexOf(d) >= 0 && !seen[d]) { seen[d] = 1; out.push(d); } });
+    return out.sort(function (a, b) { return LR_WEEK.indexOf(a) - LR_WEEK.indexOf(b); }).slice(0, 2);
+  }
+  // Which of this week's school days get a reading page. days = the notebook's own list; saved = the Ladders card's ticks.
+  // Default: the 2nd and 4th school day; a slot past the end of a short week takes the latest school day not already used.
+  function lrDays(days, saved) {
+    days = Array.isArray(days) ? days : [];
+    var want = lrSavedDays(saved), pick = [], wi = function (d) { return LR_WEEK.indexOf(d); };
+    var free = function (k) { return k >= 0 && k < days.length && pick.indexOf(days[k]) < 0; };
+    var take = function (k) { if (free(k)) pick.push(days[k]); };
+    if (want.length) want.forEach(function (d) {
+      var at = days.indexOf(d), k;
+      if (!free(at)) { at = -1; for (k = 0; k < days.length; k++) if (wi(days[k]) > wi(d) && free(k)) { at = k; break; } }
+      if (at < 0) for (k = days.length - 1; k >= 0; k--) if (wi(days[k]) < wi(d) && free(k)) { at = k; break; }
+      take(at);
+    });
+    else [1, 3].forEach(function (i) {
+      var at = free(i) ? i : -1;
+      if (at < 0) for (var k = days.length - 1; k >= 0; k--) if (free(k)) { at = k; break; }
+      take(at);
+    });
+    return pick.sort(function (a, b) { return days.indexOf(a) - days.indexOf(b); });
+  }
+  // This week's reading pages: { pages:[{ day, x }], cursor } — x is the engine's item { lv, label, i, num, of, id, item } —
+  // or null when nothing should print. Fewer days than items (a one-day week, one tick) → fewer pages, and the cursor says so.
+  function lrWeek(ctx, days) {
+    var r = ctx && ctx.ladders && ctx.ladders.reading;
+    if (!r || r.on !== true || !r.ready || !r.next || !Array.isArray(r.next.items) || !r.next.items.length) return null;
+    var on = lrDays(days, r.days), items = r.next.items.filter(function (x) { return x && x.item && x.item.text; });
+    var n = Math.min(on.length, items.length), pages = [];
+    if (!n || items.length !== r.next.items.length) return null;   // a passage of the wrong shape → print none rather than a broken page
+    for (var i = 0; i < n; i++) pages.push({ day: on[i], x: items[i] });
+    return { pages: pages, cursor: r.next.cursor ? Object.assign({}, r.next.cursor, { adv: n }) : null };
+  }
+  // Type sizes by level: big for the youngest readers, smaller as passages and questions get longer (measured in
+  // test_nb_ladread.js against the shortest and longest passage of every level — none clips).
+  // A passage much longer than its level's usual (LR_HEAVY: letters of text + questions + choices, a poem line counting 30
+  // more) steps down one size; the smallest size is 12.5px — the size of a printed test passage.
+  var LR_TIER = { g1: 1, g2: 2, g3: 3, g4: 3, g5: 4, g6: 5, g78: 6 };
+  var LR_HEAVY = { 1: 1e9, 2: 1e9, 3: 1500, 4: 1800, 5: 1900, 6: 2350, 7: 1e9 };
+  //            how  title text  lh    gap stem  n   choice l   indent psgPad
+  var LR_SIZES = { 1: [18, 27, 27, 1.6, 28, 23, 32, 23, 34, 42, "14px 22px 12px"], 2: [16, 22, 21, 1.55, 18, 18, 27, 18, 28, 37, "11px 18px 9px"],
+    3: [14, 19, 16.5, 1.5, 14, 15, 23, 15, 23, 31, "10px 16px 8px"], 4: [13, 17, 14, 1.45, 10, 13.5, 21, 13, 21, 29, "9px 15px 7px"],
+    5: [12.5, 16.5, 13.5, 1.43, 9, 13, 20, 12.5, 20, 28, "8px 14px 6px"], 6: [12.5, 16, 13, 1.42, 8, 12.5, 19, 12.5, 19, 27, "8px 14px 6px"],
+    7: [12, 15.5, 12.5, 1.4, 7, 12, 18, 12, 18, 26, "7px 13px 5px"] };
+  function lrLoad(p) {
+    var q = Array.isArray(p.q) ? p.q : [], txt = String(p.text || "");
+    return txt.length + (p.kind === "poem" ? 30 * txt.split("\n").length : 0) +
+      q.reduce(function (a, x) { return a + String((x && x.text) || "").length + (Array.isArray(x && x.c) ? x.c.join("").length : 0); }, 0);
+  }
+  function lrTier(lv, p) { var t = LR_TIER[lv] || 5; return lrLoad(p) > LR_HEAVY[t] ? t + 1 : t; }
+  var LR_CSS = "\n  /* NBLADREAD — Read and answer */\n" +
+    "  .lr-body { padding:12px 46px 8px; }\n" +
+    "  .lr-how { flex-shrink:0; font-weight:800; color:var(--lu-dark); background:var(--lu-gpale); border:1.5px solid #e8d9a8; border-radius:9px; padding:5px 14px; }\n" +
+    "  .lr-psg { flex-shrink:0; background:var(--lu-pale); border:1.5px solid var(--lu-light); border-radius:12px; }\n" +
+    "  .lr-title { font-family:'Fredoka One',cursive; color:var(--lu-mid); line-height:1.2; margin-bottom:4px; }\n" +
+    "  .lr-text p { color:var(--ink); margin-bottom:0.45em; }\n" +
+    "  .lr-text p:last-child { margin-bottom:0; }\n" +
+    "  .lr-qs { display:flex; flex-direction:column; padding-top:4px; }\n" +
+    "  .lr-stem { display:flex; align-items:flex-start; gap:9px; font-weight:800; color:var(--ink); line-height:1.3; }\n" +
+    "  .lr-n { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; background:var(--lu-pink); color:white; font-family:'Fredoka One',cursive; }\n" +
+    "  .lr-cs { display:flex; flex-wrap:wrap; align-items:center; gap:5px 30px; margin-top:6px; }\n" +
+    "  .lr-cs.lr-col { flex-direction:column; align-items:flex-start; }\n" +
+    "  .lr-cs.lr-grid { display:grid; grid-template-columns:1fr 1fr; gap:4px 22px; align-items:start; }\n" +
+    "  .lr-grid .lr-c { align-items:flex-start; }\n" +
+    "  .lr-text.lr-two { display:grid; grid-template-columns:1fr 1fr; gap:0 30px; align-items:start; }\n" +
+    "  .lr-two > div > p { margin-bottom:0.45em; }\n" +
+    "  .lr-c { display:inline-flex; align-items:center; color:var(--ink); font-weight:600; line-height:1.3; }\n" +
+    "  .lr-l { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; border:2px solid var(--lu-mid); border-radius:50%; background:white; color:var(--lu-dark); font-weight:800; margin-right:9px; }\n" +
+    "  .lr-why { font-size:10.5px; color:var(--muted); line-height:1.45; }\n" +
+    Object.keys(LR_SIZES).map(function (t) {
+      var s = LR_SIZES[t], c = "  .lr-t" + t;
+      return c + " .lr-how { font-size:" + s[0] + "px; }\n" + c + " .lr-psg { padding:" + s[10] + "; }\n" + c + " .lr-title { font-size:" + s[1] + "px; }\n" +
+        c + " .lr-text p { font-size:" + s[2] + "px; line-height:" + s[3] + "; }\n" + c + " .lr-qs { gap:" + s[4] + "px; }\n" + c + " .lr-stem { font-size:" + s[5] + "px; }\n" +
+        c + " .lr-n { width:" + s[6] + "px; height:" + s[6] + "px; font-size:" + Math.round(s[6] * 0.58) + "px; }\n" + c + " .lr-cs { margin-left:" + s[9] + "px; }\n" +
+        c + " .lr-c { font-size:" + s[7] + "px; }\n" + c + " .lr-l { width:" + s[8] + "px; height:" + s[8] + "px; font-size:" + Math.round(s[8] * 0.55) + "px; }\n";
+    }).join("");
+  // The passage: paragraphs as written; a poem keeps its lines (a blank line = a new verse), and a long poem from 3rd grade up
+  // reads in two columns, whole verses in each (plain grid columns — the PDF maker doesn't follow CSS text columns), so its
+  // short lines don't take the whole page.
+  function lrText(p, t) {
+    var s = String(p.text || "");
+    if (p.kind === "poem") {
+      var vs = s.split(/\n\s*\n/).filter(function (v) { return v.trim(); });
+      var ps = vs.map(function (v) { return '<p>' + v.split("\n").map(lrEsc).join("<br>") + '</p>'; });
+      if (!(t >= 3 && vs.length > 1 && s.split("\n").length > 8)) return { two: false, html: ps.join("") };
+      var lines = vs.map(function (v) { return v.split("\n").length; }), all = lines.reduce(function (a, b) { return a + b; }, 0), k = 0, run = 0;
+      while (k < vs.length - 1 && run + lines[k] / 2 < all / 2) { run += lines[k]; k++; }   // the verse that crosses the middle starts the right column
+      k = Math.max(1, k);
+      return { two: true, html: '<div>' + ps.slice(0, k).join("") + '</div><div>' + ps.slice(k).join("") + '</div>' };
+    }
+    return { two: false, html: s.split(/\n+/).filter(function (v) { return v.trim(); }).map(function (v) { return '<p>' + lrEsc(v) + '</p>'; }).join("") };
+  }
+  // The choices, all with the same markup (no mark on the right one): in a row when they're all short, two across when none
+  // is long for the type size, else one per line.
+  var LR_GRID_MAX = { 1: 16, 2: 22, 3: 34, 4: 40, 5: 42, 6: 44, 7: 46 };
+  function lrChoices(cs, t) {
+    cs = Array.isArray(cs) ? cs : [];
+    var lens = cs.map(function (c) { return String(c).length; }), mx = Math.max.apply(null, lens.concat([0]));
+    var row = mx <= 22 && cs.join("").length <= 48, grid = !row && cs.length > 2 && mx <= (LR_GRID_MAX[t] || 34);
+    return '<div class="lr-cs' + (row ? "" : grid ? " lr-grid" : " lr-col") + '">' + cs.map(function (c, i) {
+      return '<span class="lr-c"><span class="lr-l">' + LR_LETTERS.charAt(i) + '</span>' + lrEsc(c) + '</span>'; }).join("") + '</div>';
+  }
+  // The child's page. x = the engine's item; the kid-facing words are short enough for a 1st grader to read alone.
+  function lrPage(wn, day, dateStr, x) {
+    var p = x.item || {}, qs = Array.isArray(p.q) ? p.q : [], lv = x.lv || p.lv || "", t = lrTier(lv, p);
+    var how = t <= 2 ? "Read it. Then circle the best answer." : "Read the passage. Then read each question and circle the letter of the best answer.";
+    var tx = lrText(p, t);
+    return '<div class="page-label">Read and Answer — ' + cap(day) + '</div>\n<div class="page">\n' +
+      luStdHeader("Read and Answer · " + lrEsc(x.label || "") + " reading", cap(day) + " — Read and answer", "read it · think · circle", cap(day), lrEsc(dateStr), "📖 I can read!") +
+      '\n<div class="body lr-body lr-t' + t + '">\n' +
+      '  <div class="lr-how">📖 ' + how + '</div>\n' +
+      '  <div class="lr-psg"><div class="lr-title">' + lrEsc(p.title) + '</div><div class="lr-text' + (tx.two ? " lr-two" : "") + '">' + tx.html + '</div></div>\n' +
+      '  <div class="lr-qs">' + qs.map(function (q, i) {
+        return '<div class="lr-q"><div class="lr-stem"><span class="lr-n">' + (i + 1) + '</span><span>' + lrEsc(q && q.text) + '</span></div>' + lrChoices(q && q.c, t) + '</div>';
+      }).join("\n") + '</div>\n' +
+      '</div>\n' + luFooter("Read and Answer", "Week " + wn + " · " + lrEsc(x.label || "") + " · passage " + x.num + " of " + x.of) + '\n</div>';
+  }
+  // The grown-up's page: for each reading page — the day, title and level, each question's right letter + the right
+  // choice's words, and the why line (the words in the passage that prove it).
+  function lrCompanion(wn, weekDates, week) {
+    var secs = week.pages.map(function (pg) {
+      var p = pg.x.item || {};
+      var rows = (Array.isArray(p.q) ? p.q : []).map(function (q, i) {
+        var k = LR_LETTERS.indexOf(String(q.ans || "")), w = (k >= 0 && Array.isArray(q.c) && q.c[k] != null) ? q.c[k] : "";
+        return '<div class="key-row"><div class="key-label" style="min-width:16px;">' + (i + 1) + '.</div><div><span class="key-ans">' + lrEsc(q.ans) + ' — ' + lrEsc(w) + '</span>' +
+          '<div class="lr-why">' + lrEsc(q.why) + '</div></div></div>';
+      }).join("\n");
+      return '  <div class="key-section" style="flex-shrink:0;">\n    <div class="key-head">' + cap(pg.day) + ' — “' + lrEsc(p.title) + '” · ' + lrEsc(pg.x.label) + ' · passage ' + pg.x.num + ' of ' + pg.x.of + '</div>\n' +
+        '    <div class="key-body">' + rows + '</div>\n  </div>';
+    }).join("\n");
+    return '<div class="page-label">Teaching Companion — Read and Answer · answers</div>\n<div class="page">\n' +
+      '<div class="header companion-header">\n  <div>\n    <div class="header-eyebrow">Teaching Companion · Read and Answer</div>\n' +
+      '    <div class="header-name">Read and Answer <span class="parent-badge">answers · not for the child</span></div>\n' +
+      '    <div class="header-sub">the right letter · the words that prove it</div>\n  </div>\n' +
+      '  <div class="header-right">\n    <div class="header-week">Week ' + wn + '</div>\n    <div class="header-date">' + weekDates + '</div>\n  </div>\n</div>\n<div class="accent-bar"></div>\n' +
+      '<div class="body" style="gap:10px;padding-top:10px;">\n' +
+      '  <div class="teach-banner" style="flex-shrink:0;"><strong style="font-size:9px;letter-spacing:0.06em;text-transform:uppercase;">How to use this page —</strong> ' +
+      'Your child reads the passage and the questions alone and circles one letter for each — help with a word only if asked. Check it together afterward. ' +
+      'If an answer is off, read the words in the “why” line together and let your child find the answer again, rather than giving it.</div>\n' +
+      secs + '\n' +
+      '  <div style="flex-shrink:0;font-size:10px;color:var(--muted);line-height:1.45;">From the reading ladder on the Notebook tab (the Ladders card): the level and the days are set there. Next week picks up right after these passages.</div>\n' +
+      '</div>\n' + luFooter("Teaching Companion · Not for the child", "Week " + wn + " · " + weekDates) + '\n</div>';
+  }
+  // For the app's Ladders card (index.html asks; it names no notebook): does this kid's notebook print a ladder?
+  // opt = the app's view of the kid: { notebookTheme, nbLevel } (a Pre-K look builds a Pre-K notebook — not this one).
+  function nbLadReadPages(kid, opt) {
+    opt = opt || {};
+    var g = pkSpec(kid, opt) ? null : GENERATORS[kid];
+    return { reading: !!(g && g.build === generateLucy), number: false };
+  }
+  // NBLADREAD_END
+
   function generateLucy(ctx) {
     ctx = ctx || {};
     _nbLvCtx = ctx;   // NBLEVEL: the grade word the page builders print (lvG)
@@ -7139,6 +7315,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     var words = luWordsWeek(ctx, days.length);   // LU_WORDS: the week's sight words, or null → nothing new prints
     var math = luMathWeek(ctx, wn, days.length);   // LU_MATH: the week's facts from the Math Facts cards, or null → the old subtraction block
     if (math) focus = [focus[0], math.focus];   // LU_MATH: the focus card describes the deck
+    var lread = lrWeek(ctx, days);   // NBLADREAD: this week's Read and answer pages from the reading ladder, or null → nothing new prints
     var prevStats = ctx.prevStats || {};   // dashes until the shared history wiring
     var category = LUCY_DATA.category_order[((wn - 1) % LUCY_DATA.category_order.length + LUCY_DATA.category_order.length) % LUCY_DATA.category_order.length];
     var curMonth = days.length ? monthFromDate(dates[days[0]] || "") : "";
@@ -7166,6 +7343,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     });
     parts.push(nbTag(ctx, luPageEndOfWeek(wn, weekDates, blends, subtraction, days, tasks, math), "last", "End of week"));   // LU_MATH
     luMyWordsPages(ctx, words, wn).forEach(function (p) { parts.push(nbTagXp(ctx, p, "myWords", "My Words")); });   // LU_WORDS: after End of Week, so the day/back pairs don't move
+    if (lread) lread.pages.forEach(function (pg) { parts.push(nbTag(ctx, lrPage(wn, pg.day, dates[pg.day] || "", pg.x), pg.day, "Read and answer")); });   // NBLADREAD: after End of Week + My Words, so every pair stays put
 
     // Paper dolls — doll figure (always) + this week's outfit, each on its OWN sheet with a blank
     // back so Lucy can cut them out without losing anything on the reverse. Goes last in the book.
@@ -7177,11 +7355,14 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     }
 
     var luCss = (phono ? LU_PHONO_CSS : "") + (words ? LU_WORDS_CSS : "") + (math ? LU_MATH_CSS : "");   // LU_WORDS · LU_MATH
+    if (lread) luCss += LR_CSS;   // NBLADREAD
     var student = luShell(parts.join("\n"), "Lucy's Notebook — Week " + wn, luCss);
     var companion = luPageTeachingCompanion(wn, weekDates, days, tasks, blends, subtraction, ctx.teachNotes || "", words, math);   // LU_MATH
+    if (lread) companion += "\n" + lrCompanion(wn, weekDates, lread);   // NBLADREAD: the answers + why lines, on a Companion page of their own
     var parent = luShell(companion, "Lucy's Parent Companion — Week " + wn, luCss);
     var out = { student: student, parent: parent };
     if (words) out.wordCursor = words.cursor;   // LU_WORDS: the app saves it (notebookSettings/<kid>/wordCursor) so next week continues
+    if (lread && lread.cursor) out.readingCursor = lread.cursor;   // NBLADREAD: the app saves it (…/ladders/reading/cur) after a print
     return out;
   }
 
@@ -7644,7 +7825,8 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     hasPlan: pkHasPlan,
     planFor: pkPlanFor,
     reviewDecks: nbReviewDecks,         // 🔁 NBNEEDS: which drill decks this kid's notebook brings back to paper (Notebook tab card)
-    ladders: NB_LADDERS,                // 📚 NBLADDER: the two notebook ladders — engine + placement (slice 1; no page reads them yet)
+    ladders: NB_LADDERS,                // 📚 NBLADDER: the two notebook ladders — engine + placement (the 1st-grade notebook prints reading)
+    ladderPages: nbLadReadPages,        // 📖 NBLADREAD: does this kid's notebook print a ladder? (the Ladders card's note)
     lincolnBuiltinQ3: function (wk, i) { return lnPick(LINCOLN_DATA.banks.conventions, wk, i); },   // the day's built-in conventions item (Mom's answer check)
     convBankPlan: lnConvBankPlan,       // Lincoln's conventions bank: same, for the Q3 slot
     quantBankPlan: lnQuantBankPlan,     // Lincoln's number-reasoning bank: same, for the Q2 math slot

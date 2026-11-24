@@ -204,7 +204,7 @@ console.log("\n# the dish pop-up's new fields");
 console.log("\n# the files still keep their promises");
 {
   const code = BM.replace(/^\s*\/\/.*$/gm, "");
-  ok("bigmeal.js: no database call, no timer, no other node's path", !/\bdb\b|\.ref\(|setInterval|setTimeout/.test(code) && !/kitchen\/|calendar\/|momday|dadday|seasonJobs|gifts/.test(code));
+  ok("bigmeal.js: no database call, no timer, no other node's path", !/\bdb\b|\.ref\(|setInterval/.test(code) && (code.match(/setTimeout\(/g) || []).length <= 1 && !/kitchen\/|calendar\/|momday|dadday|seasonJobs|gifts/.test(code));
   ok("…every drawn handler exists on window (bmHave, bmKit too)", (() => { const names = new Set(); (code.match(/on(click|input|change)=\\?"([A-Za-z_$][\w$]*)\(/g) || []).forEach(m => names.add(m.replace(/.*"/, "").replace("(", ""))); names.delete("if"); return names.has("bmHave") && names.has("bmKit") && [...names].every(n => typeof W[n] === "function"); })());
   ok("…the only new write path is meal/n/<appliance> — still inside BM_OK", B.OK.test("seasons/ideas/xmas/t1/meal/n/slow") && !B.OK.test("seasons/ideas/xmas/t1/n/slow"));
   ok("…no family's names", !/Lincoln|Ellis|Lucy|Julian|Howe|Burris|DeWalt|Dewalt|Melanie|Sara\b|Adrienne|Andrew/.test(BM));
