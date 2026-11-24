@@ -344,6 +344,29 @@ ok("…a done row that paid less: \"✅ Rake leaves paid 6 of 10 ⭐ +6 ⭐\", a
   ok("…Fold towels, missed every day: Thu \"10 → 6 ⭐\" (the places it reads held no done tick); Fri \"+10 ⭐\": its place now holds Feed the dog's Thursday tick, so the count stops there (unsure: it pays more, never less)", J(["2026-12-03", "2026-12-04"].map(d => pill(R[d].a, "Fold towels"))) === J(["10 → 6 ⭐", "+10 ⭐"]), ["2026-12-03", "2026-12-04", "2026-12-05"].map(d => pill(R[d].a, "Fold towels")));
 }
 
+// ── Q: family-calendar days off ──
+console.log("\n── Q · a holiday / vacation that took a list off that day is not a miss and starts the count over ──");
+{ const JQ = () => ({ a_cat: FAM().a_cat, a_dish: FAM().a_dish, a_room: FAM().a_room, b_nap: K({ label: "Fold napkins", who: "kid_b", slot: "morning", cad: "daily", pts: 2, order: 0 }) });   // kid_b ticks every day the Morning list runs, so each week has check-offs
+  const run = async (cal, dates) => { const X = await mkWorld(IDX, HJS, JQ()), out = {};
+    for (const [k, v] of Object.entries(cal)) X.A.run("db.ref('calendar/" + k + "').set(" + J(v) + ")"); await X.w.flush();
+    for (const iso of dates) { await at(X.w, iso, 7); for (const sl of ["morning", "chores", "evening"]) { draw(X.B, sl, "kid_a"); draw(X.A, sl, "kid_a"); } await X.w.flush();
+      await at(X.w, iso, 20); out[iso] = { m: pill(draw(X.B, "morning", "kid_a"), "Feed the cat"), c: pill(draw(X.B, "chores", "kid_a"), "Unload dishes"), e: pill(draw(X.B, "evening", "kid_a"), "Tidy the room"), slots: X.B.run("activeSlots().join(',')") };
+      if (X.B.run("activeSlots().indexOf('morning')>=0")) { tick(X.B, "morning", "kid_b", "Fold napkins"); await X.w.flush(); }
+      if (iso === dates[dates.length - 1]) out.tick = await (async () => { const b0 = bal(X.w, "kid_a"); tick(X.B, "chores", "kid_a", "Unload dishes"); await X.w.flush(); return bal(X.w, "kid_a") - b0; })(); }
+    return out; };
+  const D = []; for (let i = 0; i < 15; i++) { const d = new Date(2026, 10, 28 + i); D.push(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0")); }
+  // a 10-day vacation, "Everything — a real day off", Mon 11/30 … Wed 12/9, nobody ticking before or after
+  const V = await run({ "vacations/trip": { name: "Trip", start: "2026-11-30", end: "2026-12-09", pause: "all" } }, D);
+  ok("a 10-day vacation that paused everything (11/30 … 12/9): no lists those days (activeSlots empty)", V["2026-12-03"].slots === "" && V["2026-12-10"].slots === "morning,afternoon,chores,evening", [V["2026-12-03"].slots, V["2026-12-10"].slots]);
+  ok("…first day back (Thu 12/10): every daily \"+10 ⭐\" (Morning, Chores, Evening); Fri \"+10\" (one miss is free); Sat \"10 → 8\"", ["m", "c", "e"].every(k => J(["2026-12-10", "2026-12-11", "2026-12-12"].map(d => V[d][k])) === J(["+10 ⭐", "+10 ⭐", "10 → 8 ⭐"])) && V.tick === 8, [["m", "c", "e"].map(k => ["2026-12-10", "2026-12-11", "2026-12-12"].map(d => V[d][k])), V.tick]);
+  // "School + chores — keep morning & evening" Tue 12/1 … Thu 12/3, then a school-only holiday Sat 12/5 … Sun 12/6
+  const C = await run({ "vacations/v": { name: "Short break", start: "2026-12-01", end: "2026-12-03", pause: "chores" }, "holidays/h": { name: "Holiday", start: "2026-12-05", end: "2026-12-06", pause: "school" } }, D.slice(0, 11));
+  ok("a break that paused school + chores (12/1 … 12/3): the Chores list is off, Morning and Evening run (activeSlots)", C["2026-12-02"].slots === "morning,evening", C["2026-12-02"].slots);
+  ok("…Chores (Unload dishes): Fri 12/4 \"+10\" (12/3 was off), Sat \"+10\", Sun \"10 → 8\", Mon \"10 → 6\"", J(["2026-12-04", "2026-12-05", "2026-12-06", "2026-12-07"].map(d => C[d].c)) === J(["+10 ⭐", "+10 ⭐", "10 → 8 ⭐", "10 → 6 ⭐"]), ["2026-12-04", "2026-12-05", "2026-12-06", "2026-12-07"].map(d => C[d].c));
+  ok("…Morning and Evening kept running, so they count as before: Wed 12/2 \"10 → 8\", Fri 12/4 \"10 → 4\", Sun 12/6 \"10 → 0\"", ["m", "e"].every(k => J(["2026-12-02", "2026-12-04", "2026-12-06"].map(d => C[d][k])) === J(["10 → 8 ⭐", "10 → 4 ⭐", "10 → 0 ⭐"])), ["m", "e"].map(k => ["2026-12-02", "2026-12-04", "2026-12-06"].map(d => C[d][k])));
+  ok("a school-only holiday (12/5 … 12/6, every list on) changes nothing: Chores Sun 12/6 \"10 → 8\" and Mon \"10 → 6\" as any days, Morning as the table", C["2026-12-05"].slots === "morning,afternoon,chores,evening" && C["2026-12-06"].c === "10 → 8 ⭐" && C["2026-12-07"].c === "10 → 6 ⭐" && C["2026-12-07"].m === "10 → 0 ⭐", [C["2026-12-05"].slots, C["2026-12-06"].c, C["2026-12-07"].c, C["2026-12-07"].m]);
+}
+
 // ── L ──
 console.log("\n── L · nothing else moves: the app before, byte for byte ──");
 const replay = async (index, hjs, plan) => { const R = await mkWorld(index, hjs); const snaps = [];
