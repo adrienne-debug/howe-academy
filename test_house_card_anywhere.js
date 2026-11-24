@@ -27,6 +27,7 @@ let BASE = process.env.BASE_HTML;
 if (!BASE) { try { const b = cp.execSync("git show 9cd01552:index.html", { cwd: __dirname, maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] }); BASE = path.join(os.tmpdir(), "hcgo_base_" + process.pid + ".html"); fs.writeFileSync(BASE, b); cp.execSync("git diff 2faffd06 ba14133b -- index.html | patch -s -p1 " + BASE, { cwd: __dirname, stdio: ["pipe", "ignore", "ignore"] }); } catch (e) { BASE = null; } }   // main then + CHOREWAIT (its lists drop missed chores now)
 console.log("(main: " + (BASE || "none — git show failed; the checks against main are skipped") + ")");
 const J = o => JSON.stringify(o), KIDS = ["kid_a", "kid_b", "kid_c", "kid_d"], SLOTS = ["morning", "afternoon", "chores", "evening"];
+const unLS = s => String(s).replace(/ <span class=\\*"ls-fire\\*"[^>]*>🔥 \d+<\/span>/g, "").replace(/<div class=\\*"ls-four\\*"[^>]*>.*?<\/div>/g, "");   // LISTSTREAK (P2): the 🔥 streak's own markup, left out of the comparisons with older copies (test_list_streak.js checks it)
 const ED = /<span onclick="event\.stopPropagation\(\);hcGo\('([^']*)'\)" title="Edit this chore" style="[^"]*">✎<\/span>/g;
 const strip = h => h.replace(ED, ""), ids = h => [...h.matchAll(ED)].map(m => m[1]);
 const dOf = n => new Date(2026, 10, 16 + n), go = (w, n, h, mi) => { const d = dOf(n); return w.at(d.getFullYear(), d.getMonth() + 1, d.getDate(), h, mi || 0); };
@@ -65,7 +66,7 @@ function places(d) {
   o.x2 = KIDS.map(k => d.run("hdGrabsHTML('" + k + "',true)"));
   return o;
 }
-const flat = p => [p.momStrip, p.dadStrip].concat(p.momRows.map(x => x[1]), p.dadRows.map(x => x[1]), Object.values(p.pops), p.grabs, p.grabsKid, p.x2).map(h => typeof h === "string" ? h.replace(/<span style="font-size:9\.5px;font-weight:700;color:#9ca3af;white-space:nowrap">[^<]*<\/span>/g, "") : h);   // 🚪 PLANDAYS: a plan row's days tag shows its own days now (not main's wk:<today>)
+const flat = p => [p.momStrip, p.dadStrip].concat(p.momRows.map(x => x[1]), p.dadRows.map(x => x[1]), Object.values(p.pops), p.grabs, p.grabsKid, p.x2).map(h => typeof h === "string" ? unLS(h.replace(/<span style="font-size:9\.5px;font-weight:700;color:#9ca3af;white-space:nowrap">[^<]*<\/span>/g, "")) : h);   // 🚪 PLANDAYS: a plan row's days tag shows its own days now (not main's wk:<today>)
 const allIds = p => flat(p).reduce((a, h) => a.concat(ids(h)), []);
 // the onclick handlers of an HTML string, in order
 const unq = s => s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");

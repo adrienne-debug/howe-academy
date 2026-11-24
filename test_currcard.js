@@ -476,6 +476,7 @@ console.log("\n(h) no new Firebase write path in the curriculum region");
   "\"notebookPersonal\"",
   "\"notebookSettings/\"+k+\"/juPicks/\"+wk",
   "\"notebookSettings/\"+kid+\"/\"+node+\"/\"+path",
+  "\"notebookSettings/\"+kid+\"/countPic\"",   // NB_COUNTPIC (2026-11-24): 🔢 what the Pre-K number card counts — Mom only, one targeted set / remove
   "\"notebookSettings/\"+kid+\"/dailyGrams/\"+key",
   "\"notebookSettings/\"+kid+\"/dailyGrams/cursor\"",
   "\"notebookSettings/\"+kid+\"/extraPages/\"+key",

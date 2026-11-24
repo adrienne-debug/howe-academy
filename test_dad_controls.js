@@ -30,6 +30,7 @@ const BASE_HJS = (() => { let s = fs.readFileSync(path.join(__dirname, "house.js
     'function lgRulesOk(){ return typeof momHere==="function"&&momHere(); }\n', "the gate");
   R('lgRBy(lgRFallOn(kid)?{on:false}:{from:lgRToday()})', 'lgRFallOn(kid)?{on:false}:{from:lgRToday()}', "the fall switch's by");
   R('lgRBy(lgRPaused()?{from:lgRToday()}:{on:true})', 'lgRPaused()?{from:lgRToday()}:{on:true}', "the pause's by");
+  R('lgRBy({from:lgRToday()})', '{from:lgRToday()}', "the take switch's by (C3 made On an object)");
   R(`function lgRLine(t,where,js){ const m=lgRulesMom(); return '<div'+(m?' onclick="'+js+'" style="cursor:pointer;padding:4px 0"':' style="padding:4px 0"')+'><b>'+esc(t)+(m?' ›':'')+'</b>`,
     `function lgRLine(t,where,js){ return '<div onclick="'+js+'" style="cursor:pointer;padding:4px 0"><b>'+esc(t)+' ›</b>`, "the › lines");
   R('function lgRulesGoSpot(){ if(!lgRulesMom())', 'function lgRulesGoSpot(){ if(!lgRulesOk())', "› Penalty");
@@ -122,9 +123,9 @@ M.actor = M.A; D.actor = D.Dd; D.Dd.run("dadUnlocked=true;1");
   ok("paused (by him): his own −100 on kid_a takes nothing — it asks with ⏸ and marks the line, penalty 0, as Mom's does (FLAGWHO)", J(zd.w) === J(zm.w) && zd.w.length === 1 && zd.a === zm.a && /⏸ Star rules are paused for everyone, so no stars come off\./.test(zd.a) && zd.pen === 0 && zd.t === "[]", [zm, zd]);
   same("⏸ Pause Off", "lgRulePause()", SR + "/pause", true);
   same("Stars fall when late, kid_a On again", "lgRuleFall('kid_a')", SR + "/fall/kid_a", true);
-  same("Take stars away, kid_b On again (removed)", "lgRuleTake('kid_b')", SR + "/take/kid_b", false);
+  same("Take stars away, kid_b On again ({from: today}, C3)", "lgRuleTake('kid_b')", SR + "/take/kid_b", true);
   await M.w.flush(); await D.w.flush();
-  ok("…the stored rules: his = Mom's but each object says by:\"dad\" (" + J(D.w.get(SR)) + ")", J(M.w.get(SR)) === J({ fall: { kid_a: { from: isoN(10) } }, pause: { from: isoN(10) } }) && J(D.w.get(SR)) === J({ fall: { kid_a: { from: isoN(10), by: "dad" } }, pause: { from: isoN(10), by: "dad" } }));
+  ok("…the stored rules: his = Mom's but each object says by:\"dad\" (" + J(D.w.get(SR)) + ")", J(M.w.get(SR)) === J({ fall: { kid_a: { from: isoN(10) } }, take: { kid_b: { from: isoN(10) } }, pause: { from: isoN(10) } }) && J(D.w.get(SR)) === J({ fall: { kid_a: { from: isoN(10), by: "dad" } }, take: { kid_b: { from: isoN(10), by: "dad" } }, pause: { from: isoN(10), by: "dad" } }));
   ok("…and every device reads his the same as hers: kid_a falls from today, nothing paused, kid_b's stars may be taken again", [M, D].every(S => S.Kk.run("starFallFrom('kid_a')") === isoN(10) && S.Kk.run("starTakeOk('kid_b')") === true && S.B.run("starTakeOk('kid_a')") === true));
   ok("refused for him too: a made-up kid, \"mom\", a key with a period; nothing written", (() => { const m = D.w.mark(); return [D.Dd.run("lgRuleFall('kid_x')"), D.Dd.run("lgRuleTake('mom')"), D.Dd.run("lgRuleFall('kid_b.x')")].every(x => x === false) && D.w.since(m).length === 0; })());
   D.Dd.run("lgClose();lgRulesOpen=false;1"); M.A.run("lgClose();lgRulesOpen=false;1");

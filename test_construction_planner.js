@@ -188,7 +188,7 @@ const names = /lincoln|ellis|lucy|julian|caleb|kenzie|sara\b|dewalt|howe/i;
 ok(!names.test(CARD.replace(/HoweNotebooks/g, "")), "index.html CBPLAN block: no kid or family names (bar the HoweNotebooks API name)");
 const nbBlock = src.slice(src.indexOf("// CBPLAN_START"), src.indexOf("// CBPLAN_END"));
 ok(nbBlock.length > 200 && !names.test(nbBlock.replace(/generateCaleb/g, "")), "notebooks.js CBPLAN block: no kid or family names (bar the existing builder's function name)");
-ok(/if \(ctx\.planOnly\) \{ var _pl = juPlanShape\(curWk, picks, wkInt \|\| 1, days\.length, pkPlanSubs\(T\)\);/.test(src), "the planner reads the build's own picks (one guarded line in the one Pre-K builder)");
+ok(/if \(ctx\.planOnly\) \{ var _pl = juPlanShape\(curWk, picks, wkInt \|\| 1, days\.length, pkPlanSubs\(T, ctx\)\);/.test(src), "the planner reads the build's own picks (one guarded line in the one Pre-K builder)");
 
 (async () => {
   let pw = null;
