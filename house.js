@@ -599,7 +599,7 @@ function hpEngineSet(on){
 // Cleaning level (hhLevelCurFor), the rotation order and cycles (SL_KIDS, SL_SLOTS, config/rotationPeriod) and the switch-on date.
 const HP_MON="2026-11-16", HP_SAT="2026-11-21";   // hhBudget only asks which day of the week: any Monday, any Saturday
 function hpPeople(){ const P={}; hpWho().forEach(function(w){ P[w]={school:hhBudget(w,HP_MON),weekend:hhBudget(w,HP_SAT),level:hhLevelCurFor(w),fit:hpFitOf(w)}; }); return P; }
-function hpOv(){ return {rotations:(typeof hhTurnsAll==="function"&&hhTurnsAll())||{},kids:(typeof SL_KIDS!=="undefined"?SL_KIDS:ROSTER).slice(),slots:SL_SLOTS.slice(),rotPeriod:Object.assign({},(typeof rotationPeriod!=="undefined"&&rotationPeriod)||{}),on:hpIsIso(hpEngine().on)?hpEngine().on:hpToday(),minDefault:HH_MIN_DEFAULT}; }
+function hpOv(){ return {rotations:(typeof hhTurnsAll==="function"&&hhTurnsAll())||{},kids:(typeof SL_KIDS!=="undefined"?SL_KIDS:ROSTER).slice(),slots:SL_SLOTS.slice(),rotPeriod:Object.assign({},(typeof rotationPeriod!=="undefined"&&rotationPeriod)||{}),on:hpIsIso(hpEngine().on)?hpEngine().on:hpToday(),minDefault:HH_MIN_DEFAULT,missed:(typeof hdMissedOv==="function")?hdMissedOv():undefined}; }   // MISSEDPLAN (slice E): the waits, 📌 and 🔄 the plan would use
 // Today and the next 4 weeks (§4.3: "for the next 4 weeks the names respect the limits"), worked out when drawn and kept until the
 // table, a limit, a level, a cycle or the date changes.
 let _hpMemo=null;
@@ -1736,6 +1736,7 @@ function lgDayData(kid,k){
         const f=lgFate(slot,kid,i,st,E,D.k); if(f&&f.gone&&f.gone.k===D.k){ const g={ic:"✖",nm:(st.emoji?st.emoji+" ":"")+(st.label||"Chore"),id:st.house||st._hh||"",note:"due "+lgWd(E.iso)+", not done in time"}; if(typeof lgXGone==="function") lgXGone(g,slot,kid,D,E,i,st); out.gone.push(g); } });
       if(typeof lgDropGones==="function") lgDropGones(out.gone,g0,slot,kid,D,steps);   // 📒 LEDGERDROP (C3): what each drop took
     });
+    if(typeof lgHDropDay==="function") lgHDropDay(out,kid,D);   // 📒 LEDGERHDROP (slice E): the plan's own drops that morning, and what a skipped plan row paid
     const db2=lgBonus(kid,m[D.wk+"_"+D.dn+"_"+kid+"_day"],"🏆","Whole day complete"); if(db2) out.lists.push({slot:"day",title:"🏆 Whole day",rows:[db2],done:0,tot:0});
   } finally { day=pd; _prevSlWk=pw; }
   out.lists.forEach(function(L){ L.rows.forEach(function(r){ out.earned+=(r.pts||0)+(r.gb||0); out.short+=r.sh||0; out.held+=r.held||0; if(r.c===0) out.open++; }); });
@@ -2039,6 +2040,53 @@ function hoDrop(X,id,n){ if(!X.dr){ X.dr={}; Object.keys(routineLog||{}).forEach
     Object.keys(D).forEach(function(q){ const t=D[q]&&D[q].drop; if(t&&t.n>0&&t.due&&t.job) X.dr[t.job+"|"+t.due]={n:t.n,gb:!!t.gb}; }); }); }); }); }
   return X.dr[id+"|"+_hhIsoOf(n)]||null; }
 // LEDGERDROP_END
+// LEDGERHDROP_START — slice E (missed-chores design §2.2, §2.4; ledger design §2–§3): with the plan ON, a turn its kid skipped drops at the
+// day's build (index.html MISSEDDAY): houseDay/<that day>/miss/<id> = {who, since, out, drop} and its "— not done" line routineLog/<kid>/
+// <wk>/<due day>/miss_h_<id> carrying the same drop {n, bid, due, job}, plus the one bank line. Here, that morning's "Gone from her list" row:
+// "✖ Vacuum · due Tue, not done in time · 2 ⭐ taken" with ⭐ Give stars back / Undo and ➖ Excuse / Undo — the words, the gate (Mom, or
+// Dad on his own link with his code in) and the writes of a list row's (slices C3 and L3). Excuse = the stars back, the "— not done"
+// line out (both kept on the note's x for an exact Undo) and a "— waved" line; nothing ever files a plan drop again. A done plan row its
+// kid had skipped says "paid 8 of 10 ⭐". Self-contained (no other ledger block's helpers). Writes only when db && !_dryRun().
+function lgHOk(){ return (typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD()&&typeof dadAwardOk==="function"&&dadAwardOk()); }
+function lgHRe(){ if(typeof renderAll==="function"){ try{ renderAll(); }catch(e){} } if(document.getElementById("lg-pop")) lgDraw(); }
+function lgHUp(u){ if(typeof db!=="undefined"&&db&&!_dryRun()) db.ref().update(u); }
+function lgHLine(kid,b){ return (b&&bank[kid]&&bank[kid].adjustments&&bank[kid].adjustments[b])||null; }
+function lgHBtn(js,lab,tip,c){ return '<button onclick="'+js+'"'+(tip?' title="'+esc(tip)+'"':'')+' style="border:1.5px solid '+(c||'var(--border)')+';background:'+(c?'#fffbeb':'#fff')+';color:'+(c?'#92400e':'#374151')+';border-radius:8px;padding:2px 9px;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap">'+lab+'</button>'; }
+function lgHDropOf(kid,iso,id){ const r=(typeof hdLive==="function")?hdLive(iso):null, m=r&&r.miss&&r.miss[id]; if(!m||m.who!==kid||!m.out||SL_KIDS.indexOf(kid)<0) return null;
+  const w=hdWkDay(m.since); if(!w) return null; const L=(((routineLog[kid]||{})[w.wk]||{})[w.dn]||{})["miss_h_"+id]||null, t=(L&&L.drop)||null;
+  return {m:m,w:w,P:"routineLog/"+kid+"/"+w.wk+"/"+w.dn+"/",L:L,t:t,line:t?lgHLine(kid,t.bid):null}; }
+function lgHDropDay(out,kid,D){ const r=(typeof hdLive==="function")?hdLive(D.iso):null, J=hhJobs(); if(!r) return;
+  out.lists.forEach(function(L){ L.rows.forEach(function(x){ const p=x.id&&r.plan&&r.plan[x.id], f=(J[x.id]||{}).pts||0; if(p&&p.sk>0&&x.c===1&&x.pts>0&&x.pts<f&&!x.note){ x.sh=f-x.pts; x.note="paid "+x.pts+" of "+f+" ⭐"; } }); });
+  Object.keys(r.miss||{}).sort().forEach(function(id){ const x=lgHDropOf(kid,D.iso,id), j=J[id]; if(!x||!j) return; const t=x.t, q="('"+kid+"','"+D.iso+"','"+id+"')", ok=lgHOk(), due=lgWd(x.m.since);
+    const g={ic:"✖",nm:(j.emoji?j.emoji+" ":"")+(j.label||"Chore"),id:id,note:"due "+due+", not done in time"};
+    if(x.m.x){ g.ic="➖"; g.note="due "+due+" · excused"; if(ok) g.xH=lgHBtn("lgHExcuseUndo"+q,"Undo"); out.gone.push(g); return; }
+    if(x.L&&ok) g.xH=lgHBtn("lgHExcuse"+q,"➖ Excuse","Not the kid's fault: the same as ✕ today on "+due+". It costs nothing and is not a miss.");
+    if(t&&!t.n){ if(t.why!=="zero") g.note+=" · nothing taken ("+(t.why==="away"?"a day off in its wait":t.why==="pause"?"⏸ paused":"Take stars away was off")+")"; }
+    else if(t){ g.note+=" · "+t.n+" ⭐ taken";
+      if(t.gb) g.gbH='<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="font-size:11.5px;font-weight:800;color:#b45309">⭐ '+(t.gb.by==="dad"?"Dad":"Mom")+' gave back +'+t.n+' ⭐</span>'+(ok?lgHBtn("lgHDropUndo"+q,"Undo"):'')+'</span>';
+      else if(!x.line) g.note+=", not in the Star Bank now";
+      else { g.tk=t.n; if(ok) g.gbH=lgHBtn("lgHDropGive"+q,"⭐ Give stars back","Put back the "+t.n+" ⭐ this drop took. It still counts as not done.","#f59e0b"); } }
+    out.gone.push(g); }); }
+function lgHDropGive(kid,iso,id){ if(!lgHOk()) return false; const x=lgHDropOf(kid,iso,id), t=x&&x.t;
+  if(!t||!(t.n>0)||t.gb||!x.line||x.m.x){ lgHRe(); return false; }
+  const gb={by:(typeof momHere==="function"&&momHere())?"mom":"dad",ts:nowTs(),at:Date.now(),line:x.line}, u={}; t.gb=gb; delete bank[kid].adjustments[t.bid];
+  u[x.P+"miss_h_"+id+"/drop/gb"]=gb; u["bank/"+kid+"/adjustments/"+t.bid]=null; lgHUp(u); lgHRe(); return true; }
+function lgHDropUndo(kid,iso,id){ if(!lgHOk()) return false; const x=lgHDropOf(kid,iso,id), t=x&&x.t, gb=t&&t.gb;
+  if(!gb||!gb.line||x.line){ lgHRe(); return false; }
+  const u={}; delete t.gb; bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{}; bank[kid].adjustments[t.bid]=gb.line;
+  u[x.P+"miss_h_"+id+"/drop/gb"]=null; u["bank/"+kid+"/adjustments/"+t.bid]=gb.line; lgHUp(u); lgHRe(); return true; }
+function lgHExcuse(kid,iso,id){ if(!lgHOk()) return false; const x=lgHDropOf(kid,iso,id); if(!x||x.m.x||!x.L){ lgHRe(); return false; }
+  const j=hhJobs()[id]||{}, by=(typeof momHere==="function"&&momHere())?"mom":"dad", kp={log:JSON.parse(JSON.stringify(x.L))}, u={}, D=routineLog[kid][x.w.wk][x.w.dn];
+  if(x.line) kp.line=x.line; const ex={by:by,at:Date.now(),c3:kp}, wl={label:(j.label||"Chore")+" — waved by "+(by==="dad"?"Dad":"Mom"),slot:hdSlotOf(j),act:"wave",ts:nowTs(),at:Date.now(),pts:0};
+  x.m.x=ex; delete D["miss_h_"+id]; D["wave_h_"+id]=wl; if(x.line) delete bank[kid].adjustments[x.t.bid];
+  u["houseDay/"+iso+"/miss/"+id+"/x"]=ex; u[x.P+"miss_h_"+id]=null; u[x.P+"wave_h_"+id]=wl; if(x.line) u["bank/"+kid+"/adjustments/"+x.t.bid]=null;
+  lgHUp(u); lgHRe(); return true; }
+function lgHExcuseUndo(kid,iso,id){ if(!lgHOk()) return false; const x=lgHDropOf(kid,iso,id), kp=x&&x.m.x&&x.m.x.c3; if(!kp||!kp.log){ lgHRe(); return false; }
+  const u={}, L=(routineLog[kid]=routineLog[kid]||{}), W=(L[x.w.wk]=L[x.w.wk]||{}), D=(W[x.w.dn]=W[x.w.dn]||{}), bid=kp.log.drop&&kp.log.drop.bid;
+  D["miss_h_"+id]=kp.log; delete D["wave_h_"+id]; u[x.P+"miss_h_"+id]=kp.log; u[x.P+"wave_h_"+id]=null;
+  if(kp.line&&bid){ bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{}; bank[kid].adjustments[bid]=kp.line; u["bank/"+kid+"/adjustments/"+bid]=kp.line; }
+  delete x.m.x; u["houseDay/"+iso+"/miss/"+id+"/x"]=null; lgHUp(u); lgHRe(); return true; }
+// LEDGERHDROP_END
 // HOUSESWITCH_START — 🚪 the real switch and today's stored plan on 👤 By person (Household by room, step 4; DESIGN §4.3 doors, §5 last
 // bullet, her yes 2026-11-17). Mom only. ON first PROVES a houseDay save works (houseDay/<today>/hello) and only then writes
 // household/meta/engine = {mode:"on", on:<today>} together with each house chore's last-done date filled once from the 8 weeks of
@@ -2084,7 +2132,9 @@ function hpOnHTML(who){
     return hpRow(id,j.emoji,j.label,(x.why==="deep"?_hhChip('✨ grown-up turn','#ede9fe','#5b21b6'):'')+(typeof hqPlanNote==="function"?hqChip(hqPlanNote(j,x.late,t)):(x.late>0?_hhChip(x.late+' day'+(x.late===1?'':'s')+' late','#fee2e2','#991b1b'):''))+(x.from?_hhChip('from '+hhWhoName(x.from),'#e0f2fe','#075985'):'')+(sk?_hhChip('skipped','#f3f4f6','#6b7280'):'')+_hhChip(x.mins+' min','#f3f4f6','#475569')
       +(mom&&!dn?'<span onclick="event.stopPropagation()" style="display:flex;gap:4px">'+hpGiveSel(t,id,who)+_hhBtn("hdSkipToggle('"+t+"','"+id+"','"+who+"');hhRender()",sk?'Put back':'✕ Skip',false,'#94a3b8')+'</span>':''),dn); }).join(''):'<div style="padding:3px 12px 6px;font-size:12px;color:var(--muted)">No house chores for them today.</div>';
   const over=Object.keys(r.over||{}).filter(function(id){ return J[id]; });
-  if(over.length) h+='<div style="'+HP_HEAD+';border-top:2px solid #fde68a;padding-top:8px">Didn’t fit anyone today ('+over.length+') — first in line tomorrow</div>'+over.map(function(id){ const o=r.over[id], j=J[id], gd=hpGrabDone(t,id); return hpRow(id,j.emoji,j.label,_hhChip(hhWhoName(o.turn)+'’s turn','#f3f4f6','#475569')+_hhChip(o.mins+' min','#f3f4f6','#475569')+hpGrabChip(t,id)+(mom&&!gd?'<span onclick="event.stopPropagation()">'+hpGiveSel(t,id,"")+'</span>':''),gd||undefined); }).join('');
+  const wt=Object.keys(r.wait||{}).filter(function(id){ return r.wait[id].who===who&&J[id]; });   // MISSEDDAY (slice E): skipped earlier, no room today — still theirs, not on their list
+  if(wt.length) h+='<div style="'+HP_HEAD+'">Waiting with '+esc(hhWhoName(who))+' · no room today ('+wt.length+')</div>'+wt.map(function(id){ const x=r.wait[id], j=J[id]; return hpRow(id,j.emoji,j.label,hqChip(hqPlanNote(j,x.late,t))+_hhChip('not on their list today','#f3f4f6','#6b7280')+_hhChip(x.mins+' min','#f3f4f6','#475569')); }).join('');
+  if(over.length) h+='<div style="'+HP_HEAD+';border-top:2px solid #fde68a;padding-top:8px">Didn’t fit anyone today ('+over.length+') — '+((typeof hdMissedOn==="function"&&hdMissedOn(t))?'tried again tomorrow until its wait runs out':'first in line tomorrow')+'</div>'+over.map(function(id){ const o=r.over[id], j=J[id], gd=hpGrabDone(t,id); return hpRow(id,j.emoji,j.label,_hhChip(hhWhoName(o.turn)+'’s turn','#f3f4f6','#475569')+_hhChip(o.mins+' min','#f3f4f6','#475569')+hpGrabChip(t,id)+(mom&&!gd?'<span onclick="event.stopPropagation()">'+hpGiveSel(t,id,"")+'</span>':''),gd||undefined); }).join('');
   return h+'<div style="height:6px"></div></div>';
 }
 // The doors only Mom taps here (DESIGN §4.3), on HOUSEDAY's stored day (index.html).
@@ -2092,7 +2142,7 @@ function hpOnHTML(who){
 function hdGive(iso,id,who){ if(!hdMom()) return null; const r=hdLive(iso), j=hhJobs()[id]; if(!r||!j||hdDone(iso,id)) return null;
   if(HouseEng.canOf(j,hdPeople()).indexOf(who)<0) return null; const p=(r.plan||{})[id], o=(r.over||{})[id]; if(!p&&!o) return null;
   const mx=Object.keys(r.plan||{}).filter(function(x){ return r.plan[x].who===who; }).reduce(function(a,x){ return Math.max(a,(r.plan[x].order||0)+1); },0);
-  const rec=p?Object.assign({},p,{who:who,order:mx,why:"given"}):{who:who,mins:o.mins,order:mx,why:"given",late:o.late||0,k:o.k,since:o.since}; const from=p?(p.from||p.who):o.turn; if(from&&from!==who) rec.from=from; else delete rec.from;
+  const rec=p?Object.assign({},p,{who:who,order:mx,why:"given"}):{who:who,mins:o.mins,order:mx,why:"given",late:o.late||0,k:o.k,since:o.since}; const from=p?(p.from||p.who):o.turn; if(from&&from!==who) rec.from=from; else delete rec.from; delete rec.sk;   // MISSEDDAY: given away pays the new person in full
   const go=function(){ const r=hdLive(iso); if(!r) return; r.plan=Object.assign({},r.plan); r.plan[id]=rec; const upd={}; upd["houseDay/"+iso+"/plan/"+id]=rec; if(o){ r.over=Object.assign({},r.over); delete r.over[id]; upd["houseDay/"+iso+"/over/"+id]=null; }
   _hdM={}; try{ hhMaterialize(); }catch(e){} if(_hdWrite()) db.ref().update(upd); if(typeof renderAll==="function") renderAll(); };
   if(o&&r.grabs&&r.grabs[id]&&typeof hdGrabTakeBack==="function"){ if(r.grabs[id].done) return null; hdGrabTakeBack(iso,id,go); return rec; }   // 🙌 HOUSEOVER: out of Up for Grabs first
@@ -2111,8 +2161,9 @@ function hdRelay(iso){ if(!hdMom()) return null; const r=hdLive(iso); if(!r) ret
   Object.keys(want).forEach(function(id){ if(!G[id]) put.push(id); });
   Object.keys(Object.assign({},r.plan,plan)).forEach(function(id){ if(!back[id]&&JSON.stringify((r.plan||{})[id]||null)!==JSON.stringify(plan[id]||null)) upd[B+"plan/"+id]=plan[id]||null; });
   Object.keys(Object.assign({},r.over,s.over)).forEach(function(id){ if(!back[id]&&JSON.stringify((r.over||{})[id]||null)!==JSON.stringify(s.over[id]||null)) upd[B+"over/"+id]=s.over[id]||null; });
+  if(s.wait) Object.keys(Object.assign({},r.wait,s.wait)).forEach(function(id){ if(JSON.stringify((r.wait||{})[id]||null)!==JSON.stringify(s.wait[id]||null)) upd[B+"wait/"+id]=s.wait[id]||null; });   // MISSEDDAY
   Object.keys(back).forEach(function(id){ delete plan[id]; s.over[id]=r.over[id]; });
-  upd[B+"built/sig"]=hdSig(); upd[B+"keep"]=null; r.plan=plan; r.over=s.over; r.built=Object.assign({},r.built,{sig:upd[B+"built/sig"]}); delete r.keep;
+  upd[B+"built/sig"]=hdSig(); upd[B+"keep"]=null; r.plan=plan; r.over=s.over; if(s.wait) r.wait=s.wait; r.built=Object.assign({},r.built,{sig:upd[B+"built/sig"]}); delete r.keep;
   _hdM={}; try{ hhMaterialize(); }catch(e){} if(_hdWrite()) db.ref().update(upd);
   put.forEach(function(id){ hdGrabPut(iso,id,want[id]); });
   Object.keys(back).forEach(function(id){ hdGrabTakeBack(iso,id,function(){ const r2=hdLive(iso), w=back[id], u2={}; if(!r2) return; r2.plan=Object.assign({},r2.plan); r2.over=Object.assign({},r2.over); if(w.plan){ r2.plan[id]=w.plan; u2[B+"plan/"+id]=w.plan; } if(!w.over){ delete r2.over[id]; u2[B+"over/"+id]=null; }

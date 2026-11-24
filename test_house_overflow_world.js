@@ -106,7 +106,7 @@ for (const kind of ["saved", "builtin", "none"]) {
   ok(kind + " · the ×2 stars in the bank = the done records' stars, net of the undos (" + recs.reduce((a, d) => a + d.pts, 0) + ")", allX2 === recs.reduce((a, d) => a + d.pts, 0), [allX2, recs.length]);
   ok(kind + " · never laid again or carried after it was done as a grab", prob.twice.length === 0, prob.twice.slice(0, 5));
   ok(kind + " · a set-day chore nobody grabbed is first in line the next day (or dropped on its own next day)", prob.carry.length === 0, prob.carry.slice(0, 5));
-  ok(kind + " · (sanity) " + recs.length + " ×2 grabs done, " + undone + " undone by Mom, holds left unfinished on some days", recs.length >= 60 && undone >= 5 && held >= 10, [recs.length, undone, held]);
+  ok(kind + " · (sanity) " + recs.length + " ×2 grabs done, " + undone + " undone by Mom, holds left unfinished on some days", recs.length >= 50 && undone >= 5 && held >= 10, [recs.length, undone, held]);   // slice E (12/07 on): a chore its kid skipped is never offered ×2 any more, so fewer
   if (M) {
     const gc = w => J(clone(w.get("grabClaims")) || {}, (k, v) => k === "doneMs" ? 0 : v);
     ok(kind + " · the normal grab records are main's, byte for byte (no ×2 grab ever touches them)", J(clone(S.w.get("grabClaims")) || {}) === J(clone(M.w.get("grabClaims")) || {}));
