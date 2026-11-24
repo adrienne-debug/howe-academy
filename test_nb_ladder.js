@@ -191,6 +191,9 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
     ok("…no optional switch without a level", !/Harder extra stage/.test(h));
     const c2 = sandbox({ grades: { p: { key: "PreK", from: "before" } } });
     ok("today's fallback grade (not set by Mom) gives no default", c2.nbLadderLevelOf("p", "number").lv === "");
+    const c3 = sandbox({ settings: { y: { ladders: { reading: { lv: "g3" } } } } }); c3._nbLadData.reading = READ; c3._nbLadData.number = NUM;
+    const h3 = c3.nbLadderCardHtml("y");
+    ok("a saved level but no grade: the first choice still says 'Pick a level' (never 'Follow the notebook level')", !/Follow the notebook level/.test(h3) && /<option value="g3" selected>3rd grade<\/option>/.test(h3) && /Starts at passage 1 of 11 in 3rd grade/.test(h3));
   }
   {
     const c = sandbox({ grades: { b: { key: "3", from: "override" } }, banks: { b: 1 }, settings: { b: { ladders: { number: { on: true, lv: "g3", cur: { week: 11, lv: "g3", from: 58, adv: 2 } }, reading: { on: true } } } } });
