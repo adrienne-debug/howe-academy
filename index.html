@@ -2023,7 +2023,7 @@ function mrIndividualHTML(kid){
   const isOpen=mrOpen[kid]!==false;
   let h='<div class="sl-check-row'+(allDone?" done":"")+'" onclick="toggleMrOpen(\''+kid+'\')" style="cursor:pointer">'+
     '<div class="sl-checkbox'+(allDone?" done":"")+'">'+(allDone?"✓":"")+'</div>'+
-    '<div style="flex:1"><div class="sl-slot-name">Morning <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+(_dueIdx.length+_am.length)+'</span></div>'+
+    '<div style="flex:1"><div class="sl-slot-name">Morning <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+(_dueIdx.length+_am.length)+'</span>'+((typeof lsBadgeHTML==="function")?lsBadgeHTML("morning",kid):"")+'</div>'+
     '<div class="sl-slot-sub">'+((allDone||morningComplete(kid,day))?(gateClockHeld(day)?'✓ Done — school starts at '+fromMin(gateStartMin(day)):'✓ Schedule unlocked'):'Finish all to unlock your schedule')+'</div></div>'+
     '<div style="font-size:14px;color:var(--muted)">'+(isOpen?"▾":"▸")+'</div></div>';
   if(isOpen){
@@ -2762,6 +2762,94 @@ function rtDoneOnWk(wk,slot,kid,d,i){
   const s=map[wk+"_"+d+"_"+kid+"_"+RT_ABBR[slot]+"step"+i];
   return !!(s&&s.done);
 }
+// LISTSTREAK_START — 🔥 one streak per list (missed-chores design §4.1, slice P2; her words 11/20: "every list but each by itself at its
+// title"; what it earns: "Nothing at first"). Morning, Afternoon, Chores and Evening each count the days in a row on which every row due
+// on that list was ticked ON ITS OWN DAY (the tick's stamp "02:15 PM Nov 23" names the day; a row done later in its wait breaks it).
+// Not breaking it: ✕ today / ➖ Excuse (waved), 😷 Kid Off, 🌅 sent to the next morning, a break that hid the list. A day with nothing
+// due (or all of it excused) is passed over. Today joins once its list is fully ticked; until then the count runs to yesterday.
+// Where the ticks come from: this week (slState), last week (prevSlState — the app's own read, _loadPrevSl), and only when a list is
+// still unbroken at the start of last week, ONE earlier week at a time (<week>/sl, read once per device per session, one read in flight,
+// none on ?dryrun=1, nothing written; the hub's ask 11/23: a kid at 🔥 14 on Saturday must not read 🔥 7 on Sunday). It stops at a miss,
+// at LS_CAP counted days, at LS_REACH weeks back, at a week that is not there (null), at week 1, or where the plan's weeks are not back
+// to back (a break: gwWeekDateRange's Monday is not 7 days before the next one). Week keys step back as _prevWkKey does: week<N-1>.
+// Earlier weeks' rows are read with today's list (as last week's always were). Until a read lands it shows the count so far, and never
+// less than it showed earlier the same day for that reason (_lsHi).
+// Not counted: the plan's own rows (st.house), the laundry line's rows (they follow today's laundry, not the day's), as-needed, ☑️ once.
+// Shown from 2 (at 0 or 1 nothing), on today's tab only. Writes nothing, saves nothing, pays nothing. The days before today are cached
+// per list and kid for 15 s or until the ticks / waves / carries / calendar / lists are replaced; today is worked out on each draw.
+let _lsM={}, _lsHi={}, _lsOld={}, _lsBusy=null, _lsV=0, LS_CAP=60, LS_REACH=12;   // LS_CAP counted days · LS_REACH weeks back (last week = 1)
+const _LS_MO=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function _lsOnDay(r,iso){ if(!r||!r.done) return false; const m=/([A-Z][a-z]{2})\s(\d{1,2})\s*$/.exec(String(r.ts||"")); return !m||(m[1]===_LS_MO[+iso.slice(5,7)-1]&&+m[2]===+iso.slice(8)); }
+function _lsDue(st,dn,iso,back){
+  if(!st||st.house||st.line||st.laundry||st.hdHidden||st.llHidden) return false;
+  const cad=st.cad||"daily"; if(cad==="asneeded"||cad==="none"||cad==="once") return false;
+  if((st.from&&iso<st.from)||(st.to&&iso>st.to)||(st.cycW&&!stepCycleOk(st,iso))) return false;
+  if(back&&(/^\d+d$/.test(cad)||cad==="2w")){ const n=cadDateNum(dn), g=(cad==="2w")?14:parseInt(cad,10); return n==null||((n-7*back)%g+g)%g===0; }   // an earlier week: 7 days a week before this week's date
+  return cadDueOn(cad,dn);
+}
+// "kid" = 😷 Kid Off that day (unticked rows excused) · "hid" = a holiday / vacation that took this list off the day · "" otherwise.
+function _lsOff(slot,kid,iso){
+  const C=(typeof calendarData!=="undefined"&&calendarData)||{}, o=((C.kidOverrides||{})[kid]||{})[iso]; let p="";
+  [C.holidays,C.vacations].forEach(function(c){ Object.values(c||{}).forEach(function(v){ const s=calNormDate(v.start||v.date), e=calNormDate(v.end||v.start||v.date); if(!p&&s&&iso>=s&&iso<=e) p=v.pause||"school"; }); });
+  if(p==="all"||(p==="chores"&&slot!=="morning"&&slot!=="evening")) return "hid";
+  return (o&&o.school===false)?"kid":"";
+}
+// One day of one list: 1 = every due row ticked on its day · 0 = passed over · -1 = a row missed (today: not finished yet).
+function _lsDay(slot,kid,wk,dn,iso,map,back){
+  const off=_lsOff(slot,kid,iso); if(off==="hid") return 0;
+  const steps=rtStepsFor(slot,kid,false,dn)||[], wv=((((typeof wavedData!=="undefined"&&wavedData)||{})[wk]||{})[dn]||{})[kid]||{}, am=((typeof amCarry!=="undefined"&&amCarry)||{})[kid]||{};
+  let ok=0;
+  for(let i=0;i<steps.length;i++){ if(!_lsDue(steps[i],dn,iso,back)) continue;
+    if(_lsOnDay(map&&map[wk+"_"+dn+"_"+kid+"_"+(slot==="morning"?"m":RT_ABBR[slot])+"step"+i],iso)){ ok++; continue; }
+    if(off||wv[slot+"step"+i]||(slot!=="morning"&&am[iso+"_"+RT_ABBR[slot]+"step"+i])) continue;
+    return -1; }
+  return ok?1:0;
+}
+// One earlier week's ticks, read once (the same kind of read _loadPrevSl makes); a week not there lands as null and is never asked again.
+function _lsAsk(wk){
+  if(_lsBusy||wk in _lsOld||typeof db==="undefined"||!db||(typeof _dryRun==="function"&&_dryRun())) return;
+  _lsBusy=wk; const done=function(v){ if(_lsBusy!==wk) return; _lsOld[wk]=v||null; _lsBusy=null; _lsV++; if(typeof renderAllSoon==="function") renderAllSoon(); };
+  try{ db.ref(wk+"/sl").once("value",function(x){ done(x.val()); },function(){ done(null); }); }catch(e){ done(null); }
+}
+// The days before today, newest first, until a miss or the end of the ticks: [n, why] — why "" a miss · "cap" · "end" (no older ticks:
+// week 1, a week not there, a break between weeks, LS_REACH) · "load" (a read still out, or this week's dates not in yet).
+function _lsPast(slot,kid,wk,ti){
+  let n=0; const N=+((/^week(\d+)$/.exec(wk)||[])[1]||0), mon=amIso("monday");
+  for(let p=_rtPos(ti)-1;p>=-1;p--){ const dn=DAYS_ALL[_rtIdx(p)], iso=amIso(dn); if(!iso) return [n,"load"]; const r=_lsDay(slot,kid,wk,dn,iso,slState,0); if(r<0) return [n,""]; n+=r; if(n>=LS_CAP) return [LS_CAP,"cap"]; }
+  if(!mon) return [n,"load"];
+  for(let k=1;k<=LS_REACH;k++){
+    if(N-k<1) return [n,"end"];
+    const kw="week"+(N-k), R=(typeof gwWeekDateRange==="function")?gwWeekDateRange(N-k):null;
+    if(R&&R.start&&R.start!==_amIsoAdd(mon,-7*k)) return [n,"end"];   // not the week before: a break sits between
+    let map=_lsOld[kw];
+    if(k===1){ if(typeof _loadPrevSl==="function") _loadPrevSl(); if(prevSlState&&_prevSlWk===kw){ map=prevSlState; _lsOld[kw]=map; } else if(map===undefined) return [n,"load"]; }   // last week: the app's own read (kept for when it is two weeks back)
+    if(map===undefined){ _lsAsk(kw); return [n,"load"]; }
+    if(map===null) return [n,"end"];
+    for(let p=5;p>=-1;p--){ const dn=DAYS_ALL[_rtIdx(p)], iso=_amIsoAdd(mon,p-7*k); const r=_lsDay(slot,kid,kw,dn,iso,map,k); if(r<0) return [n,""]; n+=r; if(n>=LS_CAP) return [LS_CAP,"cap"]; }
+  }
+  return [n,"end"];
+}
+function lsStreak(slot,kid){
+  const ti=DAYS_ALL.indexOf(_todayDay), wk=activeWk(), today=(ti>=0)?amIso(_todayDay):null; if(!today||!wk||SL_SLOTS.indexOf(slot)<0) return 0;
+  const k=slot+"|"+kid, m=_lsM[k], t=Date.now(), C=(typeof calendarData!=="undefined")?calendarData:null;
+  let past; _lsOld[wk]=slState;   // this week's ticks as this device has them: next week they are "last week" at once, with no read
+  if(m&&t-m.t<15000&&m.d===today&&m.wk===wk&&m.s===slState&&m.p===prevSlState&&m.w===wavedData&&m.a===amCarry&&m.c===C&&m.r===routineCfg2&&m.o===_lsV) past=m.v;
+  else { past=_lsPast(slot,kid,wk,ti); const h=_lsHi[k]; if(past[1]==="load"&&h&&h.d===today&&h.v[0]>past[0]) past=h.v;   // a read still out never shows less than before today
+    _lsHi[k]={d:today,v:past}; _lsM[k]={t:t,d:today,wk:wk,s:slState,p:prevSlState,w:wavedData,a:amCarry,c:C,r:routineCfg2,o:_lsV,v:past}; }
+  return Math.min(LS_CAP,past[0]+(_lsDay(slot,kid,wk,_todayDay,today,slState,0)===1?1:0));
+}
+function lsAtEdge(slot,kid){ const m=_lsM[slot+"|"+kid]; return !!(m&&m.v[1]); }   // at least this many: the cap, the oldest ticks there are, or a read still out
+// The kid's list title: " 🔥 6" after "Chores 2/4", from 2 days up, on today's tab. Anything else: "" (the title as before, byte for byte).
+function lsBadgeHTML(slot,kid){ if(typeof day==="undefined"||day!==_todayDay) return ""; let n=0; try{ n=lsStreak(slot,kid); }catch(e){ return ""; }
+  return n>=2?' <span class="ls-fire" style="color:#ea580c;font-weight:800;white-space:nowrap">\u{1F525} '+n+'</span>':''; }
+// Mom's and Dad's line (Kids today pop-up, 👤 By person): all four numbers, 0 and 1 too; "60+" = at least: it ran into the cap (or the
+// oldest ticks there are, or a read still out — a pop-up is not redrawn when a read lands). "" for a kid's own device.
+function lsFourHTML(kid,st){
+  if(!((typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD())||(typeof dadAwardOk==="function"&&dadAwardOk()))) return "";
+  let h=""; try{ h=SL_SLOTS.map(function(s){ const n=lsStreak(s,kid); return SL_SLBL[s]+' <b>'+n+(n&&lsAtEdge(s,kid)?'+':'')+'</b>'; }).join(' · '); }catch(e){ return ""; }   // "3+": at least 3
+  return '<div class="ls-four" style="font-size:11.5px;font-weight:600;color:#9a3412;'+(st||'')+'">\u{1F525} Days in a row: '+h+'</div>';
+}
+// LISTSTREAK_END
 // How many days overdue this step is. The lookback used to run on the weekday INDEX only
 // (0=Mon..6=Sun) and required a due day strictly before today, so it could never cross a
 // Monday: a Saturday chore (wk:5) missed on Saturday showed on Sunday and then silently
@@ -3060,7 +3148,7 @@ function rtSlotHTML(slot,kid){
       '<div><div class="sl-slot-name">'+label+'</div><div class="sl-slot-sub">'+(SL_STIM[slot]||"")+'</div>'+
       (s.done&&s.ts?'<div class="sl-slot-ts">Checked '+s.ts+'</div>':'')+'</div></div>';
   }
-  const avail=rtAvailable(slot,kid,day);
+  const avail=rtAvailable(slot,kid,day), _ls=(typeof lsBadgeHTML==="function")?lsBadgeHTML(slot,kid):"";   // LISTSTREAK: " 🔥 6" at the list's title
   // Due today OR carried over from a day it was missed — a skipped chore must not just vanish.
   // stepWindowOk is an AND, not an OR: a course that has ended must not come back as "late".
   const wavedIdx=steps.map((st,i)=>i).filter(i=>typeof rtWaved==="function"&&rtWaved(slot,kid,day,i));   // WAVE: shown greyed, never due
@@ -3080,17 +3168,17 @@ function rtSlotHTML(slot,kid){
     const msg=_lockMsg;
     return '<div class="sl-check-row" style="opacity:.6">'+
       '<div class="sl-checkbox" style="background:none;border-color:var(--border);color:var(--muted)">&#128274;</div>'+
-      '<div style="flex:1"><div class="sl-slot-name">'+label+' <span style="color:var(--muted);font-weight:700">0/'+total+'</span></div>'+
+      '<div style="flex:1"><div class="sl-slot-name">'+label+' <span style="color:var(--muted);font-weight:700">0/'+total+'</span>'+_ls+'</div>'+
       '<div class="sl-slot-sub">'+msg+'</div></div></div>';
   }
   if(total===0&&!optIdx.length){
-    return '<div class="sl-check-row done"><div class="sl-checkbox done">✓</div><div><div class="sl-slot-name">'+label+'</div><div class="sl-slot-sub">Nothing due today</div></div></div>'+((wavedIdx.length&&typeof rtWavedRowHTML==="function")?'<div class="mr-steps">'+wavedIdx.map(i=>rtWavedRowHTML(steps[i])).join('')+'</div>':'');   // WAVE
+    return '<div class="sl-check-row done"><div class="sl-checkbox done">✓</div><div><div class="sl-slot-name">'+label+_ls+'</div><div class="sl-slot-sub">Nothing due today</div></div></div>'+((wavedIdx.length&&typeof rtWavedRowHTML==="function")?'<div class="mr-steps">'+wavedIdx.map(i=>rtWavedRowHTML(steps[i])).join('')+'</div>':'');   // WAVE
   }
   const isOpen=rtIsOpen(slot,kid,allDone);
   const sub=allDone?('✓ '+label+' done'):(!avail?('\u{1F512} '+_lockMsg):(SL_STIM[slot]||''));
   let h='<div class="sl-check-row'+(allDone?" done":"")+'" onclick="toggleRtOpen(\''+slot+'\',\''+kid+'\','+(isOpen?'true':'false')+')" style="cursor:pointer">'+
     '<div class="sl-checkbox'+(allDone?" done":"")+'">'+(allDone?"✓":"")+'</div>'+
-    '<div style="flex:1"><div class="sl-slot-name">'+label+' <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+total+'</span></div>'+
+    '<div style="flex:1"><div class="sl-slot-name">'+label+' <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+total+'</span>'+_ls+'</div>'+
     '<div class="sl-slot-sub">'+sub+'</div></div>'+
     '<div style="font-size:14px;color:var(--muted)">'+(isOpen?"▾":"▸")+'</div></div>';
   if(isOpen){
@@ -9707,7 +9795,7 @@ function boardStatPop(kid,slot,d){
   const html='<div id="board-stat-pop" onclick="boardStatPopClose()" style="position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:9000;display:flex;align-items:center;justify-content:center;padding:20px">'+
     '<div onclick="event.stopPropagation()" style="background:#fff;border-radius:16px;max-width:420px;width:100%;max-height:75vh;overflow:auto;padding:16px 18px;box-shadow:0 20px 50px rgba(0,0,0,0.3)">'+
     '<div style="display:flex;align-items:center;margin-bottom:8px"><div style="font-family:\'Fraunces\',serif;font-weight:700;font-size:16px;flex:1">'+cap(kid)+' — '+title+' <span style="color:var(--muted);font-size:13px">('+hdrCount+')</span></div>'+
-    '<button onclick="boardStatPopClose()" style="border:none;background:#f3f4f6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer">✕</button></div>'+inner+((_tapOk&&typeof amPopFootHTML==="function")?amPopFootHTML(kid,slot,_d):'')+'</div></div>';   // SENDAM: 🌅 Send all
+    '<button onclick="boardStatPopClose()" style="border:none;background:#f3f4f6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer">✕</button></div>'+((SL_SLOTS.indexOf(slot)>=0&&day===_todayDay&&typeof lsFourHTML==="function")?lsFourHTML(kid,"margin:-2px 0 6px"):"")+inner+((_tapOk&&typeof amPopFootHTML==="function")?amPopFootHTML(kid,slot,_d):'')+'</div></div>';   // SENDAM: 🌅 Send all
   document.body.insertAdjacentHTML("beforeend",html);
 }
 // ── T2: read-only peek at the week that's built but hasn't started ──────────
