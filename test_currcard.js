@@ -479,6 +479,7 @@ console.log("\n(h) no new Firebase write path in the curriculum region");
   "\"notebookSettings/\"+kid+\"/dailyGrams/\"+key",
   "\"notebookSettings/\"+kid+\"/dailyGrams/cursor\"",
   "\"notebookSettings/\"+kid+\"/extraPages/\"+key",
+  "\"notebookSettings/\"+kid+\"/gradeOverride\"",   // NBLEVEL (study step 2, 2026-11-23): 📏 Notebook level override, Mom only, one targeted value
   "\"notebookSettings/\"+kid+\"/letterCursor\"",
   "\"notebookSettings/\"+kid+\"/nbLevel/\"+key",
   "\"notebookSettings/\"+kid+\"/nbMode\"",
