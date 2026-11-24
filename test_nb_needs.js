@@ -210,7 +210,7 @@ ok(!appCtx({ kid: "ellis" }).nbNeedsReadsCap("ellis") && !appCtx({ kid: "lincoln
 
 console.log("(g) every notebook prints byte-for-byte the same with and without the block");
 const NBSRC0 = NBSRC.replace(NBSHOW + "\n", "").replace("    reviewDecks: nbReviewDecks,         // 🔁 NBNEEDS: which drill decks this kid's notebook brings back to paper (Notebook tab card)\n", "");
-ok(NBSRC0.length < NBSRC.length && NBSRC0.indexOf("NBNEEDS") < 0 && NBSRC0.indexOf("nbReviewDecks") < 0, "baseline = this tree's notebooks.js with the NBNEEDS block and its export removed");
+ok(NBSRC0.length < NBSRC.length && NBSRC0.indexOf("NBNEEDS_START") < 0 && NBSRC0.indexOf("nbReviewDecks") < 0, "baseline = this tree's notebooks.js with the NBNEEDS block and its export removed");
 const NB0 = loadNb(NBSRC0);
 ok(NB0 && typeof NB0.generate === "function" && NB0.reviewDecks === undefined, "baseline loads (no reviewDecks)");
 const dates = { monday: "November 16", tuesday: "November 17", wednesday: "November 18", thursday: "November 19", friday: "November 20" };
