@@ -63,6 +63,8 @@ const draw = (d, slot, kid) => d.run("(function(){ const d0=day; day=_todayDay; 
 const drawAll = d => { const o = {}; KIDS.forEach(k => SLOTS.forEach(s => { o[k + "/" + s] = draw(d, s, k); })); return o; };
 const idxOf = (d, slot, kid, label) => d.run("(function(){ return (rtStepsFor('" + slot + "','" + kid + "',false,_todayDay)||[]).findIndex(function(x){ return x&&x.label===" + J(label) + "&&x.cad!=='none'; }); })()");
 const tick = (d, slot, kid, label) => { const i = idxOf(d, slot, kid, label); if (i < 0) return -1; d.run("(function(){ const d0=day; day=_todayDay; try{ " + (slot === "morning" ? "toggleMorningStep('" + kid + "'," + i + ")" : "toggleRtStep('" + slot + "','" + kid + "'," + i + ")") + "; } finally{ day=d0; } })()"); return i; };
+const drawOn = (d, slot, kid, dn) => d.run("(function(){ const d0=day; day=" + J(dn) + "; try{ rtOpen={}; mrOpen={}; return " + (slot === "morning" ? "mrIndividualHTML(" + J(kid) + ")" : "rtSlotHTML(" + J(slot) + "," + J(kid) + ")") + "; } finally{ day=d0; } })()");
+const popOn = (d, kid, slot, dn) => d.run("(function(){ let h=''; const b=document.body.insertAdjacentHTML; document.body.insertAdjacentHTML=function(w,x){ h=x; }; try{ boardStatPop(" + J(kid) + "," + J(slot) + "," + J(dn) + "); } finally{ document.body.insertAdjacentHTML=b; } return h; })()");
 const pop = (d, kid, slot) => d.run("(function(){ let h=''; const b=document.body.insertAdjacentHTML; document.body.insertAdjacentHTML=function(w,x){ h=x; }; try{ boardStatPop(" + J(kid) + "," + J(slot) + ",_todayDay); } finally{ document.body.insertAdjacentHTML=b; } return h; })()");
 const num = (d, slot, kid) => d.run("(typeof lsStreak==='function')?(_lsM={},lsStreak(" + J(slot) + "," + J(kid) + ")):null");
 const nums = d => { const o = {}; KIDS.forEach(k => { o[k] = SLOTS.map(s => num(d, s, k)); }); return o; };
@@ -104,6 +106,7 @@ async function replay(index, side) {
     R.draws[n] = drawAll(B); R.nums[n] = nums(B);
     R.pops[n] = { a_chores: pop(A, "kid_a", "chores"), a_morning: pop(A, "kid_a", "morning"), c_chores: pop(A, "kid_c", "chores") };
     R.kidPops[n] = pop(B, "kid_a", "chores");
+    if (n === 8) { R.other = {}; KIDS.forEach(k => SLOTS.forEach(sl => { R.other[k + "/" + sl] = drawOn(B, sl, k, "monday"); })); R.otherPops = SLOTS.map(sl => popOn(A, "kid_a", sl, "monday")); }   // another day's tab on screen (Tue 11/24)
   }
   // D · last week not loaded (yet): this week only. A device whose read of last week has not landed, then a fresh device.
   R.misc.unloaded = B.run("(function(){ if(typeof lsStreak!=='function') return null; const ps=prevSlState, o=_lsOld, h=_lsHi; prevSlState=null; _lsM={}; try{ const held=[lsStreak('chores','kid_a'),lsStreak('chores','kid_b'),lsStreak('chores','kid_d')]; _lsM={}; _lsOld={}; _lsHi={}; _lsBusy='x'; return held.concat([lsStreak('chores','kid_a'),lsStreak('chores','kid_b'),lsStreak('chores','kid_d'),lsBadgeHTML('chores','kid_a')]); } finally{ prevSlState=ps; _lsOld=o; _lsHi=h; _lsBusy=null; _lsM={}; } })()");
@@ -184,6 +187,8 @@ let same = 0, fired = 0; const bad = [];
 for (let n = 0; n <= 8; n++) Object.keys(N.draws[n]).forEach(k => { const h = N.draws[n][k], b = O.draws[n][k], f = fireOf(h), [kid, slot] = k.split("/"), v = N.nums[n][kid][SLOTS.indexOf(slot)];
   if (f === null) { if (h === b && (v === null || v < 2)) same++; else bad.push([n, k, "no-fire", v]); } else { if (f === v && v >= 2 && unfire(h) === b) fired++; else bad.push([n, k, f, v]); } });
 ok("every list drawn on every day (" + (same + fired) + "): no flame → the baseline's HTML byte for byte (" + same + "); a flame → the baseline's plus the 🔥 span alone (" + fired + ")", bad.length === 0 && same > 50 && fired >= 40, bad.slice(0, 6));
+ok("another day's tab on screen (Monday's, viewed Tue 11/24, kid_a at 🔥 9): every kid's every list title = the baseline's, byte for byte, no flame", Object.keys(N.other).length === 16 && Object.keys(N.other).every(k => N.other[k] === O.other[k] && N.other[k].indexOf("ls-fire") < 0) && N.nums[8].kid_a[2] === 9, Object.keys(N.other).filter(k => N.other[k] !== O.other[k]));
+ok("…and Mom's pop-ups for that day draw no 🔥 line (= the baseline's)", N.otherPops.every((h, i) => h === O.otherPops[i] && h.indexOf("ls-four") < 0 && h.length > 100));
 ok("the lists before the taps too", [0, 1, 2, 3, 4, 5, 6, 7, 8].every(n => Object.keys(N.pre[n]).every(k => fireOf(N.pre[n][k]) === null ? N.pre[n][k] === O.pre[n][k] : unfire(N.pre[n][k]) === O.pre[n][k])));
 ok("Mom's pop-ups = the baseline's plus the one line", [0, 4, 8].every(n => Object.keys(N.pops[n]).every(k => unfour(N.pops[n][k]) === O.pops[n][k] && N.pops[n][k] !== O.pops[n][k])));
 ok("no error logged on either device in either copy", J(N.errs) === J([0, 0]) && J(O.errs) === J([0, 0]), [N.errs, O.errs]);
@@ -215,26 +220,28 @@ console.log("\n── I · reaching further back: one earlier week at a time ─
   ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday"].forEach((dn, j) => { sl1["week1_" + dn + "_kid_a_cstep" + bi] = { done: true, ts: "07:00 PM Nov " + (9 + j), pts: 5, bid: null }; });
   const had1 = J(w.db.tree.root.week1 || null); w.db.tree.root.week1 = Object.assign({}, w.db.tree.root.week1 || {}, { sl: sl1 });
   const I = {};
+  const wrap = d => d.run("(function(){ const r0=db.ref; globalThis.__slReads=[]; db.ref=function(p){ const r=r0.apply(db,arguments); if(/\\/sl$/.test(String(p))&&r&&r.once){ const o=r.once; r.once=function(){ __slReads.push(String(p)); return o.apply(r,arguments); }; } return r; }; return 1; })()");
+  const reads = d => JSON.parse(d.run("JSON.stringify(__slReads)")), extra = d => reads(d).filter(p => p !== d.run("_prevWkKey()") + "/sl");
+  const settle = async (d, kid) => { let v = null; for (let r = 0; r < 6; r++) { v = num(d, "chores", kid); await w.flush(); } return v; };
   for (let n = -1; n <= 13; n++) {
     await go(w, n, 19); await w.flush();
     if (n === 13) { I.sunFirst = num(B, "chores", "kid_a"); I.sunWk = B.run("activeWk()"); }
     tick(B, "chores", "kid_a", "Make the bed"); if (n >= 0) tick(B, "chores", "kid_c", "Toys in the bin"); if (n !== 9) tick(B, "chores", "kid_b", "Wipe the sink");
     await w.flush(); B.run("_lsM={}"); B.run("lsStreak('chores','kid_a')"); await w.flush();
+    if (n === 12) { const P = w.boot("P", "devP"); wrap(P); await w.flush(); I.satNb = await settle(P, "kid_b"); I.satReads = reads(P); I.satLast = P.run("_prevWkKey()"); w.devs.splice(w.devs.indexOf(P), 1); }   // a fresh device, Saturday: every <week>/sl read counted
     if (n === 12) { I.sat = num(B, "chores", "kid_a"); I.satFire = fireOf(draw(B, "chores", "kid_a")); I.satWk = B.run("activeWk()"); }
     if (n === 13) I.sunAfter = num(B, "chores", "kid_a");
   }
+  ok("Sat 11/28, kid_b (the sink missed Wed 11/25, THIS week): 3, and no <week>/sl read but (at most) the app's own last week (" + I.satLast + ") — every read of any week, real or not, counted", I.satNb === 3 && I.satReads.every(p => p === I.satLast + "/sl"), [I.satNb, I.satReads]);
   ok("a 20-day streak (Mon 11/09 … Sat 11/28, 11/09–11/14 from the stored week before) reads 20 on Saturday (" + I.satWk + ")", I.sat === 20 && I.satFire === 20, [I.sat, I.satFire]);
   ok("…and 20 on the Sunday after (" + I.sunWk + ") before its tick, on the same device: no drop across the week change; 21 once Sunday is ticked", I.sunFirst === 20 && I.sunAfter === 21 && I.sunWk !== I.satWk, [I.sunFirst, I.sunAfter, I.satWk, I.sunWk]);
   // fresh devices on Sunday 11/29 (week4): every <week>/sl read they make, counted
-  const wrap = d => d.run("(function(){ const r0=db.ref; globalThis.__slReads=[]; db.ref=function(p){ const r=r0.apply(db,arguments); if(/\\/sl$/.test(String(p))&&r&&r.once){ const o=r.once; r.once=function(){ __slReads.push(String(p)); return o.apply(r,arguments); }; } return r; }; return 1; })()");
-  const reads = d => JSON.parse(d.run("JSON.stringify(__slReads)")), extra = d => reads(d).filter(p => p !== d.run("_prevWkKey()") + "/sl");
-  const settle = async (d, kid) => { let v = null; for (let r = 0; r < 6; r++) { v = num(d, "chores", kid); await w.flush(); } return v; };
   { const F = w.boot("F", "devF"); wrap(F); await w.flush();
     const mF = w.mark(), nb = await settle(F, "kid_b"), xb = extra(F), rb = reads(F);
     const nc = await settle(F, "kid_c"), xc = extra(F);
     const na = await settle(F, "kid_a"), xa = extra(F);
     const nm = await settle(F, "kid_a"); await settle(F, "kid_c"); const xz = extra(F);
-    ok("kid_b (the sink missed Wed 11/25, last week): 4, and NO extra read — only last week's, the app's own", nb === 4 && xb.length === 0 && J(rb) === J(["week3/sl"]), [nb, rb]);
+    ok("Sun 11/29, kid_b (the sink missed Wed 11/25, LAST week): 4, and NO extra read — every <week>/sl read the device made is the app's own last week", nb === 4 && xb.length === 0 && J(rb) === J(["week3/sl"]), [nb, rb]);
     ok("kid_c (from Mon 11/16; Sun 11/15 not ticked, two weeks back): 14, exactly one extra read: week2", nc === 14 && J(xc) === J(["week2/sl"]), [nc, xc]);
     ok("kid_a (unbroken into the week before): 21, one more read: week1 — in order, week2 not read twice", na === 21 && J(xa) === J(["week2/sl", "week1/sl"]), [na, xa]);
     I.wr = writes(w, mF);
