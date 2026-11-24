@@ -33,7 +33,7 @@ const clone = v => v === undefined ? undefined : JSON.parse(JSON.stringify(v));
 const CORE_TEST = fs.readFileSync(path.join(__dirname, "test_archive_core.js"), "utf8");
 const GROUPS = (0, eval)("(" + /const GROUPS = (\{[\s\S]*?\n\});/.exec(CORE_TEST)[1] + ")");
 const codeOnly = (0, eval)("(" + /(function codeOnly\(raw\) \{[\s\S]*?\n\})/.exec(CORE_TEST)[1] + ")");
-const LOADERS = ["initFb", "boot"];   // the listener itself, and boot's dead ha_archive read (NO_MIRROR drops that key)
+const LOADERS = ["archBootListen", "archLoadFull", "boot"];   // the listeners themselves (ARCHBOOT slice 4: the copy at start, the full record on demand), and boot's dead ha_archive read (NO_MIRROR drops that key)
 
 // ── 1. static: who waits ──────────────────────────────────────────────────────────────────────────────────────────────────
 const GUARD = /archiveEnsureAll\(|archiveWhenAll\(/;
@@ -85,7 +85,7 @@ console.log("\n── 1. every build, write and History path waits; the main scr
   const waits = [].concat(GROUPS.C, GROUPS.D).filter(f => { const r = C.fns[f]; return r && GUARD.test(C.code.slice(r.open, r.end)); });
   ok("no group C/D reader (main screens, kids' devices) ever waits", !waits.length, waits);
   ok("the Pace page doesn't wait (its past-weeks numbers are main-screen ones: paceStreak is group D)", !GUARD.test(C.code.slice(C.fns.renderPace.open, C.fns.renderPace.end)) && GROUPS.D.indexOf("paceStreak") >= 0);
-  ok("a schedule re-lay (relayWeek → _rlwFire) waits for every past week, like it waits for the week's own data", /function _rlwFire\(att\)\{[^\n]*\n[^\n]*\n\s*const ready=[^\n]*archiveEnsureAll\(\)/.test(SRC));
+  ok("a schedule re-lay (relayWeek → _rlwFire) waits for every past week, like it waits for the week's own data", /function _rlwFire\(att\)\{[^\n]*\n(?:[^\n]*\n){1,2}\s*const ready=[^\n]*archiveEnsureAll\(\)/.test(SRC));   // ARCHBOOT (slice 4) adds its archiveWhenAll line above it
   ok("the archive listener lets the waiters go", /db\.ref\("archive"\)\.on\("value",[\s\S]{0,1200}?_archAllArrived\(\)/.test(SRC));
   // 6a. the static check can fail
   const noBuildGuard = SRC.replace(/\n  if\(typeof archiveEnsureAll==="function"&&!archiveEnsureAll\(\)\) return \{error:"Past weeks are still loading[^\n]*/, "");
@@ -105,7 +105,8 @@ const MINUS = minusFeature(SRC);
 const MINUS_PATH = path.join(os.tmpdir(), "ha_archensure_minus_" + process.pid + ".html");
 fs.writeFileSync(MINUS_PATH, MINUS);
 process.on("exit", () => { try { fs.unlinkSync(MINUS_PATH); } catch (e) {} });
-const MINUS_NO_CORE = MINUS.replace(/\/\/ ARCHCORE_START[\s\S]*?\/\/ ARCHCORE_END/, "");   // ARCHCORE (slice 3) uses the wait too, typeof-guarded
+const MINUS_NO_CORE = MINUS.replace(/\/\/ ARCHCORE_START[\s\S]*?\/\/ ARCHCORE_END/, "").replace(/\/\/ ARCHBOOT_START[\s\S]*?\/\/ ARCHBOOT_END/, "")
+  .split("\n").filter(ln => !/ARCHBOOT/.test(ln)).join("\n");   // ARCHCORE (slice 3) and ARCHBOOT (slice 4) use the wait too, typeof-guarded
 ok("the baseline has no trace of the feature", !/archiveEnsureAll|archiveWhenAll|_archAllArrived|_archWait/.test(MINUS_NO_CORE), (MINUS_NO_CORE.match(/.*(archiveEnsureAll|archiveWhenAll|_archAllArrived|_archWait).*/) || [""])[0].trim());
 
 // ── worlds: the whole app, with the archive listener held back until we say ───────────────────────────────────────────────
