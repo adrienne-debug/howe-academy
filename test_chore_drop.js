@@ -53,7 +53,7 @@ const BASE_HJS = (() => { let s = fs.readFileSync(path.join(__dirname, "house.js
   R("[\"earned\",\"short\",\"open\",\"held\",\"taken\"].forEach(function(f){ tot[f]+=x[f]||0; });", "[\"earned\",\"short\",\"open\",\"held\"].forEach(function(f){ tot[f]+=x[f]; });", "the week's sums");
   R(/^ {2}if\(on&&!st\.house&&typeof lgDropOff===[^\n]*\n/m, "", "the Excuse hook");
   R(/^ {2}if\(!st\.house&&typeof lgDropKept===[^\n]*\n/m, "", "the Undo hook");
-  R(/lgRTakeOn\(kid\)\?false:\{from:lgRToday\(\)\}\); \}[^\n]*/, "lgRTakeOn(kid)?false:null); }", "Take stars away On");
+  R(/lgRTakeOn\(kid\)\?false:lgRBy\(\{from:lgRToday\(\)\}\)\); \}[^\n]*/, "lgRTakeOn(kid)?false:null); }", "Take stars away On");
   R(/else if\(nx<=X\.t\)\{ const mk=[^\n]*/, "else if(nx<=X.t) marks.push({n:n,m:\"drop\",who:c.who}); }", "How often's mark");
   R("'not done by its next day'+(x.dk?' · '+x.dk.n+' ⭐ '+(x.dk.gb?'given back':'taken'):'')", "'not done by its next day'", "How often's tip");
   R(/\+\(x\.dk\?'<span style="font-size:10px[^\n]*?':''\)\+'<\/span>'; \}\)\.join\(''\)\+'<\/span>'; \}[^\n]*/, "+'</span>'; }).join('')+'</span>'; }", "How often's −2");
