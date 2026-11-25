@@ -23,15 +23,19 @@ const block = html.slice(hA, hB + hE.length);
 const SITES = [
   ["function nbSetLook(kid,key){ if(!momHere()) return; if(typeof nbLookKidPicks===\"function\"&&nbLookKidPicks(kid)) return;   // NB_LOOKPICK: 2+ ticked = the kid picks in Kids' Corner\n",
    "function nbSetLook(kid,key){ if(!momHere()) return;\n"],
-  ["      nbLookPickRow(sel,lookOpts,'<div style=\"display:flex;gap:6px;flex-wrap:wrap\">'+looks+'</div>')+   // NB_LOOKPICK: Mom's pills (0–1 ticked) or the kid's pick (2+), then the tick list\n",
-   "      '<div style=\"display:flex;gap:6px;flex-wrap:wrap\">'+looks+'</div>'+\n"],
+  // 🎛 NB_CUSTOM (2026-11-24): the look card's two halves are placed apart — the pills/pick on the Customize card's top line, the ticks in its 🎨 Look dial
+  ["      pick:nbLookPickRow(sel,lookOpts,pills,\"top\"),   // NB_LOOKPICK: Mom's pills (0–1 ticked) or the kid's pick (2+)\n", "      pick:pills,\n"],
+  ["      ticks:nbLookPickRow(sel,lookOpts,pills,\"ticks\")   // NB_LOOKPICK: \"<name> may choose from:\"\n", "      ticks:\"\"\n"],
   ["        if(typeof nbLookPickKcHtml===\"function\") h+=nbLookPickKcHtml(k);   // NB_LOOKPICK: 🎨 My notebook look (2+ looks ticked by Mom)\n", ""]
 ];
-ok(SITES.every(([now, was]) => count(html, now) === 1 && (was === "" || count(html, was) === 0)), "index.html: three call sites, each once (nbSetLook's guard, the look card, Kids' Corner)");
+ok(SITES.every(([now, was]) => count(html, now) === 1 && (was === "" || count(html, was) === 0)), "index.html: four call sites, each once (nbSetLook's guard, the look's two halves, Kids' Corner)");
 let htmlBase = html.slice(0, hA) + html.slice(hB + hE.length);
+// NB_CUSTOM_COPY (2026-11-24): "Same as another kid…" copies the ticks — Mom's settings, not the build (test_nb_customize_copy.js)
+const cA = htmlBase.indexOf("// NB_CUSTOM_COPY_START"), cE = "// NB_CUSTOM_COPY_END\n", cB = htmlBase.indexOf(cE), copyBlk = cA >= 0 ? htmlBase.slice(cA, cB + cE.length) : "";
+if (copyBlk) htmlBase = htmlBase.replace(copyBlk, "");
 SITES.forEach(([now, was]) => { htmlBase = htmlBase.replace(now, was); });
 ok(!/NB_LOOKPICK|nbLookPick|nbLookKid|nbLookAllow|nbLooksAllowed|looksAllowed|lookCard/.test(htmlBase), "with the block and call sites cut out, index.html has no trace of this change");
-ok(count(html, "looksAllowed") === count(block, "looksAllowed") && count(html, "lookCard") === count(block, "lookCard"), "looksAllowed / lookCard are read only inside the block — the notebook build never sees the ticks");
+ok(count(html, "looksAllowed") === count(block, "looksAllowed") + count(copyBlk, "looksAllowed") && count(html, "lookCard") === count(block, "lookCard"), "looksAllowed / lookCard are read only inside the block (and the copy) — the notebook build never sees the ticks");
 const nS = "  // NB_LOOKPICK_START", nE = "  // NB_LOOKPICK_END\n", nA = nbSrc.indexOf(nS), nB = nbSrc.indexOf(nE);
 const EXPORT = "    lookCard: lookCard,                 // 🎨 NB_LOOKPICK: a look's mascot, picture row and colours (Kids' Corner look picker)\n";
 ok(nA > 0 && nB > nA && count(nbSrc, "// NB_LOOKPICK_START") === 1 && count(nbSrc, EXPORT) === 1, "notebooks.js: one NB_LOOKPICK block + one export line");
@@ -76,7 +80,7 @@ function sandbox(src, o) {
   };
   const lp = src.indexOf(hS) >= 0 ? src.slice(src.indexOf(hS), src.indexOf(hE) + hE.length) : "";
   const body = "let kcKid=" + JSON.stringify(o.kcKid === undefined ? null : o.kcKid) + "; function _kcLoadKid(){}\n" + wireOf(src) + "\n" + lp +
-    "\nfunction lookCardHtml(sel){ const lookOpts=nbLookOpts(sel);\n" + segOf(src) + "\nreturn lookHtml; }\n" +
+    "\nfunction lookCardHtml(sel){ const lookOpts=nbLookOpts(sel);\n" + segOf(src) + "\nreturn lookParts?lookParts.pick+lookParts.ticks:\"\"; }\n" +
     "return {log:null, nbSetLook, nbThemeOf, lookCardHtml" + (lp ? ", nbLookAllow, nbLookKidSet, nbLookPickKcHtml, nbLooksAllowed, nbLookKidPicks" : "") + "};";
   const W = new Function(...Object.keys(env), body)(...Object.values(env));
   W.log = log; return W;

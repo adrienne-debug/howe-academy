@@ -86,11 +86,11 @@ ok(blk.indexOf("momHere())?WB_MOMPEN:WB_PEN") > 0, "viewer: Mom writes in red, k
 ok(blk.indexOf("nbtView.penOnly&&e.pointerType!==\"pen\"") > 0, "viewer: pencil-only lets a palm or finger scroll");
 
 // the Notebook tab
-ok(src.indexOf('((typeof nbtTabHtml==="function")?nbtTabHtml(sel,wkLabel):"")+') > 0, "Notebook tab: the switch card is in the kid's card");
+ok(src.indexOf('((typeof nbtTabHtml==="function")?nbtTabHtml(sel,wkLabel):"")+') > 0 && src.indexOf('lab("This notebook is:")+nbtSegHtml(kid)+') > 0, "Notebook tab: the Send card is in the kid's card; the switch is on the Customize card's top line (NB_CUSTOM)");
 const th = blk.slice(blk.indexOf("function nbtTabHtml("));
 ok(/function nbtTabHtml\(kid,wkLabel\)\{\s*if\(!momHere\(\)\) return "";/.test(th), "Notebook tab: Mom only");
 ok(th.indexOf('seg("print",') > 0 && th.indexOf('seg("tablet",') > 0, "Notebook tab: Printed / On the tablet switch");
-ok(/if\(mode==="tablet"\)\{[\s\S]*nbtSend\(/.test(th), "Notebook tab: Send to tablet only for a tablet kid");
+ok(/if\(mode!=="tablet"\) return "";[\s\S]*nbtSend\(/.test(th), "Notebook tab: Send to tablet only for a tablet kid");
 ok(th.indexOf('link("Open the notebook")') > 0 && th.indexOf("answer pages") < 0 && /const link=\(txt\)=>'<button onclick="nbtOpen\(\\''\+kid\+'\\',\\''\+wk\+'\\'\)"/.test(th), "Notebook tab: one Open link (today's page; the key beside it on Mom's device)");
 
 // print path untouched
