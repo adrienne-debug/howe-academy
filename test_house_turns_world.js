@@ -61,12 +61,19 @@ const realDay = (B, n) => +B.run("_rtRotDayNum('" + DN[dOf(n).getDay()] + "')") 
 // ── A ──
 console.log("\n── A · nothing switched: 60 days, every list, every write, the whole database = main's (off / preview / ON) ──");
 if (BASE) for (const mode of ["off", "preview", "on"]) {
-  const replay = async index => { const w = await W.world({ household: household(mode), tree: tree(), index }); const A = w.boot("A", "devA", { mom: true }), B = w.boot("B", "devB"); await w.flush(); const snaps = [];
-    for (let n = 0; n < 60; n++) { await go(w, n, 7, 0); tickRot(B, "morning", "kid_b", "tank"); tick(B, "morning", "kid_a", "Brush teeth");
+  const replay = async index => { const w = await W.world({ household: household(mode), tree: tree(), index }); const A = w.boot("A", "devA", { mom: true }), B = w.boot("B", "devB"); await w.flush(); const snaps = [], dayAt = [];
+    for (let n = 0; n < 60; n++) { dayAt.push(w.since(0).length); await go(w, n, 7, 0); if (index === undefined) STALE[n] = B.run("typeof boardWeekIsThisWeek==='function'&&!boardWeekIsThisWeek()"); tickRot(B, "morning", "kid_b", "tank"); tick(B, "morning", "kid_a", "Brush teeth");
       await go(w, n, 16, 40); tickRot(B, "afternoon", "kid_a", "pick3"); tickRot(B, "afternoon", "kid_c", "pick3"); tickRot(B, "chores", "kid_a", "bins"); tick(B, "chores", "kid_a", "Unload the dishwasher"); await w.flush();
       snaps.push(listsDay(B, n)); }
-    return { snaps, writes: w.since(0).filter(l => !/\/grabs\//.test(l.path)).map(l => l.op + " " + l.path + " " + (l.keys || []).filter(k => !/\/grabs\//.test(k)).join(",")).join("\n"), tree: JSON.stringify(w.db.tree.root, (k, v) => /^\d{4}-\d\d-\d\d$/.test(k) && v && v.built ? Object.assign({}, v, { grabs: undefined }) : v), built:   /* step 6b: ON with chores that fit nobody also stores their ×2 offers (houseDay/<iso>/grabs) — everything else = main */ Object.keys(w.db.tree.root.houseDay || {}).length }; };
-  const N = await replay(undefined), O = await replay(BASE);
+    // 📅 BWNOWEEK (break week slice 1, 2026-11-24): this world runs past the made-up family's last built week (from Sun Dec 20 the
+    //   board keeps week 6 — the comment above), where main wrote a day start into week 6's record on a later Saturday and Wednesday.
+    //   On those days (the branch's boardWeekIsThisWeek() false) a dayStart write is set aside on BOTH sides; what main wrote and the
+    //   branch did not is checked below to be only those. test_break_week_1.js covers the rule.
+    const all = w.since(0), stale = (l, i) => /^week\d+\/dayStart\//.test(l.path) && dayAt.some((a, n) => STALE[n] && i >= a && (n === 59 || i < dayAt[n + 1]));
+    const set = all.map((l, i) => stale(l, i) ? l.op + " " + l.path : null).filter(Boolean);
+    return { snaps, set, writes: all.filter((l, i) => !stale(l, i)).filter(l => !/\/grabs\//.test(l.path)).map(l => l.op + " " + l.path + " " + (l.keys || []).filter(k => !/\/grabs\//.test(k)).join(",")).join("\n"), tree: (() => { const r = clone(w.db.tree.root); set.forEach(x => { const p = x.split(" ")[1].split("/"); for (let d = p.length; d > 0; d--) { let o = r; p.slice(0, d - 1).forEach(k => { o = o && o[k]; }); if (!o) break; if (d === p.length || (o[p[d - 1]] && !Object.keys(o[p[d - 1]]).length)) delete o[p[d - 1]]; else break; } }); return JSON.stringify(r, (k, v) => /^\d{4}-\d\d-\d\d$/.test(k) && v && v.built ? Object.assign({}, v, { grabs: undefined }) : v); })(), built:   /* step 6b: ON with chores that fit nobody also stores their ×2 offers (houseDay/<iso>/grabs) — everything else = main */ Object.keys(w.db.tree.root.houseDay || {}).length }; };
+  const STALE = []; const N = await replay(undefined), O = await replay(BASE);
+  ok(mode + " · 📅 BWNOWEEK: on the days past the last built week the branch wrote no day start; main's extra writes there are only day starts into the old week (" + O.set.length + ")", N.set.length === 0 && O.set.every(x => /^set week\d+\/dayStart\/\w+\/\w+$/.test(x)) && STALE.slice(0, 34).every(x => x === false) && STALE.slice(34).every(x => x === true), [N.set, O.set, STALE.indexOf(true)]);
   const bad = N.snaps.map((s, i) => s === O.snaps[i] ? null : isoN(i)).filter(Boolean);
   ok(mode + " · every kid's four lists, Mom's and Dad's, with their check marks: main's on all 60 days", bad.length === 0, bad.slice(0, 3));
   ok(mode + " · every write in 60 days is main's, in order (" + N.writes.split("\n").length + " writes)", N.writes === O.writes, (() => { const x = N.writes.split("\n"), y = O.writes.split("\n"); const i = x.findIndex((l, j) => l !== y[j]); return [i, x[i], y[i]]; })());

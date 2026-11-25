@@ -63,7 +63,7 @@ ok("the block writes nothing and asks nothing (no db, no dialog)", !/db\.ref|\.s
 ok("a household needs a familyId of its own (never the Howe app)", /kind==="household"&&window\.HA_FAMILY\.familyId&&window\.HA_FAMILY\.familyId!=="howe"/.test(BLOCK));
 let BEFORE = "";
 try { BEFORE = stripKind(src); } catch (e) { ok("stripKind runs", false, String(e)); }
-ok("stripped: no trace of the slice left", !!BEFORE && !/HHKIND|HA_HOUSEHOLD|haHousehold|haRosterOk/.test(BEFORE));
+ok("stripped: no trace of the slice left (outside the 🧩 AREAS block, which reads HA_HOUSEHOLD for a household's starting switches)", !!BEFORE && !/HHKIND|const HA_HOUSEHOLD|function haHousehold|haRosterOk|HA_HOUSEHOLD \?|\|\|HA_HOUSEHOLD\)&&v\.every|!out\.length&&!HA_HOUSEHOLD/.test(BEFORE.replace(/\/\/ AREAS_START[\s\S]*?\/\/ AREAS_END\n/, "")));   // later slices (🧩 AREAS, 🏡 HHHOME) read HA_HOUSEHOLD behind a typeof guard — this looks for the slice's OWN lines
 ok("stripped: the old lines are back", BEFORE.indexOf("const FAMILY_DEFAULT = (window.HA_FAMILY && Array.isArray(window.HA_FAMILY.roster) && window.HA_FAMILY.roster.length &&") > 0
   && BEFORE.indexOf('if(!out.length){ alert("You need at least one kid."); return; }') > 0
   && BEFORE.indexOf("function autoGenerateWeekIfNeeded(){\n  if(_autoGenTried) return;") > 0 && BEFORE.indexOf("function mlEveningSweep(force){\n  try{") > 0);

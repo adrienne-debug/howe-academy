@@ -1646,6 +1646,8 @@
     var curSum = coverWk ? curWk : curCover;
     var css = T.css + ((lv.nbFindIt && T.css.indexOf(".find-row {") < 0) ? PK_FIND_CSS : "") + ((lv.nbFindIt && !(T.legacyFindLayout && lv.nbLowercase)) ? PK_FIT_CSS : "");
     var P = Object.assign({}, T.P, { lowerFirst: !!lv.nbLowercase });   // little letters: the ABC cards show the little one big
+    var lnum = lntWeek(ctx);   // NBLADNUM: this week's Number thinking questions from the number ladder, or null → nothing new prints
+    if (lnum) css += LNT_CSS_PK;   // NBLADNUM
 
     var parts = [juHtmlHead(weekNum, T.book, css, T.fonts)];
     parts.push(nbTag(ctx, juPageCover(weekNum, weekDates, curSum, T, picks, lv), "week", "Cover"));   // NBT_TODAY: each page's day + name (tablet only)
@@ -1659,6 +1661,7 @@
     var uT = UNIT_INSERT_THEMES[T.unitTheme];
     (ctx.units || []).forEach(function (ins) { nbTagUnit(ctx, ins, unitInsertPages(ins, weekNum, uT)).forEach(function (p) { parts.push(p); }); });
     spellNbPages(ctx, uT).forEach(function (p) { parts.push(nbTag(ctx, p, "week", "Spelling")); });   // 📝 SPELLPAGE
+    if (lnum) parts.push(nbTag(ctx, lntPkPage(weekNum, weekDates, lnum, P), "week", "Number thinking"));   // NBLADNUM: last in the book, so no page moves
     parts.push("</body>\n</html>");
     var student = parts.join("\n");
 
@@ -1666,6 +1669,7 @@
     var guide = (T.parent && pkSameLevel(lv, T.parentLevel || JU_LEVEL)) ? T.parent : pkPageParent;
     var parent = juHtmlHead(weekNum, T.guideTitle, css, T.fonts) + "\n" +
       guide(weekNum, weekDates, curSum, ctx.teachNotes || "", pkCountPicGuide(T, countPic), picks, lv) + "\n</body>\n</html>";   // NB_COUNTPIC
+    if (lnum) parent = parent.slice(0, parent.lastIndexOf("\n</body>")) + "\n" + lntPkAnswers(weekNum, weekDates, lnum, T) + "\n</body>\n</html>";   // NBLADNUM: the answers, last in the guide
 
     var out = { student: student, parent: parent };
     // the app persists this to notebookSettings/<kid>/letterCursor after a print, so the
@@ -1676,6 +1680,7 @@
     // JU_NUMBERS_AHEAD: same idea for numbers — notebookSettings/<kid>/numberCursor (see juNumberStart)
     if (wkInt > 0 && picks._numbers && numStart != null) out.numberCursor = { week: wkInt, from: numStart, adv: picks._numbers.adv };
     if (T.key) out.prekTheme = T.key;   // the app saves the cursors above for a themed kid too (index.html PREKTHEME_WIRE)
+    if (lnum && lnum.cursor) out.numberLadderCursor = lnum.cursor;   // NBLADNUM: the app saves it (the number ladder's cur) after a print
     return out;
   }
   function generateJulian(ctx) { return generatePreK(ctx, JU_THEME, JU_LEVEL, "julian"); }
@@ -2359,8 +2364,8 @@
   // it on for a child). The content is two static files beside the app — ladders/number_thinking.json (one question = one item)
   // and ladders/read_and_answer.json (one passage with all its questions = one item); index.html NBLADDER loads them lazily and
   // keeps each kid's place at notebookSettings/<kid>/ladders/<number|reading> = { on, lv, opt, cur }.
-  // Nothing here touches the DOM or Firebase. Only the 1st-grade notebook reads ctx.ladders (reading, NBLADREAD — slice 2);
-  // every other notebook prints what it printed before. Later slices put the other items on the pages.
+  // Nothing here touches the DOM or Firebase. Only the 1st-grade notebook reads ctx.ladders.reading (NBLADREAD — slice 2), and the
+  // Pre-K / K and 1st-grade notebooks ctx.ladders.number (slice 4, the block right after this one); every other notebook prints what it printed before. Later slices put the other items on the pages.
   //  • A ladder climbs: the items of the kid's level in order (`o`), then the next level in the ladder's own order. It never wraps
   //    and never starts over; past the last level → `end`.
   //  • The number ladder's 4th- and 6th-grade rungs are not in the file — they are the question banks Mom keeps on the Notebook
@@ -3073,6 +3078,190 @@
   NB_LADDERS.picture = ladPicture;
   // NBLADPIC_END
   // NBLADDER_END
+  // NBLADNUM_START — 🔢 "Number thinking" in the Pre-K / K notebooks and the 1st-grade notebook: slice 4 of the notebook ladders
+  // (notebooks study, her words 2026-11-23/24: "Build it"; number questions "5 a week"; the harder stage off unless she switches
+  // it on; Pre-K and K "done with a grown-up who reads the Read aloud line"; a notebook is "a fun warm-up done mostly alone"
+  // that works printed AND on a tablet, and never shows or hints the answer). The ladder engine (HoweNotebooks.ladders) picks the
+  // week's questions; index.html hands them in as ctx.ladders.number = { on, ready, next, … }. This block puts them on paper:
+  //  • ONE page of its own, "Number thinking", after the week's other pages (Pre-K / K: last in the book; 1st grade: after the
+  //    Read and answer pages, before the paper dolls, so every day/back pair keeps its sheet). On the tablet it is an any-time
+  //    page of the week (nbTag "week"). A question a school day was measured and doesn't fit the daily pages (see the report).
+  //  • each question drawn with ladders.picture where it has a picture (the same size and frame for every choice, letters at the
+  //    corner, nothing marking the right one); plain words otherwise. Pre-K / K questions (LAD_GROWN) are done with a grown-up:
+  //    the page says "with a grown-up" and prints each "Read aloud: …" line, as the placement sheet does. From 1st grade the child
+  //    reads it alone: a number line or puzzle prints as it is (parts and pairs keep it, with the picture beside), and a picture
+  //    whose words would give it away ("about how many dots? (picture: 45 dots…)") prints its short spoken question instead.
+  //  • the answers — the right letter, the right choice's words, the rule, and the plain words for each picture — go on a
+  //    grown-up page only: a Companion page of their own in the 1st-grade notebook (like the reading answers), a page at the end
+  //    of the Grown-Up Guide in a Pre-K / K notebook.
+  //  • the place the week took goes back to the app as out.numberLadderCursor (the engine's { week, lv, from, adv, opt }); the app
+  //    saves it (the number ladder's cur) after a print, PDF or tablet send, so next week picks up after these questions and the
+  //    same week built again is the same. (out.numberCursor is the Pre-K number card's own place — a different thing.)
+  // Off, not loaded yet, or nothing left on the ladder → nothing here runs and every page is byte for byte what it was.
+  var LNT_LETTERS = "ABCDEFGH";
+  // Picture sizes (px) on this page — measured in test_nb_ladnum.js: five Pre-K / K questions fit with room to spare in every look.
+  var LNT_PIC = { grown: { w: 360, h: 96, choice: 88, cellMax: 28 }, alone: { w: 330, h: 84, choice: 60, cellMax: 25 } };
+  // This week's questions: { items:[x], cursor, stop, end } — x is the engine's item { lv, label, i, num, of, id, item } — or null
+  // when nothing should print. A question of the wrong shape, or a picture that can't be drawn where its words would give the
+  // answer away → print none rather than a broken or hinting page.
+  function lntWeek(ctx) {
+    var r = ctx && ctx.ladders && ctx.ladders.number;
+    if (!r || r.on !== true || !r.ready || !r.next || !Array.isArray(r.next.items) || !r.next.items.length) return null;
+    var items = r.next.items.filter(function (x) { return x && x.item && x.item.text && Array.isArray(x.item.c) && x.item.c.length >= 2 && x.item.c.length <= LNT_LETTERS.length; });
+    if (items.length !== r.next.items.length) return null;
+    if (items.some(function (x) { return lntUnsafe(x); })) return null;
+    return { items: items, cursor: r.next.cursor ? Object.assign({}, r.next.cursor) : null, stop: r.next.stop || null, end: !!r.next.end };
+  }
+  function lntGrown(x) { return !!LAD_GROWN[x.lv]; }
+  // The picture (NBLADPIC — typeof-guarded like the placement sheet's call sites, so that block can be cut out on its own), or null.
+  function lntPic(x) { return (x.item && x.item.pic && typeof ladPicture === "function") ? ladPicture(x.item, lntGrown(x) ? LNT_PIC.grown : LNT_PIC.alone) : null; }
+  // Do the question's plain words belong on the grown-up page? Pre-K / K: always (they describe the picture). From 1st grade: yes,
+  // except number puzzles and pairs, whose numbers ARE the question (NBLADPIC's LADPIC_OWN_TEXT).
+  function lntMoved(x) {
+    var p = x.item && x.item.pic, own = (typeof LADPIC_OWN_TEXT === "object" && LADPIC_OWN_TEXT) || { parts: 1, pairs: 1 };
+    return !!(p && typeof p === "object") && (lntGrown(x) || !Object.prototype.hasOwnProperty.call(own, p.kind));
+  }
+  // A child-alone question whose plain words would give the answer away ("… 45 dots …") can't print without its picture.
+  function lntUnsafe(x) { return !lntGrown(x) && lntMoved(x) && !lntPic(x); }
+  // A number line / puzzle line: the first "?" is the empty box to fill (the rest of the line as written).
+  function lntLine(s) {
+    s = ladEsc(s);
+    var k = s.indexOf("?");
+    return '<div class="lnt-line">' + (k < 0 ? s : s.slice(0, k) + '<span class="lnt-box">?</span>' + s.slice(k + 1)) + '</div>';
+  }
+  // One question, child's page. n = 1…5. Same markup for every choice; nothing marks the right one.
+  function lntQ(x, n) {
+    var q = x.item, grown = lntGrown(x), P = lntPic(x), head = "", body;
+    if (grown) head = q.say ? '<span class="lnt-say">Read aloud: “' + ladEsc(q.say) + '”</span>' : '';
+    else if (P && lntMoved(x)) head = '<span class="lnt-ask">' + ladEsc(q.say || "") + '</span>';
+    var lines = (P && lntMoved(x)) ? "" : String(q.text || "").split(" / ").map(lntLine).join("");
+    var top = head ? '<div class="lnt-top"><span class="lnt-n">' + n + '</span>' + head + '</div>'   // no spoken line → the number line sits beside the number
+      : '<div class="lnt-top lnt-top-l"><span class="lnt-n">' + n + '</span><div class="lnt-lines">' + lines + '</div></div>';
+    if (!head) lines = "";
+    if (P) body = (lines ? '<div class="lnt-lines lnt-under">' + lines + '</div>' : '') +
+      '<div class="lnt-row"><div class="lnt-pic">' + P.pic + '</div><div class="lnt-pcs">' +
+      P.choices.map(function (s, i) { return '<span class="lnt-pc"><span class="lnt-l">' + LNT_LETTERS.charAt(i) + '</span>' + s + '</span>'; }).join("") + '</div></div>';
+    else body = (lines ? '<div class="lnt-lines lnt-under">' + lines + '</div>' : '') + '<div class="lnt-cs">' +
+      q.c.map(function (c, i) { return '<span class="lnt-c"><span class="lnt-l">' + LNT_LETTERS.charAt(i) + '</span>' + ladEsc(ladChoiceWord(c, grown)) + '</span>'; }).join("") + '</div>';
+    return '<div class="lnt-q">' + top + body + '</div>';
+  }
+  // Where the week sits on the ladder: "1st grade · questions 6–10 of 60" (a week that climbs a level names both).
+  function lntSpan(w) {
+    var runs = [];
+    w.items.forEach(function (x) { var r = runs[runs.length - 1]; if (r && r.lv === x.lv) r.b = x.num; else runs.push({ lv: x.lv, label: x.label, a: x.num, b: x.num, of: x.of }); });
+    return runs.map(function (r) { return ladEsc(r.label) + " · question" + (r.a === r.b ? " " + r.a : "s " + r.a + "–" + r.b) + " of " + r.of; }).join(" · then ");
+  }
+  function lntAnyGrown(w) { return w.items.some(lntGrown); }
+  var LNT_HOW_GROWN = "A grown-up reads each question aloud. Circle the answer — the picture or its letter.";
+  var LNT_HOW_ALONE = "Read each one. Find what comes next or what is missing. Circle the letter of the answer.";
+  function lntQs(w) {
+    return '  <div class="lnt-how">🔢 ' + (lntAnyGrown(w) ? LNT_HOW_GROWN : LNT_HOW_ALONE) + '</div>\n' +
+      '  <div class="lnt-qs">' + w.items.map(function (x, i) { return lntQ(x, i + 1); }).join("\n") + '</div>\n';
+  }
+  // The grown-up's rows: the right letter + its words, the rule, and the picture's plain words when they left the child's page.
+  function lntKeyRows(w, row) {
+    return w.items.map(function (x, i) {
+      var q = x.item, grown = lntGrown(x), moved = !!lntPic(x) && lntMoved(x);
+      return row(i + 1, ladEsc(q.ans) + ' — ' + ladEsc(ladAnsText(q.c, q.ans, grown)), ladEsc(q.rule || ""), moved ? ladEsc(q.text || "") : "", ladEsc(x.label) + " · " + x.num + " of " + x.of);
+    }).join("\n");
+  }
+  function lntTail(w) {
+    var s = "Next week picks up right after these questions.";
+    if (w.stop) s = "After these, the ladder reaches the " + ladEsc(ladWord(w.stop.lv).replace(" grade", "-grade")) + " question bank (on the Notebook tab) and stops; pick the next level on the Ladders card when the bank is done.";
+    else if (w.end) s = "These are the last questions on the ladder.";
+    return "From the number ladder on the Notebook tab (the Ladders card): the level is set there. " + s;
+  }
+  // The page's look: one stylesheet, each notebook's own colours (Pre-K looks: --ju-*; the 1st-grade notebook: --lu-*).
+  function lntCss(c) {
+    return "\n  /* NBLADNUM — Number thinking */\n" +
+      "  .lnt-body { gap:10px; padding-top:10px; }\n" +
+      "  .lnt-how { flex-shrink:0; font-size:14px; font-weight:800; color:" + c.dark + "; background:" + c.pale + "; border:1.5px solid " + c.light + "; border-radius:9px; padding:6px 14px; line-height:1.35; }\n" +
+      "  .lnt-qs { display:flex; flex-direction:column; gap:9px; }\n" +
+      "  .lnt-q { flex-shrink:0; background:#fff; border:1.5px solid " + c.light + "; border-radius:12px; padding:7px 14px 10px; }\n" +
+      "  .lnt-top { display:flex; align-items:center; gap:10px; min-height:26px; }\n" +
+      "  .lnt-n { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; background:" + c.num + "; color:#fff; font-size:14px; font-weight:800; }\n" +
+      "  .lnt-say { font-size:13px; font-style:italic; font-weight:700; color:#92400e; line-height:1.3; }\n" +
+      "  .lnt-ask { font-size:16px; font-weight:800; color:var(--ink); line-height:1.3; }\n" +
+      "  .lnt-top-l { align-items:flex-start; }\n" +
+      "  .lnt-top-l .lnt-n { margin-top:3px; }\n" +
+      "  .lnt-under { margin:4px 0 0 36px; }\n" +
+      "  .lnt-line { font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace; font-size:21px; font-weight:700; color:var(--ink); white-space:pre-wrap; line-height:1.45; }\n" +
+      "  .lnt-box { display:inline-block; min-width:1.5em; text-align:center; border:2px dashed #4b5563; border-radius:6px; line-height:1.15; color:#6b7280; }\n" +
+      "  .lnt-row { display:flex; align-items:center; gap:18px; margin:7px 0 0 36px; }\n" +
+      "  .lnt-pic { flex:1 1 auto; min-width:0; display:flex; align-items:center; }\n" +
+      "  .lnt-pcs { flex:none; display:flex; gap:14px; }\n" +
+      "  .lnt-pc { position:relative; display:block; border:2px solid #9ca3af; border-radius:12px; padding:3px; line-height:0; background:#fff; }\n" +
+      "  .lnt-l { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border:2px solid " + c.mid + "; border-radius:50%; background:#fff; color:" + c.dark + "; font-size:12px; font-weight:800; line-height:1; }\n" +
+      "  .lnt-pc .lnt-l { position:absolute; top:-9px; left:-9px; }\n" +
+      "  .lnt-cs { display:flex; flex-wrap:wrap; gap:6px 30px; margin:7px 0 0 36px; }\n" +
+      "  .lnt-c { display:inline-flex; align-items:center; gap:8px; font-size:19px; font-weight:700; color:var(--ink); line-height:1.3; }\n" +
+      "  .lnt-svg, .lnt-q .nbl-svg { display:block; }\n" +
+      "  .lnt-grown { display:inline-block; font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; background:#fef3c7; color:#92400e; border:1.5px solid #fcd34d; border-radius:20px; padding:2px 10px; }\n" +
+      "  .lnt-key { display:flex; gap:10px; align-items:flex-start; font-size:12px; line-height:1.45; padding:4px 0; border-bottom:1px solid #f0f0f0; }\n" +
+      "  .lnt-key:last-child { border-bottom:none; }\n" +
+      "  .lnt-key-n { flex-shrink:0; min-width:18px; font-weight:800; color:" + c.dark + "; }\n" +
+      "  .lnt-key-a { font-weight:800; color:" + c.dark + "; }\n" +
+      "  .lnt-key-r { color:var(--muted); }\n" +
+      "  .lnt-key-p { font-size:11px; color:var(--muted); }\n" +
+      "  .lnt-key-w { font-size:10px; color:var(--muted); white-space:nowrap; margin-left:auto; padding-left:8px; }\n";
+  }
+  var LNT_CSS_PK = lntCss({ dark: "var(--ju-deep)", mid: "var(--ju-mid)", pale: "var(--ju-pale)", light: "var(--ju-light)", num: "var(--ju-deep)" });
+  var LNT_CSS_LU = lntCss({ dark: "var(--lu-dark)", mid: "var(--lu-mid)", pale: "var(--lu-pale)", light: "var(--lu-light)", num: "var(--lu-pink)" });
+  function lntKeyRow(n, ans, rule, pic, where) {
+    return '<div class="lnt-key"><span class="lnt-key-n">' + n + '.</span><div><span class="lnt-key-a">' + ans + '</span> <span class="lnt-key-r">— ' + rule + '</span>' +
+      (pic ? '<div class="lnt-key-p">the picture: ' + pic + '</div>' : '') + '</div><span class="lnt-key-w">' + where + '</span></div>';
+  }
+  // ── the Pre-K / K notebook (generatePreK — every look) ──  P = the look's page words (eyebrow, footer, emoji).
+  function lntPkPage(weekNum, weekDates, w, P) {
+    var grown = lntAnyGrown(w);
+    return '<div class="page-label">Number Thinking — Week ' + weekNum + '</div>\n<div class="page">\n' +
+      juHeader(P.eyebrow, "Number Thinking", grown ? "with a grown-up · look · think · circle" : "look · think · circle", "Week " + weekNum, weekDates, grown ? "🤝 With a grown-up" : "🔢 I can think!") +
+      '\n<div class="body lnt-body">\n' + lntQs(w) + '</div>\n' + juFooter(P.footer, weekDates, P.emoji) + '\n</div>';
+  }
+  // The grown-up's page, last in the Grown-Up Guide.
+  function lntPkAnswers(weekNum, weekDates, w, T) {
+    var grown = lntAnyGrown(w);
+    return '<div class="page-label">Grown-Up Guide — Number Thinking answers</div>\n<div class="page">\n' +
+      juHeader(T.eyebrow, "Number Thinking — answers", "for the grown-up · not for the child", "Week " + weekNum, weekDates, "💛 For Grown-Ups") +
+      '\n<div class="body lnt-body">\n' +
+      '  <div class="p-banner"><strong>' + (grown ? 'Sit together.' : 'Done alone.') + '</strong> ' +
+      (grown ? 'Read each question aloud (its “Read aloud” line is on the page) and let your child point to or circle an answer — the picture or its letter. '
+        : 'Your child reads each question and circles one letter — help with a word only if asked. ') +
+      'If an answer is off, look at the picture again together and let your child find it, rather than giving it.</div>\n' +
+      '  <div class="p-sec">\n    <div class="p-sec-h">The answers · ' + lntSpan(w) + '</div>\n    <div class="p-sec-b">\n' + lntKeyRows(w, lntKeyRow) + '\n    </div>\n  </div>\n' +
+      '  <div style="flex-shrink:0;font-size:10.5px;color:var(--muted);line-height:1.45;">' + lntTail(w) + '</div>\n' +
+      '</div>\n' + juFooter(T.P.footer, weekDates, T.emoji) + '\n</div>';
+  }
+  // ── the 1st-grade notebook (generateLucy) ──
+  function lntLuPage(wn, weekDates, w) {
+    var grown = lntAnyGrown(w);
+    return '<div class="page-label">Number Thinking — Week ' + wn + '</div>\n<div class="page">\n' +
+      luStdHeader("Number Thinking · " + ladEsc(w.items[0].label), "Number thinking", grown ? "with a grown-up · look · think · circle" : "look · think · circle", "Week " + wn, weekDates, grown ? "🤝 With a grown-up" : "🔢 I can think!") +
+      '\n<div class="body lnt-body">\n' + lntQs(w) + '</div>\n' + luFooter("Number Thinking", "Week " + wn + " · " + lntSpan(w)) + '\n</div>';
+  }
+  function lntLuCompanion(wn, weekDates, w) {
+    return '<div class="page-label">Teaching Companion — Number Thinking · answers</div>\n<div class="page">\n' +
+      '<div class="header companion-header">\n  <div>\n    <div class="header-eyebrow">Teaching Companion · Number Thinking</div>\n' +
+      '    <div class="header-name">Number Thinking <span class="parent-badge">answers · not for the child</span></div>\n' +
+      '    <div class="header-sub">the right letter · the rule behind it</div>\n  </div>\n' +
+      '  <div class="header-right">\n    <div class="header-week">Week ' + wn + '</div>\n    <div class="header-date">' + weekDates + '</div>\n  </div>\n</div>\n<div class="accent-bar"></div>\n' +
+      '<div class="body lnt-body">\n' +
+      '  <div class="teach-banner" style="flex-shrink:0;"><strong style="font-size:9px;letter-spacing:0.06em;text-transform:uppercase;">How to use this page —</strong> ' +
+      (lntAnyGrown(w) ? 'Read each question aloud (its “Read aloud” line is on the page) and let your child circle an answer. '
+        : 'Your child reads each question alone and circles one letter — help with a word only if asked. ') +
+      'Check it together afterward. If an answer is off, say the rule out loud together and let your child find the answer again, rather than giving it.</div>\n' +
+      '  <div class="key-section" style="flex-shrink:0;">\n    <div class="key-head">Number thinking · ' + lntSpan(w) + '</div>\n    <div class="key-body">' + lntKeyRows(w, lntKeyRow) + '</div>\n  </div>\n' +
+      '  <div style="flex-shrink:0;font-size:10px;color:var(--muted);line-height:1.45;">' + lntTail(w) + '</div>\n' +
+      '</div>\n' + luFooter("Teaching Companion · Not for the child", "Week " + wn + " · " + weekDates) + '\n</div>';
+  }
+  // For the app's Ladders card (HoweNotebooks.ladderPages): does this kid's notebook print number questions? A Pre-K look (its own
+  // or one set for the kid) builds a Pre-K / K notebook; a built-in notebook prints them when it is the 1st-grade one.
+  function lntPrints(kid, opt) {
+    if (pkSpec(kid, opt || {})) return true;
+    var g = GENERATORS[kid];
+    return !!(g && g.build === generateLucy);
+  }
+  // NBLADNUM_END
 
   /* ============================================================================
    *  LINCOLN  (5th grade — snakes 🐍)
@@ -5535,6 +5724,7 @@ ${extraStrip || ""}
     if (qbPlan && qbPlan.before) qbPlan = null;
     var cvPlan = lnConvBankPlan(ctx.convBank, wn, schoolDays);      // …and her conventions bank replaces the built-in fix-the-sentence items
     if (cvPlan && cvPlan.before) cvPlan = null;
+    var lr3 = lr3Week(ctx, schoolDays, { k: "ln", wn: wn, dates: datesMap, emoji: cfg.theme_emoji || "🐍", pad: function () { return enPageNotes(T); } });   // NBLADREAD3: this week's Read and answer pages, or null
     schoolDays.forEach(function (day, i) {
       var dateStr = datesMap[day];
       var daySubjects = lnDaySubjects(tasks, student, day);
@@ -5561,6 +5751,7 @@ ${extraStrip || ""}
       var dgd = dgPlan && dgPlan.byDay[schoolDays[i]];
       if (dgd) parts.push(nbTag(ctx, dgStudentPage("lincoln", dgd, wn, dgTitle), schoolDays[i], dgTitle));   // the day's Daily Grams page rides right behind the daily page
       if (i < dailyPages.length - 1) { if (bbOn) parts.push(nbTag(ctx, lnBrainBreakPage(i + 1, wn), schoolDays[i], "Brain break")); } else parts.push(nbTag(ctx, lnCreativePage(wn), schoolDays[i], "Creative page"));
+      lr3Push(ctx, parts, lr3, schoolDays[i]);   // NBLADREAD3: this day's Read and answer page(s), right behind the day's own pages
     });
     parts.push(nbTag(ctx, eowH, "last", "End of week"));
     var student_html = lnFullHtml(cfg.student_short + "'s Notebook — Week " + weekNum, parts.join("\n\n\n"));
@@ -5576,6 +5767,7 @@ ${extraStrip || ""}
     if (cqPlan) out.cogatBankCursor = cqPlan.cursor;
     if (qbPlan) out.quantBankCursor = qbPlan.cursor;
     if (cvPlan) out.convBankCursor = cvPlan.cursor;
+    if (lr3) lr3Finish(out, lr3, weekDates);   // NBLADREAD3: its CSS, the parent page with the answers, the place to save
     return out;
   }
 
@@ -5881,9 +6073,10 @@ ${ellFooter("Howe Academy · Mission Briefing · Week " + weekNum)}
     var dayCap = cap(dayName);
     var skillCheckHtml = ellSkillCheck(dayTasks);
     function choiceRows(choices) { return (choices || []).map(function (ch) { return '<div class="choice-row"><div class="choice-letter plain">' + ch[0] + '</div><span>' + ch[1] + '</span></div>\n'; }).join(""); }
-    var pChoices = choiceRows(passage.q1_choices), lChoices = choiceRows(lang.choices), mChoices = choiceRows(mathQ.choices);
+    // NBLADREAD3 (retire): passage = null once the reading ladder is on → no old passage box (a day's CogAT bank box still prints)
+    var pChoices = choiceRows(passage && passage.q1_choices), lChoices = choiceRows(lang.choices), mChoices = choiceRows(mathQ.choices);
     bank = bank || {};   // ELLISBANKS: a bank box replaces its built-in box; a missing bank leaves the built-in markup exactly as it was
-    var secRead = bank.cogat ? ellCogatBox(bank.cogat) : `    <div class="sec-label sec-red">🎯 Iowa Reading — Test Prep</div>
+    var secRead = bank.cogat ? ellCogatBox(bank.cogat) : !passage ? "" : `    <div class="sec-label sec-red">🎯 Iowa Reading — Test Prep</div>
     <div class="card card-read">
       <div class="passage-block">
         <div class="passage-title">${passage.title}</div>
@@ -6099,14 +6292,15 @@ ${ellFooter("Howe Academy · Creative Launch · Week " + weekNum, "Mission Compl
     var constraintHtml = "";
     if (weekNotes && weekNotes.length) constraintHtml = '<div class="constraint-banner"><strong>THIS WEEK:</strong>  ' + weekNotes.join("  ·  ") + '</div>';
     var dayCards = (dayAssignments || []).map(function (da) {
-      var passage = da.passage, lang = da.lang, mathQ = da.math_q, word = da.word, b = da.bank || {};
+      // NBLADREAD3 (retire): no passage (the reading ladder is on) → no Iowa Reading key row
+      var passage = da.passage || {}, lang = da.lang, mathQ = da.math_q, word = da.word, b = da.bank || {};
       var q1l = passage.q1_ans || "?", q1t = ellGetAnsText(passage.q1_choices || [], q1l);
       var lal = lang.answer || "?", lat = ellGetAnsText(lang.choices || [], lal);
       var mal = mathQ.answer || "?", mat = ellGetAnsText(mathQ.choices || [], mal);
       var wordDef = word.def || "", wordShort = wordDef.slice(0, 55).replace(/\s+$/, "") + (wordDef.length > 55 ? "…" : "");
       // ELLISBANKS: a bank box's key row shows the answer letter, the answer and (for conventions / numbers) the rule
       var row1 = b.cogat ? '<div class="key-row"><div class="key-label">CogAT</div><div><span class="key-ans">(' + b.cogat.ans + ')</span><span class="key-sub"> ' + ellAnsText(b.cogat).slice(0, 40) + ' — ' + (ELL_CQ[b.cogat.type] || ELL_CQ.A).label + '</span></div></div>'
-        : '<div class="key-row"><div class="key-label">Iowa R</div><div><span class="key-ans">(' + q1l + ')</span><span class="key-sub"> ' + q1t.slice(0, 55) + ' — ' + (passage.q1_skill || "") + '</span></div></div>';
+        : !da.passage ? '' : '<div class="key-row"><div class="key-label">Iowa R</div><div><span class="key-ans">(' + q1l + ')</span><span class="key-sub"> ' + q1t.slice(0, 55) + ' — ' + (passage.q1_skill || "") + '</span></div></div>';
       var row2 = b.conv ? '<div class="key-row"><div class="key-label">' + (b.conv.ctype === "CP" ? "Capitals" : (b.conv.ctype === "SP" ? "Spelling" : "Usage")) + '</div><div><span class="key-ans">(' + b.conv.ans + ')</span><span class="key-sub"> ' + ellAnsText(b.conv).slice(0, 40) + (b.conv.rule ? ' — ' + b.conv.rule.slice(0, 70) : '') + '</span></div></div>'
         : '<div class="key-row"><div class="key-label">Language</div><div><span class="key-ans">(' + lal + ')</span><span class="key-sub"> ' + lat.slice(0, 60) + '</span></div></div>';
       var row3 = b.quant ? '<div class="key-row"><div class="key-label">Number</div><div><span class="key-ans">(' + b.quant.ans + ') ' + ellAnsText(b.quant) + '</span><span class="key-sub">' + (b.quant.rule ? ' — ' + b.quant.rule.slice(0, 80) : '') + '</span></div></div>'
@@ -6137,7 +6331,7 @@ ${ellHeader("TEACHING COMPANION · PARENT REFERENCE", "ANSWER", "KEYS", "WEEK", 
 
     ${constraintHtml}
 
-    <div class="sec-label sec-red">📋 Daily Answer Keys — ${(dayAssignments || []).some(function (da) { return da.bank; }) ? "Word · CogAT · Conventions · Number Reasoning" : "Word · Iowa Reading · Language · Math"}</div>
+    <div class="sec-label sec-red">📋 Daily Answer Keys — ${(dayAssignments || []).some(function (da) { return da.bank; }) ? "Word · CogAT · Conventions · Number Reasoning" : (dayAssignments || []).some(function (da) { return da.passage; }) ? "Word · Iowa Reading · Language · Math" : "Word · Language · Math"}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
       ${dayCards}
     </div>
@@ -6157,7 +6351,8 @@ ${ellFooter("Howe Academy · Parent Guide · Answer Keys · Week " + weekNum)}
 
   function ellParentPage2(weekNum, weekDates, dayAssignments) {
     var fullKeys = (dayAssignments || []).map(function (da) {
-      var passage = da.passage, lang = da.lang, mathQ = da.math_q, b = da.bank || {};
+      // NBLADREAD3 (retire): no passage → no passage key block
+      var passage = da.passage || {}, lang = da.lang, mathQ = da.math_q, b = da.bank || {};
       var q1Rows = ellChoiceRows(passage.q1_choices || [], passage.q1_ans || "");
       var laRows = ellChoiceRows(lang.choices || [], lang.answer || "");
       var maRows = ellChoiceRows(mathQ.choices || [], mathQ.answer || "");
@@ -6171,7 +6366,7 @@ ${ellFooter("Howe Academy · Parent Guide · Answer Keys · Week " + weekNum)}
       var k1 = b.cogat
         ? '<div style="font-size:7.5px;font-weight:700;color:var(--tf-dark);margin:2px 0 1px;">🧠 CogAT · ' + (ELL_CQ[b.cogat.type] || ELL_CQ.A).label + '</div>' +
           '<div style="font-size:7.5px;color:#444;margin-bottom:1px;">' + b.cogat.text + '</div>' + bankRows(b.cogat)
-        : '<div style="font-size:7.5px;font-weight:700;color:var(--tf-dark);margin:2px 0 1px;">📡 ' + ellStripTags(passage.title || "") + '</div>' +
+        : !da.passage ? '' : '<div style="font-size:7.5px;font-weight:700;color:var(--tf-dark);margin:2px 0 1px;">📡 ' + ellStripTags(passage.title || "") + '</div>' +
           '<div style="font-size:7.5px;color:#444;margin-bottom:1px;">' + (passage.q1_text || "") + '</div>' + q1Rows;
       var k2 = b.conv
         ? '<div style="font-size:7.5px;font-weight:700;color:#8b0000;margin:3px 0 1px;">' + (b.conv.ctype === "CP" ? "🔠 Capitals" : (b.conv.ctype === "SP" ? "✏️ Spelling" : "✏️ Usage")) + '</div>' +
@@ -6279,10 +6474,12 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
     var dayAssignments = [];
     var dgPlan = dgWeekPlan(ctx.dailyGrams, wn, orderedDays, datesMap), dgTitle = (ctx.dailyGrams && ctx.dailyGrams.title) || "Daily Grams";
     var bankPlans = ellBankPlans(ctx, wn, orderedDays);   // ELLISBANKS: Mom's banks for this week (each may be null / before its start)
+    var lr3 = lr3Week(ctx, orderedDays, { k: "tf", wn: wn, dates: datesMap, pad: function () { return enPageNotes(T); } });   // NBLADREAD3: this week's Read and answer pages, or null
     orderedDays.forEach(function (day, i) {
       var dateStr = datesMap[day] || "";
       var dayTasks = nbByTime(ellisTasks.filter(function (t) { return t.day === day; }));
       var passage = ellPick(ELLIS_DATA.banks.passages, wn, i);
+      if (lr3Retire(ctx)) passage = null;   // NBLADREAD3: the old built-in passages retire once the reading ladder is switched on
       var lang = ellPick(ELLIS_DATA.banks.lang, wn, i);
       var mathQ = ellPick(ELLIS_DATA.banks.math, wn, i);
       var word = ellPick(ELLIS_DATA.banks.words, wn, i);
@@ -6294,6 +6491,7 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
       var dgd = dgPlan && dgPlan.byDay[day];
       if (dgd) pages.push(nbTag(ctx, dgStudentPage("ellis", dgd, wn, dgTitle), day, dgTitle));   // the day's Daily Grams page rides right behind the daily page
       pages.push(i < orderedDays.length - 1 ? nbTag(ctx, ellBrainBreakPage(i + 1, wn), day, "Brain break") : nbTag(ctx, ellCreativePage(wn, weekDates), day, "Creative page"));
+      lr3Push(ctx, pages, lr3, day);   // NBLADREAD3: this day's Read and answer page(s), right behind the day's own pages
     });
 
     var cp1 = ellParentPage1(wn, weekDates, dayAssignments, ctx.weekNotes || []);
@@ -6306,6 +6504,7 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
     if (bankPlans.cogat && bankPlans.cogat.cursor) out.cogatBankCursor = bankPlans.cogat.cursor;
     if (bankPlans.conv && bankPlans.conv.cursor) out.convBankCursor = bankPlans.conv.cursor;
     if (bankPlans.quant && bankPlans.quant.cursor) out.quantBankCursor = bankPlans.quant.cursor;
+    if (lr3) lr3Finish(out, lr3, weekDates);   // NBLADREAD3: its CSS, the parent page with the answers, the place to save
     return out;
   }
 
@@ -7738,9 +7937,174 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
   function nbLadReadPages(kid, opt) {
     opt = opt || {};
     var g = pkSpec(kid, opt) ? null : GENERATORS[kid];
-    return { reading: !!(g && g.build === generateLucy), number: false };
+    if (lr3Prints(g)) return { reading: true, number: false };   // NBLADREAD3: the 4th- and 6th-grade notebooks print it too
+    return { reading: !!(g && g.build === generateLucy), number: lntPrints(kid, opt) };   // NBLADNUM: number questions print in the Pre-K / K and 1st-grade notebooks
   }
   // NBLADREAD_END
+
+  // NBLADREAD3_START — 📖 "Read and answer" in the 4th- and 6th-grade notebooks + write-first days: slice 3 of the notebook
+  // ladders (notebooks study, her words 2026-11-23/24: "Build it"; reading "twice a week sounds great"; from 3rd grade up
+  // "Write first some days"; "A full page" for the 6th–8th grade passages; the 4th-grade notebook's eight old built-in passages
+  // "Retire them" when the ladder goes into that notebook). The slice-2 page (lrText, lrChoices, lrTier, LR_SIZES, LR_CSS) is
+  // the one builder: here it gets each notebook's own header, footer, colours and fonts (LR3_LOOKS — no new theme).
+  //  • The days and the passages are slice 2's (lrWeek: the reading ladder's day ticks, default the 2nd and 4th school day).
+  //  • Where: each reading page goes right behind that day's own pages (its daily page, its Daily Grams page, its brain break or
+  //    creative page). Those two notebooks pair no page with the one after it (the Daily Grams page already moves every later
+  //    page by one), so nothing there needs a pad.
+  //  • Write-first (Mom's choice on the Ladders card, saved as the reading ladder's "wf": "one" = the week's 2nd reading day,
+  //    "both" = both, nothing = never; levels g3 and up only — never g1/g2): each question carrying the passage file's
+  //    writeFirst flag prints with three writing lines and NO choices; their choices print on the NEXT page — the back of that sheet —
+  //    under "Now turn back and check", same order and numbering; a question without the flag keeps its choices on the front.
+  //    The front must be a sheet front for its back to be its back, so when it would land on a back one Notes page goes first
+  //    (that is the only pad). Each later page then sits 2 or 3 pages further on; nothing after it in these notebooks is paired.
+  //  • The answers and why lines go only on a parent page of that notebook's own (after its other parent pages).
+  //  • Retire: once the reading ladder is ON for the 4th-grade notebook, its old built-in passage box ("Iowa Reading — Test
+  //    Prep") and its two answer-key rows no longer print — the day's CogAT bank box stands there as it does every week the bank
+  //    covers. Off, everything prints as before (a week before the CogAT bank's start week still shows an old passage).
+  // Off, not loaded, or nothing left on the ladder → nothing here runs and every page is byte for byte what it was.
+  var LR3_WF_HEAD = "Now turn back and check: circle the choice closest to what you wrote";
+  // A notebook's look: the slice-2 colours (Lucy's variable names in LR_CSS) mapped onto that notebook's own; its title font;
+  // the colour of a writing line; and the page around the body.
+  var LR3_LOOKS = {
+    tf: { map: { "--lu-dark": "var(--tf-dark)", "--lu-gpale": "#fff3c0", "--lu-pale": "#ddeeff", "--lu-light": "var(--tf-silver-lt)", "--lu-mid": "var(--acc-read)",
+      "--lu-pink": "var(--tf-red)", "--ink": "#1a1a2e", "--muted": "#5b6474" }, font: "'Nunito',sans-serif", line: "#8ea5c4",
+      page: function (o) {
+        return '<!-- READ AND ANSWER' + (o.mode === "back" ? " (BACK)" : "") + ': ' + o.day.toUpperCase() + ' -->\n<div class="page">\n' +
+          ellHeader("Read and Answer · " + o.lab + " reading", "<span class='hl'>" + o.day.toUpperCase() + "</span> —", o.mode === "back" ? "Check" : "Read and answer", "Week", ellPad2(o.wn), lrEsc(o.date)) +
+          '\n<div class="page-body ' + o.cls + '">\n' + o.body + '</div>\n' + ellFooter("Read and Answer · " + cap(o.day), o.foot) + '\n</div>';
+      },
+      parent: function (o) {
+        return '<!-- PARENT PAGE: READ AND ANSWER -->\n<div class="page">\n' + ellHeader("TEACHING COMPANION · PARENT REFERENCE", "READ &amp;", "ANSWER", "WEEK", ellPad2(o.wn), "Parent Only") +
+          '\n  <div class="companion-accent"></div>\n<div class="page-body lr-kbody">\n' + o.body + '</div>\n' + ellFooter("Parent Guide · Read and Answer · Week " + o.wn, o.dates) + '\n</div>';
+      } },
+    ln: { map: { "--lu-dark": "var(--green-dark)", "--lu-gpale": "var(--gold-pale)", "--lu-pale": "var(--green-pale)", "--lu-light": "var(--green-light)", "--lu-mid": "var(--green-mid)",
+      "--lu-pink": "var(--green-mid)", "--ink": "var(--ink)", "--muted": "var(--muted)" }, font: "'Fraunces',serif", line: "#9ca3af",
+      page: function (o) {
+        return '<div class="page-label">Read and Answer — ' + cap(o.day) + (o.mode === "back" ? " (back)" : "") + '</div>\n<div class="page">\n\n  <div class="header">\n    <div>\n' +
+          '      <div class="header-eyebrow">Read and Answer · ' + o.lab + ' reading</div>\n      <div class="header-name">' + o.title + '</div>\n' +
+          '      <div class="header-sub">' + (o.mode === "back" ? "check · circle" : "read · think · answer") + '</div>\n    </div>\n    <div class="header-right">\n' +
+          '      <div class="header-week">' + cap(o.day) + '</div>\n      <div class="header-date">' + lrEsc(o.date) + '</div>\n    </div>\n  </div>\n  <div class="accent-bar"></div>\n\n' +
+          '  <div class="body ' + o.cls + '">\n' + o.body + '  </div>\n\n  <div class="footer">\n    <div class="footer-txt">Read and Answer · ' + cap(o.day) + '</div>\n' +
+          '    <div class="footer-snake">' + (o.emoji || "") + '</div>\n    <div class="footer-txt">' + o.foot + '</div>\n  </div>\n\n</div>';
+      },
+      parent: function (o) {
+        return '<div class="page-label">Teaching Companion — Read and Answer · answers</div>\n<div class="page">\n\n  <div class="header" style="background:#1e2d40;">\n    <div>\n' +
+          '      <div class="header-eyebrow">Teaching Companion · Parent Reference</div>\n      <div style="display:flex;align-items:center;gap:0;">\n' +
+          '        <div class="header-name" style="display:inline;">Read and Answer</div>\n        <span class="parent-badge">Parent Only</span>\n      </div>\n' +
+          '      <div class="header-sub">the right letter · the words that prove it</div>\n    </div>\n    <div class="header-right">\n      <div class="header-week">Week ' + o.wn + '</div>\n' +
+          '      <div class="header-date">' + o.dates + '</div>\n    </div>\n  </div>\n  <div class="companion-accent"></div>\n\n  <div class="body lr-kbody">\n' + o.body + '  </div>\n\n' +
+          '  <div class="footer" style="background:#1e2d40;">\n    <div class="footer-txt">Teaching Companion · Parent Reference</div>\n    <div class="footer-snake">' + (o.emoji || "") + '</div>\n' +
+          '    <div class="footer-txt">Week ' + o.wn + ' · ' + o.dates + '</div>\n  </div>\n\n</div>';
+      } },
+    lu: { line: "#c4b5fd",
+      page: function (o) {
+        return '<div class="page-label">Read and Answer — ' + cap(o.day) + (o.mode === "back" ? " (back)" : "") + '</div>\n<div class="page">\n' +
+          luStdHeader("Read and Answer · " + o.lab + " reading", o.title, o.mode === "back" ? "check · circle" : "read it · think · write", cap(o.day), lrEsc(o.date), "📖 I can read!") +
+          '\n<div class="body ' + o.cls + '">\n' + o.body + '</div>\n' + luFooter("Read and Answer", o.foot) + '\n</div>';
+      },
+      pad: function () {
+        return '<div class="page-label">Notes</div>\n<div class="page">\n' + luStdHeader("Notes", "My notes", "draw · write · think", "", "", "✏️ Notes") +
+          '\n<div class="body"><div class="lr-pad"></div></div>\n' + luFooter("Notes", "") + '\n</div>';
+      } }
+  };
+  // Write-first is for levels g3 and up (a 1st/2nd-grade page always shows its choices).
+  function lr3WfLevel(lv) { return !!lv && !/^g[12]$/.test(String(lv)); }
+  function lr3Flagged(q) { return !!(q && q.writeFirst === true); }
+  // Marks this week's write-first pages (pg.wf) on slice 2's week: "one" = the week's 2nd reading day, "both" = both.
+  function lr3Flags(ctx, w, look) {
+    if (!w) return w;
+    var wf = String((ctx && ctx.ladders && ctx.ladders.reading && ctx.ladders.reading.wf) || "");
+    w.pages.forEach(function (pg, k) {
+      pg.wf = (wf === "both" || (wf === "one" && k === 1)) && lr3WfLevel(pg.x.lv) && (Array.isArray(pg.x.item.q) ? pg.x.item.q : []).some(lr3Flagged);
+    });
+    w.look = look;
+    return w;
+  }
+  // This week's reading pages for an older notebook (slice 2's lrWeek), or null → nothing new prints.
+  // look = { k: "tf" | "ln", wn, dates, emoji, pad }.
+  function lr3Week(ctx, days, look) { return lr3Flags(ctx, lrWeek(ctx, days), look); }
+  // The body of a reading page: "plain" (slice 2's page exactly), "front" (a write-first day) or "back" (its choices).
+  var LR3_WL = { 1: 34, 2: 32, 3: 30, 4: 28, 5: 27, 6: 26, 7: 26 };
+  function lr3Stem(i, q) { return '<div class="lr-stem"><span class="lr-n">' + (i + 1) + '</span><span>' + lrEsc(q && q.text) + '</span></div>'; }
+  function lr3Body(p, t, mode) {
+    var qs = Array.isArray(p.q) ? p.q : [];
+    if (mode === "back") return '  <div class="lr-how lr-back">↩ ' + LR3_WF_HEAD + '.</div>\n' +
+      '  <div class="lr-qs">' + qs.map(function (q, i) { return lr3Flagged(q) ? '<div class="lr-q">' + lr3Stem(i, q) + lrChoices(q.c, t) + '</div>' : ""; }).filter(Boolean).join("\n") + '</div>\n';
+    var wf = mode === "front", all = wf && qs.every(lr3Flagged), tx = lrText(p, t);
+    var how = !wf ? (t <= 2 ? "Read it. Then circle the best answer." : "Read the passage. Then read each question and circle the letter of the best answer.")
+      : all ? "Read the passage. Write your own answer on the lines under each question. Then turn the page over."
+      : "Read the passage. Where a question has lines, write your own answer on them. Circle the letter of the best answer for the others. Then turn the page over.";
+    return '  <div class="lr-how">📖 ' + how + '</div>\n' +
+      '  <div class="lr-psg"><div class="lr-title">' + lrEsc(p.title) + '</div><div class="lr-text' + (tx.two ? " lr-two" : "") + '">' + tx.html + '</div></div>\n' +
+      '  <div class="lr-qs">' + qs.map(function (q, i) {
+        return '<div class="lr-q">' + lr3Stem(i, q) + ((wf && lr3Flagged(q)) ? '<div class="lr-lines"><div class="lr-wl"></div><div class="lr-wl"></div><div class="lr-wl"></div></div>' : lrChoices(q && q.c, t)) + '</div>';
+      }).join("\n") + '</div>\n';
+  }
+  function lr3Page(look, day, x, mode) {
+    var p = x.item || {}, t = lrTier(x.lv || p.lv || "", p), lab = lrEsc(x.label || "");
+    return LR3_LOOKS[look.k].page({ mode: mode, day: day, date: (look.dates || {})[day] || "", wn: look.wn, lab: lab, emoji: look.emoji,
+      title: cap(day) + (mode === "back" ? " — check your answers" : " — Read and answer"), cls: "lr-body lr-t" + t + (mode === "plain" ? "" : " lr-wf"),
+      body: lr3Body(p, t, mode), foot: "Week " + look.wn + " · " + lab + " · passage " + x.num + " of " + x.of });
+  }
+  function lr3Pages(html) { return (String(html).match(/<div class="page"[ >]/g) || []).length; }
+  // Push this day's reading page(s) onto the notebook's page list. A write-first page and its back share a sheet: when the
+  // front would land on a sheet back (an odd page, counting from 0), a Notes page goes first.
+  function lr3Push(ctx, list, w, day) {
+    if (!w) return;
+    var look = w.look;
+    w.pages.forEach(function (pg) {
+      if (pg.day !== day) return;
+      if (!pg.wf) { list.push(nbTag(ctx, lr3Page(look, day, pg.x, "plain"), day, "Read and answer")); return; }
+      if (lr3Pages(list.join("\n")) % 2 === 1) list.push(nbTag(ctx, (look.pad || LR3_LOOKS[look.k].pad)(), day, "Notes"));
+      list.push(nbTag(ctx, lr3Page(look, day, pg.x, "front"), day, "Read and answer"));
+      list.push(nbTag(ctx, lr3Page(look, day, pg.x, "back"), day, "Read and answer — check"));
+    });
+  }
+  // The CSS: the older notebooks get slice 2's rules in their own colours + the write-first rules; the 1st-grade one already
+  // has slice 2's (LR_CSS) and gets only the write-first rules.
+  function lr3Css(k) {
+    var L = LR3_LOOKS[k], base = k === "lu" ? "" : LR_CSS.replace(/var\((--[\w-]+)\)/g, function (m, v) { return L.map[v] || m; }).replace(/'Fredoka One',cursive/g, L.font) +
+      "  .lr-body { gap:4px; }\n  .lr-title { font-weight:800; }\n  .lr-kbody { gap:8px; padding-top:10px; }\n  .lr-khead { font-weight:800; font-size:11px; margin:2px 0 3px; }\n  .lr-kwf { font-size:8.5px; font-weight:700; color:var(--lu-mid); }\n".replace("var(--lu-mid)", L.map["--lu-mid"]);
+    return base + "  /* NBLADREAD3 — write-first */\n  .lr-lines { display:flex; flex-direction:column; }\n  .lr-wl { border-bottom:1.5px solid " + L.line + "; }\n" +
+      "  .lr-back { font-size:15px !important; padding:9px 16px !important; }\n  .lr-pad { flex:1; border-radius:9px; background:repeating-linear-gradient(transparent,transparent 33px," + L.line + " 33px," + L.line + " 34.5px); }\n" +
+      Object.keys(LR3_WL).map(function (t) { return "  .lr-t" + t + " .lr-lines { margin-left:" + LR_SIZES[t][9] + "px; }\n  .lr-t" + t + " .lr-wl { height:" + LR3_WL[t] + "px; }\n"; }).join("");
+  }
+  // Add a <style> to a whole notebook document (one </head> in each notebook's shell).
+  function lr3AddCss(html, css) { var k = String(html).indexOf("</head>"); return k < 0 ? html : html.slice(0, k) + "<style>\n" + css + "</style>\n" + html.slice(k); }
+  // The parent page: each reading page's day, title, level and place; each question's right letter + its words and the why line;
+  // on a write-first day, which questions were written first.
+  function lr3Parent(look, weekDates, w) {
+    var secs = w.pages.map(function (pg) {
+      var p = pg.x.item || {};
+      var rows = (Array.isArray(p.q) ? p.q : []).map(function (q, i) {
+        var k = LR_LETTERS.indexOf(String(q.ans || "")), word = (k >= 0 && Array.isArray(q.c) && q.c[k] != null) ? q.c[k] : "";
+        return '<div class="key-row"><div class="key-label" style="min-width:16px;">' + (i + 1) + '.</div><div><span class="key-ans">' + lrEsc(q.ans) + ' — ' + lrEsc(word) + '</span>' +
+          ((pg.wf && lr3Flagged(q)) ? ' <span class="lr-kwf">✍ written first</span>' : '') + '<div class="lr-why">' + lrEsc(q.why) + '</div></div></div>';
+      }).join("\n");
+      return '  <div style="flex-shrink:0;">\n    <div class="lr-khead">' + cap(pg.day) + ' — “' + lrEsc(p.title) + '” · ' + lrEsc(pg.x.label) + ' · passage ' + pg.x.num + ' of ' + pg.x.of +
+        (pg.wf ? ' · write-first day' : '') + '</div>\n    <div>' + rows + '</div>\n  </div>';
+    }).join("\n");
+    var any = w.pages.some(function (pg) { return pg.wf; });
+    var how = '  <div class="lr-how" style="font-size:10.5px;font-weight:600;flex-shrink:0;line-height:1.45;"><b>How to use this page —</b> Your child reads the passage and the questions alone and answers each one; check it together afterward. ' +
+      (any ? 'On a write-first day, a question with lines was answered in your child’s own words before the choices (on the back of the sheet): an answer that says what the “why” line points to is right, even in other words. ' : '') +
+      'If an answer is off, read the words in the “why” line together and let your child find the answer again, rather than giving it.</div>\n';
+    return LR3_LOOKS[look.k].parent({ wn: look.wn, dates: lrEsc(weekDates), emoji: look.emoji,
+      body: how + secs + '\n  <div style="flex-shrink:0;font-size:9.5px;color:' + LR3_LOOKS[look.k].map["--muted"] + ';line-height:1.45;">From the reading ladder on the Notebook tab (the Ladders card): the level, the days and write-first are set there. Next week picks up right after these passages.</div>\n' });
+  }
+  // After an older notebook is built: its CSS, its parent page (after its other parent pages), the place to save.
+  function lr3Finish(out, w, weekDates) {
+    var css = lr3Css(w.look.k), par = lr3Parent(w.look, weekDates, w), b = out.parent.lastIndexOf("</body>");
+    out.student = lr3AddCss(out.student, css);
+    out.parent = lr3AddCss(out.parent.slice(0, b) + "\n\n" + par + "\n" + out.parent.slice(b), css);
+    if (w.cursor) out.readingCursor = w.cursor;
+    return out;
+  }
+  // Retire the 4th-grade notebook's old built-in passages: only once its reading ladder is switched on.
+  function lr3Retire(ctx) { return !!(ctx && ctx.ladders && ctx.ladders.reading && ctx.ladders.reading.on === true); }
+  function lr3AnyWf(w) { return !!(w && w.pages.some(function (pg) { return pg.wf; })); }
+  // Which built notebooks print the reading ladder besides the 1st-grade one (nbLadReadPages asks).
+  function lr3Prints(g) { return !!(g && (g.build === generateEllis || g.build === generateLincoln)); }
+  // NBLADREAD3_END
 
   function generateLucy(ctx) {
     ctx = ctx || {};
@@ -7761,6 +8125,8 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     var math = luMathWeek(ctx, wn, days.length);   // LU_MATH: the week's facts from the Math Facts cards, or null → the old subtraction block
     if (math) focus = [focus[0], math.focus];   // LU_MATH: the focus card describes the deck
     var lread = lrWeek(ctx, days);   // NBLADREAD: this week's Read and answer pages from the reading ladder, or null → nothing new prints
+    if (lread) lr3Flags(ctx, lread, { k: "lu", wn: wn, dates: dates });   // NBLADREAD3: write-first days (levels g3 and up)
+    var lnum = lntWeek(ctx);   // NBLADNUM: this week's Number thinking questions from the number ladder, or null → nothing new prints
     var prevStats = ctx.prevStats || {};   // dashes until the shared history wiring
     var category = LUCY_DATA.category_order[((wn - 1) % LUCY_DATA.category_order.length + LUCY_DATA.category_order.length) % LUCY_DATA.category_order.length];
     var curMonth = days.length ? monthFromDate(dates[days[0]] || "") : "";
@@ -7788,7 +8154,9 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     });
     parts.push(nbTag(ctx, luPageEndOfWeek(wn, weekDates, blends, subtraction, days, tasks, math), "last", "End of week"));   // LU_MATH
     luMyWordsPages(ctx, words, wn).forEach(function (p) { parts.push(nbTagXp(ctx, p, "myWords", "My Words")); });   // LU_WORDS: after End of Week, so the day/back pairs don't move
-    if (lread) lread.pages.forEach(function (pg) { parts.push(nbTag(ctx, lrPage(wn, pg.day, dates[pg.day] || "", pg.x), pg.day, "Read and answer")); });   // NBLADREAD: after End of Week + My Words, so every pair stays put
+    // NBLADREAD3: a write-first day's page (pg.wf — only NBLADREAD3 sets it) goes through lr3Push: its choices on the back, a Notes pad first if needed
+    if (lread) lread.pages.forEach(function (pg) { if (pg.wf) lr3Push(ctx, parts, { pages: [pg], look: lread.look }, pg.day); else parts.push(nbTag(ctx, lrPage(wn, pg.day, dates[pg.day] || "", pg.x), pg.day, "Read and answer")); });   // NBLADREAD: after End of Week + My Words, so every pair stays put
+    if (lnum) parts.push(nbTag(ctx, lntLuPage(wn, weekDates, lnum), "week", "Number thinking"));   // NBLADNUM: after Read and answer, before the paper dolls
 
     // Paper dolls — doll figure (always) + this week's outfit, each on its OWN sheet with a blank
     // back so Lucy can cut them out without losing anything on the reverse. Goes last in the book.
@@ -7801,13 +8169,17 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
 
     var luCss = (phono ? LU_PHONO_CSS : "") + (words ? LU_WORDS_CSS : "") + (math ? LU_MATH_CSS : "");   // LU_WORDS · LU_MATH
     if (lread) luCss += LR_CSS;   // NBLADREAD
+    if (lr3AnyWf(lread)) luCss += lr3Css("lu");   // NBLADREAD3: the writing lines + the back page
+    if (lnum) luCss += LNT_CSS_LU;   // NBLADNUM
     var student = luShell(parts.join("\n"), "Lucy's Notebook — Week " + wn, luCss);
     var companion = luPageTeachingCompanion(wn, weekDates, days, tasks, blends, subtraction, ctx.teachNotes || "", words, math);   // LU_MATH
     if (lread) companion += "\n" + lrCompanion(wn, weekDates, lread);   // NBLADREAD: the answers + why lines, on a Companion page of their own
+    if (lnum) companion += "\n" + lntLuCompanion(wn, weekDates, lnum);   // NBLADNUM: the answers + rules, on a Companion page of their own
     var parent = luShell(companion, "Lucy's Parent Companion — Week " + wn, luCss);
     var out = { student: student, parent: parent };
     if (words) out.wordCursor = words.cursor;   // LU_WORDS: the app saves it (notebookSettings/<kid>/wordCursor) so next week continues
     if (lread && lread.cursor) out.readingCursor = lread.cursor;   // NBLADREAD: the app saves it (…/ladders/reading/cur) after a print
+    if (lnum && lnum.cursor) out.numberLadderCursor = lnum.cursor;   // NBLADNUM: the app saves it (the number ladder's cur) after a print
     return out;
   }
 

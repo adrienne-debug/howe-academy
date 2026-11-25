@@ -199,8 +199,8 @@ ok(/if\(nbNeedsReadsCap\(sel\) && momHere\(\)\)\{/.test(REV) && /const cap=nbRev
 ok(!/sel==="julian" && momHere\(\)\)\{\n\s*const cap=nbReviewCap\("julian"\)/.test(html) && !/Julian missed in drills/.test(REV), "…no longer Julian only, no kid name in its text");
 ok((html.match(/id="nbrev-card"/g) || []).length === 1 && (html.match(/onclick="nbSetReviewCap\(/g) || []).length === 1, "one stepper in the app (one id, one onclick builder)");
 ok(/esc\(revNm\)/.test(REV) && /const revNm=cap\(sel\);/.test(html), "the stepper's text names the kid from the roster before cap is shadowed by the slot count");
-ok((html.match(/nbNeedsCardHtml\(sel\)/g) || []).length === 1 && /nbtTabHtml\(sel,wkLabel\):""\)\+[^\n]*\n\s*\(\(typeof nbNeedsCardHtml==="function"\)\?nbNeedsCardHtml\(sel\):""\)\+[^\n]*\n\s*formHtml\+/.test(html),
-  "the card sits once, right under the Printed / On the tablet switch, above the kid's other notebook controls");
+ok((html.match(/\?nbNeedsCardHtml\((sel|kid)\)/g) || []).length === 1 && html.indexOf('struggles:((typeof nbNeedsCardHtml==="function")?nbNeedsCardHtml(kid):"")+(p.review||""),') > 0,
+  "the card sits once, in the Customize card's 🔁 Struggles dial, right above the review stepper (NB_CUSTOM)");
 // readsCap follows the notebook, never a kid id
 ok(appCtx({ kid: "julian" }).nbNeedsReadsCap("julian") && appCtx({ kid: "lucy" }).nbNeedsReadsCap("lucy") && appCtx({ kid: "caleb" }).nbNeedsReadsCap("caleb") &&
    appCtx({ kid: "kid9", settings: { kid9: { notebookTheme: "shark" } } }).nbNeedsReadsCap("kid9"), "stepper shows: the dinosaur, construction and shark Pre-K notebooks, Lucy's");
