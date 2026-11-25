@@ -76,6 +76,7 @@ const CHANGES=[
    "    if(typeof fbTasksLoaded!==\"undefined\"&&!fbTasksLoaded) return false;\n    if("+BW+") return false;   // 📅 BWNOWEEK: the sweep rests on last school week — nothing moved, no marker written\n    const marker=(eveningSweeps||{})[_todayDay];\n"],
   ["Schedule day tabs","  if(scheduleBreakToday()){ const _dt=document.getElementById(\"day-tabs\"); if(_dt) _dt.innerHTML=peekBtn+suppBtn; return; }\n","  if(scheduleBreakToday()){ const _dt=document.getElementById(\"day-tabs\"); if(_dt) _dt.innerHTML=peekBtn+suppBtn; return; }\n  if(typeof boardWeekIsThisWeek===\"function\"&&!boardWeekIsThisWeek()){ const _dt=document.getElementById(\"day-tabs\"); if(_dt) _dt.innerHTML=peekBtn+suppBtn; return; }   // 📅 BWNOWEEK: a week the board doesn't hold draws no day picker, as a break does\n"],
   ["Schedule tab","  if(_brk){ el.innerHTML=(_brk.type===\"cleaning\"&&typeof hhCleanCardHTML===\"function\")?hhCleanCardHTML():renderScheduleBreakCard(_brk); return; }   // 🧽 CLEANINGDAY\n","  if(_brk){ el.innerHTML=(_brk.type===\"cleaning\"&&typeof hhCleanCardHTML===\"function\")?hhCleanCardHTML():renderScheduleBreakCard(_brk); return; }   // 🧽 CLEANINGDAY\n  if(typeof boardWeekIsThisWeek===\"function\"&&!boardWeekIsThisWeek()){ el.innerHTML=renderScheduleBreakCard({name:\"No school week planned\",type:\"noweek\"}); return; }   // 📅 BWNOWEEK: …and a week the board doesn't hold gets the same card, in her answer 1's words (no last-week cards, no 💰 Claim box)\n"],
+  ["board stars pop-up","    const sp=getKidDayPoints(kid,day);\n","    const sp=(day===_todayDay&&typeof boardWeekIsThisWeek===\"function\"&&!boardWeekIsThisWeek())?0:getKidDayPoints(kid,day);   // 📅 BWNOWEEK: no star pool listed as today's from last school week (wages: slice 2)\n"],
 ];
 function strip(src){
   for(let i=CHANGES.length-1;i>=0;i--){ const [,o,n]=CHANGES[i]; if(count(src,n)!==1) throw new Error("change "+i+" ("+CHANGES[i][0]+") not found once"); src=src.split(n).join(o); }
@@ -134,7 +135,7 @@ async function world(o){
   };
   W.roll=async iso=>{ clock.now=hm(iso,0,0)+30000; A.fn("dayRollCheck")(); await flush(200000); };
   W.at=async(iso,h,m)=>{ clock.now=hm(iso,h,m); await flush(2000); };
-  W.R('__HARNESS_NO_RENDER=true; tab="kids"; var __celebs=0; _showCelebration=function(){ __celebs++; }; gwShowToast=function(){};');
+  W.R('__HARNESS_NO_RENDER=true; tab="kids"; var __celebs=0; _showCelebration=function(){ __celebs++; }; var __toasts=[]; gwShowToast=function(m){ __toasts.push(String(m)); }; var __pop=""; document.body.insertAdjacentHTML=function(p,h){ __pop=h; };');
   return W;
 }
 const playWeek=async(W,mon,lateFrom)=>{ for(let i=0;i<5;i++){ const iso=addDays(mon,i), dn=dnOf(iso); if(i) await W.roll(iso); await W.play(iso,dn,i>=lateFrom?9*60+40:24*60);
@@ -159,7 +160,7 @@ const PS=`(function(){ var out={}, sv0={kid:kid,day:day}; try{
   out.sched={}; ((typeof __schedViews!=="undefined"&&__schedViews)||["kid_a","all"]).forEach(function(w){ var _k=kid,_d=day,_t=tab; try{ kid=w; day=_todayDay; tab="schedule"; var el=document.createElement("div"); renderSchedule(el); renderDayTabs(); out.sched[w]={html:el.innerHTML,tabs:document.getElementById("day-tabs").innerHTML}; }catch(e){ out.sched[w]="ERR "+e; } finally{ kid=_k; day=_d; tab=_t; } });
   }finally{ kid=sv0.kid; day=sv0.day; } return JSON.stringify(out); })()`;
 // the four Rule A items (+ the ⭐ card): pool line, celebration, day bonus, day start, sweep — what each shows and writes
-const POOL=`(function(){ var o={}; ["kid_a","kid_b"].forEach(function(k){ var h=kcPointsHTML(k); o[k]={pool:h.indexOf("\\u{1F3B0} Spins")>=0,html:h}; }); return JSON.stringify(o); })()`;
+const POOL=`(function(){ var o={}; ["kid_a","kid_b"].forEach(function(k){ var h=kcPointsHTML(k); __pop=""; boardStatPop(k,"stars"); o[k]={pool:h.indexOf("\\u{1F3B0} Spins")>=0,html:h,pop:__pop,popPool:__pop.indexOf("School spins (pool")>=0}; }); return JSON.stringify(o); })()`;   // the ⭐ card and the board's ⭐ Today's stars pop-up
 const WCELEB='(function(){ sv(WK+"_celeb_used",{}); __celebs=0; celebrateDayComplete("kid_a",_todayDay); return __celebs; })()';
 // a check-off of kid_a's last card today: hasSpun true (so no ordinary spin muddies it) and no SPINONCE record — only the day bonus could spin
 const WBONUS='(function(){ sv(WK+"_day_bonus_used",{}); var ts=weekData.tasks.filter(function(x){ return x.who==="kid_a"&&effectiveDay(x)===_todayDay&&!/lunch/i.test(x.title||""); }); if(!ts.length) return "none";'
@@ -194,6 +195,8 @@ function checkFour(lbl,F,wk,dn,withPool){
   const {op,np,r}=F;
   if(withPool) ok(lbl+": before, the ⭐ card showed last "+dn+"'s 🎰 pool as today's; after, no pool line (both children)",op.kid_a.pool&&op.kid_b.pool&&!np.kid_a.pool&&!np.kid_b.pool,[op.kid_a.pool,np.kid_a.pool]);
   else ok(lbl+": no pool line after (both children)",!np.kid_a.pool&&!np.kid_b.pool);
+  if(withPool) ok(lbl+": the board's ⭐ Today's stars pop-up — before it listed last "+dn+"'s 🎰 pool; after not (the wages rows untouched)",op.kid_a.popPool&&op.kid_b.popPool&&!np.kid_a.popPool&&!np.kid_b.popPool&&np.kid_a.pop.indexOf("Today")>=0,[op.kid_a.popPool,np.kid_a.popPool,np.kid_a.pop.slice(0,200)]);
+  else ok(lbl+": the board's ⭐ Today's stars pop-up lists no pool after",!np.kid_a.popPool&&!np.kid_b.popPool);
   ok(lbl+": celebrateDayComplete — before it celebrated and wrote "+wk+"/celeb_used; after nothing, no write",r.celeb[0].v===1&&r.celeb[0].writes.some(w=>w.indexOf(wk+"/celeb_used")>=0)&&r.celeb[1].v===0&&r.celeb[1].writes.length===0,r.celeb);
   if(r.bonus[0].v==="bonus") ok(lbl+": the day-bonus spin — before it spun (wrote "+wk+"/day_bonus_used); after no bonus, no write",r.bonus[0].writes.some(w=>w.indexOf(wk+"/day_bonus_used/kid_a_"+dn)>=0)&&r.bonus[1].v==="no bonus"&&r.bonus[1].writes.length===0,r.bonus);
   else ok(lbl+": the day-bonus spin — no school card today to finish (before: "+r.bonus[0].v+"); after no bonus, no write",r.bonus[0].writes.length===0&&r.bonus[1].v!=="bonus"&&r.bonus[1].writes.length===0,r.bonus);
@@ -272,7 +275,7 @@ function checkFour(lbl,F,wk,dn,withPool){
         for(const W of [OLD,NEW]) await W.at(iso,20,5);
         const sw=[await runWriter(OLD,'haMomOn(); '+WSWEEP(false)),await runWriter(NEW,'haMomOn(); '+WSWEEP(false))];
         const same=p=>p[0].v===p[1].v&&JSON.stringify(p[0].writes)===JSON.stringify(p[1].writes);
-        ok("holiday inside a real week: the ⭐ card (pool line "+(JSON.parse(np).kid_a.pool?"shown":"none")+") identical to before",op===np);
+        ok("holiday inside a real week: the ⭐ card and the board's ⭐ pop-up (pool line "+(JSON.parse(np).kid_a.pool?"shown":"none")+") identical to before",op===np);
         ok("holiday inside a real week: celebrateDayComplete identical to before ("+c[1].v+" celebration, "+c[1].writes.length+" write) — BRKTODAY does not guard it",same(c),c);
         ok("holiday inside a real week: the day bonus identical to before ("+bo[1].v+", "+bo[1].writes.length+" writes) — BRKTODAY does not guard it",same(bo),bo);
         ok("holiday inside a real week: dsAutoStart identical to before ("+ds[1].writes.length+" write) — BRKTODAY does not guard it",same(ds),ds);
@@ -302,7 +305,7 @@ function checkFour(lbl,F,wk,dn,withPool){
       const pl=[OLD.R(POOL),NEW.R(POOL)], c=[await runWriter(OLD,WCELEB),await runWriter(NEW,WCELEB)], bo=[await runWriter(OLD,WBONUS),await runWriter(NEW,WBONUS)], ds=[await runWriter(OLD,WDS),await runWriter(NEW,WDS)];
       for(const W of [OLD,NEW]) await W.at("2026-11-10",20,5);
       const sw=[await runWriter(OLD,'haMomOn(); '+WSWEEP(false)),await runWriter(NEW,'haMomOn(); '+WSWEEP(false))];
-      ok("one-day holiday with cards: the ⭐ card's pool line ("+(JSON.parse(pl[1]).kid_a.pool?"shown":"none")+") identical — BRKTODAY does not guard it",pl[0]===pl[1]&&JSON.parse(pl[1]).kid_a.pool);
+      ok("one-day holiday with cards: the ⭐ card's pool line and the board's ⭐ pop-up pool row ("+(JSON.parse(pl[1]).kid_a.pool?"shown":"none")+") identical — BRKTODAY does not guard them",pl[0]===pl[1]&&JSON.parse(pl[1]).kid_a.popPool&&JSON.parse(pl[1]).kid_a.pool);
       ok("one-day holiday with cards: celebrateDayComplete identical ("+c[1].v+" celebration, "+c[1].writes.length+" write) — BRKTODAY does not guard it",same(c)&&c[1].v===1,c);
       ok("one-day holiday with cards: the day bonus identical ("+bo[1].v+", "+bo[1].writes.length+" writes) — BRKTODAY does not guard it",same(bo)&&bo[1].v==="bonus",bo);
       ok("one-day holiday with cards: dsAutoStart identical ("+ds[1].writes.length+" write) — BRKTODAY does not guard it",same(ds)&&ds[1].writes.length===1,ds);
