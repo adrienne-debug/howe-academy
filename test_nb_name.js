@@ -32,8 +32,10 @@ const FIX = {
 // sha256 (first 16 hex) of JSON.stringify(generate(kid, ctx)) with no name passed — taken from origin/main 3c00664, BEFORE NBNAME.
 // Pre-K hashes refreshed ON PURPOSE 2026-11-24 (PK_COVERFIT, test_prek_cover_fit.js): three CSS lines join every Pre-K notebook's
 // sheet so the cover's cards can't run off the page; with that block cut out of notebooks.js the old hashes come back exactly.
-const BEFORE = {"julian/empty":"b81b956feb8e2a8e","julian/big":"d3076c76513364b1","julian/jWeek":"2fc49f06d0818cef","julian/extras":"6b56a373f5200a34",
-  "caleb/empty":"8d606791cb80f6c4","caleb/big":"9f61c161c89d5ac6","caleb/jWeek":"8e309ffe87c1a3b6","caleb/extras":"fc97a13a7a9b248d"};
+// …and again ON PURPOSE 2026-11-25 (PK_DAILYFIT, test_prek_daily_fit.js): the daily page's fit rules join the shared Pre-K sheet and the
+// daily pages (the closing card's gaps, two row classes, one name size rule); with that block cut out the hashes above it come back exactly.
+const BEFORE = {"julian/empty":"401ad528008c582e","julian/big":"ca718feb49aa3291","julian/jWeek":"e1a392e36631fc6e","julian/extras":"e353771923e4120c",
+  "caleb/empty":"a39cc77da9202673","caleb/big":"f8b0eb658feaf7c9","caleb/jWeek":"b3d8472899d33c79","caleb/extras":"a0a7b6829a48747e"};
 const KIDS = ["julian", "caleb"];
 const snap = {};
 for (const kid of KIDS) for (const f in FIX) snap[kid + "/" + f] = hash(NB.generate(kid, clone(FIX[f])));

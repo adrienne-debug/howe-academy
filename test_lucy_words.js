@@ -52,8 +52,10 @@ if (process.argv.includes("--hashes")) { console.log(JSON.stringify(snap)); proc
 // sha256 (first 16 hex) of JSON.stringify(generate(kid, ctx)) — taken from origin/main abb03281, BEFORE LU_WORDS.
 // Pre-K hashes refreshed ON PURPOSE 2026-11-24 (PK_COVERFIT, test_prek_cover_fit.js): three CSS lines join every Pre-K notebook's
 // sheet so the cover's cards can't run off the page; with that block cut out of notebooks.js the old hashes come back exactly.
+// …and again ON PURPOSE 2026-11-25 (PK_DAILYFIT, test_prek_daily_fit.js): the daily page's fit rules join the shared Pre-K sheet and the
+// daily pages (the closing card's gaps, two row classes, one name size rule); with that block cut out the hashes above it come back exactly.
 const BEFORE = {"lucy/plain":"af77007c75d1b458","lucy/emptyMastery":"af77007c75d1b458","lucy/otherDecks":"af77007c75d1b458","lucy/cursorNoDeck":"af77007c75d1b458","lucy/deckButOff":"af77007c75d1b458","lucy/loe":"36d587741a627cef","lucy/nineCards":"bd3fdff7318ec50f","lucy/withSpelling":"0e61fdac2fa0584b",
-  "julian/withSightWords":"e88cb68251dc5fac","caleb/withSightWords":"7cd035ca23163a8a","ellis/withSightWords":"375283d2cc0727d3","lincoln/withSightWords":"92fec5297fe46073","kid9/withSightWords":"477f4e9017a4f89d","shark/withSightWords":"bfbdaa67682c2693"};
+  "julian/withSightWords":"a95efdab2c2b9505","caleb/withSightWords":"9a2aeaf66de2772f","ellis/withSightWords":"375283d2cc0727d3","lincoln/withSightWords":"92fec5297fe46073","kid9/withSightWords":"477f4e9017a4f89d","shark/withSightWords":"519f23ac953b43b0"};
 
 console.log("(a) no deck / My Words off → byte-identical to main");
 Object.keys(NODATA).forEach(k => ok(snap["lucy/" + k] === BEFORE["lucy/" + k], "lucy/" + k, "now " + snap["lucy/" + k]));
