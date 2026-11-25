@@ -42,7 +42,7 @@ const PIECES = [
   ["  if(bank&&(dadCtl===undefined||(typeof _kioskD===\"function\"&&_kioskD()))&&typeof mdCardSpotCheck===\"function\"){ try{ h+=mdCardSpotCheck(); }catch(e){} }   // 🔎 SPOTCHECK: Mom's Day, and Dad's Day on his link (DADSPOT)\n", "  if(bank&&dadCtl===undefined&&typeof mdCardSpotCheck===\"function\"){ try{ h+=mdCardSpotCheck(); }catch(e){} }   // 🔎 SPOTCHECK: Mom's Day only\n"],
   ["  if(!(typeof ckLogCanDock===\"function\"?ckLogCanDock():momHere())) return;   // DADSPOTLOG: Mom, or Dad's link with his code\n", "  if(!momHere()) return;   // Mom-only; the Log card lives behind the Admin PIN too\n"]
 ];
-const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const BASE_IDX = (() => { let s = require(path.join(__dirname, "test_fixtures", "ledger_l5_out.js")).idx(fs.readFileSync(path.join(__dirname, "index.html"), "utf8"));   // L5 (FLAGONE) out first: it reworks the ⚠️ line and the 🔒 line
   for (const [a, b] of PIECES) { const n = s.split(a).length - 1; if (n !== 1) throw new Error("test_dad_spot_log: the app before cannot be built — " + J(a.slice(0, 70)) + " found " + n + "×"); s = s.replace(a, () => b); }
   if (/DADSPOT|_spSeeOk|_spActOk|rlDadDoorHTML/.test(s)) throw new Error("test_dad_spot_log: the app before still has DADSPOT");
   const t = path.join(os.tmpdir(), "dad_spot_log_before_" + process.pid + ".html"); fs.writeFileSync(t, s); return t; })();
@@ -80,11 +80,12 @@ const DOORLINE = o => '<div onclick="rlDadToggle()" style="margin:10px 12px 0;ba
 // Mom's card → a locked Dad's (no ⚙ / 🎲 / ✓ / ✗, the line at the foot) or an unlocked Dad's (no ⚙)
 const lockedSP = h => { h = h.replace(GEAR, "").replace(DRAW, "").replace(RES, ""); const i = h.lastIndexOf("</div></div>"); return h.slice(0, i) + SPTIP + h.slice(i); };
 const openSP = h => h.replace(GEAR, "");
-const lockedDoor = log => DOORLINE(true) + '<div style="margin:0 12px">' + log.replace(WARN, "") + LOGTIP + '</div>';
+const FUNDO = /<button onclick="event\.stopPropagation\(\);flagUndo\([^"]*\)" title="[^"]*" style="[^"]*">undo<\/button>/g, noUndo = h => String(h).replace(FUNDO, "");   // L5 (FLAGONE): a 🚩 line's "undo", for Mom or Dad with his code
+const lockedDoor = log => DOORLINE(true) + '<div style="margin:0 12px">' + noUndo(log).replace(WARN, "") + LOGTIP + '</div>';
 const openDoor = log => DOORLINE(true) + '<div style="margin:0 12px">' + log + '</div>';
 // each write as [op, path, the value now there] — a bank line's id and a push key are random, the times are the clock's
 const norm = p => p.replace(/(\/adjustments\/)[^/]+$/, "$1*").replace(/-P\d+/g, "-P*");
-const vals = (w, m) => w.since(m || 0).map(l => { let v = w.get(l.path); v = v && typeof v === "object" ? clone(v) : v; if (v && typeof v === "object") { delete v.ts; delete v.iso; delete v.flagTs; delete v.at; } return [l.op, norm(l.path), v === undefined ? null : v, l.committed === undefined ? "" : l.committed]; }).sort((a, b) => J(a) < J(b) ? -1 : 1);
+const vals = (w, m) => w.since(m || 0).map(l => { let v = w.get(l.path); v = v && typeof v === "object" ? clone(v) : v; if (v && typeof v === "object") { delete v.ts; delete v.iso; delete v.flagTs; delete v.at; delete v.flagBid; } return [l.op, norm(l.path), v === undefined ? null : v, l.committed === undefined ? "" : l.committed]; }).sort((a, b) => J(a) < J(b) ? -1 : 1);
 // Dad's writes, read as Mom's: who → mom, the result's by out
 const asMom = v => J(v).replace(/"bid":"[^"]*"/g, "\"bid\"").replace(/,"by":"dad"/g, "").replace(/Dad undid/g, "Mom undid").replace(/"undo":"dad"/g, '"undo":"mom"').replace(/"flagBy":"dad"/g, '"flagBy":"mom"').replace(/ · by Dad/g, "");
 const asMomO = v => J(v).replace(/"bid":"[^"]*"/g, "\"bid\"").replace(/ · by Mom/g, "");
@@ -102,7 +103,7 @@ const ISO1 = "2026-11-19", ISO2 = "2026-11-20", ISO3 = "2026-11-21";
 
 (async () => {
 const N = await mkWorld(IDX), O = await mkWorld(BASE_IDX);
-for (const S of [N, O]) { await S.w.at(2026, 11, 19, 7, 0); S.A.run("spSetPenOn()"); await S.w.flush(); await S.w.at(2026, 11, 19, 8, 0); await tickAll(S); await S.w.at(2026, 11, 19, 10, 0); }
+for (const S of [N, O]) { await S.w.at(2026, 11, 19, 7, 0); S.A.run("_spSetPen('on',true);_spSetPen('pts',100)"); /* the penalty on at 100, saved: the switch's first tap's two writes (L5 made the unset default ON, so the tap would now turn it off) */ await S.w.flush(); await S.w.at(2026, 11, 19, 8, 0); await tickAll(S); await S.w.at(2026, 11, 19, 10, 0); }
 ok("the setup: Thu 11/19 10 AM, the penalty on (100 ⭐), kid_a's pool 3 and kid_c's 1 (both worlds)", [N, O].every(S => S.A.run("JSON.stringify([spPenalty(),spPool('kid_a',_todayDay).length,spPool('kid_c',_todayDay).length])") === J([{ on: true, pts: 100 }, 3, 1])));
 
 // ── A ──
@@ -124,7 +125,7 @@ ok("…her card with picks (✓ / ✗ on each): byte for byte the app before's",
   ok("two devices, one pick: Dad's ✗ on the toys Mom just checked (his code in) does nothing — no ask, zero writes", N.Dd.run("spResolve('kid_c',0,'no')") === false && N.Dd.run("__cf.length") === 0 && (await N.w.flush(), N.w.since(m).length === 0) && !/spResolve\('kid_c'/.test(SPC(N.Dd))); lock(N.Dd, true); }
 { const r = []; for (const S of [N, O]) { const k = logKey(S.A, "kid_c", "Toys in the bin"), m = S.w.mark(); S.A.run("__cf=[];1"); S.A.run(flagJs(k, "kid_c")); await S.w.flush(); r.push([S.A.run("__cf.length"), vals(S.w, m), bankOf(S.w, "kid_c")]); }
   ok("her ⚠️ −100 in the Log (kid_c's toys): the same ask, writes and bank as the app before's (by Mom)", J(r[0]) === J(r[1]) && r[0][0] === 1 && r[0][2].some(a => a[0] === -100 && / · by Mom$/.test(a[1])), r[0]); }
-ok("…her Log afterwards: byte for byte the app before's (\"🚩 by Mom · −100\")", LOG(N.A) === LOG(O.A) && /🚩 by Mom · −100/.test(LOG(N.A)));
+ok("…her Log afterwards: byte for byte the app before's (\"🚩 by Mom · −100\"), but L5's undo on that line", noUndo(LOG(N.A)) === LOG(O.A) && (LOG(N.A).match(FUNDO) || []).length === 1 && /🚩 by Mom · −100/.test(LOG(N.A)));
 
 // ── B ──
 console.log("\n── B · Dad's link, locked: look-only, one line says how, every tap refused ──");
