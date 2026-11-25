@@ -512,6 +512,7 @@ console.log("\n── C · C6's −1 on a 0 ⭐ daily, then ticked and sent back
   S.zeroSteps = st;
   ok("the kid's bank against Tuesday night: " + st.map(x => x[0] + " " + x[1]).join(" → "), J(st.map(x => x[1])) === J([-1, -1, -1, -1, -101, -1]), st);
 }
+if (process.env.LGS_DUMP) fs.writeFileSync(process.env.LGS_DUMP, J(S.dump));
 // ── DP ── (DADPAST, her "yes" 2026-11-24: Dad on his own link with his code in reaches the same days as Mom; Wed 12/9)
 console.log("\n── DP · Dad's past days (his link, his code in) ──");
 { const wk4 = A.run("activeWk()"), pw4 = A.run("_prevWkKey()"), ci = idxOf(A, "chores", "kid_c", "Toys in the bin", "tuesday"), bi = idxOf(A, "morning", "kid_a", "Make the bed", "tuesday");
@@ -567,7 +568,6 @@ console.log("\n── DP · Dad's past days (his link, his code in) ──");
   const bm = bal(A, "kid_c"); A.run("mdKidTick('chores','kid_c','tuesday'," + ci + ")"); await w.flush();
   ok("Mom: unchanged — her past-day un-tick works as before", onT("chores", "kid_c", ci, "tuesday") === false && bal(A, "kid_c") < bm);
 }
-if (process.env.LGS_DUMP) fs.writeFileSync(process.env.LGS_DUMP, J(S.dump));
 console.log("\n(two devices at the same moment: the un-tick itself, the pop-up's own, ran on both: kid_c's bank moved " + S.race + " — see the report)");
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
