@@ -2524,7 +2524,8 @@
     if (!hi) { hi = lo; lo = null; }
     if (lo) for (var s = ord.indexOf(lo) + 1; s < ord.indexOf(hi); s++) { if (track.levels[ord[s]].bank) skipped.push(ord[s]); }
     if (!real(lv) && skipped.indexOf(lv) < 0) skipped.push(lv);
-    return { suggested: lv, lo: lo, hi: hi, skipped: skipped };
+    var pr = { suggested: lv, lo: lo, hi: hi, skipped: skipped };
+    return (typeof ladPlace3Pair === "function") ? ladPlace3Pair(track, pr) : pr;   // 📏 NBLADPLACE3: + the level above (up) and the list (levels)
   }
   function ladEsc(v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
   var LAD_LETTERS = "ABCDEFGH";
@@ -2582,6 +2583,7 @@
   function ladAnsText(c, ans, tok) { var i = LAD_LETTERS.indexOf(String(ans || "")); return (i >= 0 && Array.isArray(c) && c[i] != null) ? ladChoiceWord(c[i], tok) : ""; }
   // How to choose, for the parent sheet: hi is the harder of the two; the rung just below hi may be a bank (not in this check).
   function ladRuleLines(track, pr, partWord) {
+    if (pr.up && typeof ladPlace3Rules === "function") return ladPlace3Rules(track, pr, partWord);   // 📏 NBLADPLACE3: three parts
     var L = function (k) { return track.levels[k].label; };
     var ord = track.order, belowHi = ord[ord.indexOf(pr.hi) - 1], lines = [];
     var name = function (k) { return track.levels[k].bank ? "the " + ladWord(k).replace(" grade", "-grade") + " question bank" : L(k); };
@@ -2598,14 +2600,82 @@
     if (pr.skipped.length) out.push(pr.skipped.map(function (k) { return ladWord(k); }).join(" and ") + " " + (pr.skipped.length > 1 ? "are" : "is") +
       " the question bank on the Notebook tab, not part of this ladder — so this check uses the nearest levels: " + track.levels[pr.lo || pr.hi].label + (pr.lo ? " and " + track.levels[pr.hi].label : "") + ".");
     if (pr.lo && pr.suggested === pr.lo) out.push(track.levels[pr.lo].label + " is the first level, so this check pairs it with the one above.");
+    return (typeof ladPlace3Note === "function") ? ladPlace3Note(track, pr, out) : out;   // 📏 NBLADPLACE3: three levels named; the last level says so
+  }
+  // NBLADPLACE3_START — 📏 the placement check covers THREE levels (her words 2026-11-24: her 1st grader "could have maybe did
+  // the second grade placement… when you click the placement test, it does the placement test for that grade, like the one
+  // above it, one below it"; asked "three levels?" → "Yes, three levels"). Part 1 = the level below, Part 2 = the picked level,
+  // Part 3 = the level above. The very first level (it + the one above) and the very last (the one below + it) have only two
+  // to show, so they stay two; a picked bank rung stays as before (the real levels either side of it, two parts). A bank rung
+  // is never printed: the nearest real level stands in and the grown-up's page names the rung passed over. Still writes
+  // nothing and never moves the kid's level or place. Outside this block only typeof-guarded calls use it, so the tree with
+  // the block cut out prints exactly the two-level check it printed before.
+  //  • placementPair keeps its shape { suggested, lo, hi, skipped } (lo/hi = the same two levels as before) and gains
+  //    up (the level above, or null when the check stays two) and levels ([lo, hi, up] without the empties, in print order);
+  //    skipped also names a bank rung between hi and up.
+  //  • Pages: a Pre-K / K check of three parts is 9 questions — more than a sheet holds with its pictures — so Parts 1–2 go on
+  //    the first sheet and Part 3 on a second (split by part, never mid-question; Name/Date on the first sheet only). Reading:
+  //    1st- and 2nd-grade passages share a sheet as before; every other passage has a sheet of its own.
+  function ladPlace3Real(track, k) { var L = track.levels[k]; return !!(L && !L.bank && L.items.length); }
+  function ladPlace3Banks(track, a, b) {   // the bank rungs strictly between levels a and b
+    var ord = track.order, out = [];
+    for (var i = ord.indexOf(a) + 1; i < ord.indexOf(b); i++) { if (track.levels[ord[i]].bank) out.push(ord[i]); }
     return out;
   }
+  function ladPlace3Pair(track, pr) {
+    var ord = track.order, up = null;
+    if (pr.lo && pr.hi === pr.suggested) {   // a real picked level with one below it: find the next real level above
+      for (var a = ord.indexOf(pr.hi) + 1; a < ord.length; a++) { if (ladPlace3Real(track, ord[a])) { up = ord[a]; break; } }
+    }
+    var skipped = pr.skipped.concat(up ? ladPlace3Banks(track, pr.hi, up) : []);
+    return { suggested: pr.suggested, lo: pr.lo, hi: pr.hi, skipped: skipped, up: up, levels: [pr.lo, pr.hi, up].filter(Boolean) };
+  }
+  function ladPlace3BankName(k) { return "the " + ladWord(k).replace(" grade", "-grade") + " question bank"; }
+  // How to choose, three parts: Part 3 comfortable → the level above; Part 2 comfortable but Part 3 a struggle → the picked
+  // level; a struggle on Part 2 → the level below (or the bank rung between, then the level below on a struggle with Part 1).
+  function ladPlace3Rules(track, pr, w) {
+    var L = function (k) { return track.levels[k].label; };
+    var upB = ladPlace3Banks(track, pr.hi, pr.up), loB = ladPlace3Banks(track, pr.lo, pr.hi), lines = [];
+    lines.push("Comfortable and mostly right on " + w + " 3 → " + L(pr.up) + ".");
+    lines.push("Comfortable on " + w + " 2, but " + w + " 3 is a struggle → " + L(pr.hi) +
+      (upB.length ? " (" + ladPlace3BankName(upB[0]) + " on the Notebook tab comes right after it)" : "") + ".");
+    if (loB.length) {
+      lines.push("A struggle on " + w + " 2 → " + ladPlace3BankName(loB[loB.length - 1]) + " (it lives on the Notebook tab, so it isn’t in this check).");
+      lines.push("A struggle on " + w + " 1 too → " + L(pr.lo) + ".");
+    } else lines.push("A struggle on " + w + " 2 → " + L(pr.lo) + ".");
+    return lines;
+  }
+  function ladPlace3Note(track, pr, out) {
+    var lab = function (k) { return track.levels[k].label; };
+    if (pr.up) {
+      if (!pr.skipped.length) return out;
+      var ls = pr.levels.map(lab);
+      return [pr.skipped.map(function (k) { return ladWord(k); }).join(" and ") + (pr.skipped.length > 1 ? " are question banks" : " is the question bank") +
+        " on the Notebook tab, not part of this ladder — so this check uses the nearest levels: " + ls.slice(0, -1).join(", ") + " and " + ls[ls.length - 1] + "."];
+    }
+    if (pr.lo && pr.hi === pr.suggested) return out.concat([lab(pr.hi) + " is the last level, so this check pairs it with the one below."]);
+    return out;
+  }
+  function ladPlace3ReadGroups(ps) {   // [[passage index…] per sheet]: 1st/2nd-grade passages share a sheet, the rest one each
+    var g = [];
+    ps.forEach(function (x, i) {
+      var big = x.lv === "g1" || x.lv === "g2", last = g[g.length - 1];
+      if (big && last && last.big) last.ix.push(i); else g.push({ big: big, ix: [i] });
+    });
+    return g.map(function (x) { return x.ix; });
+  }
+  function ladPlace3NumGroups(parts) {   // [[part index…] per sheet]
+    var all = parts.map(function (x, i) { return i; });
+    if (parts.length < 3 || !parts.some(function (x) { return LAD_GROWN[x.lv]; })) return [all];
+    return [all.slice(0, 2), all.slice(2)];
+  }
+  // NBLADPLACE3_END
   // The pages: { child:[page html], parent:[page html], pair } or null. opts = { lv (the suggested level), kidName }.
   function ladderPlacementPages(kind, data, opts) {
     opts = opts || {};
     var track = ladTrack(kind, data), pr = track ? ladderPlacementPair(track, opts.lv) : null;
     if (!pr) return null;
-    var lvs = [pr.lo, pr.hi].filter(Boolean), kidName = opts.kidName || "", child = [], parent = [];
+    var lvs = (pr.levels || [pr.lo, pr.hi]).filter(Boolean), kidName = opts.kidName || "", child = [], parent = [];
     var nameLine = '<div class="lp-line"><span>Name</span><span>Date</span></div>';
     var parentTop = function (title) {
       return '<div class="page lp-parent">' + ladHead(title + " — for the grown-up", kidName, false) +
@@ -2622,7 +2692,9 @@
           x.p.q.map(function (q) { qn++; return '<div class="lp-q"><div class="lp-stem">' + qn + '. ' + ladEsc(q.text) + '</div>' + ladChoices(q.c, false) + '</div>'; }).join("") + '</div>';
       };
       var how = '<div class="lp-how">Read each passage by yourself. Then read each question and circle the letter of the best answer.</div>';
-      if (small) child.push('<div class="page lp-child">' + ladHead("Reading check", kidName, false) + nameLine + how + ps.map(psgHtml).join("") + '</div>');
+      var rg = (typeof ladPlace3ReadGroups === "function") ? ladPlace3ReadGroups(ps) : null;   // 📏 NBLADPLACE3: which passages share a sheet
+      if (rg) rg.forEach(function (ix, gi) { child.push('<div class="page lp-child">' + ladHead("Reading check" + (rg.length > 1 ? " — " + (gi + 1) + " of " + rg.length : ""), kidName, false) + (gi === 0 ? nameLine + how : "") + ix.map(function (i) { return psgHtml(ps[i], i); }).join("") + '</div>'); });
+      else if (small) child.push('<div class="page lp-child">' + ladHead("Reading check", kidName, false) + nameLine + how + ps.map(psgHtml).join("") + '</div>');
       else ps.forEach(function (x, idx) { child.push('<div class="page lp-child">' + ladHead("Reading check" + (ps.length > 1 ? " — " + (idx + 1) + " of " + ps.length : ""), kidName, false) + (idx === 0 ? nameLine + how : "") + psgHtml(x, idx) + '</div>'); });
       parent.push(parentTop("Reading check") +
         ladPairNote(track, pr).map(function (s) { return '<p class="lp-rule">' + ladEsc(s) + '</p>'; }).join("") +
@@ -2635,7 +2707,7 @@
       var grown = lvs.some(function (k) { return LAD_GROWN[k]; });
       var parts = lvs.map(function (k) { return { lv: k, qs: ladList(track, k, false).slice(0, 3) }; });
       var qn = 0;
-      var body = parts.map(function (x, idx) {
+      var partHtml = parts.map(function (x, idx) {
         var big = LAD_GROWN[x.lv] || x.lv === "g1" || x.lv === "g2";
         return '<div class="' + (big ? "lp-big" : "") + '">' + (parts.length > 1 ? '<div class="lp-part">Part ' + (idx + 1) + (LAD_GROWN[x.lv] ? ' — a grown-up reads each one aloud' : '') + '</div>' : '') +
           x.qs.map(function (q) {
@@ -2646,9 +2718,16 @@
             return '<div class="lp-q"><div class="lp-stem">' + qn + '.</div>' + lines +
               (LAD_GROWN[x.lv] && q.say ? '<div class="lp-say">Read aloud: “' + ladEsc(q.say) + '”</div>' : '') + ladChoices(q.c, !!LAD_GROWN[x.lv]) + '</div>';
           }).join("") + '</div>';
-      }).join("");
-      child.push('<div class="page lp-child">' + ladHead("Number check", kidName, grown) + nameLine +
-        '<div class="lp-how">' + (grown ? ((typeof LADPIC_HOW === "string" && body.indexOf("lp-pq") >= 0) ? LADPIC_HOW : "A grown-up reads each question aloud. Circle the letter of the answer.") : "Find what comes next or what is missing. Circle the letter of the answer.") + '</div>' + body + '</div>');
+      }), body = partHtml.join("");
+      var howOf = function (grown, body) {
+        return '<div class="lp-how">' + (grown ? ((typeof LADPIC_HOW === "string" && body.indexOf("lp-pq") >= 0) ? LADPIC_HOW : "A grown-up reads each question aloud. Circle the letter of the answer.") : "Find what comes next or what is missing. Circle the letter of the answer.") + '</div>';
+      };
+      var ng = (typeof ladPlace3NumGroups === "function") ? ladPlace3NumGroups(parts) : null;   // 📏 NBLADPLACE3: parts per sheet
+      if (ng && ng.length > 1) ng.forEach(function (ix, gi) {
+        var pb = ix.map(function (i) { return partHtml[i]; }).join(""), pgGrown = ix.some(function (i) { return LAD_GROWN[parts[i].lv]; });
+        child.push('<div class="page lp-child">' + ladHead("Number check — " + (gi + 1) + " of " + ng.length, kidName, pgGrown) + (gi === 0 ? nameLine + howOf(pgGrown, pb) : "") + pb + '</div>');
+      });
+      else child.push('<div class="page lp-child">' + ladHead("Number check", kidName, grown) + nameLine + howOf(grown, body) + body + '</div>');
       qn = 0;
       parent.push(parentTop("Number check") +
         ladPairNote(track, pr).map(function (s) { return '<p class="lp-rule">' + ladEsc(s) + '</p>'; }).join("") +
