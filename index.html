@@ -1821,7 +1821,22 @@ let DAY_DT={}; let CONSTRAINT={}; let WIN={default:(window.HA_FAMILY&&window.HA_
 // ── FAMILY IDENTITY — single source of truth. Edit in Admin → Settings → Family (saved to Firebase).
 //    First-boot default comes from family-config.js (per-family deployment); the Howe
 //    literals below are the last-resort fallback if that file is missing. ──
-const FAMILY_DEFAULT = (window.HA_FAMILY && Array.isArray(window.HA_FAMILY.roster) && window.HA_FAMILY.roster.length &&
+// HHKIND_START — a home with no school (her ask 2026-11-24: her mom's house, "she does not have kids there … the household stuff";
+// her "Yes, start step 1" 2026-11-24 — DESIGN_household_edition_2026-11-24.md §5.1, slice 1). family-config.js kind:"household"
+// marks such a home. It is never the Howe app: it needs a familyId of its own. In this slice the kind does three things, and
+// nothing any other family can see (every call site is marked HHKIND):
+//   1. an EMPTY kid list is real. Before, an empty roster in the family file, in the saved copy or in settings/family fell back
+//      to the four Howe kids, and the Kids editor refused to save with nobody on it.
+//   2. Household's "who" list and laundry's people list stay empty of kids, instead of falling back to the Howe four.
+//   3. the weekly build and the 8 PM sweep do not run — there is no school week to build or sweep.
+// Kids can still be added in the Kids editor; the family file's own roster should stay empty for a household (an emptied list
+// is stored as "nothing saved", and nothing saved means the family file's list).
+const HA_HOUSEHOLD = !!(window.HA_FAMILY&&window.HA_FAMILY.kind==="household"&&window.HA_FAMILY.familyId&&window.HA_FAMILY.familyId!=="howe");
+function haHousehold(){ return HA_HOUSEHOLD; }
+function haRosterOk(v){ return Array.isArray(v)&&v.every(function(k){return k&&k.id&&k.name&&k.color;}); }
+// HHKIND_END
+const FAMILY_DEFAULT = HA_HOUSEHOLD ? (haRosterOk(window.HA_FAMILY.roster)?window.HA_FAMILY.roster:[]) :   // HHKIND: a household with no kids listed has no kids
+                       (window.HA_FAMILY && Array.isArray(window.HA_FAMILY.roster) && window.HA_FAMILY.roster.length &&
                         window.HA_FAMILY.roster.every(function(k){return k&&k.id&&k.name&&k.color;}))
   ? window.HA_FAMILY.roster
   : [
@@ -1833,7 +1848,7 @@ const FAMILY_DEFAULT = (window.HA_FAMILY && Array.isArray(window.HA_FAMILY.roste
 // Loaded synchronously from the localStorage cache (kept in sync with Firebase settings/family); defaults to FAMILY_DEFAULT
 const ROSTER_DEF = (function(){
   try{ var v=JSON.parse(HA_LS.getItem("ha_family")||"null");
-       if(Array.isArray(v)&&v.length&&v.every(function(k){return k&&k.id&&k.name&&k.color;})) return v; }catch(e){}
+       if(Array.isArray(v)&&(v.length||HA_HOUSEHOLD)&&v.every(function(k){return k&&k.id&&k.name&&k.color;})) return v; }catch(e){}   // HHKIND: a household's saved empty list counts
   return FAMILY_DEFAULT;
 })();
 const ROSTER       = ROSTER_DEF.map(k=>k.id);                         // all kids, in roster order
@@ -2008,6 +2023,7 @@ function toggleMorningStep(kid,i){
 }
 function mrIndividualHTML(kid){
   const steps=morningStepsFor(kid);
+  if(typeof rtZeroSee==="function") rtZeroSee("morning",kid,steps);   // CHOREZERO
   const _am=(typeof amFor==="function")?amFor(kid,day):[], _amIso=_am.length?amIso(day):null, _amDn=_am.filter(it=>amDoneBy(it,_amIso)).length;   // SENDAM
   if(!steps.length){
     const s=getSlot(kid,"morning"), _amH=_am.length?'<div class="mr-steps">'+amRowsHTML(kid,_am,routineEditable())+'</div>':'';   // SENDAM: a kid with no morning steps still sees what was sent, above the Morning box
@@ -3000,21 +3016,22 @@ function rtFallPill(st,n){ const p=(st&&st.pts)||0, f=rtFallPay(st,n,arguments[2
 // (calendar/kidOverrides school:false), \ud83c\udf05 sent that day, a day before RT_DAILY_FROM or before the kid's "Stars fall when late" / \u23f8 Pause (the \ud83d\udcd2 Ledger \u2699, read as rtFallDays reads it).
 // Not the plan's own rows (st.house), the laundry line's rows, or a rotating job (st.rot: the job and its free days change hands each day).
 const RT_DAILY_FROM="2026-11-30";
-function rtDailyRow(st){ return !!st&&(st.cad||"daily")==="daily"&&(st.pts||0)>0&&!st.house&&!st.line&&!st.laundry&&!st.rot; }
-// Missed days in a row before today, 0\u20266 (6 = already 0 \u2b50).
-function rtDailyMissed(slot,kid,i,st){
-  if(!rtDailyRow(st)||typeof _todayDay!=="string") return 0;
+function rtDailyRow(st,z){ return !!st&&(st.cad||"daily")==="daily"&&(st.pts>0)!==!!z&&!st.house&&!st.line&&!st.laundry&&!st.rot; }
+// Missed days in a row before today, 0\u20266 (6 = already 0 \u2b50). z (CHOREZERO, C6): a 0 \u2b50 daily, walked back to last week's Sunday; -1 = unsure.
+function rtDailyMissed(slot,kid,i,st,z){
+  if(!rtDailyRow(st,z)||typeof _todayDay!=="string") return 0;
   const tp=_rtPos(DAYS_ALL.indexOf(_todayDay)), t=new Date(), wk=activeWk(), ab=slot==="morning"?"m":RT_ABBR[slot]; if(tp<-1||!ab) return 0;
   const iso=function(k){ const d=new Date(t.getFullYear(),t.getMonth(),t.getDate()-k,12); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
   const mon=routineDateISO("monday"); if(mon&&mon!==iso(tp)) return 0;   // the week on screen is not today's week (a week change mid-flight): say nothing
-  const from=[RT_DAILY_FROM,starFallFrom(kid)].sort()[1], off=((typeof calendarData!=="undefined"&&calendarData&&calendarData.kidOverrides)||{})[kid]||{};
+  if(z){ const q=_todayDay==="monday"?"tuesday":"monday"; if(routineDateISO(q)!==iso(tp-_rtPos(DAYS_ALL.indexOf(q)))) return -1; }   // C6: that week's own dates must be today's (routineDateISO says today for today)
+  const from=z?rtZeroFrom(kid):[RT_DAILY_FROM,starFallFrom(kid)].sort()[1], off=((typeof calendarData!=="undefined"&&calendarData&&calendarData.kidOverrides)||{})[kid]||{};
   let n=0;
-  for(let k=1;k<=6;k++){ const ds=iso(k), p=tp-k, prev=p<-1; if(ds<from) break;
+  for(let k=1;k<=(z?tp+8:6);k++){ const ds=iso(k), p=tp-k, prev=p<-1; if(ds<from) break;
     const w=prev?_prevWkKey():wk, dn=DAYS_ALL[_rtIdx(prev?p+7:p)]; if(prev&&typeof _loadPrevSl==="function") _loadPrevSl();
-    const m=prev?(_prevSlWk===w?prevSlState:null):slState; if(!w||!m) break;   // last week not on this device yet: say nothing
+    const m=prev?(_prevSlWk===w?prevSlState:null):slState; if(!w||!m){ if(z) return -1; break; }   // last week not on this device yet: say nothing
     if((st.from&&ds<st.from)||(st.to&&ds>st.to)||!stepCycleOk(st,ds)) break;
     const r=m[w+"_"+dn+"_"+kid+"_"+ab+"step"+i]; if(r&&r.done) break;
-    if(rtDailyLogOn(kid,w,dn,slot,st.label)) break;   // its place moved: the day's own log says this chore was ticked
+    const lo=rtDailyLogOn(kid,w,dn,slot,st.label); if(lo){ if(z&&lo>1) return -1; break; }   // its place moved: the day's own log says this chore was ticked
     if((((wavedData[w]||{})[dn]||{})[kid]||{})[slot+"step"+i]) break;
     if((off[ds]||{}).school===false) break;
     if(rtDailyCalOff(slot,ds)) break;   // a holiday / vacation that took this list off that day
@@ -3028,7 +3045,7 @@ function rtDailyMissed(slot,kid,i,st){
 // standing "on" line for this list and this chore's words. Last week's log not on this device yet: unsure, so the count stops.
 function rtDailyLogOn(kid,w,dn,slot,label){
   const W=((typeof routineLog!=="undefined"&&routineLog)||{})[kid]||{};
-  if(!W[w]&&typeof _rlWin!=="undefined"&&typeof db!=="undefined"&&db&&String(_rlWin.key||"").split("|")[0].split(",").indexOf(w)<0) return true;
+  if(!W[w]&&typeof _rlWin!=="undefined"&&typeof db!=="undefined"&&db&&String(_rlWin.key||"").split("|")[0].split(",").indexOf(w)<0) return 2;
   const L=(W[w]||{})[dn]||{}; let last=null;
   Object.keys(L).forEach(function(k){ const x=L[k]; if(x&&x.slot===slot&&x.label===label&&(x.act==="on"||x.act==="off")&&(!last||(x.at||0)>=(last.at||0))) last=x; });
   return !!(last&&last.act==="on");
@@ -3057,6 +3074,41 @@ function rtDailyJoin(j){ return rtDailyOn(j)?_hhIsoLocal(Date.now()):""; }
 function rtDailyOnIds(){ const J=hhJobs(); return Object.keys(J).filter(function(id){ return rtDailyOn(J[id]); }); }
 function rtDailyStampNew(before){ if(!before) return; const J=hhJobs(); Object.keys(J).forEach(function(id){ const t=before.indexOf(id)<0?rtDailyJoin(J[id]):""; if(t&&J[id].from!==t){ J[id].from=t; if(_hhWrite()) db.ref("household/jobs/"+id+"/from").set(t); } }); }
 // CHOREDAILY_END
+// CHOREZERO_START — her rule 2026-11-19/20 (missed-chores design §2.8, slice C6): a daily worth 0 ⭐: "A flat 1 ⭐ a day", "1 day missed
+// wouldnt cost them"; where it stops: "give both options" (11/24). Missed = C5's walk (rtDailyMissed z). From the 2nd missed day in a row,
+// 1 ⭐ comes off that kid's bank each morning: 📒 ⚙ "Stops after 5" (the default, starRules/zero missing or {stop:5}) = the 2nd–6th missed
+// days, then nothing until it is done once; "No stop" ({stop:0}) = every day. Only TODAY's line, noticed by a draw of the kid's list on
+// today's tab (rtSlotHTML, mrIndividualHTML); a day nobody draws costs nothing and is never filed later. Decided once (C3's way): the
+// line routineLog/<kid>/<wk>/<day>/zero_<chore> {zero:{n:1,run,bid,job} | {n:0,why:"off"|"pause",run,job}} is made by a transaction that
+// writes only if none is on the server; only that device writes bank/<kid>/adjustments/czero_<wk>_<day>_<kid>_<chore> (−1, src "zero").
+// Before deciding, every input is heard from the server (once), so a device just woken or offline takes nothing. Never obSet.
+const RT_ZERO_FROM="2026-12-07";
+function rtZeroFrom(kid){ const R=starRules(), t=(R.take||{})[kid]; return [RT_ZERO_FROM,(t&&t.from)||"",(R.pause||{}).from||""].sort()[2]; }
+function rtZeroStop(){ return (starRules().zero||{}).stop!==0; }
+function rtZeroKey(slot,kid,st){ return st._hh||("rt_"+slot+"_"+kid+"_"+hhSlug(st.label)); }
+// Today is not a miss for that kid and list (😷 Kid Off, a calendar day off that paused the list): nothing is filed today (hub's rule 11/24).
+function rtZeroRun(slot,kid,i,st){ const t=_amToday(), o=((typeof calendarData!=="undefined"&&calendarData&&calendarData.kidOverrides)||{})[kid]||{}; if((o[t]||{}).school===false||rtDailyCalOff(slot,t)) return 0;
+  const n=rtDailyMissed(slot,kid,i,st,1); return n>1&&(n<7||!rtZeroStop())?n:0; }
+function rtZeroSee(slot,kid,steps){ if(day===_todayDay) (steps||[]).forEach(function(st,i){ if(rtDailyRow(st,1)&&stepWindowOk(st,day)&&!rtWaved(slot,kid,day,i)) rtZeroFile(slot,kid,i,st); }); }
+let _czWait={};
+function rtZeroFile(slot,kid,i,st,heard){
+  const wk=activeWk(), dn=_todayDay, jk=rtZeroKey(slot,kid,st), key="zero_"+jk, w=kid+"|"+key, live=db&&!_dryRun();
+  if((((routineLog[kid]||{})[wk]||{})[dn]||{})[key]||(!heard&&_czWait[w])) return; const n=rtZeroRun(slot,kid,i,st); if(!n) return;
+  if(live&&!heard){ _czWait[w]=1; const pw=_prevWkKey(), P=[wk+"/sl","routineLog/"+kid+"/"+wk,"routineLog/"+kid+"/"+(pw||wk),"waved","calendar","household"].map(function(p){ return db.ref(p).once("value"); });
+    P.push(db.ref("amCarry/"+kid).orderByKey().startAt(_amIsoAdd(_amToday(),-60)).once("value"));   // amAttach's own query
+    Promise.all(P).then(function(){ delete _czWait[w]; const s=(rtStepsFor(slot,kid,false,dn)||[])[i];
+      if(_todayDay===dn&&activeWk()===wk&&s&&rtDailyRow(s,1)&&rtZeroKey(slot,kid,s)===jk&&!rtWaved(slot,kid,dn,i)) rtZeroFile(slot,kid,i,s,1); },function(){ delete _czWait[w]; });
+    return; }
+  const no=starTakeAt(kid,_amToday()), bid="czero_"+wk+"_"+dn+"_"+kid+"_"+jk, z=no?{n:0,why:no,run:n,job:jk}:{n:1,run:n,bid:bid,job:jk};
+  const rec={label:(st.label||"Chore")+" — not done "+n+" days",slot:slot,act:"zero",ts:nowTs(),at:Date.now(),pts:0,zero:z};
+  const ln=z.n?{amount:-1,note:(st.emoji?st.emoji+" ":"")+(st.label||"Chore")+" · not done "+n+" days",ts:rec.ts,iso:new Date().toISOString(),src:"zero",wk:wk,day:dn}:null;
+  const put=function(){ if(!ln) return; bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{}; bank[kid].adjustments[bid]=ln; };
+  const L=(routineLog[kid]=routineLog[kid]||{}), W=(L[wk]=L[wk]||{}); (W[dn]=W[dn]||{})[key]=rec;
+  if(!live){ put(); return; }
+  try{ db.ref("routineLog/"+kid+"/"+wk+"/"+dn+"/"+key).transaction(function(cur){ return cur?undefined:rec; },function(err,ok){
+    if(err||!ok||!ln) return; put(); db.ref("bank/"+kid+"/adjustments/"+bid).set(ln); },false); }catch(e){}   // the bank listener redraws
+}
+// CHOREZERO_END
 // STARRULES_START — 📒 Ledger ⚙ star rules (chore ledger design §4, L4, her yes 11/23), written by house.js LEDGERRULES at household/meta/
 // starRules {fall:{kid:{on:false}|{from}},take:{kid:false},pause:{on:true}|{from}}; missing = as before. A flip never reaches back.
 function starRules(){ try{ return householdData.meta.starRules||{}; }catch(e){ return {}; } }
@@ -3212,6 +3264,7 @@ function rtSlotHTML(slot,kid){
   const _raw=steps.map((st,i)=>(day===_todayDay&&wavedIdx.indexOf(i)<0)?rtLateDays(slot,kid,i,true):0);
   const _wait=_raw.map((n,i)=>(n>0&&stepWindowOk(steps[i],day))?((typeof rtWaitCut==="function")?rtWaitCut(steps[i],n):n):0);
   _raw.forEach((n,i)=>{ const st=steps[i]; if(n>0&&!_wait[i]&&(stepWindowOk(st,day)||(st.cycW&&stepWindowOk(Object.assign({},st,{cycW:0}),day)))) _rtLogLateMiss(slot,kid,i,st.cad||"daily",st.label,st.pts||0); });
+  if(typeof rtZeroSee==="function") rtZeroSee(slot,kid,steps);   // CHOREZERO: a 0 ⭐ daily missed 2+ days in a row
   const dueIdx=steps.map((st,i)=>i).filter(i=>wavedIdx.indexOf(i)<0&&stepWindowOk(steps[i],day)&&(cadDueOn(steps[i].cad||"daily",day)||_wait[i]>0));   // carry-overs only on today's tab
   const total=dueIdx.length;
   // ✋ as-needed rows: shown, tappable, paid — but never part of total/allDone.
@@ -4241,8 +4294,9 @@ function _obDecide(e,cb){
       if(p&&typeof p.then==="function") p.then(function(){ cb(true); },function(){ cb(null); }); else cb(null);
     });
   };
-  if(e.u) _obRead(e.u,function(uv){ if(uv===undefined) return cb(null); if(uv!==null) return cb(false); go(); });   // e.g. a claim on a card that's now checked
-  else go();
+  const g=function(){ if(!e.k) return go(); _obRead(e.k[0],function(kv){ if(kv===undefined) return cb(null); if(_obCanon(kv)!==_obCanon(e.k[1])) return cb(false); go(); }); };   // SPOTONE/L5: only while e.g. a ↩ Send back's 🚩 is still there (its Undo took it off → nothing to redo)
+  if(e.u) _obRead(e.u,function(uv){ if(uv===undefined) return cb(null); if(uv!==null) return cb(false); g(); });   // e.g. a claim on a card that's now checked
+  else g();
 }
 function obReplay(){
   try{
@@ -5070,6 +5124,7 @@ function initFb() {
         var str=JSON.stringify(v);
         if(str!==HA_LS.getItem("ha_family")){ HA_LS.setItem("ha_family",str); try{ sessionStorage.setItem("ha_reload_why","family"); }catch(e){} location.reload(); }   // ⏱ CDBOOTS label
       }
+      else if(HA_HOUSEHOLD&&v==null){ var c0=HA_LS.getItem("ha_family"); if(c0&&c0!=="[]"){ HA_LS.setItem("ha_family","[]"); try{ sessionStorage.setItem("ha_reload_why","family-empty"); }catch(e){} location.reload(); } }   // HHKIND: a household's last kid was removed on another device
     });
     db.ref("settings/celebration_songs").on("value",s=>{
       if(s.val()) celebSongs=Object.values(s.val());
@@ -7268,7 +7323,7 @@ function chSettingsClickoffLogHTML(){
   // Click-off Log (accountability)
   h+='<div class="rules-wrap" style="margin-top:20px">';
   h+='<div class="rules-hdr">🕵️ Click-off Log</div>';
-  h+='<div class="rules-sub">Every routine check-off this week, newest first. If a kid checked off something they did NOT actually do, tap ⚠️ −100 to dock 100 points.</div>';
+  h+='<div class="rules-sub">Every routine check-off this week, newest first. If a kid checked off something they did NOT actually do, tap ⚠️ '+flagLbl()+(spPenalty().on?' to dock '+spPenalty().pts+' points.':' to mark it.')+'</div>';
   var _rlwk=activeWk();
   [...ROSTER].forEach(function(kid){
     var kc=SL_KCOL[kid]||"#f59e0b";
@@ -7290,8 +7345,9 @@ function chSettingsClickoffLogHTML(){
       var slbl=(typeof SL_SLBL!=="undefined"&&SL_SLBL[e.slot])||e.slot||"";
       var dlbl=(typeof DAY_LBL!=="undefined"&&DAY_LBL[e._day])||e._day||"";
       h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)'+(e.flagged?';opacity:.6':'')+'">';
-      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">'+((typeof flagMarkTxt==="function"&&flagMarkTxt(e))||'−100')+'</span>':'')+((e.drop&&e.drop.n)?' <span style="color:#b91c1c;font-weight:800">'+(e.drop.gb?'−'+e.drop.n+' ⭐ given back':'−'+e.drop.n+' ⭐')+'</span>':'')/* CHOREDROP: what the drop took */+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
-      if(on&&!e.flagged&&(typeof ckLogCanDock!=="function"||ckLogCanDock())) h+='<button onclick="rlogFlag(\''+kid+'\',\''+_rlwk+'\',\''+e._day+'\',\''+e._key+'\')" title="Didn\'t actually do it — dock 100 points" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ −100</button>';
+      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">'+((typeof flagMarkTxt==="function"&&flagMarkTxt(e))||'−100')+'</span>':'')+((e.drop&&e.drop.n)?' <span style="color:#b91c1c;font-weight:800">'+(e.drop.gb?'−'+e.drop.n+' ⭐ given back':'−'+e.drop.n+' ⭐')+'</span>':'')/* CHOREDROP: what the drop took */+((e.zero&&e.zero.n)?' <span style="color:#b91c1c;font-weight:800">'+(e.zero.gb?'−1 ⭐ given back':'−1 ⭐')+'</span>':'')/* CHOREZERO */+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
+      if(on&&!e.flagged&&(typeof ckLogCanDock!=="function"||ckLogCanDock())) h+='<button onclick="rlogFlag(\''+kid+'\',\''+_rlwk+'\',\''+e._day+'\',\''+e._key+'\')" title="Didn\'t actually do it — '+(spPenalty().on?'dock '+spPenalty().pts+' points':'mark it')+'" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ '+flagLbl()+'</button>';
+      else if(e.flagged) h+=flagUndoBtn("step",kid,_rlwk+"/"+e._day+"/"+e._key);   // FLAGONE: undo
       h+='</div>';
     });
     if(entries.length>60) h+='<div style="font-size:11px;color:var(--muted);padding:6px 0">Showing the 60 most recent of '+entries.length+'.</div>';
@@ -7502,7 +7558,7 @@ function famSave(){
     if(emoji) rec.emoji=emoji; else delete rec.emoji;
     out.push(rec);
   }
-  if(!out.length){ alert("You need at least one kid."); return; }
+  if(!out.length&&!HA_HOUSEHOLD){ alert("You need at least one kid."); return; }   // HHKIND: a household may have none
   var msg=document.getElementById("fam-save-msg"); if(msg){ msg.textContent="Saving…"; msg.style.color="var(--muted)"; }
   HA_LS.setItem("ha_family",JSON.stringify(out));
   var done=function(){ try{ sessionStorage.setItem("ha_reload_why","family-save"); }catch(e){} location.reload(); };   // ⏱ CDBOOTS label
@@ -13817,7 +13873,7 @@ const HH_VERDICTS={keep:["✅","Keep","#15803d"],change:["✏️","Change","#b45
 // HHROSTER (audit 2026-10-24, her "go"): the household "who" list is THIS family's kids in roster order, then Mom, Dad, Up for
 // Grabs — it was Howe's four by name, so Settings ▸ 🧽 Cleaning Day listed Lincoln/Ellis/Lucy/Julian in every family's app and a
 // family's own kids' household jobs would never show. For Howe the list comes out identical.
-const HH_WHO=((typeof ROSTER!=="undefined"&&Array.isArray(ROSTER)&&ROSTER.length)?ROSTER.slice():["lincoln","ellis","lucy","julian"]).concat(["mom","dad","grab"]);
+const HH_WHO=((typeof ROSTER!=="undefined"&&Array.isArray(ROSTER)&&(ROSTER.length||(typeof HA_HOUSEHOLD!=="undefined"&&HA_HOUSEHOLD)))?ROSTER.slice():["lincoln","ellis","lucy","julian"]).concat(["mom","dad","grab"]);   // HHKIND: a household's empty list stays empty
 function hhWhoName(w){ return w==="mom"?"Mom":w==="dad"?"Dad":w==="grab"?"Up for Grabs":((typeof KID_NAME!=="undefined"&&KID_NAME[w])||cap(w)); }
 function hhSlug(l){ return String(l||"").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,96)||"x"; }
 // Ids are "<source>_<slug of the label>"; two rows with the same label on the same list get _2, _3 … so nothing is lost.
@@ -15940,7 +15996,7 @@ function llAddEvery(iso,x){ const e=llEvery(x); if(e.unit==="d") return llAddDay
 function llDue(x,lastIso){ const l=lastIso||(x&&x.last); if(x&&x.next&&/^\d{4}-\d{2}-\d{2}$/.test(x.next)&&(!lastIso||lastIso===(x.last||""))) return x.next; return l?llAddEvery(l,x):""; }
 function llCap(dow){ const c=laundryLine&&laundryLine.caps; const v=c?parseInt(c[dow],10):NaN; return (v>=0&&v<=LL_CAP_MAX)?v:(dow===6?0:1); }   // default: one load Mon–Sat, Sunday off
 // 👤 Who runs a load (step 5). People: Mom, Dad, the kids.
-function llPeople(){ const R=(typeof ROSTER!=="undefined"&&ROSTER&&ROSTER.length)?ROSTER:["lincoln","ellis","lucy","julian"]; return ["mom","dad"].concat(R); }
+function llPeople(){ const R=(typeof ROSTER!=="undefined"&&ROSTER&&(ROSTER.length||(typeof HA_HOUSEHOLD!=="undefined"&&HA_HOUSEHOLD)))?ROSTER:["lincoln","ellis","lucy","julian"]; return ["mom","dad"].concat(R); }   // HHKIND: a household's empty list stays empty
 // "both" = Mom or Dad (her ask 2026-10-18: "a mom or dad choice where it shows up on both"): either parent runs it — it reads
 // "Mom or Dad" everywhere, whoever taps 🫧 Start has it, and 🤒 Mom's sick asks nobody (Dad has it).
 function llDoerChoices(){ const P=llPeople(); return P.slice(0,2).concat(["both"],P.slice(2)); }
@@ -18293,8 +18349,8 @@ function luAwayRowsHTML(bare){ if(!luParentOk()) return ""; const A=luAwayList()
 //   switch flips (they were fixed at the draw); it applies from the next draw. All off → no draw, the card says it's paused.
 //   Writes: settings/spotCheck/types/<type> set (one switch per tap).
 //   −100 if not done (her ask 2026-10-15: "the option to take off -100 because it's the rules if not done"): the same sheet has
-//   "✗ Not done also takes off [100] ⭐" with an on/off switch, at settings/spotCheck/penalty = {on,pts}. Missing = OFF (DeWalt
-//   shares this code; Adrienne turns it on for Howe). When on, ✗ Not done does the undo above (the item's own stars back) AND
+//   "✗ Not done also takes off [100] ⭐" with an on/off switch, at settings/spotCheck/penalty = {on,pts}. Missing = ON at 100 (her
+//   answer 2026-11-21 to the ledger design's question 2, "ON at 100"; was OFF: DeWalt shares this code). When on, ✗ Not done does the undo above (the item's own stars back) AND
 //   bankDirect(kid,−pts,"🔎 Spot check: not done — <item>"); the confirm names both amounts; the result and 📜 record carry pen.
 //   Writes: settings/spotCheck/penalty/on · settings/spotCheck/penalty/pts set; bank/<kid>/adjustments/<id> (bankDirect).
 //   🔎 on Mom's afternoon checklist (her ask 2026-10-15: "make the spot check go to Mom's afternoon checklist and say spot
@@ -18336,8 +18392,8 @@ function spSetType(ty){
   if(_spWrite()) db.ref("settings/spotCheck/types/"+ty).set(v);
   if(typeof _cuRe==="function") _cuRe(); return true;
 }
-// −pts on ✗ Not done — off unless she turned it on.
-function spPenalty(){ const p=(spotSet&&spotSet.penalty)||{}; const n=parseInt(p.pts,10); return {on:p.on===true,pts:(n>0?Math.min(n,10000):100)}; }
+// −pts on ✗ Not done — on at 100 unless she turned it off (FLAGONE: the one penalty, also the 🚩's and ↩ Send back's).
+function spPenalty(){ const p=(spotSet&&spotSet.penalty)||{}; const n=parseInt(p.pts,10); return {on:p.on!==false,pts:(n>0?Math.min(n,10000):100)}; }
 function _spSetPen(k,v){
   spotSet=Object.assign({},spotSet); spotSet.penalty=Object.assign({},spotSet.penalty||{}); spotSet.penalty[k]=v; spotSetOnValue(spotSet);
   if(_spWrite()) db.ref("settings/spotCheck/penalty/"+k).set(v);
@@ -18417,9 +18473,10 @@ function spResolve(kid,j,r){
   const iso=_spIso(), rec=spDay(kid,iso); if(!rec||!rec.picks||!rec.picks[j]) return false;
   if(rec.results&&rec.results[j]) return false;
   const p=rec.picks[j], pen=spPenalty(), _nt=pen.on&&typeof starTakeOk==="function"&&!starTakeOk(kid); if(_nt) pen.on=false;   // STARRULES
+  const _fm=r==="no"&&pen.on&&typeof flagSpotMark==="function"?flagSpotMark(kid,p):""; if(_fm) pen.on=false;   // SPOTONE: already marked 🚩 → no more stars
   if(r==="no"){
     if(typeof confirm==="function"&&!confirm("Not done?\n\n“"+(p.label||"")+"” goes back to not done for "+((typeof KID_NAME!=="undefined"&&KID_NAME[kid])||cap(kid))+(p.pts>0?", and its "+p.pts+" ⭐ come back off":"")+"."
-      +(pen.on?"\n\nThe rule: −"+pen.pts+" ⭐ more for not doing it.":"")+(_nt?"\n\n"+starTakeWhy(kid)+", so nothing more comes off.":""))) return false;
+      +(pen.on?"\n\nThe rule: −"+pen.pts+" ⭐ more for not doing it.":"")+(_nt?"\n\n"+starTakeWhy(kid)+", so nothing more comes off.":"")+(_fm?"\n\nIt is already marked 🚩 by "+_fm+", so no more stars come off.":""))) return false;
     if(p.kind==="step"){
       let i=p.i; const steps=(p.slot==="morning"&&typeof morningStepsFor==="function")?morningStepsFor(kid):(rtStepsFor(p.slot,kid,false,p.d)||[]);
       if(!steps[i]||(steps[i].label||"")!==p.label){ const f=steps.findIndex(function(s){ return s&&(s.label||"")===p.label; }); if(f>=0) i=f; }   // the list was edited since the draw
@@ -19626,9 +19683,33 @@ let ckLogOpen=false;
 // asks, then marks the line with penalty 0 and takes nothing. An old mark (no flagBy) draws as before.
 function flagWho(){ return (typeof momHere==="function"&&momHere())?"mom":"dad"; }
 function flagWhoName(w){ return w==="dad"?"Dad":"Mom"; }
-function flagMarkTxt(r){ return r&&r.flagBy?"🚩 by "+flagWhoName(r.flagBy)+" · "+(r.penalty===0?"no stars taken":"−100"):""; }
-function flagOffAsk(kid,label){ return "Mark a false check-off for "+cap(kid)+"?\n\n\""+label+"\"\n\n"+starTakeWhy(kid)+", so no stars come off. The line just gets its 🚩 mark."; }
+function flagMarkTxt(r){ return r&&r.flagBy?"🚩 "+(r.sb?"Wasn't done · ":"")+"by "+flagWhoName(r.flagBy)+" · "+(r.penalty===0?"no stars taken":"−"+(-r.penalty||100)):""; }   // FLAGONE: the amount taken
+function flagOffAsk(kid,label){ return "Mark a false check-off for "+cap(kid)+"?\n\n\""+label+"\"\n\n"+(arguments[2]?"The 🔎 spot check's ✗ already took "+arguments[2]+" ⭐":starTakeOk(kid)?"The penalty is off":starTakeWhy(kid))+", so no stars come off. The line just gets its 🚩 mark."; }
 // FLAGWHO_END
+// FLAGONE_START — one 🚩 record for the Click-off Log's ⚠️, 🧾's −100 and the 📒 Ledger's ↩ Send back ▸ Wasn't done (DESIGN_chore_ledger
+// _2026-11-21 §5 "one record", slice L5). The amount is the ONE penalty (spPenalty, the 🔎 Spot check ⚙, on at 100 unless set): 0 when
+// it is off, Take stars away is off for the kid, or ⏸ — the line is still marked, penalty 0. The minus line has a FIXED id per marked line
+// (flg_<wk>_<day>_<key>; a school card flg_<WK>_<id>), kept on the mark as flagBid: two taps or two devices write one line, and "undo"
+// (house.js lgFlagUndo, fetched on the tap) takes it and the mark off. Writes only when db && !_dryRun().
+function flagN(kid,kind,ref){ const P=spPenalty(); return P.on&&starTakeOk(kid)&&!(kind&&flagSpotTook(kid,kind,ref))?P.pts:0; }
+// SPOTONE (hub 2026-11-24, "one record, never twice"): the 🔎 spot check's ✗ and the 🚩 never both take the penalty for one tick.
+// flagSpotTook: the ✗ that already took it for that tick (a step: its list, words and day, judged after this tick) → its amount, or 0.
+// flagSpotMark: the tick the spot pick names already carries the 🚩 → who marked it ("Mom" / "Dad"), or "" (its ✗ then takes none).
+function flagSpotTook(kid,kind,ref){ const r=flagRec(kind,kid,ref), q=String(ref).split("/"), x=(typeof spDay==="function"&&spDay(kid,kind==="task"?_spIso():amIso(q[1])))||{}, R=x.results||{}; let n=0;
+  const P=x.picks||{}; Object.keys(P).forEach(function(j){ const p=P[j]||{}, s=R[j]; if(s&&s.r==="no"&&s.pen&&(kind==="task"?p.kind==="task"&&p.id===ref:p.kind==="step"&&r&&p.slot===r.slot&&p.label===r.label&&p.d===q[1]&&q[0]===activeWk()&&(r.at||0)<=(s.at||0))) n=s.pen; });
+  return n; }
+function flagSpotMark(kid,p){ let b=null; if(p.kind==="task") b=(histState||{})[p.id];
+  else { const L=((routineLog[kid]||{})[activeWk()]||{})[p.d]||{}; Object.keys(L).forEach(function(k){ const x=L[k]; if(x&&x.act==="on"&&x.slot===p.slot&&x.label===p.label&&(!b||(x.at||0)>(b.at||0))) b=x; }); }
+  return b&&b.flagged?flagWhoName(b.flagBy):""; }
+function flagLbl(){ const P=spPenalty(); return P.on?"−"+P.pts:"🚩 Mark"; }
+function flagLine(kid,id,n,note){ const A=(bank[kid]=bank[kid]||{}).adjustments=bank[kid].adjustments||{}; if(A[id]) return;
+  A[id]={amount:-n,note:note,ts:nowTs(),iso:new Date().toISOString(),src:"earn",wk:activeWk(),day:day}; if(db&&!_dryRun()) db.ref("bank/"+kid+"/adjustments/"+id).set(A[id]); }   // not the 📮 outbox: a replay after its Undo would bring it back (as C3's drop line)
+function flagSet(kid,rec,path,id,note,who,x,n){ if(n==null) n=flagN(kid); const p={flagged:true,penalty:n?-n:0,flagTs:nowTs(),flagBy:who};
+  if(n){ p.flagBid=id; flagLine(kid,id,n,note); } Object.assign(p,x||{}); Object.assign(rec,p); if(db&&!_dryRun()) db.ref(path).update(p); return p; }
+function flagRec(kind,kid,ref){ if(kind==="task") return (histState||{})[ref]||null; const p=String(ref).split("/"); return (((routineLog[kid]||{})[p[0]]||{})[p[1]]||{})[p[2]]||null; }
+function flagUndoBtn(kind,kid,ref){ const r=flagRec(kind,kid,ref); return r&&r.flagBy&&(r.flagBid||r.penalty===0)&&ckLogCanDock()?'<button onclick="event.stopPropagation();flagUndo(\''+kind+'\',\''+kid+'\',\''+ref+'\')" title="Take the 🚩 off'+(r.sb?' and put the tick back':'')+'" style="flex-shrink:0;padding:2px 7px;border-radius:7px;border:1px solid #d1d5db;background:#fff;color:#374151;font-size:10.5px;font-weight:700;cursor:pointer">undo</button>':''; }
+function flagUndo(kind,kid,ref){ if(!ckLogCanDock()) return; if(typeof lgFlagUndo==="function") return lgFlagUndo(kind,kid,ref,1); haLazyLoad("house").then(function(){ if(typeof lgFlagUndo==="function") lgFlagUndo(kind,kid,ref,1); },function(){}); }
+// FLAGONE_END
 // DADGATE (her answer 2026-11-24: "Yes, ask for code"): the card is Mom's and Dad's link's (ckLogCanSee); the −100 and the 🚩 mark are
 // Mom's, or Dad's with his code in (dadAwardOk) — the same gate as his other star buttons. Locked, he sees every line and mark, no −100.
 function ckLogCanSee(){ try{ return momHere()||_kioskD(); }catch(e){ return false; } }
@@ -19659,29 +19740,25 @@ function ckLogToday(){
 }
 function ckLogDock(kind,kid,ref,label){
   if(!ckLogCanDock()) return;
-  const who=(typeof momHere==="function"&&momHere())?"mom":"dad", off=typeof starTakeOk==="function"&&!starTakeOk(kid);   // FLAGWHO: Take stars away off → the 🚩 mark, no stars (as the Click-off Log's ⚠️)
+  const who=(typeof momHere==="function"&&momHere())?"mom":"dad", sp=flagSpotTook(kid,kind,ref), n=flagN(kid,kind,ref), off=!n;   // FLAGWHO · FLAGONE: no penalty (off, Take stars away off, ⏸, SPOTONE) → the 🚩 mark, no stars
   if(kind==="step"){
     const p=ref.split("/"); const rec=(((routineLog[kid]||{})[p[0]]||{})[p[1]]||{})[p[2]]; if(!rec||rec.flagged) return;
-    if(!confirm(off?flagOffAsk(kid,rec.label||label||""):"Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||label||"")+"\"")) return;
-    if(!off) bankDirect(kid,-100,"🚩 false check-off dock — "+(rec.label||label||"")+" · by "+flagWhoName(who));   // FLAGWHO
-    const patch={flagged:true,penalty:off?0:-100,flagTs:nowTs(),flagBy:who}; Object.assign(rec,patch);
-    if(db&&!_dryRun()) db.ref("routineLog/"+kid+"/"+p[0]+"/"+p[1]+"/"+p[2]).update(patch);
+    if(!confirm(off?flagOffAsk(kid,rec.label||label||"",sp):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||label||"")+"\"")) return;
+    flagSet(kid,rec,"routineLog/"+kid+"/"+p[0]+"/"+p[1]+"/"+p[2],"flg_"+p.join("_"),"🚩 false check-off dock — "+(rec.label||label||"")+" · by "+flagWhoName(who),who,null,n);   // FLAGWHO · FLAGONE
   } else {
     const h=histState[ref]; if(!h||h.flagged) return;
-    if(!confirm((off?flagOffAsk(kid,label||""):"Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(label||"")+"\"")+"\n\n(The card stays checked — use “"+cw("fixFalse")+"” in the subject sheet to undo the record.)")) return;
-    if(!off) bankDirect(kid,-100,"🚩 false check-off dock — "+(label||"")+" · by "+flagWhoName(who));   // FLAGWHO
-    const patch={flagged:true,penalty:off?0:-100,flagTs:nowTs(),flagBy:who}; Object.assign(h,patch);
+    if(!confirm((off?flagOffAsk(kid,label||"",sp):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(label||"")+"\"")+"\n\n(The card stays checked — use “"+cw("fixFalse")+"” in the subject sheet to undo the record.)")) return;
+    const patch=flagSet(kid,h,WK+"/history/"+ref,"flg_"+WK+"_"+ref,"🚩 false check-off dock — "+(label||"")+" · by "+flagWhoName(who),who,null,n);   // FLAGWHO · FLAGONE
     try{ const hs=ld(WK+"_history")||{}; if(hs[ref]){ Object.assign(hs[ref],patch); sv(WK+"_history",hs); } }catch(e){}
-    if(db&&!_dryRun()) db.ref(WK+"/history/"+ref).update(patch);
   }
-  dbg("🚩 "+(off?"mark, no stars,":"dock −100")+" "+kid+" ("+kind+") by "+who+": "+(label||""));
+  dbg("🚩 "+(off?"mark, no stars,":"dock −"+n)+" "+kid+" ("+kind+") by "+who+": "+(label||""));
   if(typeof renderAll==="function") renderAll();
 }
 function ckLogToggle(){ ckLogOpen=!ckLogOpen; if(typeof renderAll==="function") renderAll(); }
 function mdCardCheckLog(){
   try{
     if(!ckLogCanSee()) return "";   // DADGATE
-    const items=ckLogToday(), canDock=ckLogCanDock(); if(!items.length) return "";
+    const items=ckLogToday(), canDock=ckLogCanDock(), fl=flagLbl(), fP=spPenalty(); if(!items.length) return "";   // FLAGONE
     const byKid={}; items.forEach(i=>{ (byKid[i.kid]=byKid[i.kid]||[]).push(i); });
     const kids=Object.keys(byKid).sort((a,b)=>((typeof ROSTER!=="undefined"&&ROSTER)||[]).indexOf(a)-((typeof ROSTER!=="undefined"&&ROSTER)||[]).indexOf(b));
     const docked=items.filter(i=>i.flagged).length;
@@ -19696,13 +19773,13 @@ function mdCardCheckLog(){
           h+='<span style="font-size:11px;color:var(--muted);flex:0 0 62px">'+esc(i.ts)+'</span>';
           h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">'+(i.kind==="step"?'🧹 ':'')+esc(i.label)+(i.pts?' <span style="color:#b45309;font-weight:700">+'+i.pts+'⭐</span>':'')+'</span>';
           if(i.kind==="wave") h+='<span style="flex-shrink:0;font-size:11px;font-weight:800;color:#6b7280">🙋 waved</span>';   // WAVE: nothing to dock
-          else if(i.flagged) h+='<span title="'+(i.penalty===0?'marked, no stars taken':'docked −100')+'" style="flex-shrink:0;font-size:11px;font-weight:800;color:#b91c1c">'+(flagMarkTxt(i)||'🚩 −100')+'</span>';   // FLAGWHO
-          else if(canDock) h+='<button onclick="event.stopPropagation();ckLogDock(\''+i.kind+'\',\''+i.kid+'\',\''+i.ref.replace(/'/g,"\\'")+'\',\''+esc(i.label).replace(/'/g,"\\'")+'\')" title="Didn’t actually do it — dock 100" style="flex-shrink:0;padding:3px 9px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">−100</button>';
+          else if(i.flagged) h+='<span title="'+(i.penalty===0?'marked, no stars taken':'docked −'+(-i.penalty||100))+'" style="flex-shrink:0;font-size:11px;font-weight:800;color:#b91c1c">'+(flagMarkTxt(flagRec(i.kind,i.kid,i.ref)||i)||'🚩 −100')+'</span>'+flagUndoBtn(i.kind,i.kid,i.ref);   // FLAGWHO · FLAGONE: undo
+          else if(canDock) h+='<button onclick="event.stopPropagation();ckLogDock(\''+i.kind+'\',\''+i.kid+'\',\''+i.ref.replace(/'/g,"\\'")+'\',\''+esc(i.label).replace(/'/g,"\\'")+'\')" title="Didn’t actually do it — '+(fP.on?'dock '+fP.pts:'mark it')+'" style="flex-shrink:0;padding:3px 9px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+fl+'</button>';
           h+='</div>';
         });
       });
-      h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px">A dock takes 100 ⭐ from the Star Bank and marks the line. A school card stays checked — use “'+cw("fixFalse")+'” in the subject sheet to undo the record.</div>';
-      if(!canDock) h+='<div style="font-size:11.5px;color:#6b7280;margin-top:6px">🔒 Put your code in under Star controls to use −100.</div>';   // DADGATE: a locked Dad
+      h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px">A dock takes '+(fP.on?fP.pts+' ⭐ from the Star Bank':'no stars (the penalty is off)')+' and marks the line. A school card stays checked — use “'+cw("fixFalse")+'” in the subject sheet to undo the record.</div>';
+      if(!canDock) h+='<div style="font-size:11.5px;color:#6b7280;margin-top:6px">🔒 Put your code in under Star controls to use '+fl+'.</div>';   // DADGATE: a locked Dad
       h+='</div>';
     }
     h+='</div>';
@@ -19717,7 +19794,7 @@ function rlDadToggle(){ rlDadOpen=!rlDadOpen; if(typeof renderAll==="function") 
 function rlDadDoorHTML(){
   if(!_kioskD()) return "";
   return '<div onclick="rlDadToggle()" style="margin:10px 12px 0;background:#fff;border-radius:12px;padding:10px 14px;display:flex;font-size:12.5px;font-weight:800;color:#4c1d95;cursor:pointer;box-shadow:0 4px 20px rgba(43,122,120,0.13)">🕵️ Click-off Log (this week)<span style="margin-left:auto">'+(rlDadOpen?'▲':'›')+'</span></div>'
-    +(rlDadOpen?'<div style="margin:0 12px">'+chSettingsClickoffLogHTML()+(ckLogCanDock()?'':'<div style="font-size:11.5px;color:#6b7280;margin-top:6px">🔒 Put your code in under Star controls to use ⚠️ −100.</div>')+'</div>':'');
+    +(rlDadOpen?'<div style="margin:0 12px">'+chSettingsClickoffLogHTML()+(ckLogCanDock()?'':'<div style="font-size:11.5px;color:#6b7280;margin-top:6px">🔒 Put your code in under Star controls to use ⚠️ '+flagLbl()+'.</div>')+'</div>':'');
 }
 // DADSPOTLOG_END
 // LEDGER_START — 📒 the Ledger's button on 🧒 Kids today (DESIGN_chore_ledger_2026-11-21 §2, L1: "moms day as a button to a pop up",
@@ -20169,7 +20246,7 @@ function renderMomsDay(el){
   // 🌙 Luteal/period support — surfaces ONLY during the hard-week phases
   try{
     const _ci=mwCycleInfo(mwTodayIso());
-    if(_ci.key==='luteal'||_ci.key==='menstrual'){
+    if((typeof mwCycleOwn!=="function"||mwCycleOwn())&&(_ci.key==='luteal'||_ci.key==='menstrual')){   // CYCLEOWN: only for a family with a cycle of its own
       const _lut=_ci.key==='luteal';
       h+='<div style="background:linear-gradient(135deg,'+(_lut?'#efe7f7':'#fbe3ec')+',#fff);border:1.5px solid '+(_lut?'#6B4C93':'#c2547e')+';border-radius:12px;padding:12px 14px">'
         +'<div style="display:flex;align-items:center;gap:9px;margin-bottom:7px">'
@@ -27678,6 +27755,21 @@ function mwCycleInfo(iso){
   const day=m+1;
   return Object.assign({day}, mwPhaseFor(day));
 }
+// CYCLEOWN_START — the built-in cycle start (wellnessCycle's fallback date) is Adrienne's own. Every other family's app used it
+// until a period was logged there, so Home Base showed "Luteal Week / Period Week" and Health showed a cycle day, a phase, a
+// "next period expected" date and a "last period started" date that family never entered (found 2026-11-24 reading for the
+// Household edition; her "Yes, start step 0" 2026-11-24 — DESIGN_household_edition_2026-11-24.md §5.4). mwCycleOwn() = this
+// family has a cycle of its own: Howe always (nothing changes there); any other family once a period is logged or a start
+// date other than the built-in one is saved. Not its own → the banner and the cycle wording are left out (every call site is
+// marked CYCLEOWN); weights, blood pressure, symptoms and the Period Log's own "Log period start" stay. No new database writes.
+const MW_BUILTIN_ANCHOR='2026-07-25';
+function mwCycleOwn(){
+  if(typeof HA_IS_HOWE==="undefined"||HA_IS_HOWE) return true;
+  if((wellnessPeriods||[]).some(p=>p&&p.iso)) return true;
+  const a=wellnessCycle&&wellnessCycle.anchor;
+  return !!a&&a!==MW_BUILTIN_ANCHOR;
+}
+// CYCLEOWN_END
 function mwFmtShort(iso){ const d=new Date(iso+'T00:00'); return (d.getMonth()+1)+'/'+d.getDate(); }
 function mwTodayIso(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function mwDelta(a,b){ const d=+(a-b).toFixed(1); const cls=d<-0.05?'down':(d>0.05?'up':'flat'); const arrow=d<-0.05?'▼':(d>0.05?'▲':'▬'); return {d,cls,arrow,str:(d>0?'+':'')+d.toFixed(1)}; }
@@ -27690,8 +27782,8 @@ function mwChartSVG(list){
   const y0=Math.floor(Math.min.apply(null,ys)-1), y1=Math.ceil(Math.max.apply(null,ys)+1);
   const px=t=>pad.l+(W-pad.l-pad.r)*(t-x0)/((x1-x0)||1);
   const py=v=>pad.t+(H-pad.t-pad.b)*(1-(v-y0)/((y1-y0)||1));
-  let bands='';
-  for(let i=0;i<list.length;i++){
+  let bands=''; const own=mwCycleOwn();   // CYCLEOWN: no phase bands or phase-coloured dots without a cycle of its own
+  for(let i=0;own&&i<list.length;i++){
     const c=mwCycleInfo(list[i].iso);
     const xL = i===0? pad.l : (px(xs[i-1])+px(xs[i]))/2;
     const xR = i===list.length-1? W-pad.r : (px(xs[i])+px(xs[i+1]))/2;
@@ -27703,7 +27795,7 @@ function mwChartSVG(list){
     grid+=`<line x1="${pad.l}" y1="${py(g)}" x2="${W-pad.r}" y2="${py(g)}" stroke="#e8e4de" stroke-width="1"/><text x="4" y="${py(g)+3}" font-size="9" fill="#9ca3af">${g}</text>`;
   }
   const line=list.map((w,i)=>(i?'L':'M')+px(xs[i]).toFixed(1)+' '+py(w.lb).toFixed(1)).join(' ');
-  const dots=list.map((w,i)=>{const c=mwCycleInfo(w.iso);return `<circle cx="${px(xs[i]).toFixed(1)}" cy="${py(w.lb).toFixed(1)}" r="3.4" fill="#fff" stroke="${c.txt}" stroke-width="2"/>`;}).join('');
+  const dots=list.map((w,i)=>{const c=mwCycleInfo(w.iso);return `<circle cx="${px(xs[i]).toFixed(1)}" cy="${py(w.lb).toFixed(1)}" r="3.4" fill="#fff" stroke="${own?c.txt:'#2B7A78'}" stroke-width="2"/>`;}).join('');
   const xlab=list.map((w,i)=> (i%2===0||i===list.length-1)?`<text x="${px(xs[i]).toFixed(1)}" y="${H-6}" font-size="8.5" fill="#9ca3af" text-anchor="middle">${mwFmtShort(w.iso)}</text>`:'').join('');
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${bands}${grid}<path d="${line}" fill="none" stroke="#2B7A78" stroke-width="2.5" stroke-linejoin="round"/>${dots}${xlab}</svg>`;
 }
@@ -27714,6 +27806,7 @@ function renderMPWeigh(el){
   const today=mwTodayIso();
 
   let currentCard='', comparisonCard='', trendCard='', historyCard='';
+  const own=mwCycleOwn();   // CYCLEOWN: false = another family that has not entered a cycle of its own
   let defaultDate=today;
 
   if(has){
@@ -27723,7 +27816,7 @@ function renderMPWeigh(el){
       <div class="stat">
         <div><div class="big">${latest.lb.toFixed(1)}<span style="font-size:16px;color:#6b6560"> lb</span></div>
           <div style="font-size:11px;color:#6b6560;margin-top:3px">${new Date(latest.iso+'T00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div></div>
-        <div style="margin-left:auto;text-align:right"><span class="badge" style="background:${ci.color};color:${ci.txt}">${ci.emoji} Cycle day ${ci.day} · ${ci.label}</span></div>
+        ${own?`<div style="margin-left:auto;text-align:right"><span class="badge" style="background:${ci.color};color:${ci.txt}">${ci.emoji} Cycle day ${ci.day} · ${ci.label}</span></div>`:''}
       </div></div></div>`;
 
     const prev=list[list.length-2];
@@ -27742,24 +27835,28 @@ function renderMPWeigh(el){
       }
     } else { ins+=`<br><br>Log ~4 weeks to unlock the same-cycle-phase comparison — that's the one that cancels out water weight.`; }
 
+    if(!own){   // CYCLEOWN: the plain four-week comparison, no phase wording
+      const d4=cycD?(cycD.d<-0.05?`down <b>${Math.abs(cycD.d).toFixed(1)} lb</b>`:(cycD.d>0.05?`up <b>${cycD.d.toFixed(1)} lb</b>`:`holding steady`)):'';
+      ins=cycD?`Compared with four weeks ago, you're ${d4}.`:`Log about 4 weeks to see how you compare with four weeks ago.`;
+    }
     comparisonCard=`<div class="card"><div class="head h-purple"><span>📊</span> How You're Actually Doing</div><div class="body">
       <div class="tiles">
-        <div class="tile"><div class="lbl">vs last week (raw)</div><div class="val ${rawD?rawD.cls:''}">${rawD?rawD.arrow+' '+rawD.str:'—'}</div><div class="cap">${prev?'from '+prev.lb.toFixed(1)+' on '+mwFmtShort(prev.iso)+' · <i>different phase, noisy</i>':'need a prior entry'}</div></div>
-        <div class="tile" style="border-color:#6B4C93;background:#F0EBF8"><div class="lbl">vs 4 wks ago · same phase ⭐</div><div class="val ${cycD?cycD.cls:''}">${cycD?cycD.arrow+' '+cycD.str:'—'}</div><div class="cap">${samePhase?'from '+samePhase.w.lb.toFixed(1)+' on '+mwFmtShort(samePhase.w.iso)+' ('+mwCycleInfo(samePhase.w.iso).label+') · <b>the true trend</b>':'need ~4 wks of data'}</div></div>
+        <div class="tile"><div class="lbl">vs last week (raw)</div><div class="val ${rawD?rawD.cls:''}">${rawD?rawD.arrow+' '+rawD.str:'—'}</div><div class="cap">${prev?'from '+prev.lb.toFixed(1)+' on '+mwFmtShort(prev.iso)+(own?' · <i>different phase, noisy</i>':''):'need a prior entry'}</div></div>
+        <div class="tile" style="border-color:#6B4C93;background:#F0EBF8"><div class="lbl">${own?'vs 4 wks ago · same phase ⭐':'vs 4 wks ago'}</div><div class="val ${cycD?cycD.cls:''}">${cycD?cycD.arrow+' '+cycD.str:'—'}</div><div class="cap">${samePhase?'from '+samePhase.w.lb.toFixed(1)+' on '+mwFmtShort(samePhase.w.iso)+(own?' ('+mwCycleInfo(samePhase.w.iso).label+') · <b>the true trend</b>':''):'need ~4 wks of data'}</div></div>
       </div>
       <div class="note rose" style="margin-top:10px">${ins}</div></div></div>`;
 
-    trendCard=`<div class="card"><div class="head h-green"><span>📈</span> Trend (shaded by cycle phase)</div><div class="body">
+    trendCard=`<div class="card"><div class="head h-green"><span>📈</span> Trend${own?' (shaded by cycle phase)':''}</div><div class="body">
       ${mwChartSVG(list)}
-      <div class="legend"><span><i class="sw" style="background:#fbe3ec"></i>🩸 Menstrual</span><span><i class="sw" style="background:#eaf4ec"></i>🌱 Follicular</span><span><i class="sw" style="background:#fff6d6"></i>✨ Ovulation</span><span><i class="sw" style="background:#efe7f7"></i>🌙 Luteal</span></div>
+      ${own?`<div class="legend"><span><i class="sw" style="background:#fbe3ec"></i>🩸 Menstrual</span><span><i class="sw" style="background:#eaf4ec"></i>🌱 Follicular</span><span><i class="sw" style="background:#fff6d6"></i>✨ Ovulation</span><span><i class="sw" style="background:#efe7f7"></i>🌙 Luteal</span></div>`:''}
     </div></div>`;
 
-    const rows=list.slice().reverse().map(w=>{const c=mwCycleInfo(w.iso);return `<div class="wrow"><div class="wdate">${mwFmtShort(w.iso)}</div><div class="wlb">${w.lb.toFixed(1)}</div><span class="mini" style="background:${c.color};color:${c.txt}">${c.emoji} d${c.day}</span><div style="flex:1;color:#6b6560;font-size:11px">${w.note||''}</div></div>`;}).join('');
+    const rows=list.slice().reverse().map(w=>{const c=mwCycleInfo(w.iso);return `<div class="wrow"><div class="wdate">${mwFmtShort(w.iso)}</div><div class="wlb">${w.lb.toFixed(1)}</div>${own?`<span class="mini" style="background:${c.color};color:${c.txt}">${c.emoji} d${c.day}</span>`:''}<div style="flex:1;color:#6b6560;font-size:11px">${w.note||''}</div></div>`;}).join('');
     historyCard=`<div class="card"><div class="head h-blue"><span>🗓️</span> History</div><div class="body">${rows}</div></div>`;
 
     defaultDate = today>latest.iso ? today : new Date(Date.parse(latest.iso)+7*86400000).toISOString().slice(0,10);
   } else {
-    currentCard=`<div class="card"><div class="head h-teal"><span>⚖️</span> Weekly Weigh-In</div><div class="body"><div style="font-size:13px;color:#6b6560;line-height:1.5">No weigh-ins yet. Log your first below — pick the same day each week (Fridays work well). After ~4 weeks the app compares each reading to the <b>same point in your cycle a month earlier</b>, so a premenstrual bump never looks like fat.</div></div></div>`;
+    currentCard=`<div class="card"><div class="head h-teal"><span>⚖️</span> Weekly Weigh-In</div><div class="body"><div style="font-size:13px;color:#6b6560;line-height:1.5">No weigh-ins yet. Log your first below — pick the same day each week (Fridays work well).${own?` After ~4 weeks the app compares each reading to the <b>same point in your cycle a month earlier</b>, so a premenstrual bump never looks like fat.`:''}</div></div></div>`;
   }
 
   const logCard=`<div class="card"><div class="head h-orange"><span>➕</span> Log This Week</div><div class="body">
@@ -27805,11 +27902,11 @@ function renderMPWeigh(el){
     const days=Object.keys(wellnessSymptoms).filter(d=>Object.keys(wellnessSymptoms[d]||{}).length).sort().reverse().slice(0,14);
     const rows=days.map(d=>{ const c=mwCycleInfo(d);
       const chips=Object.keys(wellnessSymptoms[d]).map(k=>'<span class="mini" style="background:#fbe3ec;color:#b03a5b">'+(lbl[k]||k)+'</span>').join(' ');
-      return '<div class="wrow"><div class="wdate">'+mwFmtShort(d)+'</div><span class="mini" style="background:'+c.color+';color:'+c.txt+'">'+c.emoji+' d'+c.day+'</span><div style="flex:1">'+chips+'</div></div>'; }).join('');
+      return '<div class="wrow"><div class="wdate">'+mwFmtShort(d)+'</div>'+(own?'<span class="mini" style="background:'+c.color+';color:'+c.txt+'">'+c.emoji+' d'+c.day+'</span>':'')+'<div style="flex:1">'+chips+'</div></div>'; }).join('');
     return `<div class="card"><div class="head h-purple"><span>🌡</span> Symptoms</div><div class="body">
       ${rows||'<div style="font-size:12px;color:#6b6560">Nothing logged yet — tap symptom chips on Mom\'s Day as they happen.</div>'}
       ${Object.keys(wellnessSymBank).length?'<div style="margin-top:10px;font-size:11px;color:#6b6560"><b>Your added symptoms:</b> '+Object.keys(wellnessSymBank).sort().map(k=>'<span class="mini" style="background:#fbe3ec;color:#b03a5b">'+wellnessSymBank[k]+' <span onclick="mwDelSymType(\''+k+'\')" style="cursor:pointer;font-weight:800">✕</span></span>').join(' ')+'</div>':''}
-      <div class="note" style="margin-top:10px">Every logged day carries its cycle day, so once a few weeks build up, trends can show which symptoms cluster in which phase.</div>
+      ${own?`<div class="note" style="margin-top:10px">Every logged day carries its cycle day, so once a few weeks build up, trends can show which symptoms cluster in which phase.</div>`:''}
     </div></div>`;
   })();
 
@@ -27834,15 +27931,15 @@ function renderMPWeigh(el){
     return `<div class="wrow"><div class="wdate">${mwFmtShort(p.iso)}</div><div style="flex:1;font-size:12px;color:#5a544e">${new Date(p.iso+'T00:00').toLocaleDateString('en-US',{weekday:'short',year:'numeric'})}${gap?` · <span style="color:#6b6560">${gap}-day cycle</span>`:` · <span style="color:#b03a5b;font-weight:700">current</span>`}</div><button onclick="mwRemovePeriod('${p.iso}')" style="border:none;background:transparent;color:#c0392b;font-size:14px;cursor:pointer;padding:2px 6px" title="Remove this entry">✕</button></div>`;
   }).join('');
   const periodCard=`<div class="card"><div class="head" style="background:#c2547e"><span>🩸</span> Period Log</div><div class="body">
-    <span class="badge" style="background:${nowCi.color};color:${nowCi.txt}">${nowCi.emoji} Today · cycle day ${nowCi.day} · ${nowCi.label}</span>
-    ${nextLine}${avgLine}
+    ${own?`<span class="badge" style="background:${nowCi.color};color:${nowCi.txt}">${nowCi.emoji} Today · cycle day ${nowCi.day} · ${nowCi.label}</span>
+    ${nextLine}${avgLine}`:''}
     <div class="field" style="margin-top:10px"><label>Period started on</label><input type="date" id="period-date" value="${todayI}"></div>
     <button class="act" style="background:#c2547e" onclick="mwLogPeriod()">🩸 Log period start</button>
     ${pStarts.length?`<div style="margin-top:10px">${pRows}</div>`:`<div class="note rose" style="margin-top:10px">Log the day each period starts. The app uses your most recent start as the cycle anchor and learns your true cycle length from the gaps — so all the phase math and comparisons stay accurate over time.</div>`}
   </div></div>`;
 
   const cycleCard=`<details><summary>⚙️ Cycle Settings <span class="caret">▶</span></summary><div class="inner">
-    <div class="field"><label>Last period started</label><input type="date" id="cy-anchor" value="${wellnessCycle.anchor}"></div>
+    <div class="field"><label>Last period started</label><input type="date" id="cy-anchor" value="${own?wellnessCycle.anchor:''}"></div>
     <div class="field"><label>Cycle length (days)</label><input type="number" id="cy-len" min="20" max="40" value="${wellnessCycle.len}"></div>
     <button class="act" onclick="mwSaveCycle()">Update cycle</button>
     <div class="note" style="margin-top:9px">Comparisons line up the <b>same cycle day, 4 weeks apart</b> — so a premenstrual bump isn't mistaken for fat. Truest read is <b>follicular (days ~7–12)</b>.</div>
@@ -27850,7 +27947,7 @@ function renderMPWeigh(el){
 
   el.innerHTML=`<div class="mwv" style="font-family:'DM Sans',sans-serif;padding-bottom:28px">
     <style>${MW_CSS}</style>
-    ${mwBanner('Weekly weigh-in · read against your cycle')}
+    ${mwBanner(own?'Weekly weigh-in · read against your cycle':'Weekly weigh-in')}
     ${mpSubnav('weigh')}
     <div style="padding:12px 12px 0;display:flex;flex-direction:column;gap:11px">
       ${currentCard}${periodCard}${comparisonCard}${trendCard}${logCard}${bpCard}${symCard}${historyCard}${cycleCard}
@@ -27862,6 +27959,7 @@ function mwUpdateDayBadge(){
   const inp=document.getElementById('wi-date'); const out=document.getElementById('wi-daybadge');
   if(!inp||!out) return;
   const iso=inp.value; if(!iso){ out.textContent=''; return; }
+  if(!mwCycleOwn()){ out.textContent=''; return; }   // CYCLEOWN: no cycle day beside the date
   const c=mwCycleInfo(iso);
   out.innerHTML=`That date is <b style="color:${c.txt}">${c.emoji} cycle day ${c.day} · ${c.label}</b>${c.key==='follicular'?' — great time to weigh 👍':''}`;
 }
@@ -27884,6 +27982,7 @@ function mwSaveWeighin(){
 function mwSaveCycle(){
   const a=(document.getElementById('cy-anchor')||{}).value;
   const l=parseInt((document.getElementById('cy-len')||{}).value);
+  if(!a&&!mwCycleOwn()){ alert('Pick the date your last period started.'); return; }   // CYCLEOWN: an empty date must not save the built-in one into this family's database
   if(a) wellnessCycle.anchor=a;
   if(l) wellnessCycle.len=l;
   try{HA_LS.setItem('wellness_cycle',JSON.stringify(wellnessCycle));}catch(e){}
@@ -44620,7 +44719,7 @@ let _wbdBg="blank", _wbdRO=null;
 function wbdJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
 function wbdOpen(opts){
   if(typeof document==="undefined"||!document.body) return false; opts=opts||{};
-  if(typeof wbView!=="undefined"&&wbView&&!wbView.scratch) return false;   // a workbook page is open — never wipe it
+  if(typeof wbView!=="undefined"&&wbView&&!wbView.scratch&&!(typeof wblbPass==="function"&&wblbPass(opts))) return false;   // a workbook page is open — never wipe it (WBLBOARD: but the strip's chip)
   const v={scratch:true,kid:String(opts.kid||""),bookId:"",page:1,strokes:[],dirty:false,tool:"pen",penOnly:false,sawPen:false,penW:WBD_PEN_W,bg:_wbdBg,ar:0,
     uid:String(opts.uid||""),dayId:opts.dayId==null?"":String(opts.dayId),key:String(opts.key||"")};
   wbView=v;
@@ -44656,6 +44755,7 @@ function wbdFit(){
 function wbdBg(k){ const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!v.scratch) return; v.bg=_wbdBg=(k==="grid"||k==="lines"?k:"blank"); wbdFit(); wbBarRender(); }   // WBDLINES: + lines
 // wbBarRender's hook: the board's bar, drawn with the viewer's own button
 function wbdBarHTML(v,btn){
+  if(v.wblb&&typeof wblbBarHTML==="function") return wblbBarHTML(v,btn);   // WBLBOARD: ↩ Back to the book, no ✕
   return btn("\u2715","wbClose()")+'<span style="font-weight:800;font-size:13px;color:#0f172a">\u270D\uFE0F Whiteboard</span>'+
     '<span style="font-size:11px;color:#64748b">scratch \u00B7 \u2715 wipes it</span><span style="flex:1"></span>'+
     btn("\u25A2 Blank","wbdBg(\'blank\')",v.bg!=="grid"&&v.bg!=="lines")+btn("\u25A6 Grid","wbdBg(\'grid\')",v.bg==="grid")+btn("\u25A4 Lines","wbdBg(\'lines\')",v.bg==="lines")+   // WBDLINES
@@ -52608,6 +52708,7 @@ function wbGoAns(d){
 function wbClose(){
   clearTimeout(_wbAutoT); _wbAutoT=null;   // 💾 the close saves it now
   if(typeof wblClose==="function") wblClose();   // WBLINK: a reading book remembers its page
+  if(wbView&&!wbView.scratch&&typeof wblbDrop==="function") wblbDrop();   // WBLBOARD: the book's ✕ drops its board
   const backKid=(wbView&&wbView.eic&&wbView.eic.back)?wbView.kid:null;   // ↩ EIC_PANELBACK: opened from the Editor in Chief menu → ✕ returns to it (her ask 2026-10-15)
   const go=()=>{ try{ if(_wbRO) _wbRO.disconnect(); }catch(e){} _wbRO=null; const ov=document.getElementById("wb-view"); if(ov) ov.remove(); wbView=null; if(backKid&&window.eicPanel){ try{ window.eicPanel(backKid); }catch(e){} } };
   if(wbView&&wbView.dirty){ wbSave().then(go).catch(go); } else go();
@@ -52876,15 +52977,16 @@ function wblRender(v,btn){
     const cv=document.getElementById("wb-ink"); if(cv) cv.remove();
     if(v._wblP!==v.page){ v._wblP=v.page; wblPlace(v); }
   }
-  const L=wblLinks(b,v.page), r=v.wblRet; let el=document.getElementById("wb-link");
-  if(!L.length&&!r){ if(el) el.style.display="none"; return; }
+  const L=wblLinks(b,v.page), r=v.wblRet, wd=typeof wblbShow==="function"&&wblbShow(v); let el=document.getElementById("wb-link");   // WBLBOARD: wd = the ✍️ chip
+  if(!L.length&&!r&&!wd){ if(el) el.style.display="none"; return; }
   if(!el){ const st=document.getElementById("wb-stage"); if(!st||!st.parentNode) return;
     const row=document.createElement("div"); row.id="wbl-row"; st.parentNode.insertBefore(row,st); row.appendChild(st);
     el=document.createElement("div"); el.id="wb-link"; row.appendChild(el);
     const cs=document.createElement("style"); cs.textContent=WBL_CSS; row.appendChild(cs); }
   el.style.display="flex";
   el.innerHTML=(r?'<button class="wbl-bk" onclick="wblBack()">↩ Back to '+esc(wblShort((wbBook(r.b)||{}).name,b.name))+' · p. '+wblPr(wbBook(r.b),r.p)+'</button>':'')+
-    L.map((l,i)=>{ const t=wbBook(l.b), s=String(l.t||""); return '<button onclick="wblGo('+i+')">'+(t.read?"📖":"📓")+' <b>p. '+wblPr(t,parseInt(l.p,10))+'</b> '+esc(s.length>26?s.slice(0,25)+"…":s)+'</button>'; }).join("");
+    L.map((l,i)=>{ const t=wbBook(l.b), s=String(l.t||""); return '<button onclick="wblGo('+i+')">'+(t.read?"📖":"📓")+' <b>p. '+wblPr(t,parseInt(l.p,10))+'</b> '+esc(s.length>26?s.slice(0,25)+"…":s)+'</button>'; }).join("")+
+    (wd?'<button onclick="wblbOpen()">✍️ Whiteboard</button>':"");   // WBLBOARD
 }
 // Save the page's ink now and stop the pending autosave, so nothing written is lost or saved onto the next page.
 async function wblFlush(v){ clearTimeout(_wbAutoT); _wbAutoT=null; if(v.dirty){ try{ await wbSave(); }catch(e){} } clearTimeout(_wbAutoT); _wbAutoT=null; }
@@ -52901,6 +53003,49 @@ async function wblBack(){
   if(wbView&&wbView!==v&&a){ wbView.assignment=a; wbBarRender(); }   // the card's banner as it was, not re-based on this page
 }
 // WBLINK_END
+// WBLBOARD_START — ✍️ the whiteboard from a linked book's strip (Adrienne's yes 2026-11-24: "a whiteboard chip on the side strip
+//   so she can reach the board from the manual"). A tap saves the ink, keeps a reading book's place and opens the board through a
+//   token only this chip holds (Today's door still refuses over a book); its bar has "↩ Back to <book> · p. N" for ✕ and no Save.
+//   Back reopens the same page, opts, banner and wblRet. The drawing waits in _wblbKeep, memory only; the book's ✕ drops it.
+let _wblbKeep=null, _wblbTok=null;
+function wblbShow(v){
+  if(!v||v.scratch||v.eic||v.ans||(v.rules&&v.rules.length)||(typeof uascIs==="function"&&uascIs(v.bookId))) return false;
+  const b=wbBook(v.bookId)||{}; return !!(b.read||b.toc||b.links||v.wblRet);
+}
+// short name: the words shared with a book it links to / came from dropped
+function wblbName(v){ const b=wbBook(v.bookId)||{}, a=Object.values(b.links||{})[0], l=a&&(Array.isArray(a)?a[0]:Object.values(a)[0]), o=wbBook(v.wblRet?v.wblRet.b:l&&l.b);
+  return wblShort(b.name,o&&o.name); }
+function wblbPass(o){ return !!(o&&o.wblb&&o.wblb===_wblbTok); }
+function wblbDrop(){ _wblbKeep=null; }
+async function wblbOpen(){
+  const v=wbView; if(!wblbShow(v)) return false;
+  const r={b:v.bookId,p:v.page,o:{ans:v.ans,assignment:v.assignment,cover:v.cover},ret:v.wblRet||null,n:wblbName(v)};
+  await wblFlush(v); if(wbView!==v) return false;
+  wblClose();
+  try{ if(_wbRO) _wbRO.disconnect(); }catch(e){} _wbRO=null;
+  _wblbTok=r; let ok=false; try{ ok=wbdOpen({kid:v.kid,wblb:r}); }finally{ _wblbTok=null; }
+  if(!ok) return false;
+  const k=_wblbKeep, n=wbView; n.wblb=r;
+  if(k){ n.strokes=k.strokes.slice(); n.bg=k.bg; n.ar=k.ar; }
+  wbdFit(); wbBarRender(); return true;
+}
+function wblbBarHTML(v,btn){
+  const h=wbdBarHTML(Object.assign({},v,{wblb:null}),btn), r=v.wblb;
+  return '<button onclick="wblbBack()" style="padding:8px 14px;border-radius:12px;border:1.5px solid #1d4ed8;background:#1d4ed8;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↩ Back to '+esc(r.n)+' · p. '+wblPr(wbBook(r.b),r.p)+'</button>'+
+    '<span style="font-weight:800;font-size:13px;color:#0f172a">✍️ Whiteboard</span>'+h.slice(h.indexOf('<span style="flex:1"></span>'));
+}
+function wblbBack(){
+  const v=wbView, r=v&&v.scratch&&v.wblb; if(!r) return false;
+  _wblbKeep={strokes:v.strokes.slice(),bg:v.bg,ar:v.ar};
+  clearTimeout(_wbAutoT); _wbAutoT=null;
+  try{ if(_wbdRO) _wbdRO.disconnect(); }catch(e){} _wbdRO=null;
+  try{ if(_wbRO) _wbRO.disconnect(); }catch(e){} _wbRO=null;
+  wbOpen(r.b,v.kid,r.p,r.o); const n=wbView; if(!n||n===v) return false;
+  if(r.o.assignment) n.assignment=r.o.assignment;   // the card's banner as it was, not re-based on this page
+  if(r.ret) n.wblRet=r.ret;
+  wbBarRender(); return true;
+}
+// WBLBOARD_END
 // ── UNIT STUDY: British Monarchy "Royal Line" notebook page ───────────────
 // One shared dataset, read from the mastery curriculum bank (all 42 monarchs +
 // house/reign) joined with the kid's live drill items (status/tier → progress)
@@ -85974,6 +86119,7 @@ let _mlSweepArmed=false;   // ⏩ is a two-tap button: arm, then tap again withi
 const ML_SWEEP_MIN=20*60;
 function _mlSweepDue(nowMin,marker,force){ return !!force||(nowMin>=ML_SWEEP_MIN&&!marker); }
 function mlEveningSweep(force){
+  if(typeof HA_HOUSEHOLD!=="undefined"&&HA_HOUSEHOLD) return false;   // HHKIND: a household has no school day to sweep
   try{
     if(typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return false;
     if(typeof fbTasksLoaded!=="undefined"&&!fbTasksLoaded) return false;
@@ -89140,12 +89286,9 @@ function rlogFlag(kid,wk,d,key){
   if(!(typeof ckLogCanDock==="function"?ckLogCanDock():momHere())) return;   // DADSPOTLOG: Mom, or Dad's link with his code
   const rec=routineLog[kid]&&routineLog[kid][wk]&&routineLog[kid][wk][d]&&routineLog[kid][wk][d][key];
   if(!rec||rec.flagged) return;
-  const off=typeof starTakeOk==="function"&&!starTakeOk(kid), who=typeof flagWho==="function"?flagWho():"mom";   // FLAGWHO: Take stars away off → the 🚩 mark, no stars
-  if(!confirm(off?flagOffAsk(kid,rec.label||""):"Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||"")+"\"")) return;
-  if(!off) bankDirect(kid,-100,"🚩 false check-off dock"+(typeof flagWhoName==="function"?" · by "+flagWhoName(who):""));
-  const patch={flagged:true,penalty:off?0:-100,flagTs:nowTs(),flagBy:who};
-  Object.assign(rec,patch);
-  if(db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("routineLog/"+kid+"/"+wk+"/"+d+"/"+key).update(patch);
+  const sp=flagSpotTook(kid,"step",wk+"/"+d+"/"+key), n=flagN(kid,"step",wk+"/"+d+"/"+key), off=!n, who=typeof flagWho==="function"?flagWho():"mom";   // FLAGWHO · FLAGONE: no penalty (off, Take stars away off, ⏸, SPOTONE) → the 🚩 mark, no stars
+  if(!confirm(off?flagOffAsk(kid,rec.label||"",sp):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||"")+"\"")) return;
+  flagSet(kid,rec,"routineLog/"+kid+"/"+wk+"/"+d+"/"+key,"flg_"+wk+"_"+d+"_"+key,"🚩 false check-off dock"+(typeof flagWhoName==="function"?" · by "+flagWhoName(who):""),who,null,n);   // FLAGONE
   renderAll();
 }
 // ── Accountability: "Morning not done by <hour> -> lose tech" house rule ──
@@ -94725,6 +94868,7 @@ function autoBuildOnDayRoll(){
 }
 let _autoGenTried=false;
 function autoGenerateWeekIfNeeded(){
+  if(typeof HA_HOUSEHOLD!=="undefined"&&HA_HOUSEHOLD) return;   // HHKIND: a household has no school week to build
   if(_autoGenTried) return;
   if(!db||!currData||!currData.subjects||!currData.weekDays||!currData.lessons) return;
   const wn=weekNumForDate(_todayStr());
