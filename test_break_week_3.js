@@ -15,6 +15,9 @@
  *   2b. Dad's 👨‍👩‍👧‍👦 Everyone today says the same line (a2, g); the This-week strip is not drawn on a day with no school week at all
  *      (the Schedule tab shows its break card first) — nothing there to label, before or after.
  *   2c. The weekly report's "This week" chip names the week it shows and its dates ("Wk 1 · Nov 9–13") in a2 and g.
+ *   2d. The star totals of a week with no school: another day's tab (Mom's 🧒 Kids day chips, the ⭐ Today's stars pop-up) no
+ *      longer shows last school week's pool for that weekday; 🎰 Slot Machine Points ▸ Week total (and its days, whose − + change
+ *      the board's pool) counts the board's week alone — no longer its pool plus this week's wages. Today's ⭐ card unchanged.
  *   6. ZERO database writes from any of it.
  *   7. 300 random normal weeks (and a one-day holiday inside a real week): every screen touched renders byte-identical to the
  *      code before.
@@ -121,7 +124,8 @@ const lit=h=>count(h,"background:#2B7A78;color:#fff\">");   // a Week grid day h
   // first, the screen as it is before this slice (the same world on the code before)
   const a2o=await world({name:"a2 before",base:true,cal:HOL("2026-11-16","2026-11-20"),plan:d=>gap(d,2,1,true)});
   await playWeek(a2o);
-  for(const W of [a2,a2o]){ await W.roll("2026-11-16"); await W.roll("2026-11-17"); await W.at("2026-11-17",9,0); }
+  // break Monday: a list tick pays a wage of this week (gap20261116, Monday); then break Tuesday 9:00
+  for(const W of [a2,a2o]){ await W.roll("2026-11-16"); await W.at("2026-11-16",9,0); W.B.run('day=_todayDay; toggleMorningStep("kid_a",0);'); await W.flush(3000); await W.roll("2026-11-17"); await W.at("2026-11-17",9,0); }
   { const o=screens(a2o.A), t=txt(o.week);
     ok("BEFORE (the code before, break Tuesday): \"This week · Week 1\" over last school week's cards, Tuesday lit as today",/This week Week 1 ›/.test(t)&&t.indexOf("Math — Math 1")>=0&&/Tue •/.test(t)&&lit(o.week)===1,t.slice(0,200)); }
   const m0=a2.db.log.length;
@@ -161,6 +165,25 @@ const lit=h=>count(h,"background:#2B7A78;color:#fff\">");   // a Week grid day h
     ok("on last school week (Week 1) the ‹ arrow is off — there is no week before it",/<button disabled aria-label="Previous week"/.test(navL));
     ok("› › from last school week = the line, then Week 2 (read-only, by number — the plan skipped it); ‹ = the line again",off3===1&&/^‹ Week 2 read-only ↩ back to this week ›/.test(t3)&&/^‹ This week Nov 16–20 ›/.test(t4),[t3.slice(0,80),t4.slice(0,60)]);
     ok("↩ back to this week from last school week = the line",/^‹ This week Nov 16–20 › No school this week/.test(t5)); }
+  // ═══ 2d. the star totals of a week with no school ═══
+  { const ST=`(function(){ ${RESET} var o={}; mpDay="monday"; o.kidsMon=mdCardKidsToday(_todayDay,true,true); mpDay=null;
+      __pop=""; var _d=day; day="monday"; boardStatPop("kid_a","stars"); day=_d; o.popMon=__pop; o.kc=kcPointsHTML("kid_a");
+      ptsEditUnlocked=true; var hel={innerHTML:""}; renderHistory(hel); ptsEditUnlocked=false; o.hist=hel.innerHTML;
+      o.n={dayMon:earnedDayTotal("kid_a","monday"),week:earnedWeekTotal("kid_a"),pool:getKidPoints("kid_a"),poolMon:getKidDayPoints("kid_a","monday"),poolTue:getKidDayPoints("kid_a","tuesday")};
+      var adj=(bank.kid_a&&bank.kid_a.adjustments)||{}, w1={all:0}, g={all:0}; Object.keys(adj).forEach(function(id){ var a=adj[id]; if(a&&!a.held&&a.src==="earn"){ var t=a.wk==="week1"?w1:(a.wk==="gap20261116"?g:null); if(t){ t[a.day]=(t[a.day]||0)+a.amount; t.all+=a.amount; } } }); o.w1=w1; o.g=g;
+      return JSON.stringify(o); })()`;
+    const m=a2.db.log.length, N=JSON.parse(a2.A.run(ST)), O=JSON.parse(a2o.A.run(ST));
+    const chip=o=>+(/Kid A .*?⭐ \+(\d+) today/.exec(txt(o.kidsMon))||[])[1], hist=o=>(/Kid A — Week total: ⭐(\d+) Mon (\d+) .*?Tue (\d+) /.exec(txt(o.hist))||[]).slice(1).map(Number);
+    const g1=N.g.monday||0, w=N.w1;
+    ok("set-up: last school week's pool (Mon 5, Tue 3), its wages ("+w.all+"), one wage this week on break Monday ("+g1+"), on both builds",N.n.poolMon===5&&N.n.poolTue===3&&w.all>0&&g1===1&&JSON.stringify(O.g)===JSON.stringify(N.g)&&JSON.stringify(O.w1)===JSON.stringify(N.w1),[N.n,N.g,N.w1]);
+    ok("BEFORE: Mom's 🧒 Kids ▸ Monday chip said \"⭐ +"+(5+g1)+" today\" — last Monday's pool (5) + this Monday's wage",chip(O)===5+g1,[chip(O)]);
+    ok("BEFORE: the ⭐ Today's stars pop-up on Monday's tab listed last Monday's 🎰 pool",O.popMon.indexOf("School spins (pool")>=0);
+    ok("BEFORE: 🎰 Slot Machine Points ▸ Week total = last week's pool + THIS week's wages ("+(8+N.g.all)+"), Tue 0 (today's pool dropped), Mon "+(5+g1),JSON.stringify(hist(O))===JSON.stringify([8+N.g.all,5+g1,0]),hist(O));
+    ok("4a: Mom's 🧒 Kids ▸ Monday chip — \"⭐ +"+g1+" today\", this Monday's own (no pool: there was no school)",chip(N)===g1&&N.n.dayMon===g1,[chip(N),N.n.dayMon]);
+    ok("4a: the ⭐ Today's stars pop-up on Monday's tab — no pool row; this Monday's wage still listed",N.popMon.indexOf("School spins (pool")<0&&/Today's stars/.test(N.popMon)&&/\+1/.test(txt(N.popMon)),txt(N.popMon));
+    ok("4b: 🎰 Slot Machine Points ▸ Week total = last school week alone, its pool + its own wages ("+(8+w.all)+"); its days the same (Mon "+(5+(w.monday||0))+", Tue "+(3+(w.tuesday||0))+") — what its − + buttons change",JSON.stringify(hist(N))===JSON.stringify([8+w.all,5+(w.monday||0),3+(w.tuesday||0)])&&N.n.week===8+w.all,[hist(N),N.n.week]);
+    ok("today's ⭐ card (Kids' Corner) unchanged",N.kc===O.kc);
+    ok("the totals: ZERO database writes",writesSince(a2,m).length===0); }
   // the break's weekend: Sunday before (counted as Monday) and Saturday after
   { const W=a2; await W.roll("2026-11-21"); await W.at("2026-11-21",10,0); const t=txt(screens(W.A).week);
     ok("a2 Sat Nov 21 (the Saturday after): the same line — the break touches this week",t.indexOf("No school this week — Fall Break, Nov 16–20 · back Mon Nov 23")>=0,t.slice(0,160)); }
@@ -230,14 +253,18 @@ const lit=h=>count(h,"background:#2B7A78;color:#fff\">");   // a Week grid day h
       const set='weekData.tasks='+JSON.stringify(tasks)+'; checked='+JSON.stringify(ck)+'; _todayDay="'+today+'"; day="'+today+'"; ';
       const R=`(function(){ var o=[]; ${RESET} o.push(mpSchWeekHTML("${who}"),mpSchWkNavHTML()); mpSchWkStep(${rnd()<0.5?-1:1}); o.push(mpSchWkNavHTML(),String(mpSchWkOff)); mpSchWkBack();
         var el={innerHTML:""}; renderDadAll(el); o.push(el.innerHTML); digestWkSel=null; o.push(renderHistoryReport()); o.push(twsHTML());
+        mpDay="${other}"; o.push(mdCardKidsToday(_todayDay,true,true)); mpDay=null; __pop=""; var _d=day; day="${other}"; boardStatPop("kid_a","stars"); day=_d; o.push(__pop);
+        ["kid_a","kid_b"].forEach(function(k){ o.push(String(earnedWeekTotal(k))); DAYS_ALL.forEach(function(d){ o.push(String(earnedDayTotal(k,d))); }); });
+        ptsEditUnlocked=${it%3===0}; var hel={innerHTML:""}; renderHistory(hel); ptsEditUnlocked=false; o.push(hel.innerHTML);
         return JSON.stringify(o); })()`;
       const rows=[];
       for(const W of [OLD,NEW]){ W.clock.now=hm(ISO[today],8+(it%10),(it*7)%60); W.A.run(set); rows.push(W.A.run(R)); }
       if(rows[0]!==rows[1]){ diffs++; if(!first){ let i=0; while(rows[0][i]===rows[1][i]) i++; first={it,today,who,a:rows[0].slice(Math.max(0,i-150),i+150),b:rows[1].slice(Math.max(0,i-150),i+150)}; } }
       n+=rows[1].length; if(rows[1].indexOf(">This week</button>")>=0&&rows[1].indexOf("Week 1 Report")>=0) chips++;
     }
-    ok("300 normal weeks: the Week grid (every view), its ‹ › steps, Dad's Everyone today, the weekly report — identical to the code before",diffs===0,first);
-    ok("…they really drew ("+Math.round(n/1e6)+" MB of screens; the report with its \"This week\" chip "+chips+" times) and wrote nothing",n>3e6&&chips===300&&writesSince(OLD,m0o).length===0&&writesSince(NEW,m0n).length===0,[n]);
+    ok("300 normal weeks: the Week grid (every view), its ‹ › steps, Dad's Everyone today, the weekly report, the This-week strip, Mom's 🧒 Kids day chips, the ⭐ pop-up, every star total, 🎰 Slot Machine Points — identical to the code before",diffs===0,first);
+    const wO=writesSince(OLD,m0o), wN=writesSince(NEW,m0n);
+    ok("…they really drew ("+Math.round(n/1e6)+" MB of screens; the report with its \"This week\" chip "+chips+" times); the writes are the code before's own, the same on both builds ("+wN.length+": the History tab's spot-check level, as before this slice)",n>3e6&&chips===300&&JSON.stringify(wO)===JSON.stringify(wN)&&wN.every(x=>/^set spotChecks\/kid_[ab]\/level$/.test(x)),[n,wO.slice(0,4),wN.slice(0,4)]);
   }
 
   try{ fs.unlinkSync(BASE_PATH); }catch(e){}

@@ -6681,8 +6681,8 @@ function bankDirectRemove(kid,id){
 // are always in the bank balance itself.)
 function bankEarnedDay(kid,d){ const adjs=(bank[kid]&&bank[kid].adjustments)||{}; let n=0; Object.keys(adjs).forEach(id=>{ const a=adjs[id]; if(a&&!a.held&&a.src==="earn"&&a.wk===(typeof listWk==="function"?listWk(WK):WK)&&a.day===d) n+=(a.amount||0); }); return n; }
 function bankEarnedWeek(kid){ const adjs=(bank[kid]&&bank[kid].adjustments)||{}; let n=0; Object.keys(adjs).forEach(id=>{ const a=adjs[id]; if(a&&!a.held&&a.src==="earn"&&a.wk===(typeof listWk==="function"?listWk(WK):WK)) n+=(a.amount||0); }); return n; }
-function earnedDayTotal(kid,d){ return ((d===_todayDay&&typeof lwGap==="function"&&lwGap())?0:getKidDayPoints(kid,d))+bankEarnedDay(kid,d); }   // 📅 LISTWK: today on a week the board doesn't hold — no pool from last school week
-function earnedWeekTotal(kid){ return getKidPoints(kid)+bankEarnedWeek(kid); }
+function earnedDayTotal(kid,d){ return ((typeof lwGap==="function"&&lwGap())?0:getKidDayPoints(kid,d))+bankEarnedDay(kid,d); }   // 📅 LISTWK: today on a week the board doesn't hold — no pool from last school week · 📅 BWLABEL: nor on any other day of it (another day's tab showed last school week's pool for that weekday)
+function earnedWeekTotal(kid){ return getKidPoints(kid)+((typeof bwlBoardWages==="function"&&typeof lwGap==="function"&&lwGap())?bwlBoardWages(kid,null):bankEarnedWeek(kid)); }   // 📅 BWLABEL: a week with no school — last school week's own total (its pool + its wages), not its pool + this week's wages; every reader is a view of the board's week (🎰 Slot Machine Points, the Spin admin)
 
 let slotSpinDay=null;
 let slotPendingTaskId=null;
@@ -9805,6 +9805,12 @@ function bwlNavHTML(b,wn,off){
 }
 // the weekly report's "This week" chip, in a week with no school: the week the report really shows (the board's) and its dates
 function bwlReportChip(){ const b=bwlInfo(); return b?esc("Wk "+b.lastWn+(b.lastDates?" \u00B7 "+b.lastDates:"")):null; }
+// The two halves of a star total in a week with no school: the board's pool is last school week's, the list wages are this
+// week's (stamped with the list week). Views of THIS week (Mom's 🧒 Kids day chips, the board, the ⭐ Today's stars pop-up) now
+// count no pool on any day; the views of the BOARD's week (🎰 Slot Machine Points ▸ Week total and its days, whose − + change
+// that week's pool) count that week alone — its pool and the wages stamped with it. A school week: exactly as before.
+function bwlBoardWages(k,d){ const adjs=(bank[k]&&bank[k].adjustments)||{}; let n=0; Object.keys(adjs).forEach(function(id){ const a=adjs[id]; if(a&&!a.held&&a.src==="earn"&&a.wk===WK&&(d==null||a.day===d)) n+=(a.amount||0); }); return n; }
+function bwlBoardDayTotal(k,d){ return (typeof lwGap==="function"&&lwGap())?getKidDayPoints(k,d)+bwlBoardWages(k,d):earnedDayTotal(k,d); }
 // 📅 BWLABEL_END
 function renderScheduleBreakCard(brk){
   const isVac=brk.type==="vacation";
@@ -10185,7 +10191,7 @@ function boardStatPop(kid,slot,d){
       .forEach(t=>{ const cv=checked[t.id]; rows.push({lab:t.title||"",done:!!cv,ts:(cv&&cv.ts)||(typeof cv==="string"?cv:"")}); });
   } else if(slot==="stars"){ title="⭐ Today's stars";
     const sp=(day===_todayDay&&typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek())?0:getKidDayPoints(kid,day);   // 📅 BWNOWEEK: no star pool listed as today's from last school week (wages: slice 2)
-    if(sp) rows.push({lab:"🎰 School spins (pool"+(getPointClaim(kid,day)?", "+getPointClaim(kid,day).status:", unclaimed")+")",done:true,ts:"",amt:sp});
+    if(sp&&!(day!==_todayDay&&typeof lwGap==="function"&&lwGap())) rows.push({lab:"🎰 School spins (pool"+(getPointClaim(kid,day)?", "+getPointClaim(kid,day).status:", unclaimed")+")",done:true,ts:"",amt:sp});   // 📅 BWLABEL: a week with no school — no other day's pool either (today's: slice 1's line above)
     const adjs=(bank[kid]&&bank[kid].adjustments)||{};
     Object.keys(adjs).map(id=>adjs[id]).filter(a=>a&&a.src==="earn"&&a.wk===(typeof listWk==="function"?listWk(WK):WK)&&a.day===day)
       .sort((a,b)=>String(a.ts).localeCompare(String(b.ts)))
@@ -29411,7 +29417,7 @@ function renderHistory(el){
       h+='<div style="font-size:12px;font-weight:700;color:'+HIST_KCOL_LIGHT[k2]+';margin-bottom:6px">'+cap(k2)+' — Week total: ⭐'+earnedWeekTotal(k2)+'</div>';
       h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">';
       DAYS.slice(0,6).forEach(d=>{
-        const dp=earnedDayTotal(k2,d);
+        const dp=(typeof bwlBoardDayTotal==="function")?bwlBoardDayTotal(k2,d):earnedDayTotal(k2,d);   // 📅 BWLABEL: the board's week, as the Week total above it and its − + buttons
         h+='<div style="background:rgba(255,255,255,0.06);border-radius:6px;padding:6px;text-align:center">';
         h+='<div style="font-size:9px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.3px">'+cap(d).slice(0,3)+'</div>';
         h+='<div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;color:#fbbf24;margin:2px 0">'+dp+'</div>';
