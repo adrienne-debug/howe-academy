@@ -42,9 +42,9 @@ const toMin=s=>{ const m=/(\d+):(\d+)\s*([AP]M)/i.exec(s||""); if(!m) return nul
 // 📅 BWNOWEEK (break week slice 1, 2026-11-24): the line asks schoolOffToday() — a break day, or a week the board doesn't hold — and the
 // empty line names a no-week day "No school week planned" (it reads _brk, so it is stripped with NEW2a). test_break_week_1.js covers both.
 const CUT1="    if(typeof schoolOffToday===\"function\"&&schoolOffToday()) return [];   // \u{1F3D6} KC_BREAK";
-const NEW2n="      if(!_brk&&typeof boardWeekIsThisWeek===\"function\"&&!boardWeekIsThisWeek()) _brk={name:\"No school week planned\",type:\"noweek\"};   // \u{1F4C5} BWNOWEEK: no break behind it — her answer 1's words\n";
+const NEW2n="      if(!_brk&&typeof boardWeekIsThisWeek===\"function\"&&!boardWeekIsThisWeek()) _brk={type:\"noweek\"};   // \u{1F4C5} BWNOWEEK: no break behind it (the line below draws her answer 1's words)\n";
 const NEW2a="      let _brk=null; try{ _brk=(typeof scheduleBreakToday===\"function\")?scheduleBreakToday():null; }catch(e){}   // \u{1F3D6} KC_BREAK: a break day names the break\n";
-const NEW2b="'+(_brk?(_brk.type===\"cleaning\"?'No school today \\u2014 it\\u2019s cleaning day \\u{1F9FD}':'No school today \\u2014 '+esc(_brk.name)+' \\u{1F389}'):'No school cards today \\u{1F389}')+'";
+const NEW2b="'+(_brk?(_brk.type===\"noweek\"?'No school week planned \\u{1F389}':_brk.type===\"cleaning\"?'No school today \\u2014 it\\u2019s cleaning day \\u{1F9FD}':'No school today \\u2014 '+esc(_brk.name)+' \\u{1F389}'):'No school cards today \\u{1F389}')+'";
 const OLD2b="No school cards today \\u{1F389}";
 const count=(s,x)=>s.split(x).length-1;
 function strip(src){

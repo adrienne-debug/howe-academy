@@ -56,12 +56,14 @@ const CHANGES=[
    +"//   doesn't cover with no calendar break (every week after the plan ends), the weekend days of a break — boardWeekIsThisWeek().\n"
    +"function schoolOffToday(){ try{ return !!scheduleBreakToday()||("+BW+"); }catch(e){ return false; } }\n"],
   ["the line","  let b=null; try{ b=scheduleBreakToday(); }catch(e){ b=null; } if(!b) return \"\";\n",
-   "  let b=null; try{ b=scheduleBreakToday(); }catch(e){ b=null; } if(!b&&"+BW+") b={name:\"No school week planned\",type:\"noweek\"};   // 📅 BWNOWEEK: no break behind it — her answer 1's words\n  if(!b) return \"\";\n"],
+   "  let b=null; try{ b=scheduleBreakToday(); }catch(e){ b=null; } if(!b&&"+BW+") b={type:\"noweek\"};   // 📅 BWNOWEEK: no break behind it (the line below draws her answer 1's words)\n  if(!b) return \"\";\n"],
   ["Kids' Corner cards","    if(typeof scheduleBreakToday===\"function\"&&scheduleBreakToday()) return [];   // 🏖 KC_BREAK (her report 2026-11-24:",
    "    if(typeof schoolOffToday===\"function\"&&schoolOffToday()) return [];   // 🏖 KC_BREAK → 📅 BWNOWEEK: asks schoolOffToday() (a break day, or a week the board doesn't hold) (her report 2026-11-24:"],
   ["Kids' Corner line","      let _brk=null; try{ _brk=(typeof scheduleBreakToday===\"function\")?scheduleBreakToday():null; }catch(e){}   // 🏖 KC_BREAK: a break day names the break\n",
    "      let _brk=null; try{ _brk=(typeof scheduleBreakToday===\"function\")?scheduleBreakToday():null; }catch(e){}   // 🏖 KC_BREAK: a break day names the break\n"
-   +"      if(!_brk&&"+BW+") _brk={name:\"No school week planned\",type:\"noweek\"};   // 📅 BWNOWEEK: no break behind it — her answer 1's words\n"],
+   +"      if(!_brk&&"+BW+") _brk={type:\"noweek\"};   // 📅 BWNOWEEK: no break behind it (the line below draws her answer 1's words)\n"],
+  ["the line's words","  return '<div style=\"padding:22px 14px;text-align:center;font-size:15px;font-weight:700;color:var(--muted)\">'+(b.type===\"cleaning\"?'No school today \\u2014 it\\u2019s cleaning day \\u{1F9FD}':'No school today \\u2014 '+esc(b.name)+' \\u{1F389}')+'</div>';\n","  return '<div style=\"padding:22px 14px;text-align:center;font-size:15px;font-weight:700;color:var(--muted)\">'+(b.type===\"noweek\"?'No school week planned \\u{1F389}':b.type===\"cleaning\"?'No school today \\u2014 it\\u2019s cleaning day \\u{1F9FD}':'No school today \\u2014 '+esc(b.name)+' \\u{1F389}')+'</div>';   // 📅 BWNOWEEK: no break behind it — her answer 1's words alone\n"],
+  ["Kids' Corner line's words","      h+='<div style=\"padding:22px 14px;text-align:center;font-size:15px;font-weight:700;color:var(--muted)\">'+(_brk?(_brk.type===\"cleaning\"?'No school today \\u2014 it\\u2019s cleaning day \\u{1F9FD}':'No school today \\u2014 '+esc(_brk.name)+' \\u{1F389}'):'No school cards today \\u{1F389}')+'</div>';\n","      h+='<div style=\"padding:22px 14px;text-align:center;font-size:15px;font-weight:700;color:var(--muted)\">'+(_brk?(_brk.type===\"noweek\"?'No school week planned \\u{1F389}':_brk.type===\"cleaning\"?'No school today \\u2014 it\\u2019s cleaning day \\u{1F9FD}':'No school today \\u2014 '+esc(_brk.name)+' \\u{1F389}'):'No school cards today \\u{1F389}')+'</div>';   // 📅 BWNOWEEK: no break behind it — her answer 1's words alone\n"],
   ["pool line","    const spun=(typeof getKidDayPoints===\"function\")?getKidDayPoints(k,dn):0;\n",
    "    const spun=(typeof getKidDayPoints===\"function\"&&!("+BW+"))?getKidDayPoints(k,dn):0;   // 📅 BWNOWEEK: no star pool for today from last school week\n"],
   ["celebration","function celebrateDayComplete(kid,d0){\n  const d=d0||day;\n  if(hasCelebrated(kid,d)) return;\n",
@@ -82,12 +84,13 @@ ok("every BWNOWEEK change is in index.html exactly once ("+CHANGES.length+")",CH
 const BASE=strip(SRC);
 ok("stripped: no BWNOWEEK left, every old line back once, the file shorter",BASE.indexOf("BWNOWEEK")<0&&CHANGES.every(c=>count(BASE,c[1])===1)&&BASE.length<SRC.length);
 ok("stripped: the helper and the claim fix (slice 0) are still there — this slice is all that's taken out",count(BASE,"function boardWeekIsThisWeek(")===1&&count(BASE,"BWCLAIM")===2);
-ok("ONE question: every change asks boardWeekIsThisWeek() (or schoolOffToday(), which asks it) — no second way to decide",CHANGES.every(c=>c[2].indexOf("boardWeekIsThisWeek()")>0||c[2].indexOf("schoolOffToday()")>0));
+const C=nm=>CHANGES.find(c=>c[0]===nm);
+ok("ONE question: every change asks boardWeekIsThisWeek() (or schoolOffToday(), which asks it) — no second way to decide (the two words lines only draw a type the asking lines set)",CHANGES.filter(c=>!/words$/.test(c[0])).every(c=>c[2].indexOf("boardWeekIsThisWeek()")>0||c[2].indexOf("schoolOffToday()")>0));
 { const added=CHANGES.map(c=>c[2].split("\n").filter(l=>c[1].indexOf(l)<0).join("\n")).join("\n").replace(/\/\/[^\n]*|\/\*[^*]*\*\//g,"");
   ok("the changes write nothing (no db, storage, timer, set/update/remove, sv)",!/\bdb\b|HA_LS|localStorage|\bsv\(|setTimeout|\.set\(|\.update\(|\.remove\(|obSet|obInc/.test(added),added.match(/\bdb\b|\.set\(|\.update\(/)); }
-ok("today only: the celebration and the day bonus ask about _todayDay; the day start and the sweep only ever touch today",/d===_todayDay&&typeof boardWeekIsThisWeek/.test(CHANGES[5][2])&&/taskDay===_todayDay&&typeof boardWeekIsThisWeek/.test(CHANGES[6][2]));
-ok("the sweep's guard sits ahead of its marker check and its lock (it stops — it never moves anything else)",SRC.indexOf(CHANGES[8][2])>SRC.indexOf("function mlEveningSweep(force){")&&SRC.indexOf(CHANGES[8][2])<SRC.indexOf("haClaimSchedLock(\"cascade\"",SRC.indexOf("function mlEveningSweep(force){")));
-ok("the words: \"No school week planned\" in place of a break name, nothing else invented",count(SRC,"No school week planned")===2&&count(SRC,'name:"No school week planned",type:"noweek"')===2);
+ok("today only: the celebration and the day bonus ask about _todayDay; the day start and the sweep only ever touch today",/d===_todayDay&&typeof boardWeekIsThisWeek/.test(C("celebration")[2])&&/taskDay===_todayDay&&typeof boardWeekIsThisWeek/.test(C("day bonus")[2]));
+ok("the sweep's guard sits ahead of its marker check and its lock (it stops — it never moves anything else)",SRC.indexOf(C("sweep")[2])>SRC.indexOf("function mlEveningSweep(force){")&&SRC.indexOf(C("sweep")[2])<SRC.indexOf("haClaimSchedLock(\"cascade\"",SRC.indexOf("function mlEveningSweep(force){")));
+ok("the words: her answer's \"No school week planned 🎉\" alone, in the line and in Kids' Corner — nothing else invented",count(SRC,"'No school week planned \\u{1F389}'")===2&&count(SRC,"No school week planned")===2&&count(SRC,'{type:"noweek"}')===2&&SRC.indexOf("No school today \\u2014 No school week")<0);
 const BASE_PATH=path.join(os.tmpdir(),"break_week_1_base_"+process.pid+".html");
 fs.writeFileSync(BASE_PATH,BASE);
 
@@ -164,7 +167,7 @@ const BAD=/(^|\s|,)(week[^/ ]*\/|pointClaims\/|bank\/)/;
 const tagsBalanced=h=>["div","span","button"].every(t=>count(h,"<"+t+">")+count(h,"<"+t+" ")===count(h,"</"+t+">"));
 const cnt=h=>(String(h).match(/class="task-cb/g)||[]).length;
 const firstDiff=(a,b)=>{ let i=0; while(i<a.length&&a[i]===b[i]) i++; return {at:i,a:a.slice(Math.max(0,i-120),i+160),b:b.slice(Math.max(0,i-120),i+160)}; };
-const NOWEEK='>No school today — No school week planned \u{1F389}</div>';
+const NOWEEK='>No school week planned \u{1F389}</div>';
 let staleWrites=[];
 
 // the four items on a stale day, before vs after → [{item, before, after}]
@@ -209,8 +212,8 @@ function checkFour(lbl,F,wk,dn,withPool){
         ok(lbl+": before, Kids' Corner listed last "+dn+"'s cards as today's, Mom's Today and Dad's Day drew them, the board counted them",KIDS.slice(0,3).every(k=>o[k].kc.length>0)&&cnt(o.all)>0&&cnt(o.dad)>0&&o.pills.some(p=>p!=="\u{1F4C5} 0/0"),[KIDS.map(k=>o[k].kc.length),cnt(o.all),o.pills]);
       }
       ok(lbl+": after, Kids' Corner has no cards and says \"No school today — No school week planned\"",KIDS.every(k=>n[k].kc.length===0&&n[k].kcSchool.indexOf(NOWEEK)>0),KIDS.map(k=>n[k].kcSchool.slice(0,300)));
-      ok(lbl+": after, Mom's Today (Mom, All, each kid) — no school card, the line once",cnt(n.mom)+cnt(n.all)===0&&KIDS.every(k=>cnt(n[k].ag)===0&&n[k].ag.indexOf(NOWEEK)>0)&&n.all.indexOf(NOWEEK)>0&&count(n.all,"No school today")===1&&n.mom.indexOf(NOWEEK)>0);
-      ok(lbl+": after, Dad's Day — the same (Dad gets what Mom gets)",cnt(n.dad)===0&&n.dad.indexOf(NOWEEK)>0&&count(n.dad,"No school today")===1);
+      ok(lbl+": after, Mom's Today (Mom, All, each kid) — no school card, the line once",cnt(n.mom)+cnt(n.all)===0&&KIDS.every(k=>cnt(n[k].ag)===0&&n[k].ag.indexOf(NOWEEK)>0)&&n.all.indexOf(NOWEEK)>0&&count(n.all,"No school week planned")===1&&count(n.all,"No school today")===0&&n.mom.indexOf(NOWEEK)>0);
+      ok(lbl+": after, Dad's Day — the same (Dad gets what Mom gets)",cnt(n.dad)===0&&n.dad.indexOf(NOWEEK)>0&&count(n.dad,"No school week planned")===1&&count(n.dad,"No school today")===0);
       ok(lbl+": after, the board's 📅 pills read 0/0, nothing left for the Mom loop, no Today's-card group",n.pills.length>0&&n.pills.every(p=>p==="\u{1F4C5} 0/0")&&KIDS.every(k=>n[k].board.total===0&&n[k].ml.length===0)&&n.dc===0,n.pills);
       ok(lbl+": after, schoolOffToday() is true and the line names no break: \"No school week planned\"",n.off===true&&n.line.indexOf(NOWEEK)>0&&o.off===false&&o.line==="");
       ok(lbl+": all views balanced",[n.mom,n.all,n.dad].concat(KIDS.map(k=>n[k].kcSchool)).every(tagsBalanced));
