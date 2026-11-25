@@ -439,6 +439,37 @@ console.log("\n── W · the answer: only Mom (or an unlocked Dad), only the t
   const g = tryW(A, "notfault"); ok("W · …and Mom's own change still works: ONE write, \"notfault\"", g.r === true && g.w === 1 && g.why === "notfault", g);
 }
 
+console.log("\n── R · the guards behind the buttons (each called directly) ──");
+{ const A = T.A, Dd = T.Dd, wk = wkT, ent = kid => Object.entries((root(tw).amCarry || {})[kid] || {});
+  // c13: amCostSee on a carry already done, inside its cost window (the sink: ignored, zero Thu, ticked Thu; Sat is in its 5 days)
+  const sid = (ent("kid_a").filter(([, r]) => r.label === "Wipe the sink" && r.fromDay === "monday")[0] || [])[0], sc = sid && root(tw).amCarry.kid_a[sid];
+  const inWin = !!sid && A.run("!!amCostN('kid_a',amCarry.kid_a[" + J(sid) + "],amIso(_todayDay))"), L0 = J(amzLines(tw, "kid_a")), B0 = J(amzBank(tw, "kid_a"));
+  let m = tw.mark(); A.run("amCostSee('kid_a',amCarry.kid_a[" + J(sid) + "])"); await tw.flush();
+  ok("R · c13: amCostSee called on a carry already done (the sink, ticked Thu; Sat " + (inWin ? "is" : "NOT") + " in its cost window): no line, no bank line, nothing written", inWin && !!(sc && sc.done) && writes(tw, m).length === 0 && J(amzLines(tw, "kid_a")) === L0 && J(amzBank(tw, "kid_a")) === B0 && !A.run("(((routineLog.kid_a||{})[" + J(wk) + "]||{}).saturday||{})[" + J("amz_" + sid) + "]"), [inWin, WS(tw, m)]);
+  // k2: a second device (unlocked Dad) has heard Mom's give-back but its bank listener is behind (it still has the bank line)
+  const hid = (ent("kid_a").filter(([, r]) => r.label === "Dust the shelf")[0] || [])[0], fl = amzLines(tw, "kid_a").filter(l => /shelf/.test(l.label) && l._dn === "friday")[0];
+  const ln = fl && clone(adj(tw, "kid_a")[fl.amz.bid]), gargs = J("kid_a") + "," + J(wk) + ",'friday'," + J(hid);
+  A.run("lgAmzGive(" + gargs + ")"); await tw.flush(); Dd.run("dadUnlocked=true;1");
+  Dd.run("bank.kid_a.adjustments[" + J(fl.amz.bid) + "]=" + J(ln) + ";1");   // its bank listener behind: the line still here
+  const heard = Dd.run("!!((((routineLog.kid_a||{})[" + J(wk) + "]||{}).friday||{})[" + J("amz_" + hid) + "].amz.gb)") && Dd.run("!!lgDropLine('kid_a'," + J(fl.amz.bid) + ")");
+  m = tw.mark(); const g2 = Dd.run("lgAmzGive(" + gargs + ")"); await tw.flush();
+  ok("R · k2: a second device that heard the give-back but still shows the bank line: ⭐ Give stars back again refused, nothing written", !!ln && heard && g2 === false && writes(tw, m).length === 0 && !adj(tw, "kid_a")[fl.amz.bid], [!!ln, heard, g2, WS(tw, m)]);
+  Dd.run("delete bank.kid_a.adjustments[" + J(fl.amz.bid) + "];1");
+  // k5: ➖ Excuse on a carry that is not "ignored": not their fault (kid_b's fish, changed in W), no answer (Saturday's "lazy" send), sent before 12/07 (CALM world)
+  const nf = (ent("kid_b").filter(([, r]) => r.why === "notfault")[0] || [])[0], na = (ent("kid_a").filter(([, r]) => r.fromDay === "saturday" && !("why" in r))[0] || [])[0];
+  const pre = P.A.run("(function(){ let o=null; Object.keys(amCarry).forEach(function(k){ Object.keys(amCarry[k]||{}).forEach(function(id){ const it=amCarry[k][id]; if(!o&&it&&!it.house&&it.at&&_amIsoOf(it.at)<RT_AMWHY_FROM) o=[k,id]; }); }); return o; })()");
+  const ex5 = (V, kid, id) => { const vw = V === P ? P.w : tw, d = V === P ? P.A : A, w0 = J(((root(vw).amCarry || {})[kid] || {})[id]), mm = vw.mark(); const r = d.run("lgAmzExcuse(" + J(kid) + "," + J(id) + ")"); return { r, n: writes(vw, mm).length, same: J(((root(vw).amCarry || {})[kid] || {})[id]) === w0 && d.run("(amCarry[" + J(kid) + "][" + J(id) + "]||{}).why") === JSON.parse(w0).why }; };
+  const e5 = [ex5(T, "kid_b", nf), ex5(T, "kid_a", na), pre ? ex5(P, pre[0], pre[1]) : null]; await tw.flush(); await P.w.flush();
+  ok("R · k5: ➖ Excuse on a carry that is not \"ignored\" (not their fault · no answer · sent before 12/07): refused, nothing written, its why untouched", !!nf && !!na && !!pre && e5.every(x => x && x.r === false && x.n === 0 && x.same), [nf, na, pre, e5]);
+  // k13: the Excuse's Undo after someone else changed the answer back to "ignored"
+  const sl = amzLines(tw, "kid_a").filter(l => /shelf/.test(l.label) && l._dn === "saturday")[0], sbid = sl && sl.amz.bid;
+  const xr = A.run("lgAmzExcuse('kid_a'," + J(hid) + ")"); await tw.flush();
+  const back = Dd.run("amWhySet('kid_a'," + J(hid) + ",'ignored')"); await tw.flush();
+  const st = [xr, back, root(tw).amCarry.kid_a[hid].why, !!sbid && !adj(tw, "kid_a")[sbid]];
+  m = tw.mark(); const u13 = A.run("lgAmzExUndo('kid_a'," + J(wk) + ",'saturday'," + J(hid) + ")"); await tw.flush();
+  ok("R · k13: Mom's ➖ Excuse, then Dad changes the answer back to \"ignored\": the Excuse's Undo is refused, nothing written, no bank line put back", st[0] === true && st[1] === true && st[2] === "ignored" && st[3] === true && u13 === false && writes(tw, m).length === 0 && !adj(tw, "kid_a")[sbid], [st, u13, WS(tw, m)]);
+}
+
 if (process.env.MWHY_DUMP) fs.writeFileSync(process.env.MWHY_DUMP, J(S.dump));
 try { fs.unlinkSync(BASE_IDX); } catch (e) {}
 console.log("\n" + pass + " passed, " + fail + " failed");
