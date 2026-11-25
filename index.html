@@ -2571,7 +2571,7 @@ function rtSetAlwaysOpenDay(d){
   if(db) db.ref("config/routineTimes").set(routineTimes);
   renderAll();
 }
-function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtAlwaysOpen(d)||(d===_todayDay&&typeof hhCleanOn==="function"&&hhCleanOn(_todayStr()))||rtSchoolworkDone(kid,d)||(d===_todayDay&&typeof openPmToday==="function"&&openPmToday(kid))||(d!==_todayDay)||(new Date().getHours()>=rtAfternoonHour()); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
+function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtAlwaysOpen(d)||(d===_todayDay&&typeof hhCleanOn==="function"&&hhCleanOn(_todayStr()))||rtSchoolworkDone(kid,d)||(d===_todayDay&&typeof schoolOffToday==="function"&&schoolOffToday())||(d===_todayDay&&typeof openPmToday==="function"&&openPmToday(kid))||(d!==_todayDay)||(new Date().getHours()>=rtAfternoonHour()); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
 // MEALS_START — after-meal jobs (her ask 2026-10-02, DeWalt table-jobs chart: set/clear/wipe table, sweep,
 // dishwasher after every meal). A step tagged st.meal sits in its meal's list under its own heading:
 // breakfast → Morning, lunch → Afternoon, supper → Evening. Lunch and Supper open at their OWN hour
@@ -5309,7 +5309,7 @@ function initFb() {
     if(typeof rlWindowAttach==="function") rlWindowAttach(activeWk());   // RLWIN: this week + last week live; older weeks load when first needed · typeof: the Envirothon build strips RLWIN (ENVBUILD 2026-11-08)
     db.ref("waved").on("value",s=>{ wavedOnValue(s.val()||{}); if(tab==="moms-plan"||tab==="kids"||tab==="schedule") renderAllSoon(); });   // WAVE
     if(typeof amAttach==="function") amAttach();   // 🌅 SENDAM
-    db.ref("spotChecks").on("value",s=>{ spotOnValue(s.val()||{}); if(tab==="moms-plan"&&momHere()) renderAllSoon(); });   // 🔎 SPOTCHECK
+    db.ref("spotChecks").on("value",s=>{ spotOnValue(s.val()||{}); if(tab==="moms-plan"&&(momHere()||_kioskD())) renderAllSoon(); });   // 🔎 SPOTCHECK
     db.ref("settings/spotCheck").on("value",s=>{ if(typeof spotSetOnValue==="function") spotSetOnValue(s.val()); if(tab==="moms-plan"&&momHere()) renderAllSoon(); });   // 🔎 SPOTCHECK ⚙
     db.ref("config/routineRules").on("value",s=>{ routineRules=Object.assign({loseTechEnabled:false,loseTechHour:10}, s.val()||{}); });
     db.ref("config/rewards").on("value",s=>{ rewardCatalog=s.val()||[]; if(typeof renderAllSoon==="function") renderAllSoon(); });
@@ -7290,7 +7290,7 @@ function chSettingsClickoffLogHTML(){
       var dlbl=(typeof DAY_LBL!=="undefined"&&DAY_LBL[e._day])||e._day||"";
       h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)'+(e.flagged?';opacity:.6':'')+'">';
       h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">'+((typeof flagMarkTxt==="function"&&flagMarkTxt(e))||'−100')+'</span>':'')+((e.drop&&e.drop.n)?' <span style="color:#b91c1c;font-weight:800">'+(e.drop.gb?'−'+e.drop.n+' ⭐ given back':'−'+e.drop.n+' ⭐')+'</span>':'')/* CHOREDROP: what the drop took */+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
-      if(on&&!e.flagged) h+='<button onclick="rlogFlag(\''+kid+'\',\''+_rlwk+'\',\''+e._day+'\',\''+e._key+'\')" title="Didn\'t actually do it — '+(spPenalty().on?'dock '+spPenalty().pts+' points':'mark it')+'" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ '+flagLbl()+'</button>';
+      if(on&&!e.flagged&&(typeof ckLogCanDock!=="function"||ckLogCanDock())) h+='<button onclick="rlogFlag(\''+kid+'\',\''+_rlwk+'\',\''+e._day+'\',\''+e._key+'\')" title="Didn\'t actually do it — '+(spPenalty().on?'dock '+spPenalty().pts+' points':'mark it')+'" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ '+flagLbl()+'</button>';
       else if(e.flagged) h+=flagUndoBtn("step",kid,_rlwk+"/"+e._day+"/"+e._key);   // FLAGONE: undo
       h+='</div>';
     });
@@ -8024,6 +8024,7 @@ function eicReopenTodayFor(kid){
 // A score saved on the engine = today's sitting done: check off today's first open Editor in Chief card for that kid.
 function eicCheckCard(kid){
   try{
+    if(typeof schoolOffToday==="function"&&schoolOffToday()) return false;   // 🏖 BRKTODAY: no card today on a break — the exercise still scores, as on a day with no card
     if(typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return false;
     const t=weekData.tasks.filter(x=>x&&x.who===kid&&eicIsSubject(kid,x.subjectKey)&&!String(x.id||"").endsWith("_c")&&!x._eowOverflow
       &&!(checked&&checked[x.id])&&effectiveDay(x)===_todayDay).sort((a,b)=>toMin(a.time)-toMin(b.time))[0];
@@ -8933,6 +8934,7 @@ function helperName(id){ return ((helpersData&&helpersData[id])||{}).name||"Help
 function helperIcon(id){ return ((helpersData&&helpersData[id])||{}).icon||"🙋"; }
 // Today's cards this helper is approved for (done or not), in time order.
 function helperTasksToday(id){
+  if(typeof schoolOffToday==="function"&&schoolOffToday()) return [];   // 🏖 BRKTODAY: no school cards today on a break — her list, Dad's helper cards and the count follow
   const p=helpersData[id]; if(!p) return [];
   let all=[]; try{ all=(typeof getActiveTasks==="function"?getActiveTasks():weekData.tasks)||[]; }catch(e){ all=[]; }
   return all.filter(t=>t&&!String(t.id||"").endsWith("_c")&&!/lunch/i.test(t.title||"")&&(t.mom==="required"||t.mom==="maybe"||(typeof famPresGivable==="function"&&famPresGivable(t)))&&_hlpIsToday(t)&&(_hlpApproved(p,t)||(typeof helperGivenTo==="function"&&helperGivenTo(t)===id)))   // 🙋 + what Mom gave her today
@@ -9418,6 +9420,29 @@ function scheduleBreakToday(){
   return scan(calendarData.holidays,"holiday")||scan(calendarData.vacations,"vacation")
     ||((typeof hhCleanDay==="function"&&hhCleanDay(ds))?{name:"Cleaning day",type:"cleaning",start:ds,end:ds,pause:"school"}:null);   // 🧽 CLEANINGDAY: pauses like a vacation
 }
+// 🏖 BRKTODAY_START — ONE rule for today's school work on a break day (her "fix all" 2026-11-24, after Kids' Corner's fix: "if they're on
+//   break, there shouldn't be anything there"). A full break week builds no week, so the active week is still LAST week's and its
+//   cards match today's day name; a one-day holiday added after the week was built leaves cards laid on that day. On a day
+//   scheduleBreakToday() returns a break (holiday, vacation, cleaning day — the Schedule tab's own test, never a second one) there
+//   are no school cards TODAY, and every screen and gate that asks about today's school work asks schoolOffToday(). Today only:
+//   past and future days, the week views, effectiveDay, the week builder and which week is active are not changed. Reads only.
+function schoolOffToday(){ try{ return !!scheduleBreakToday(); }catch(e){ return false; } }
+// The one plain line a "today" agenda draws where its school cards would be — the words and look of Kids' Corner's break line.
+function brkTodayLineHTML(){
+  let b=null; try{ b=scheduleBreakToday(); }catch(e){ b=null; } if(!b) return "";
+  return '<div style="padding:22px 14px;text-align:center;font-size:15px;font-weight:700;color:var(--muted)">'+(b.type==="cleaning"?'No school today \u2014 it\u2019s cleaning day \u{1F9FD}':'No school today \u2014 '+esc(b.name)+' \u{1F389}')+'</div>';
+}
+// Mom's 🗓 Schedule ▸ Today and Dad's ▸ All on a break day: the line, then only the rows that are not school cards — Mom's laundry,
+// meal-prep and house blocks (momAgendaHtml with no cards), Dad's own column (extra) — as each agenda draws a day with no cards.
+function brkTodayAgendaHTML(who,d,extra){
+  const _pk=kid, _pd=day; let rest="";
+  try{ kid=who; day=d;
+    if(who==="mom"){ const h=momAgendaHtml([]); if(h.indexOf('class="mom-agenda"')>=0) rest=h; }
+    else if(extra&&Array.isArray(extra.items)&&extra.items.length) rest=allAgendaHtml([],null,{extra:extra});
+  }catch(e){ rest=""; } finally{ kid=_pk; day=_pd; }
+  return brkTodayLineHTML()+rest;
+}
+// 🏖 BRKTODAY_END
 // First weekday strictly after today that isn't a calendar off-day and sits in a
 // real plan week — i.e. the day school actually picks back up. Capped so a
 // misconfigured calendar can never loop forever.
@@ -9699,7 +9724,7 @@ function momAgendaHtml(dayTasks){
   h+='</div>';
   return h;
 }
-function _boardTaskCounts(kid,d){ var ts=getActiveTasks().filter(function(t){return t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title)}); return {total:ts.length, done:ts.filter(function(t){return !!checked[t.id]}).length}; }
+function _boardTaskCounts(kid,d){ if(d===_todayDay&&typeof schoolOffToday==="function"&&schoolOffToday()) return {total:0,done:0};   /* 🏖 BRKTODAY: no school cards today on a break */ var ts=getActiveTasks().filter(function(t){return t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title)}); return {total:ts.length, done:ts.filter(function(t){return !!checked[t.id]}).length}; }
 function renderMomBoard(el){
   if(!el){el=document.getElementById("content");if(!el)return;}
   function pill(t,ok,extra,click){ return '<span class="bpill'+(ok?" ok":"")+'"'+(click?' onclick="'+click+'"':'')+' style="'+(click?'cursor:pointer;':'')+(extra||"")+'">'+t+'</span>'; }
@@ -9808,6 +9833,7 @@ function boardStatPop(kid,slot,d){
       if(!_due&&!_wv&&!(st.cad==="asneeded"&&_dn)) return;
       rows.push({lab:(st.emoji?st.emoji+" ":"")+(st.label||("Step "+(i+1)))+((_due||_wv)?"":" (as needed)"),done:_dn,ts:rec.ts||"",i:i,wv:_wv,hs:st,dly:(_due&&typeof rtDailyNote==="function"&&day===_todayDay)?rtDailyNote("morning",kid,i,st):""}); });   // CHOREDAILY: Mom's note   // LISTS_TAP: i → the ○/✅ is a tap
   } else if(slot==="tasks"){ title="📅 School work";
+    if(!(day===_todayDay&&typeof schoolOffToday==="function"&&schoolOffToday()))   // 🏖 BRKTODAY: no school cards today on a break
     getActiveTasks().filter(t=>t.who===kid&&effectiveDay(t)===day&&!t.id.endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title))
       .forEach(t=>{ const cv=checked[t.id]; rows.push({lab:t.title||"",done:!!cv,ts:(cv&&cv.ts)||(typeof cv==="string"?cv:"")}); });
   } else if(slot==="stars"){ title="⭐ Today's stars";
@@ -10861,6 +10887,7 @@ function _efCapOk(kid,t,todayCount){
 }
 function efPullNext(kid){
   try{
+    if(typeof schoolOffToday==="function"&&schoolOffToday()) return null;   // 🏖 BRKTODAY: a break day pulls nothing forward (this writes)
     if(!kid||typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return null;
     if(typeof fbTasksLoaded!=="undefined"&&!fbTasksLoaded) return null;
     const today=_todayDay; const ti=_efDayIdx(today); if(ti<0||ti>=EF_DAYS.length-1) return null;
@@ -11167,7 +11194,7 @@ let _rvHealed={};
 function rvRecOf(id){ for(const k in (reviews||{})){ const r=(reviews[k]||{})[id]; if(r) return r; } return null; }
 function rvSchoolEndMin(){ try{ return _mlDayEndMin(); }catch(e){ return toMin("4:15 PM"); } }
 function rvKidOff(kid,dn){ try{ const ds=_pushDateStr(dn); if(!ds) return true; if(typeof schedOvKidOff==="function"&&schedOvKidOff(kid,ds)) return true; if(typeof smapIsKidOff==="function"&&smapIsKidOff(kid,ds)) return true; if(typeof coopTimedEndMin==="function"&&coopTimedEndMin(kid,(typeof routineDateISO==="function"?routineDateISO(dn):ds))>0) return true; if(typeof coopFullDayFor==="function"&&coopFullDayFor(kid,(typeof routineDateISO==="function"?routineDateISO(dn):ds))) return true; }catch(e){} return false; }
-function rvCanToday(kid,minutes){ try{ return !rvKidOff(kid,_todayDay)&&(_mlNowMin()+minutes<=rvSchoolEndMin()); }catch(e){ return false; } }
+function rvCanToday(kid,minutes){ try{ if(typeof schoolOffToday==="function"&&schoolOffToday()) return false;   /* 🏖 BRKTODAY: no "later today" on a break */ return !rvKidOff(kid,_todayDay)&&(_mlNowMin()+minutes<=rvSchoolEndMin()); }catch(e){ return false; } }
 function rvNextSchoolDay(kid,from){ let dn=(typeof _nextSchoolDay==="function")?_nextSchoolDay(kid,from):null; let g=0; while(dn&&rvKidOff(kid,dn)&&g++<7){ dn=_nextSchoolDay(kid,dn); } return dn||null; }
 // → {day,time} or null (no school day left this week)
 function rvPlanDay(kid,minutes,when){
@@ -13059,6 +13086,7 @@ function renderDadsDay(el){
   h+='<div style="margin:10px 12px 0">'; try{ h+=mdCardKidsToday(today,true,true,_dadAward); }catch(e){ h+=mdCardStarBank(_dadAward); h+=mdCardKidsToday(today,true); } h+='</div>';
   h+=_ss('checklog','🧾 Check-offs');   // STICKYSTACK
   try{ h+=mdCardCheckLog(); }catch(e){}   // 🧾 Today's check-offs · −100 (Dad's Day too)
+  try{ h+=rlDadDoorHTML(); }catch(e){}   // 🕵️ DADSPOTLOG
   h+=_ss('dinner','🍽 Dinner');   // STICKYSTACK
   try{ h+='<div style="margin:10px 12px 0">'+mdCardDinner(iso)+'</div>'; }catch(e){}
   try{ h+='<div style="margin:10px 12px 0">'+panDadCardHTML()+'</div>'; }catch(e){}   // PAN_LIST (C3, her ask 2026-11-01 "Dad needs to see all the food items"): the week's dinners + 🥫 What's in the house, read-only — rides in the 🍽 Dinner section
@@ -14757,12 +14785,13 @@ function momSchedHouse(dayName,dayTasks){
       if(x.done) out.push({m:x.at,o:3,html:_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ 🧽 '+lbl+'</span>')});
       else out.push({m:x.at,o:2,html:_lbBox('#f0fdf4','#16a34a','<span style="flex:1;font-size:13px">🧽 '+lbl+' · '+x.mins+' min'+_kpCd(x.at,x.at+x.mins)+'</span>'+_kpBtn('✓ Done',"hhPlanCheck('"+mwTodayIso()+"','"+x.id+"')",true))}); }); return out.sort(function(a,b2){ return (a.m-b2.m)||(a.o-b2.o); }); }
   const list=hhHouseToday(); if(!list.length) return out;
-  const next=(typeof momSchedNextMom==="function")?momSchedNextMom(dayTasks||[]):null, def=hhHouseDefaultMin(), iso=mwTodayIso();
+  const next=(typeof momSchedNextMom==="function")?momSchedNextMom(dayTasks||[]):null, def=hhHouseDefaultMin(), iso=mwTodayIso(), P=(typeof hmixPlaced==="function")?hmixPlaced(dayName,dayTasks||[],list):null;   // 🏡 HOUSEMIX
   list.forEach(function(x){ const r=x.r, b=x.rec, key=hhHouseKey(r.id), lbl='<b>'+esc(r.label)+'</b> <span style="color:#6b6560">· '+esc(hhRoomName(hhRoomOf(r.job)))+'</span>';
     const doneBtn=_kpBtn('✓ Done',r.on,true), skipBtn=_kpBtn('Not now',"hhHouseBlockSet('"+_lbQ(r.id)+"','skip')",false), laterBtn=_kpBtn('⏰ 30 min later',"hhHouseBlockSet('"+_lbQ(r.id)+"','later')",false);
     if(r.done){ const ts=(((momdayData||{})[iso]||{}).chores||{})[(r.job.src&&r.job.src.id)||r.id]; const dm=(typeof ts==="number")?_lbMin(ts):def;
       out.push({m:(dm>=0&&dm<24*60)?dm:def,o:3,html:_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ 🏡 '+lbl+'</span>')}); return; }
     if(b&&b.at==="skip"){ out.push({m:def,o:1,html:_lbBox('#f0fdf4','#86efac','<span style="flex:1;font-size:13px">🏡 '+lbl+'</span>'+doneBtn)}); return; }
+    if(!b&&P&&P[r.id]){ out.push(hmixRow(r,lbl,P[r.id],doneBtn,skipBtn)); return; }   // 🏡 HOUSEMIX: placed in a gap
     if(!b){ out.push({m:def,o:1,html:_lbBox('#f0fdf4','#16a34a','<span style="flex:1 1 100%;font-size:13px">🏡 '+lbl+' — block out time?</span>'
         +'<label style="font-size:12px;color:#334155;font-weight:700">How long? <input id="hb-min-'+key+'" type="number" min="1" max="240" value="'+r.mins+'" style="width:54px;padding:4px 6px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px;font-family:\'DM Sans\',sans-serif"> min</label>'
         +_lbQBtn('Now',"hhHouseBlockSet('"+_lbQ(r.id)+"','now')",true)+(next?_lbQBtn('After '+esc(_lbCardName(next)),"hhHouseBlockSet('"+_lbQ(r.id)+"','after','"+_lbQ(next.id)+"')",false):'')+_lbQBtn('Later',"hhHouseBlockSet('"+_lbQ(r.id)+"','later')",false)+_lbQBtn('Not now',"hhHouseBlockSet('"+_lbQ(r.id)+"','skip')",false))}); return; }
@@ -14808,6 +14837,23 @@ function hgapLay(o){ o=o||{}; const win={start:Math.max(+o.now||0,+o.start||0),e
   const busy=hgapBusy(o.cards,o), gaps=hgapGaps(busy,win,o.cushion);
   return {busy:busy,gaps:gaps,placed:hgapPlace(o.chores,gaps,win)}; }
 // HOUSEGAP_END
+// HOUSEMIX_START — step 7 slice 2 (PLAN_house_step7 §5 row 2): once Mom taps "Mixed in" on 👤 By person (household/people/mom/fit
+// stored "mixed"; the unset default is not her tap — her answer 2026-11-20 "When I tap Mixed in"), momSchedHouse draws each unanswered
+// chore where hgapLay places it in her laid day as drawn, with ✓ Done · Now · ⏰ Later · Not now (today's taps, today's writes).
+// Worked out on each draw, kept nowhere, never handed to the Mom loop: no lesson moves for it. Not placed: no gap → after school, as
+// today. No school or her Mom-off day → by time of day (Morning 7:00 · Afternoon 12:00 · Night 5:00 PM, as Dad's); any time → as today.
+function hmixOn(){ return hhPeopleOf("mom").fit==="mixed"; }
+function hmixNoSchool(iso){ const d=new Date(iso+"T12:00:00").getDay(); if(d===0||d===6||scheduleBreakToday()) return true; return ROSTER.length>0&&ROSTER.every(function(k){ return !!smapIsKidOff(k,iso); }); }
+function hmixPlaced(dn,cards,list){ try{ if(!hmixOn()) return null; const P={};
+  const ch=list.filter(function(x){ return !x.r.done&&!x.rec; }).map(function(x){ return {id:x.r.id,mins:x.r.mins,slot:mcSlotOf(x.r.job),score:1}; });
+  if(mlMomOff()||hmixNoSchool(mwTodayIso())){ ch.forEach(function(c){ const m=DAD_SLOT_MIN[c.slot]; if(m!=null) P[c.id]={at:m,end:m+c.mins,how:"slot",slot:c.slot}; }); return P; }
+  const blocks=momBlockOpen().concat(hhHouseBlocksOpen(),kitPrepBlocksOpen()).filter(function(b){ return _mlBlkLaid[b.key]!=null; }).map(function(b){ return [_mlBlkLaid[b.key],_mlBlkLaid[b.key]+b.mins]; });
+  hgapLay({cards:cards,chores:ch,blocks:blocks,now:_mlNowMin(),start:gateStartMin(dn),end:coSchoolEnd(),lunch:_mlLunchWin(),done:function(t){ return !!_mlFinished(t.id,t); },lead:famIsMomCard,helper:helperHolds,span:mlMomSpan})
+    .placed.forEach(function(p){ if(p.how==="gap") P[p.id]=p; }); return P; }catch(e){ return null; } }
+function hmixRow(r,lbl,p,doneBtn,skipBtn){ const S=MC_SLOTS[p.slot];
+  return {m:p.at,o:1,html:_lbBox('#f0fdf4','#16a34a','<span style="flex:1 1 100%;font-size:13px">🏡 '+lbl+' · '+r.mins+' min · '+(S?S.ic+' '+S.nm:fromMin(p.at)+'–'+fromMin(p.end)+' · in a gap')+'</span>'
+    +doneBtn+_kpBtn('Now',"hhHouseBlockSet('"+_lbQ(r.id)+"','now')",false)+_kpBtn('⏰ Later',"hhHouseBlockSet('"+_lbQ(r.id)+"','later')",false)+skipBtn)}; }
+// HOUSEMIX_END
 // HH_SETTINGS_METER_START — PR A of the distributing cleaning day (her 2026-10-11: "settings per card on how often they should be
 // done and which kids can do … percentage wise farthest from being done … a cleaning day's start etc needs to be settings much
 // like a school day"). Three things, no behaviour change on any list:
@@ -18211,6 +18257,10 @@ function spotOnValue(v){ spotData=v||{}; try{ HA_LS.setItem('ha_spot',JSON.strin
 function spotSetOnValue(v){ spotSet=(v&&typeof v==="object")?v:{}; try{ HA_LS.setItem('ha_spot_set',JSON.stringify(spotSet)); }catch(e){} }
 function _spWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
 function _spMomOk(){ return typeof momHere==="function"&&momHere(); }
+// DADSPOT (her words 2026-11-24: "where it is fro mom", "Yes, ask for code"): Dad's link sees the card and draws as Mom's does; ✓ / ✗ / 🎲 need his code. ⚙ stays Mom's.
+function _spSeeOk(){ return _spMomOk()||(typeof _kioskD==="function"&&_kioskD()); }
+function _spActOk(){ return _spMomOk()||(typeof _kioskD==="function"&&_kioskD()&&typeof dadAwardOk==="function"&&dadAwardOk()); }
+function _spByT(r){ return r&&r.by==="dad"?" · by Dad":""; }
 // Who is ticking right now, when it isn't the kid: stamped on the check-off so the pool can leave it out.
 function _spBy(){ try{ if(typeof momHere==="function"&&momHere()) return "mom"; if(typeof _kioskD==="function"&&_kioskD()) return "dad"; }catch(e){} return null; }
 function _spIso(){ return (typeof mwTodayIso==="function")?mwTodayIso():""; }
@@ -18293,7 +18343,7 @@ function spSettle(kid,iso){
 function spDue(){ try{ const n=new Date(), m=n.getHours()*60+n.getMinutes(); return m>=((typeof rvSchoolEndMin==="function")?rvSchoolEndMin():16*60+15); }catch(e){ return false; } }
 function spDay(kid,iso){ return ((spotData[kid]||{})[iso||_spIso()])||null; }
 function spEnsureDraw(kid,force){
-  if(!_spMomOk()||typeof _todayDay!=="string") return null;
+  if(!(force?_spActOk():_spSeeOk())||typeof _todayDay!=="string") return null;   // DADSPOT
   const iso=_spIso(), cur=spDay(kid,iso); if(cur&&cur.picks) return cur;
   if(!force&&!spDue()) return null;
   if(!spOn()) return null;   // ⚙ all switched off: paused
@@ -18308,7 +18358,7 @@ function spEnsureDraw(kid,force){
 function spDrawNow(kid){ spEnsureDraw(kid,true); if(typeof _cuRe==="function") _cuRe(); }
 // ✓ / ✗ for one pick. ✗ runs CHOREUNDO's undo (or the school card's ↩ Unmark) and raises the count.
 function spResolve(kid,j,r){
-  if(!_spMomOk()||(r!=="ok"&&r!=="no")) return false;
+  if(!_spActOk()||(r!=="ok"&&r!=="no")) return false;   // DADSPOT
   const iso=_spIso(), rec=spDay(kid,iso); if(!rec||!rec.picks||!rec.picks[j]) return false;
   if(rec.results&&rec.results[j]) return false;
   const p=rec.picks[j], pen=spPenalty(), _nt=pen.on&&typeof starTakeOk==="function"&&!starTakeOk(kid); if(_nt) pen.on=false;   // STARRULES
@@ -18322,10 +18372,11 @@ function spResolve(kid,j,r){
     } else if(p.kind==="task"&&checked[p.id]){
       try{ const b=document.getElementById("dlg-uncheck"); if(b&&typeof b.onclick==="function"){ pendingId=p.id; pendingClaimMode=false; b.onclick(); } }catch(e){ dbg("spot check unmark: "+e); }
     }
-    if(pen.on&&typeof bankDirect==="function") bankDirect(kid,-pen.pts,"🔎 Spot check: not done — "+(p.label||""));   // the rule, her switch
+    if(pen.on&&typeof bankDirect==="function") bankDirect(kid,-pen.pts,"🔎 Spot check: not done — "+(p.label||"")+_spByT({by:_spBy()}));   // the rule, her switch
   }
   const l=spLevel(kid), res={r:r,at:Date.now(),ts:(typeof nowTs==="function")?nowTs():"",n:rec.n||l.n};
   if(r==="no"&&pen.on) res.pen=pen.pts;
+  if(_spBy()==="dad") res.by="dad";   // DADSPOT
   rec.results=rec.results||{}; rec.results[j]=res; spotOnValue(spotData);
   if(_spWrite()) db.ref("spotChecks/"+kid+"/"+iso+"/results/"+j).set(res);
   if(r==="no"){ l.n=Math.min(SP_MAX,l.n+1); l.types[p.type||"chore"]=true; _spSetLevel(kid,l); }
@@ -18359,7 +18410,7 @@ function spRecToggle(kid){ spRecOpen=(spRecOpen===kid)?"":kid; if(typeof _cuRe==
 function spRecord(kid){
   const all=spotData[kid]||{}, out=[];
   Object.keys(all).filter(function(k){ return /^\d{4}-\d{2}-\d{2}$/.test(k); }).sort().reverse().forEach(function(k){ const r=all[k]||{}, res=r.results||{};
-    (r.picks||[]).forEach(function(p,j){ out.push({iso:k,label:p.label||"",emoji:p.emoji||"",type:p.type||"",ts:p.ts||"",r:(res[j]&&res[j].r)||"",n:(res[j]&&res[j].n)||r.n||SP_MIN,pen:(res[j]&&res[j].pen)||0}); }); });
+    (r.picks||[]).forEach(function(p,j){ out.push({iso:k,label:p.label||"",emoji:p.emoji||"",type:p.type||"",ts:p.ts||"",r:(res[j]&&res[j].r)||"",by:(res[j]&&res[j].by)||"",n:(res[j]&&res[j].n)||r.n||SP_MIN,pen:(res[j]&&res[j].pen)||0}); }); });
   return out;
 }
 function _spSwitch(on,click,lbl){ return '<span onclick="'+click+'" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#1f2937"><span style="width:34px;height:20px;border-radius:10px;background:'+(on?'#16a34a':'#cbd5e1')+';position:relative;flex-shrink:0"><span style="position:absolute;top:2px;left:'+(on?'16':'2')+'px;width:16px;height:16px;border-radius:50%;background:#fff"></span></span>'+lbl+'</span>'; }
@@ -18378,17 +18429,17 @@ function spSetSheetHTML(){
 }
 function _spEndLbl(){ try{ return fromMin((typeof rvSchoolEndMin==="function")?rvSchoolEndMin():16*60+15); }catch(e){ return "4:15 PM"; } }
 function mdCardSpotCheck(){
-  if(!_spMomOk()||typeof _todayDay!=="string") return "";
+  if(!_spSeeOk()||typeof _todayDay!=="string") return "";   // DADSPOT
   const iso=_spIso(), d=_todayDay, _pd=day; let rows=[];
   try{ day=d; rows=ROSTER.map(function(k){ spEnsureDraw(k,false); return {kid:k,rec:spDay(k,iso),lvl:spLevel(k),pool:spPool(k,d).length}; }); } finally { day=_pd; }
   let todo=0; rows.forEach(function(x){ const p=(x.rec&&x.rec.picks)||[], res=(x.rec&&x.rec.results)||{}; p.forEach(function(q,j){ if(!res[j]) todo++; }); });
   let h='<div id="sp-card" style="margin:10px 12px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
   h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#1e3a8a;color:#fff;font-weight:800;font-size:13px"><span>🔎</span> Spot check'+(todo?' · '+todo+' to check':'')
-    +'<button onclick="spSetToggle()" title="What spot check picks from" style="margin-left:auto;border:none;background:rgba(255,255,255,'+(spSetOpen?'0.45':'0.2')+');color:#fff;border-radius:8px;padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer">⚙</button></div>';
-  if(spSetOpen) h+=spSetSheetHTML();
+    +(_spMomOk()?'<button onclick="spSetToggle()" title="What spot check picks from" style="margin-left:auto;border:none;background:rgba(255,255,255,'+(spSetOpen?'0.45':'0.2')+');color:#fff;border-radius:8px;padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer">⚙</button>':'')+'</div>';
+  if(spSetOpen&&_spMomOk()) h+=spSetSheetHTML();
   h+='<div style="padding:6px 14px 10px">';
   const _paused=!spOn();
-  if(_paused) h+='<div style="font-size:12px;font-weight:700;color:#1e3a8a;padding:6px 0">Spot check is paused — ⚙ to pick what it checks.</div>';
+  if(_paused) h+='<div style="font-size:12px;font-weight:700;color:#1e3a8a;padding:6px 0">Spot check is paused'+(_spMomOk()?' — ⚙ to pick what it checks.':'.')+'</div>';
   rows.forEach(function(x){
     const kid=x.kid, nm=esc((typeof KID_NAME!=="undefined"&&KID_NAME[kid])||cap(kid)), p=(x.rec&&x.rec.picks)||[], res=(x.rec&&x.rec.results)||{};
     h+='<div style="display:flex;align-items:center;gap:6px;margin:8px 0 2px"><span style="font-size:11px;font-weight:800;color:'+((typeof PACE_KCOL!=="undefined"&&PACE_KCOL[kid])||"#111827")+'">'+nm+'</span>'
@@ -18396,24 +18447,25 @@ function mdCardSpotCheck(){
       +'<span style="margin-left:auto">'+_cuBtn("spRecToggle('"+kid+"')",(spRecOpen===kid?'▲ ':'')+"📜 record","#1e3a8a","Every spot check for "+nm)+'</span></div>';
     if(!p.length&&!_paused){
       h+='<div style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);padding:2px 0 4px"><span style="flex:1">'+(x.pool?'Picks are drawn at '+esc(_spEndLbl())+' from '+x.pool+' thing'+(x.pool===1?'':'s')+' '+nm+' checked off.':'Nothing '+nm+' checked off themselves yet today.')+'</span>'
-        +(x.pool?_cuBtn("spDrawNow('"+kid+"')","🎲 Draw now","#1e3a8a","Pick today's spot checks now"):'')+'</div>';
+        +(x.pool&&_spActOk()?_cuBtn("spDrawNow('"+kid+"')","🎲 Draw now","#1e3a8a","Pick today's spot checks now"):'')+'</div>';
     }
     p.forEach(function(q,j){ const r=res[j];
       h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px;font-weight:600;flex-wrap:wrap">'
         +'<span style="flex:1;min-width:0">'+(q.emoji?q.emoji+' ':'')+esc(q.label)+' <span style="font-size:10px;color:var(--muted);font-weight:700">'+esc(SP_TYPE[q.type]||q.type||"")+(q.ts?' · ticked '+esc(q.ts):'')+'</span></span>'
-        +(r?(r.r==="no"?'<span style="font-size:11px;font-weight:800;color:#b91c1c">✗ Not done</span>':'<span style="font-size:11px;font-weight:800;color:#16a34a">✓ Really done</span>')
-           :_cuBtn("spResolve('"+kid+"',"+j+",'ok')","✓ Really done","#16a34a","I looked — it was done")+_cuBtn("spResolve('"+kid+"',"+j+",'no')","✗ Not done","#b91c1c","Not done — back to not done, its own stars back off"))+'</div>';
+        +(r?(r.r==="no"?'<span style="font-size:11px;font-weight:800;color:#b91c1c">✗ Not done'+_spByT(r)+'</span>':'<span style="font-size:11px;font-weight:800;color:#16a34a">✓ Really done'+_spByT(r)+'</span>')
+           :!_spActOk()?'':_cuBtn("spResolve('"+kid+"',"+j+",'ok')","✓ Really done","#16a34a","I looked — it was done")+_cuBtn("spResolve('"+kid+"',"+j+",'no')","✗ Not done","#b91c1c","Not done — back to not done, its own stars back off"))+'</div>';
     });
     if(spRecOpen===kid){
       const rec=spRecord(kid);
       h+='<div style="margin:4px 0 6px;padding:6px 8px;background:#f8fafc;border-radius:8px;font-size:11px">';
       if(!rec.length) h+='<div style="color:var(--muted)">No spot checks yet.</div>';
       rec.forEach(function(e){ h+='<div style="display:flex;gap:6px;padding:2px 0;border-bottom:1px solid #eef2f0"><span style="flex:0 0 74px;color:var(--muted)">'+esc(e.iso)+'</span><span style="flex:1;min-width:0">'+(e.emoji?e.emoji+' ':'')+esc(e.label)+'</span>'
-        +'<span style="font-weight:800;color:'+(e.r==="no"?'#b91c1c':e.r==="ok"?'#16a34a':'#9ca3af')+'">'+(e.r==="no"?'✗ not done':e.r==="ok"?'✓ done':'— not checked')+(e.pen?' · −'+e.pen+' ⭐':'')+'</span><span style="flex:0 0 34px;text-align:right;color:var(--muted)">'+e.n+'/day</span></div>'; });
+        +'<span style="font-weight:800;color:'+(e.r==="no"?'#b91c1c':e.r==="ok"?'#16a34a':'#9ca3af')+'">'+(e.r==="no"?'✗ not done':e.r==="ok"?'✓ done':'— not checked')+(e.pen?' · −'+e.pen+' ⭐':'')+_spByT(e)+'</span><span style="flex:0 0 34px;text-align:right;color:var(--muted)">'+e.n+'/day</span></div>'; });
       h+='</div>';
     }
   });
   h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px">Only what a kid checked off themselves is picked. ✗ Not done puts it back to not done and takes its own stars back off'+(spPenalty().on?', plus '+spPenalty().pts+' ⭐ for not doing it':'')+'; each ✗ adds one more check a day for that kid (up to '+SP_MAX+'), and every clean day takes one away (down to '+SP_MIN+'). The kids never see this.</div>';
+  if(!_spActOk()) h+='<div style="font-size:11.5px;color:#6b7280;margin-top:6px">🔒 Put your code in under Star controls to use ✓ Really done, ✗ Not done and 🎲 Draw now.</div>';   // DADSPOT: a locked Dad
   return h+'</div></div>';
 }
 // SPOTCHECK_END
@@ -19614,6 +19666,16 @@ function mdCardCheckLog(){
   }catch(e){ return ""; }
 }
 // CKLOG_END
+// DADSPOTLOG_START — 🕵️ the Click-off Log on Dad's Day (her words 2026-11-24: "where it is fro mom"): one folded line under 🧾 opens
+// the same log (chSettingsClickoffLogHTML); its ⚠️ needs his code (ckLogCanDock, as 🧾's −100). Dad's link only.
+let rlDadOpen=false;
+function rlDadToggle(){ rlDadOpen=!rlDadOpen; if(typeof renderAll==="function") renderAll(); }
+function rlDadDoorHTML(){
+  if(!_kioskD()) return "";
+  return '<div onclick="rlDadToggle()" style="margin:10px 12px 0;background:#fff;border-radius:12px;padding:10px 14px;display:flex;font-size:12.5px;font-weight:800;color:#4c1d95;cursor:pointer;box-shadow:0 4px 20px rgba(43,122,120,0.13)">🕵️ Click-off Log (this week)<span style="margin-left:auto">'+(rlDadOpen?'▲':'›')+'</span></div>'
+    +(rlDadOpen?'<div style="margin:0 12px">'+chSettingsClickoffLogHTML()+(ckLogCanDock()?'':'<div style="font-size:11.5px;color:#6b7280;margin-top:6px">🔒 Put your code in under Star controls to use ⚠️ −100.</div>')+'</div>':'');
+}
+// DADSPOTLOG_END
 // LEDGER_START — 📒 the Ledger's button on 🧒 Kids today (DESIGN_chore_ledger_2026-11-21 §2, L1: "moms day as a button to a pop up",
 // "Dad gets it too"). Mom mode or Dad's link only. The look-only pop-up is house.js's (LEDGERVIEW), fetched on the first tap.
 function ledgerBtn(a){ return (momHere()||_kioskD())?'<button onclick="ledgerOpen()" style="margin-left:'+(a?'auto':'6px')+';border:none;background:rgba(255,255,255,0.25);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">📒 Ledger</button>':''; }
@@ -19727,7 +19789,7 @@ function mdCardKidsToday(today,isSchoolDay,bank,dadCtl){   // bank=true: Mom's D
     h+='</div>';
   });
   h+='</div></div>';
-  if(bank&&dadCtl===undefined&&typeof mdCardSpotCheck==="function"){ try{ h+=mdCardSpotCheck(); }catch(e){} }   // 🔎 SPOTCHECK: Mom's Day only
+  if(bank&&(dadCtl===undefined||(typeof _kioskD==="function"&&_kioskD()))&&typeof mdCardSpotCheck==="function"){ try{ h+=mdCardSpotCheck(); }catch(e){} }   // 🔎 SPOTCHECK: Mom's Day, and Dad's Day on his link (DADSPOT)
 
   return h;
 }
@@ -26781,6 +26843,7 @@ function mpSchTasks(who,d){
   return src.filter(t=>base(t)&&t.who===who);
 }
 function mpSchAgendaHTML(who,d){
+  if(d===mdTodayName()&&typeof schoolOffToday==="function"&&schoolOffToday()) return brkTodayAgendaHTML(who,d);   // 🏖 BRKTODAY: a break day draws no school agenda — the line, then Mom's own rows
   const ts=mpSchTasks(who,d), _pk=kid, _pd=day;
   try{ kid=who; day=d; return who==="mom"?momAgendaHtml(ts):allAgendaHtml(ts,who==="all"?null:[who]); }
   finally{ kid=_pk; day=_pd; }
@@ -27050,6 +27113,7 @@ function renderDadAll(el){
   try{ kid="all"; day=d; dadTapView=true; ag=allAgendaHtml(mpSchTasks("all",d),null,{extra:{key:"dad",label:"\u{1F468} Dad",color:"#2C5F8A",items:dadSchedItems(d)}}); }
   catch(e){ ag='<div style="padding:20px;text-align:center;color:var(--muted)">Couldn\u2019t draw today.</div>'; }
   finally{ kid=_pk; day=_pd; dadTapView=false; }
+  if(typeof schoolOffToday==="function"&&schoolOffToday()){ try{ kid="all"; day=d; dadTapView=true; ag=brkTodayAgendaHTML("all",d,{key:"dad",label:"\u{1F468} Dad",color:"#2C5F8A",items:dadSchedItems(d)}); }catch(e){} finally{ kid=_pk; day=_pd; dadTapView=false; } }   // 🏖 BRKTODAY: Dad gets what Mom gets — the line, then his own column
   h+='<div style="padding:4px 4px 0">'+ag+'</div></div>';
   el.innerHTML=h;
 }
@@ -32003,7 +32067,7 @@ function storeOpenFor(kid){
   if(c.open===false) return false;
   if(c.closedFor&&c.closedFor[kid]) return false;
   const m=c.mode||"always";
-  const school=(typeof rtSchoolworkDone==="function")?rtSchoolworkDone(kid,_todayDay):true;
+  const school=(typeof schoolOffToday==="function"&&schoolOffToday())?true:((typeof rtSchoolworkDone==="function")?rtSchoolworkDone(kid,_todayDay):true);   // 🏖 BRKTODAY: a break day has no school work to finish
   const past=(new Date().getHours())>=((c.hour!=null?c.hour:16));
   if(m==="afterSchool") return school;
   if(m==="time") return past;
@@ -32015,7 +32079,7 @@ function storeClosedReason(kid){
   if(c.open===false) return "🚪 The store is closed right now";
   if(c.closedFor&&c.closedFor[kid]) return "🚪 The store is closed for "+cap(kid)+" right now";
   const m=c.mode||"always";
-  if((m==="afterSchool"||m==="both")&&(typeof rtSchoolworkDone==="function")&&!rtSchoolworkDone(kid,_todayDay)) return "📚 Opens when school work is done";
+  if((m==="afterSchool"||m==="both")&&!(typeof schoolOffToday==="function"&&schoolOffToday())&&(typeof rtSchoolworkDone==="function")&&!rtSchoolworkDone(kid,_todayDay)) return "📚 Opens when school work is done";   // 🏖 BRKTODAY
   if((m==="time"||m==="both")&&(new Date().getHours())<((c.hour!=null?c.hour:16))) return "⏰ Opens at "+_storeFmtHour(c.hour!=null?c.hour:16);
   return "";
 }
@@ -37659,7 +37723,7 @@ function haNbContext(kid){
   let nbRec={}; try{ nbRec=ROSTER_DEF.find(k=>k&&k.id===kid)||{}; }catch(e){}
   const nbNm=v=>(typeof v==="string"&&v.trim())||null;
   const nbLv=nbLevelCtx(kid);   // NBLEVEL: ctx.grade + ctx.gradeBand
-  return { nbKidName:cap(kid), kidName:nbNm((((notebookSettings||{})[kid])||{}).notebookName)||nbNm(nbRec.notebookName)||nbNm(nbRec.name), notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), nbGrade:nbGradeOf(kid), grade:nbLv.grade, gradeBand:nbLv.gradeBand, spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, loe:loe, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, wordCursor:luWordsCursorOf(kid), numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true, ladders:((typeof nbLadderCtx==="function")?nbLadderCtx(kid):null) }; // KIDNAME_ROSTER
+  return { nbKidName:cap(kid), kidName:nbNm((((notebookSettings||{})[kid])||{}).notebookName)||nbNm(nbRec.notebookName)||nbNm(nbRec.name), notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), nbGrade:nbGradeOf(kid), grade:nbLv.grade, gradeBand:nbLv.gradeBand, spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, loe:loe, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, wordCursor:luWordsCursorOf(kid), numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), countPic:((typeof nbCountPicOf==="function")?nbCountPicOf(kid):null), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true, ladders:((typeof nbLadderCtx==="function")?nbLadderCtx(kid):null) }; // KIDNAME_ROSTER
 }
 // LU_WORDS_WIRE_START — 🔤 Lucy's Sight Word of the Day keeps its place week to week (notebooks.js LU_WORDS; her go-ahead
 // 2026-11-21 for slice 1 of PLAN_notebook_lucy_2026-11-10.md). The context reads notebookSettings/<kid>/wordCursor; the builder
@@ -39098,6 +39162,7 @@ function _famCelebNames(list){ list=list.map(cap); return list.length>1?list.sli
 function _famCelebCards(d){ const lay=(d===_todayDay&&typeof _rtSwTodayLay==="function")?_rtSwTodayLay():null; return (lay||getActiveTasks()).filter(function(t){ return t&&t.famBlock&&effectiveDay(t)===d&&!(typeof famBoState==="function"&&famBoState(t)); }); }   // 🚫 FAMBLOCKOUT: an out copy isn't waited on
 // 1️⃣ A kid's own work is done and a celebrating family time is still ahead → confetti, never a song (her rule 10/4).
 function famCelebOwnWork(kid,d){
+  if(d===_todayDay&&typeof schoolOffToday==="function"&&schoolOffToday()) return false;   // 🏖 BRKTODAY: stale cards on a break day never fire "own work done"
   if(d!==_todayDay||hasCelebrated(kid,d)||_famCelebHas(kid+"_"+d+"_own")) return false;
   if(rtSchoolworkDone(kid,d)||!rtSchoolworkDone(kid,d,true)) return false;   // whole day done → the normal show · own work not done yet
   const defs=famDefs();
@@ -42982,6 +43047,7 @@ function dcLevel(kid){
 function dcKidsAt(level,kids){ return (kids||[]).filter(k=>dcLevel(k)===level); }
 // ── today's family cards, grouped by block + item: [{bid, key, b, it, copies:[t], present:[kid], done, label, day, u}] ──
 function dcTodayGroups(){
+  if(typeof schoolOffToday==="function"&&schoolOffToday()) return [];   // 🏖 BRKTODAY: no family-time cards today on a break — the Today's-card tile and everything else reading this follow
   const td=(typeof _todayDay!=="undefined")?_todayDay:""; let tasks=[];
   try{ tasks=(typeof getActiveTasks==="function")?getActiveTasks():(((typeof weekData!=="undefined"&&weekData)||{}).tasks||[]); }catch(e){ tasks=[]; }
   const defs=(typeof famDefs==="function")?famDefs():{}; const groups={}, order=[];
@@ -44538,15 +44604,16 @@ function wbdFit(){
   const c=(w/WBD_GRID).toFixed(2)+"px";
   hold.style.backgroundImage=v.bg==="grid"?"linear-gradient(#bfdbfe 1px,transparent 1px),linear-gradient(90deg,#bfdbfe 1px,transparent 1px)":"none";
   hold.style.backgroundSize=v.bg==="grid"?c+" "+c:"auto";
+  if(v.bg==="lines"&&typeof wbdLinesCss==="function") wbdLinesCss(hold.style,Math.round(w));   // WBDLINES: ▤ Lines
   if(typeof wbFit==="function") wbFit(); if(typeof wbPaint==="function") wbPaint();
   return true;
 }
-function wbdBg(k){ const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!v.scratch) return; v.bg=_wbdBg=(k==="grid"?"grid":"blank"); wbdFit(); wbBarRender(); }
+function wbdBg(k){ const v=(typeof wbView!=="undefined")?wbView:null; if(!v||!v.scratch) return; v.bg=_wbdBg=(k==="grid"||k==="lines"?k:"blank"); wbdFit(); wbBarRender(); }   // WBDLINES: + lines
 // wbBarRender's hook: the board's bar, drawn with the viewer's own button
 function wbdBarHTML(v,btn){
   return btn("\u2715","wbClose()")+'<span style="font-weight:800;font-size:13px;color:#0f172a">\u270D\uFE0F Whiteboard</span>'+
     '<span style="font-size:11px;color:#64748b">scratch \u00B7 \u2715 wipes it</span><span style="flex:1"></span>'+
-    btn("\u25A2 Blank","wbdBg(\'blank\')",v.bg!=="grid")+btn("\u25A6 Grid","wbdBg(\'grid\')",v.bg==="grid")+
+    btn("\u25A2 Blank","wbdBg(\'blank\')",v.bg!=="grid"&&v.bg!=="lines")+btn("\u25A6 Grid","wbdBg(\'grid\')",v.bg==="grid")+btn("\u25A4 Lines","wbdBg(\'lines\')",v.bg==="lines")+   // WBDLINES
     btn("\u270F\uFE0F","wbTool(\'pen\')",v.tool==="pen")+btn("\u{1FA79} Erase","wbTool(\'erase\')",v.tool==="erase")+
     btn("\u21A9\uFE0E Undo","wbUndo()")+btn("\u{1F9FD} Clear","wbClear()")+btn(v.penOnly?"\u270D\uFE0F Pencil only":"\u{1F446} Finger too","wbTogglePen()",v.penOnly)+
     ((typeof wbdSaveBtnHTML==="function")?wbdSaveBtnHTML(v,btn):"");   // WBDSAVE: 💾 Save — Mom, from Today's card on a unit day
@@ -44558,6 +44625,28 @@ function wbdDoorHTML(g){
 }
 try{ window.addEventListener("resize",function(){ if(typeof wbView!=="undefined"&&wbView&&wbView.scratch) wbdFit(); }); }catch(e){}   // a device with no ResizeObserver (the LG) still re-fits on a turn
 // WBOARD_END
+// WBDLINES_START — ▤ Lines on the whiteboard (Adrienne's yes 2026-11-24): handwriting rows for a beta family starting Logic of
+//   English Foundations A — Lesson 1 teaches the top line, the dotted midline and the baseline, and Mom writes big on a lined
+//   board for the child to trace; they have no physical board. Each row: a solid top line, a dashed midline, a darker, heavier
+//   baseline (where letters sit). Top→base = 1/8 of the board's width, half that again between rows (room for tails). Every size
+//   is a share of the width, so a turned iPad shows the same rows under the same ink. Drawn as the board's CSS (wbdFit) and on
+//   the 💾 Save picture (wbdJpeg). Stores nothing: the pick lives in _wbdBg for the sitting, like ▦ Grid. Blank stays the default.
+const WBD_LC="#94a3b8", WBD_BC="#475569";   // top + midline · baseline
+function wbdLn(w){ const x=w/8, lw=Math.max(1,w/600); return {x:x,p:x*1.5,t:x/4,lw:lw,bw:lw*2,d:w/96}; }
+function wbdLinesCss(s,w){
+  const L=wbdLn(w), f=n=>n.toFixed(2)+"px", P=f(L.p), ln=(y,h,c)=>"linear-gradient(transparent "+f(y-h/2)+","+c+" "+f(y-h/2)+","+c+" "+f(y+h/2)+",transparent "+f(y+h/2)+")";
+  s.backgroundImage=[ln(L.t,L.lw,WBD_LC),ln(L.t+L.x,L.bw,WBD_BC),"linear-gradient(90deg,transparent 50%,#fff 50%)",ln(L.t+L.x/2,L.lw,WBD_LC)].join(",");   // white gaps over the midline make its dashes
+  s.backgroundSize="100% "+P+",100% "+P+","+f(2*L.d)+" "+P+",100% "+P;
+}
+function wbdLinesDraw(g,W,H){
+  const L=wbdLn(W);
+  g.strokeStyle=WBD_LC; g.lineWidth=L.lw; g.beginPath();
+  for(let y=L.t;y<H;y+=L.p){ g.moveTo(0,y); g.lineTo(W,y); const m=y+L.x/2; if(m<H) for(let a=0;a<W-1;a+=2*L.d){ g.moveTo(a,m); g.lineTo(Math.min(W,a+L.d),m); } }
+  g.stroke(); g.strokeStyle=WBD_BC; g.lineWidth=L.bw; g.beginPath();
+  for(let y=L.t+L.x;y<H;y+=L.p){ g.moveTo(0,y); g.lineTo(W,y); }
+  g.stroke();
+}
+// WBDLINES_END
 // WBDSAVE_START — 💾 Save on the whiteboard (Sara's answer 2026-11-20: a board is kept only "when someone taps Save"; PLAN §7.2;
 //   Adrienne's "go with her answers and build" 2026-11-22). Scratch stays the default — nothing is written until Save is tapped.
 //   · WHO: Mom (momHere()), on a board opened from Today's card with a unit day (wbdOpen({uid, dayId})). Not on a board opened
@@ -44586,6 +44675,7 @@ function wbdJpeg(v){
   g.fillStyle="#fff"; g.fillRect(0,0,W,H);
   if(v.bg==="grid"){ const st=W/WBD_GRID; g.strokeStyle="#bfdbfe"; g.lineWidth=Math.max(1,W/800); g.beginPath();
     for(let x=st;x<W-1;x+=st){ g.moveTo(x,0); g.lineTo(x,H); } for(let y=st;y<H-1;y+=st){ g.moveTo(0,y); g.lineTo(W,y); } g.stroke(); }
+  if(v.bg==="lines"&&typeof wbdLinesDraw==="function") wbdLinesDraw(g,W,H);   // WBDLINES
   g.drawImage(ink,0,0,W,H);
   return c.toDataURL("image/jpeg",0.85);
 }
@@ -46830,6 +46920,7 @@ function renderKidsCorner(el){
         h+=kcCalToggleHTML(k);
         if(typeof wlTileHTML==="function") h+=wlTileHTML(k); if(typeof skTileHTML==="function") h+=skTileHTML(k);   // 🎁 WISHES: the 🎁 My wish list button · ✨ SEASONKID: the ✨ Our plans button
         h+=kcModeBodyHTML(k);   // KC_LISTS: Today | My Lists | Month
+        if(typeof nbLookPickKcHtml==="function") h+=nbLookPickKcHtml(k);   // NB_LOOKPICK: 🎨 My notebook look (2+ looks ticked by Mom)
       }
     }
   }
@@ -50101,6 +50192,123 @@ function _nbMomLockHtml(){ nbPinOpen=false; return ""; }   // MOMSWITCH (2026-11
 function nbPinLock(){ haMomOff(); nbPinOpen=false; renderAll(); }   // UNIMOM
 // Review-folding cap (struggled-with drill items folded back into the week), per kid. Default 2, clamped 0–5.
 function nbReviewCap(kid){ const v=notebookSettings&&notebookSettings[kid]&&notebookSettings[kid].reviewCap; const n=parseInt(v,10); return isNaN(n)?2:Math.max(0,Math.min(5,n)); }
+// NB_LOOKPICK_START — 🎨 the looks a kid may use + the Kids' Corner look picker (looks plan §13 / step 5; her decisions
+// 2026-11-24: who picks — "Kid picks from mine"; Pre-K kids too — "Yes, with pictures"; where — "it would need to be on their
+// kids corner"). Each control has ONE home, and only one of them can change the look at any moment:
+//   · MOM'S TICK LIST — the Notebook tab's 🎨 look card, Mom only (momHere): "<name> may choose from:" one tick per look the
+//     kid's notebook offers (HoweNotebooks.notebookOptions — never a typed list). Saved one tick at a time:
+//     notebookSettings/<kid>/looksAllowed/<lookKey> = true, or removed. Ticking never changes the look itself.
+//   · 0 or 1 ticked → Mom's picker works exactly as today; Kids' Corner shows nothing new.
+//   · 2 or more ticked → the kid picks in their own Kids' Corner (kcKid) on "🎨 My notebook look"; Mom's picker becomes a
+//     read-only line ("<name> chose <look>") and nbSetLook refuses — Mom changes it by changing the ticks. A look that is on
+//     but not ticked keeps printing until the kid picks (no button selected); unticking down to one brings her picker back
+//     with that look selected. Nothing here ever changes a kid's look on its own.
+//   · THE KID'S TAP (nbLookKidSet) saves only notebookSettings/<kid>/notebookTheme — one targeted write, db && !_dryRun() only,
+//     mirrored to the same local cache nbSetLook uses — and only for the kid whose Kids' Corner it is, only to a ticked look,
+//     only while 2+ are ticked. Anything else is refused. nbSetLook's Mom gate is untouched.
+//   · The buttons come from the look's own pieces (HoweNotebooks.lookCard: mascot, picture row, colour swatch), so no look is
+//     typed in here and a child who can't read yet can choose. A change shapes only the NEXT notebook built: nothing is
+//     rebuilt, re-laid or rescheduled; a week already printed or sent to a tablet is a stored copy and never changes.
+//   · No separate "note to Mom": the games' 👍 note lives in mastery/<kid>_settings/gameLikes/<game> and is read only by the
+//     games grid, so it doesn't fit a look; the kid's pick shows on Mom's look card instead.
+function _nlpOkKey(k){ return typeof k==="string"&&/^[A-Za-z0-9_-]{1,40}$/.test(k); }
+// The looks this kid's notebook offers that have a picture card: [{key,label,card}] in the notebook's own order.
+function nbLookPickOffer(kid,o){
+  const N=window.HoweNotebooks; if(!N||typeof N.lookCard!=="function") return [];
+  o=o||nbLookOpts(kid); if(!o||!Array.isArray(o.looks)) return [];
+  const out=[];
+  o.looks.forEach(l=>{ if(!l||!_nlpOkKey(l.key)) return; let c=null; try{ c=N.lookCard(l.key); }catch(e){ c=null; } if(c) out.push({key:l.key,label:String(l.label||c.label||l.key),card:c}); });
+  return out;
+}
+function _nlpTicks(kid){ const t=(((typeof notebookSettings!=="undefined"&&notebookSettings)||{})[kid]||{}).looksAllowed; return (t&&typeof t==="object")?t:{}; }
+function _nlpRawCount(kid){ const t=_nlpTicks(kid); return Object.keys(t).filter(k=>t[k]===true).length; }
+// The ticked looks this notebook still offers, in the notebook's order (a tick for a look it no longer offers is ignored).
+function nbLooksAllowed(kid,o){ const t=_nlpTicks(kid); return nbLookPickOffer(kid,o).filter(x=>t[x.key]===true).map(x=>x.key); }
+// 2+ ticked = the kid picks (Kids' Corner); otherwise Mom's picker is the live control.
+function nbLookKidPicks(kid,o){ return nbLooksAllowed(kid,o).length>=2; }
+// Mom's tick — one field: set true, or removed.
+function nbLookAllow(kid,key){
+  if(!momHere()) return false;
+  if(!nbLookPickOffer(kid).some(x=>x.key===key)) return false;
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  const ns=notebookSettings[kid]; if(!ns.looksAllowed||typeof ns.looksAllowed!=="object") ns.looksAllowed={};
+  const on=ns.looksAllowed[key]===true;
+  if(on) delete ns.looksAllowed[key]; else ns.looksAllowed[key]=true;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db&&!_dryRun()){ const r=db.ref("notebookSettings/"+kid+"/looksAllowed/"+key); if(on) r.remove(); else r.set(true); } }catch(e){}
+  if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
+  return true;
+}
+// The kid's tap — a separate function with its own three checks (never nbSetLook's Mom gate).
+function nbLookKidSet(kid,key){
+  try{ _kcLoadKid(); }catch(e){}
+  if(!kid||typeof kcKid==="undefined"||kcKid!==kid) return false;   // only on this kid's own Kids' Corner
+  const al=nbLooksAllowed(kid);
+  if(al.length<2) return false;                                     // only while Mom has 2+ ticked
+  if(al.indexOf(key)<0) return false;                               // only a look Mom ticked
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  if(notebookSettings[kid].notebookTheme===key) return true;        // already the next look — nothing to write
+  notebookSettings[kid].notebookTheme=key;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db&&!_dryRun()) db.ref("notebookSettings/"+kid+"/notebookTheme").set(key); }catch(e){}
+  try{ renderAll(); }catch(e){}
+  return true;
+}
+// The Notebook tab's look card: Mom's pills (0–1 ticked) or the kid's pick read-only (2+), then the tick list. A notebook
+// that offers fewer than two looks with pictures gets the pills back untouched.
+function nbLookPickRow(sel,o,pillsHtml){
+  const offer=nbLookPickOffer(sel,o); if(offer.length<2) return pillsHtml;
+  const t=_nlpTicks(sel), al=offer.filter(x=>t[x.key]===true).map(x=>x.key), kidPicks=al.length>=2, name=esc(cap(sel));
+  let top=pillsHtml;
+  if(kidPicks){
+    const cur=(o&&o.current)||"", curL=((o.looks||[]).find(l=>l&&l.key===cur)||{}).label||"";
+    top=al.indexOf(cur)>=0
+      ?'<div id="nblookpick-chose" style="font-size:12.5px;color:#1f2937;line-height:1.45"><b>'+name+' chose '+esc(curL)+'</b> — the next notebook will be '+esc(curL)+'. To change it, change the ticks below.</div>'
+      :'<div id="nblookpick-chose" style="font-size:12.5px;color:#1f2937;line-height:1.45"><b>'+name+' hasn’t picked yet.</b> The next notebook stays '+esc(curL||"as it is")+' until '+name+' picks in Kids’ Corner. To change it, change the ticks below.</div>';
+  }
+  const ticks=offer.map(x=>{ const on=t[x.key]===true;
+    return '<button onclick="nbLookAllow(\''+sel+'\',\''+x.key+'\')" aria-pressed="'+(on?'true':'false')+'" title="'+(on?'Ticked — tap to untick':'Tap to let '+name+' choose this look')+'" style="min-height:44px;padding:6px 11px;border-radius:20px;border:1.5px solid '+(on?'#16a34a':'var(--border)')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#166534':'#1f2937')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(on?'☑ ':'☐ ')+esc(x.label)+'</button>';
+  }).join("");
+  return top+
+    '<div id="nblookpick-ticks" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">'+
+      '<div style="font-size:12px;font-weight:800;color:#9a3412;margin-bottom:5px">'+name+' may choose from:</div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">'+ticks+'</div>'+
+      '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-top:5px">2 or more ticked = '+name+' picks in Kids’ Corner; you’ll see the pick here. None or one ticked = you pick, as now.</div>'+
+    '</div>';
+}
+// Kids' Corner ▸ "🎨 My notebook look" — this kid's own Corner only, only with 2+ looks ticked, not over a game or drill.
+let _nlpLoading=false;
+function nbLookPickKcHtml(k){
+  try{
+    _kcLoadKid();
+    if(!k||kcKid!==k) return "";
+    const m=kcCalGet(k); if(m==="drills"||m==="games"||m==="card") return "";
+    if(_nlpRawCount(k)<2) return "";
+    if(!window.HoweNotebooks){   // the notebook code loads on first use — then draw the card
+      if(!_nlpLoading&&typeof haLoadNotebooksLib==="function"){ _nlpLoading=true; haLoadNotebooksLib().then(()=>{ _nlpLoading=false; if(tab==="kids"&&kcKid===k) renderAll(); }).catch(()=>{ _nlpLoading=false; }); }
+      return "";
+    }
+    const o=nbLookOpts(k), offer=nbLookPickOffer(k,o), t=_nlpTicks(k), al=offer.filter(x=>t[x.key]===true);
+    if(al.length<2) return "";
+    const cur=(o&&o.current)||"", pick=al.find(x=>x.key===cur)||null, col=KID_COLOR[k]||"#2B7A78";
+    const hex=c=>/^#[0-9a-fA-F]{3,8}$/.test(String(c||""));
+    const btns=al.map(x=>{ const c=x.card, on=!!pick&&pick.key===x.key;
+      const sw=(c.colors||[]).filter(hex).map(cc=>'<span style="flex:1;height:14px;background:'+cc+'"></span>').join("");
+      return '<button onclick="nbLookKidSet(\''+k+'\',\''+x.key+'\')" aria-pressed="'+(on?'true':'false')+'" aria-label="'+esc(c.label)+'" style="position:relative;flex:1 1 130px;min-width:120px;min-height:120px;padding:10px 8px;border-radius:18px;border:'+(on?'4px solid '+col:'2px solid #e2ddd6')+';background:'+(on?_kcTint(col,0.88):'#fff')+';cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent;text-align:center">'+
+        (on?'<span style="position:absolute;top:6px;right:8px;width:28px;height:28px;border-radius:50%;background:'+col+';color:#fff;font-size:17px;font-weight:900;line-height:28px">✓</span>':'')+
+        '<div style="font-size:44px;line-height:1.1">'+esc(c.emoji)+'</div>'+
+        '<div style="font-size:19px;line-height:1.3;margin-top:4px;letter-spacing:1px">'+esc((c.row||[]).join(" "))+'</div>'+
+        '<div style="display:flex;border-radius:7px;overflow:hidden;margin:8px 6px 6px;border:1px solid rgba(0,0,0,.08)">'+sw+'</div>'+
+        '<div style="font-size:14px;font-weight:800;color:#374151">'+esc(c.label)+'</div></button>';
+    }).join("");
+    return '<div id="kc-nblook" style="padding:14px 12px 0"><div style="max-width:640px;margin:0 auto;padding:14px;border-radius:18px;background:#f8f7f4;border:2px dashed #e2ddd6;box-sizing:border-box">'+
+      '<div style="font-size:18px;font-weight:800;color:#57534e;margin-bottom:10px">\u{1F3A8} My notebook look</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:10px">'+btns+'</div>'+
+      '<div style="font-size:15px;font-weight:700;color:#57534e;margin-top:10px;text-align:center">'+(pick?'Your next notebook will be '+esc(pick.card.label)+'.':'Tap a picture to pick your next notebook.')+'</div>'+
+    '</div></div>';
+  }catch(e){ return ""; }
+}
+// NB_LOOKPICK_END
 // PREKLEVEL_WIRE_START — the notebook's look + level switches (her ask 2026-11-08: "a setting where they could change between
 // which theme, construction, dinosaurs, or sharks" → "for every kid, there will be a quick theme changer"). Mom's picker saves
 // to notebookSettings/<kid>/notebookTheme and notebookSettings/<kid>/nbLevel/<switch> (targeted writes, synced like reviewCap);
@@ -50117,7 +50325,7 @@ function nbLevelOf(kid){
 }
 function nbGradeOf(kid){ const g=((nbRecOf(kid).notebook||{}).gradeLabel); if(g==="K") return "Kindergarten"; if(typeof g==="string"&&g.trim()) return g.trim(); return isPreK(kid)?"Pre-K":null; }
 function nbLookOpts(kid){ const N=window.HoweNotebooks; return (N&&typeof N.notebookOptions==="function")?N.notebookOptions(kid,{isPreK:isPreK(kid),notebookTheme:nbThemeOf(kid),nbLevel:nbLevelOf(kid)}):null; }
-function nbSetLook(kid,key){ if(!momHere()) return;
+function nbSetLook(kid,key){ if(!momHere()) return; if(typeof nbLookKidPicks==="function"&&nbLookKidPicks(kid)) return;   // NB_LOOKPICK: 2+ ticked = the kid picks in Kids' Corner
   if(!notebookSettings[kid]) notebookSettings[kid]={};
   notebookSettings[kid].notebookTheme=String(key||"");
   try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
@@ -50461,6 +50669,46 @@ function nbClearName(kid){ if(!momHere()) return;
   if(tab==="notebook"){ const c=document.getElementById("content"); if(c) renderNotebook(c); }
 }
 // NBNAME_END
+// NB_COUNTPIC_START — what the Pre-K number card counts, per kid, for any look (looks study §4 row 4; her answer 2026-11-24:
+// "Make it a setting"). notebookSettings/<kid>/countPic = "animal" | "picture"; nothing saved = the look's own rule (construction
+// counts the counting picture, every other look the animal of the day), so nothing prints differently until Mom taps. The answer
+// itself lives in notebooks.js (pkCountPic, via HoweNotebooks.countPicFor) — this card only shows it and saves the choice. One
+// targeted value: set, or remove when the choice is the look's own; mirrored to ha_nb_settings like the other notebook settings.
+// The counting picture is NOT chosen here — its one home is the kid's row in the unit with a Counting deck (mastSetCountEmoji).
+function nbCountPicOf(kid){ const v=(((notebookSettings||{})[kid])||{}).countPic; return (v==="animal"||v==="picture")?v:null; }
+function nbCountPicOwn(kid){ return (((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null; }
+function nbCountPicInfo(kid){
+  try{ const N=window.HoweNotebooks; if(!N||typeof N.countPicFor!=="function") return null;
+    return N.countPicFor(kid,{ notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), countPic:nbCountPicOf(kid), countEmoji:nbCountPicOwn(kid) }); }catch(e){ return null; }
+}
+// Where the counting picture is chosen: Units ▸ <the unit with a Counting deck this kid is on> ▸ the kid's row ▸ "Counts".
+function nbCountPicWhere(kid){
+  let t="";
+  try{ for(const id in (unitStudies||{})){ const u=unitStudies[id]; if(u&&((u.kidStage||{})[kid])&&(u.decks||[]).some(d=>d&&d.key==="Counting")){ t=String(u.title||""); break; } } }catch(e){}
+  return t?('Units ▸ '+esc(t)+' ▸ '+esc(cap(kid))+'’s row ▸ “Counts”'):('Units ▸ the Math Fluency Path ▸ '+esc(cap(kid))+'’s row ▸ “Counts” (once '+esc(cap(kid))+' is on a stage there)');
+}
+function nbCountPicCardHtml(sel){
+  if(!momHere()) return "";
+  const cp=nbCountPicInfo(sel); if(!cp) return "";   // no number card = no control
+  const nm=esc(cap(sel)), pic=nbCountPicOwn(sel)||cp.lookPic||"";
+  const opt=(v,lab)=>{ const on=cp.choice===v; return '<button onclick="nbSetCountPic(\''+sel+'\',\''+v+'\')" title="'+(on?'On':'Tap to count this from the next notebook')+'" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(on?'#ea580c':'var(--border)')+';background:'+(on?'#fff7ed':'#fff')+';color:'+(on?'#9a3412':'#1f2937')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(on?'◉ ':'○ ')+lab+'</button>'; };
+  return '<div id="nbcountpic" style="font-size:12px;font-weight:800;color:#9a3412;margin:12px 0 2px">🔢 Number card counts</div>'+
+    '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:6px">What fills the ten-frames on each day’s Number of the Day card. It changes the next notebook you print.</div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">'+opt("animal","the animal of the day")+opt("picture",nm+'’s counting picture'+(pic?' '+pic:''))+'</div>'+
+    (cp.fallback?'<div style="font-size:11px;color:#9a3412;font-weight:700;line-height:1.45;margin-top:6px">'+nm+' has no counting picture yet, so the number card counts the animal of the day until one is chosen.</div>':'')+
+    '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-top:5px">'+nm+'’s counting picture is chosen on '+nbCountPicWhere(sel)+'.</div>';
+}
+function nbSetCountPic(kid,v){ if(!momHere()) return;
+  if(v!=="animal"&&v!=="picture") return;
+  const cp=nbCountPicInfo(kid); if(!cp) return;
+  const atDef=(v===cp.def);   // the look's own rule = nothing saved
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  if(atDef) delete notebookSettings[kid].countPic; else notebookSettings[kid].countPic=v;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db&&!_dryRun()){ const r=db.ref("notebookSettings/"+kid+"/countPic"); if(atDef) r.remove(); else r.set(v); } }catch(e){}
+  if(tab==="notebook"){ const c=document.getElementById("content"); if(c) renderNotebook(c); }
+}
+// NB_COUNTPIC_END
 // Extra-pages config (Notebook tab) — per-page {on, days:{monday:true,…}}, synced like reviewCap.
 // Missing config = page ON with no day assigned, so defaults match the old always-print behavior.
 function nbXpCfg(kid,key){ const c=(((notebookSettings||{})[kid]||{}).extraPages||{})[key]||{}; return { on:c.on!==false, days:c.days||{} }; }
@@ -51507,6 +51755,7 @@ function wbPageFor(book,label){
   if((m=s.match(/^(?:pgs?|pp?|pages?)\.?\s*(\d+)/i))) return clamp(m[1]);
   if(/^pre-?test/i.test(s)) return clamp(toc.pre);
   if(/^post-?test/i.test(s)) return clamp(toc.post);
+  if(typeof wblSecPage==="function") return wblSecPage(book,s,clamp);   // WBLINK: "Lesson 21 …" / "Review D …" through toc.sec
   return null;
 }
 // ── Answer key (2026-09-05). The book's toc may also carry ans={n:printedPage} — the
@@ -51553,6 +51802,7 @@ function wbOpenCheck(bookId,kid,page,ans,assign){
 // Open from a card: the workbooks listener normally has the book cached; fetch it once if not.
 // 📌 WB_ASSIGN: `assign` = wbAssignFor(card) → the viewer's "Today: Ex. 45–46" banner. Absent → no banner.
 function wbOpenFor(bookId,kid,page,assign){
+  if(typeof wblOpenFor==="function"&&wblOpenFor(bookId,kid,page,assign)) return;   // WBLINK: a reading book opens at its remembered page inside the section
   const opts={assignment:assign||null};
   if(wbBook(bookId)){ wbOpen(bookId,kid,page,opts); return; }
   if(!db){ alert("That workbook isn't loaded yet."); return; }
@@ -52311,6 +52561,7 @@ function wbGoAns(d){
 }
 function wbClose(){
   clearTimeout(_wbAutoT); _wbAutoT=null;   // 💾 the close saves it now
+  if(typeof wblClose==="function") wblClose();   // WBLINK: a reading book remembers its page
   const backKid=(wbView&&wbView.eic&&wbView.eic.back)?wbView.kid:null;   // ↩ EIC_PANELBACK: opened from the Editor in Chief menu → ✕ returns to it (her ask 2026-10-15)
   const go=()=>{ try{ if(_wbRO) _wbRO.disconnect(); }catch(e){} _wbRO=null; const ov=document.getElementById("wb-view"); if(ov) ov.remove(); wbView=null; if(backKid&&window.eicPanel){ try{ window.eicPanel(backKid); }catch(e){} } };
   if(wbView&&wbView.dirty){ wbSave().then(go).catch(go); } else go();
@@ -52343,6 +52594,7 @@ function wbBarRender(){
   // browser gets no gesture; Pencil only → a finger (or resting palm) scrolls the page as before.
   try{ const cv=document.getElementById("wb-ink"); if(cv) cv.style.touchAction=v.penOnly?"pan-x pan-y":"none"; }catch(e){}
   try{ wbAssignRender(); }catch(e){}   // 📌 WB_ASSIGN: the banner is a sibling of the bar — refresh its ↩ with every redraw
+  if(typeof wblRender==="function") try{ wblRender(v,btn); }catch(e){}   // WBLINK: reading-book bar + the linked-books strip
 }
 function wbTool(t){ if(!wbView) return; wbView.tool=t; wbBarRender(); }
 function wbTogglePen(){ if(!wbView) return; wbView.penOnly=!wbView.penOnly; wbBarRender(); }
@@ -52362,7 +52614,7 @@ async function wbLoadPage(){
   v.strokes=[]; v.dirty=false;
   if(!url){ wbPaint(); return; }
   try{
-    if(db){ const s=await db.ref(wbInkPath(v.kid,v.bookId,v.page)).once("value"); const d=s.val();
+    if(db&&!b.read){ const s=await db.ref(wbInkPath(v.kid,v.bookId,v.page)).once("value"); const d=s.val();   // WBLINK: a reading book has no ink
       if(d&&d.s) v.strokes=(Array.isArray(d.s)?d.s:Object.values(d.s)).map(k=>({c:k.c,w:k.w,p:Array.isArray(k.p)?k.p:Object.values(k.p||{})})); }
   }catch(e){}
   const draw=()=>{ wbFit(); wbPaint(); wbWatchFit(); };
@@ -52459,6 +52711,7 @@ function wbAutoSaveSoon(){
 }
 async function wbSave(quiet){
   const v=wbView; if(!v||v.scratch) return;   // WBOARD: a scratch whiteboard never writes
+  if(typeof wblIsRead==="function"&&wblIsRead(v)) return;   // WBLINK: a reading book never writes ink
   if(typeof uascIs==="function"&&uascIs(v.bookId)) return uascSave(v,quiet);   // UACTSCREEN: a 🖨 page saves at its own path, refusals said in the bar
   if(!db||_dryRun()){ v.dirty=false; wbBarRender(); return; }
   const rev=v._rev||0;
@@ -52519,6 +52772,89 @@ function wbBootFromUrl(){
   }catch(e){}
 }
 try{ if(/[?&]workbook=/.test(location.search)) window.addEventListener("load",()=>setTimeout(wbBootFromUrl,600)); }catch(e){}
+// WBLINK_START — linked books (her ask 2026-11-24, for Melanie teaching Zuri Logic of English Foundations A: load the
+// manual, workbook and readers "so she can read what she needs to read to teach Zuri", and where the manual says open the
+// workbook page, "off to the side a little spot she can click and then go back to where her other page is in her teacher
+// workbook"). Book data (all optional; a book with none of them is untouched):
+//   read:true  → a reading book: no pen, no ink layer, never reads or writes workbookWork; its page is remembered at
+//                workbookPlace/<kid>/<bookId> = {p,ts} (one targeted set, dry run inert) + the local mirror "ha_wbplace".
+//   toc.sec    → {"lesson_21": printedPage, "review_d": …}: a card label "Lesson 21 · …" / "Review D · …" opens there
+//                (wbPageFor's last resort, so every older label reads exactly as before).
+//   links      → {"<filePage>": [{b: bookId, p: filePage, t: "label"}]}: chips in a strip at the right (a bar under the
+//                toolbar on a narrow screen). A tap saves the page's ink first, keeps ONE return point on the opened
+//                view (page turns keep it, ✕ drops it with the view), and "↩ Back" saves again and reopens that exact page.
+// Chip text is escaped; the strip and its wrapper exist only while there is a chip to show.
+const WBL_CSS="#wbl-row{flex:1;display:flex;min-height:0}#wb-link{flex:none;display:flex;flex-direction:column;gap:8px;width:170px;padding:8px;overflow-y:auto;background:#f1f5f9;border-left:1px solid #e2e8f0;font-family:'DM Sans',sans-serif}#wb-link button{flex:none;min-height:48px;padding:8px 10px;border-radius:12px;border:1.5px solid #cbd5e1;background:#fff;color:#0f172a;text-align:left;font-size:13px;font-weight:700;line-height:1.25;cursor:pointer;font-family:inherit}#wb-link .wbl-bk{min-height:56px;background:#1d4ed8;border-color:#1d4ed8;color:#fff;font-size:14px}@media(max-width:699px){#wbl-row{flex-direction:column}#wb-link{order:-1;flex-direction:row;width:auto;overflow:auto hidden;border-left:0;border-bottom:1px solid #e2e8f0}#wb-link button{max-width:72vw}}";
+function wblSecKey(s){ const m=String(s||"").trim().match(/^(lesson\s*\d+|review\s*[a-z])\b/i); return m?m[1].toLowerCase().replace(/[^a-z0-9]+/g,"_"):null; }
+function wblSecPage(book,s,clamp){ const k=wblSecKey(s), sec=book.toc.sec; return (k&&sec&&sec[k]!=null)?clamp(sec[k]):null; }
+// The file pages a section covers: its first page up to the page before the next section starts (the book's end if last).
+function wblSpan(b,lbl){
+  const st=wblSecKey(lbl)&&wbPageFor(b,lbl); if(!st) return null;
+  const off=parseInt(b.toc.offset,10)||0; let nx=0;
+  Object.values(b.toc.sec||{}).forEach(x=>{ const f=(parseInt(x,10)||0)+off; if(f>st&&(!nx||f<nx)) nx=f; });
+  return [st,nx?nx-1:(b.pages||st)];
+}
+function wblPr(b,p){ const n=p-(parseInt(((b&&b.toc)||{}).offset,10)||0); return n>=1?n:p; }   // printed page
+function wblLinks(b,pg){ let a=((b&&b.links)||{})[pg]; if(!a) return []; if(!Array.isArray(a)) a=Object.values(a);
+  return a.filter(l=>l&&wbBook(l.b)&&parseInt(l.p,10)>=1).slice(0,4); }
+function wblShort(n,cur){ const a=String(n||"Book").split(" "), c=String(cur||"").split(" "); let i=0; while(i<a.length-1&&a[i]===c[i]) i++;   // drop the words both names start with
+  const s=a.slice(i).join(" "); return s.length>28?s.slice(0,27)+"…":s; }
+function wblKey(kid,id){ return "workbookPlace/"+kid+"/"+id; }
+function wblPlaces(){ try{ return JSON.parse(HA_LS.getItem("ha_wbplace")||"{}")||{}; }catch(e){ return {}; } }
+function wblPlace(v){
+  const b=wbBook(v.bookId); if(!b||!b.read||!v.kid) return;
+  const k=wblKey(v.kid,v.bookId), r={p:v.page,ts:Date.now()};
+  try{ const m=wblPlaces(); m[k]=r; HA_LS.setItem("ha_wbplace",JSON.stringify(m)); }catch(e){}
+  if(db&&!_dryRun()) try{ db.ref(k).set(r).catch(()=>{}); }catch(e){}
+}
+function wblClose(){ if(wbView) wblPlace(wbView); }
+function wblIsRead(v){ return !!(wbBook(v.bookId)||{}).read; }
+// Card chip → a reading book at a section: the remembered page when it lies inside that section, else the section start.
+function wblOpenFor(id,kid,page,assign){
+  const b=wbBook(id); if(!b||!b.read) return false;
+  const s=wblSpan(b,assign&&assign.ref); if(!s) return false;
+  const k=wblKey(kid,id), loc=wblPlaces()[k]; let done=0;
+  const go=d=>{ if(done++) return;
+    const r=[loc,d].filter(x=>x&&x.p).sort((x,y)=>(y.ts||0)-(x.ts||0))[0], p=parseInt(r&&r.p,10);
+    wbOpen(id,kid,(p>=s[0]&&p<=s[1])?p:s[0],{assignment:assign});
+    if(wbView&&wbView.assignment){ wbView.assignment=wbAssignClean(assign,b,s[0]); wbBarRender(); } };
+  if(db){ setTimeout(go,1500); db.ref(k).once("value").then(x=>go(x.val()),()=>go()); } else go();
+  return true;
+}
+// Called at the end of every wbBarRender.
+function wblRender(v,btn){
+  const b=wbBook(v.bookId)||{}, bar=document.getElementById("wb-bar");
+  if(b.read){
+    if(bar) bar.innerHTML=btn("✕","wbClose()")+'<span style="font-weight:800;font-size:13px;color:#0f172a;max-width:46vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(b.name||"Book")+'</span><span style="flex:1"></span>'+
+      btn("◀","wbGo(-1)")+'<span style="font-size:12px;font-weight:700;color:#475569;min-width:64px;text-align:center">p. '+wblPr(b,v.page)+'</span>'+btn("▶","wbGo(1)");
+    const cv=document.getElementById("wb-ink"); if(cv) cv.remove();
+    if(v._wblP!==v.page){ v._wblP=v.page; wblPlace(v); }
+  }
+  const L=wblLinks(b,v.page), r=v.wblRet; let el=document.getElementById("wb-link");
+  if(!L.length&&!r){ if(el) el.style.display="none"; return; }
+  if(!el){ const st=document.getElementById("wb-stage"); if(!st||!st.parentNode) return;
+    const row=document.createElement("div"); row.id="wbl-row"; st.parentNode.insertBefore(row,st); row.appendChild(st);
+    el=document.createElement("div"); el.id="wb-link"; row.appendChild(el);
+    const cs=document.createElement("style"); cs.textContent=WBL_CSS; row.appendChild(cs); }
+  el.style.display="flex";
+  el.innerHTML=(r?'<button class="wbl-bk" onclick="wblBack()">↩ Back to '+esc(wblShort((wbBook(r.b)||{}).name,b.name))+' · p. '+wblPr(wbBook(r.b),r.p)+'</button>':'')+
+    L.map((l,i)=>{ const t=wbBook(l.b), s=String(l.t||""); return '<button onclick="wblGo('+i+')">'+(t.read?"📖":"📓")+' <b>p. '+wblPr(t,parseInt(l.p,10))+'</b> '+esc(s.length>26?s.slice(0,25)+"…":s)+'</button>'; }).join("");
+}
+// Save the page's ink now and stop the pending autosave, so nothing written is lost or saved onto the next page.
+async function wblFlush(v){ clearTimeout(_wbAutoT); _wbAutoT=null; if(v.dirty){ try{ await wbSave(); }catch(e){} } clearTimeout(_wbAutoT); _wbAutoT=null; }
+async function wblGo(i){
+  const v=wbView; if(!v) return; const l=wblLinks(wbBook(v.bookId),v.page)[i]; if(!l) return;
+  const ret=v.wblRet||{b:v.bookId,p:v.page,o:{ans:v.ans,assignment:v.assignment}};   // one return point: a link tapped in the target keeps the first
+  await wblFlush(v); if(wbView!==v) return;
+  wbOpen(l.b,v.kid,parseInt(l.p,10)); if(wbView&&wbView!==v){ wbView.wblRet=ret; wbBarRender(); }
+}
+async function wblBack(){
+  const v=wbView, r=v&&v.wblRet; if(!r) return;
+  await wblFlush(v); if(wbView!==v) return;
+  wbOpen(r.b,v.kid,r.p,r.o); const a=r.o&&r.o.assignment;
+  if(wbView&&wbView!==v&&a){ wbView.assignment=a; wbBarRender(); }   // the card's banner as it was, not re-based on this page
+}
+// WBLINK_END
 // ── UNIT STUDY: British Monarchy "Royal Line" notebook page ───────────────
 // One shared dataset, read from the mastery curriculum bank (all 42 monarchs +
 // house/reign) joined with the kid's live drill items (status/tier → progress)
@@ -58534,7 +58870,8 @@ function nbNeedsList(kid){
 function nbNeedsReach(kid){
   try{
     const N=window.HoweNotebooks; if(!N||typeof N.reviewDecks!=="function") return null;
-    return N.reviewDecks(kid,{ notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{} });
+    return N.reviewDecks(kid,{ notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{},
+      countPic:((typeof nbCountPicOf==="function")?nbCountPicOf(kid):null), countEmoji:((typeof nbCountPicOwn==="function")?nbCountPicOwn(kid):null) });   // NB_COUNTPIC: the Animals deck follows the number card
   }catch(e){ return null; }
 }
 function nbNeedsReadsCap(kid){ const r=nbNeedsReach(kid); return !!(r&&r.readsCap); }
@@ -58858,9 +59195,10 @@ function renderNotebook(el){
     lookHtml='<div id="nblook-card" style="margin-top:14px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:12px 14px">'+
       '<div style="font-size:12px;font-weight:800;color:#9a3412;margin-bottom:2px">🎨 Notebook look <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fed7aa;color:#7c2d12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></div>'+
       '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:7px">'+(lookOpts.looks.length>1?'Pick the pictures and colors. It changes the next notebook you print — nothing already printed changes.':'This notebook has one look for now.')+'</div>'+
-      '<div style="display:flex;gap:6px;flex-wrap:wrap">'+looks+'</div>'+
+      nbLookPickRow(sel,lookOpts,'<div style="display:flex;gap:6px;flex-wrap:wrap">'+looks+'</div>')+   // NB_LOOKPICK: Mom's pills (0–1 ticked) or the kid's pick (2+), then the tick list
       (lvRows?'<div style="font-size:12px;font-weight:800;color:#9a3412;margin:12px 0 2px">📏 Level</div><div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:4px">The same notebook at a different level — turn on what this child is ready for.</div>'+lvRows:'')+
       nbNameCardHtml(sel,lookOpts)+   // NBNAME: ✏️ Name in the notebook (Pre-K notebooks)
+      ((typeof nbCountPicCardHtml==="function")?nbCountPicCardHtml(sel):"")+   // NB_COUNTPIC: 🔢 Number card counts (Pre-K notebooks)
     '</div>';
   }
   // Week switcher — only when a next week is already built and parked (generated ahead on the
@@ -85735,6 +86073,7 @@ function _mlDayOf(t){ try{ return (typeof effectiveDay==="function")?effectiveDa
 // A kid's Mom-required work still outstanding today. Carry twins are not their own sitting.
 function mlRemaining(kid){
   try{
+    if(typeof schoolOffToday==="function"&&schoolOffToday()) return [];   // 🏖 BRKTODAY: last week's (or a holiday's) cards are not Mom work today — no banner, no turn, nothing left on the strip
     return (getActiveTasks()||[]).filter(function(t){
       return t&&t.who===kid&&_mlDayOf(t)===_todayDay&&t.mom==="required"
         &&!(typeof helperHolds==="function"&&helperHolds(t))   // 🙋 a helper has it
@@ -88750,7 +89089,7 @@ function rlogAppend(kid,slot,label,act,pts,extra){
   routineLog[kid][wk][day][key]=rec;
 }
 function rlogFlag(kid,wk,d,key){
-  if(!momHere()) return;   // Mom-only; the Log card lives behind the Admin PIN too
+  if(!(typeof ckLogCanDock==="function"?ckLogCanDock():momHere())) return;   // DADSPOTLOG: Mom, or Dad's link with his code
   const rec=routineLog[kid]&&routineLog[kid][wk]&&routineLog[kid][wk][d]&&routineLog[kid][wk][d][key];
   if(!rec||rec.flagged) return;
   const n=flagN(kid), off=!n, who=typeof flagWho==="function"?flagWho():"mom";   // FLAGWHO · FLAGONE: no penalty (off, Take stars away off, ⏸) → the 🚩 mark, no stars
@@ -90555,6 +90894,7 @@ function msPosEditToggle(){ if(!momHere()) return; msPosEdit=!msPosEdit; if(type
 // today's open Math Sprints card for the kid checks itself off (same as EIC)
 function msCheckCard(kid){
   try{
+    if(typeof schoolOffToday==="function"&&schoolOffToday()) return false;   // 🏖 BRKTODAY: no card today on a break — the sprint still scores, as on a day with no card
     if(typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return false;
     const t=weekData.tasks.filter(x=>x&&x.who===kid&&msIsCard(x)&&!String(x.id||"").endsWith("_c")&&!x._eowOverflow&&!(checked&&checked[x.id])&&effectiveDay(x)===_todayDay).sort((a,b)=>toMin(a.time)-toMin(b.time))[0];
     if(!t) return false; const ts=(claimed&&claimed[t.id])||nowTs();

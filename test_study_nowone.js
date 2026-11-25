@@ -103,7 +103,8 @@ console.log("── (4) not changed; nothing written ──");
     ok("MSTALERT + SREVIEW (what's flagged, what's counted, the HQ 🚩 box) are byte-for-byte main's", cut("// MSTALERT_START", "// SREVIEW_END", base).replace(/[^\n]*MIXMISSING: cards waiting[^\n]*\n/g, "").replace(/,mixmissing:"⚠️"\};   \/\/ ⚠️ MIXMISSING/, "};") === CODE.replace(/[^\n]*MIXMISSING: cards waiting[^\n]*\n/g, "").replace(/,mixmissing:"⚠️"\};   \/\/ ⚠️ MIXMISSING/, "};"));   // ⚠️ MIXMISSING (2026-11-21) adds a ⚠️ row kind on purpose
     ok("the Home Base badge list (hbAlertItems) is byte-for-byte main's", sliceFn("hbAlertItems", base) === sliceFn("hbAlertItems"));
     ok("⏱ MINMINUTES Now rows (mmAlertsNowHTML) are main's", sliceFn("mmAlertsNowHTML", base) === sliceFn("mmAlertsNowHTML"));
-    ["REPROJ", "MOMLOOP", "DAYSTART", "SCHOOLEND"].forEach(k => ok("schedule block " + k + " is byte-for-byte main's", cut("// " + k + "_START", "// " + k + "_END", base) === cut("// " + k + "_START", "// " + k + "_END")));
+    const brk = x => String(x).replace(/\n[^\n]*\/\/ 🏖 BRKTODAY[^\n]*/g, "");   // 🏖 BRKTODAY (2026-11-24): mlRemaining's one tagged break-day line — normalized away on both sides (test_break_today.js covers it)
+    ["REPROJ", "MOMLOOP", "DAYSTART", "SCHOOLEND"].forEach(k => ok("schedule block " + k + " is byte-for-byte main's", brk(cut("// " + k + "_START", "// " + k + "_END", base)) === brk(cut("// " + k + "_START", "// " + k + "_END"))));
     const mdB = sliceFn("renderMomsDay", base), mdN = sliceFn("renderMomsDay");
     ok("renderMomsDay changed only in the study lines", mdN.replace(nowLines(src), "") === mdB.replace(nowLines(base), ""));
   } else console.log("  (skip — no origin/main to compare)");

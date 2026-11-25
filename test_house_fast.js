@@ -28,7 +28,7 @@ if (!BHJS) { try { BHJS = cp.execSync("git show " + BEFORE + ":house.js", { cwd:
 // HOUSEQUIET (slice B of the missed-chores design, 2026-11-23) changes on purpose what the Household pages draw (no red late badge,
 // Mom's notes, % done; test_house_quiet.js). Every caller asks typeof first, so the comparisons with BEFORE's pages run on house.js with
 // that block cut out: what HOUSEFAST's memo must leave byte for byte as it was.
-const noQ = s => { const i = s.indexOf("// HOUSEQUIET_START"); return i < 0 ? s : s.slice(0, i) + s.slice(s.indexOf("\n", s.indexOf("// HOUSEQUIET_END")) + 1); };
+const noQ = s0 => ["HOUSEQUIET", "HOUSEMIXSET"].reduce((s, k) => { const i = s.indexOf("// " + k + "_START"); return i < 0 ? s : s.slice(0, i) + s.slice(s.indexOf("\n", s.indexOf("// " + k + "_END")) + 1); }, s0);   // + HOUSEMIXSET (step 7 slice 2): Mom's "Mixed in" line on 👤 By person
 console.log("(base: " + (BHJS ? "house.js at " + (process.env.BASE_HOUSE || BEFORE) : "none — git show " + BEFORE + " failed; part 1 is skipped") + ")");
 
 // ── the made-up big family (deterministic) ──

@@ -243,7 +243,7 @@ console.log("\n── zero writes; not Mom: no taps ──");
 
 // HOUSEQUIET (slice B of the missed-chores design, 2026-11-23) changes on purpose what the Household pages draw (test_house_quiet.js);
 // every caller asks typeof first, so this comparison with the app before runs on house.js with that block cut out.
-const noQ = s => { const i = s.indexOf("// HOUSEQUIET_START"); return i < 0 ? s : s.slice(0, i) + s.slice(s.indexOf("\n", s.indexOf("// HOUSEQUIET_END")) + 1); };
+const noQ = s0 => ["HOUSEQUIET", "HOUSEMIXSET"].reduce((s, k) => { const i = s.indexOf("// " + k + "_START"); return i < 0 ? s : s.slice(0, i) + s.slice(s.indexOf("\n", s.indexOf("// " + k + "_END")) + 1); }, s0);   // + HOUSEMIXSET (step 7 slice 2): Mom's "Mixed in" line on 👤 By person
 console.log("\n── the rest of the three pages and the chore card: byte for byte the app before this change (8f71835c) ──");
 { let base = null; try { base = cp.execSync("git show 8f71835c:house.js", { cwd: __dirname, maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] }).toString(); } catch (e) { base = null; }
   if (!base) console.log("  (skipped: commit 8f71835c is not in this checkout)");

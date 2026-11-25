@@ -18,7 +18,9 @@ const A = src.indexOf("  // NB_LOOKS2_START"), endMark = "  // NB_LOOKS2_END\n",
 const load = (code) => { const w = {}; new Function("window", code)(w); return w.HoweNotebooks; };
 const NB = load(src), I = NB._internal;
 const block = src.slice(A, B + endMark.length);
-const OLD = load(src.slice(0, A) + src.slice(B + endMark.length));   // this tree with the block taken out
+// this tree with the block taken out — and NB_LOOKS3 with it (2026-11-24: that block builds its looks with this one's helpers)
+const A3 = src.indexOf("  // NB_LOOKS3_START"), end3 = "  // NB_LOOKS3_END\n", B3 = src.indexOf(end3);
+const OLD = load(A3 > B ? src.slice(0, A) + src.slice(B + endMark.length, A3) + src.slice(B3 + end3.length) : src.slice(0, A) + src.slice(B + endMark.length));
 let pass = 0, fail = 0;
 function ok(c, name, d) { if (c) { pass++; console.log("  ✓ " + name); } else { fail++; console.log("  ✗ " + name + (d ? "  → " + d : "")); } }
 const noStyle = (h) => String(h).replace(/<style[\s\S]*?<\/style>/g, "");
@@ -45,12 +47,12 @@ const theme = (N, k, ctx) => N.themes[k].theme(Object.assign({ kidName: "Finn" }
 
 console.log("the block and the picker");
 ok(A > 0 && B > A && src.indexOf("// NB_LOOKS2_START", A + 10) < 0, "one NB_LOOKS2 block, marked start and end");
-ok(JSON.stringify(Object.keys(NB.themes)) === '["dino","construction","shark","space","farm","forest"]' && JSON.stringify(Object.keys(OLD.themes)) === '["dino","construction","shark"]', "six looks with the block, the first three without it");
+ok(JSON.stringify(Object.keys(NB.themes).slice(0, 6)) === '["dino","construction","shark","space","farm","forest"]' && JSON.stringify(Object.keys(OLD.themes)) === '["dino","construction","shark"]', "the six looks lead the picker with the block (NB_LOOKS3's follow), the first three without it");
 ok(NB.themes.space.chip === "🚀 Space" && NB.themes.farm.chip === "🐮 Farm" && NB.themes.forest.chip === "🦊 Forest", "picker names: 🚀 Space · 🐮 Farm · 🦊 Forest");
 let op = NB.notebookOptions("julian", {});
-ok(op.looks.map(l => l.key).join() === "dino,construction,shark,space,farm,forest" && op.current === "dino", "a Pre-K kid's picker lists all six; the kid's own look stays on");
+ok(op.looks.map(l => l.key).join() === "dino,construction,shark,space,farm,forest,plain,horses,sports" && op.current === "dino", "a Pre-K kid's picker lists all nine (NB_LOOKS3's after these); the kid's own look stays on");
 op = NB.notebookOptions("kid9", { isPreK: true });
-ok(op.looks.map(l => l.key).join() === ",dino,construction,shark,space,farm,forest" && op.current === "", "a Pre-K kid on the starter notebook: Starter + the six");
+ok(op.looks.map(l => l.key).join() === ",dino,construction,shark,space,farm,forest,plain,horses,sports" && op.current === "", "a Pre-K kid on the starter notebook: Starter + the nine");
 op = NB.notebookOptions("kid9", { notebookTheme: "farm" });
 ok(op.current === "farm" && op.prek && op.levels.length === 5 && op.extraPages.length === 3, "picking a new look gives the level switches and the three extra pages, as any Pre-K look");
 ok(NB.notebookOptions("lincoln", {}).looks.length === 1 && NB.notebookOptions("lucy", {}).looks.length === 1 && NB.notebookOptions("kid9", {}).looks.length === 1, "an older kid's picker is untouched (one look each)");
