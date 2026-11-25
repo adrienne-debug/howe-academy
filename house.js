@@ -2108,7 +2108,7 @@ function lgSbBack(kid,j,c){ const W=lgSbW(kid), L=lgSbList(j), core=L.filter(fun
   L.forEach(function(x){ if(lgSbEq(lgSbAt(W,x[0]),x[2])){ lgSbAt(W,x[0],1,x[1]); u[x[0]]=x[1]; } }); return u; }
 // a "— not done" line a device filed for this turn while it was sent back (_rtLogMiss / C3's _rtDropFileC3, under its own day or the
 // day it was due) goes again with the tick's return, and C3's drop line with it (cdrop_…, −20%): the turn was done.
-function lgSbMiss(R,at,u){ if(!R||!R.slot||R.st.house) return; const D=lgSbDay(R.wk,R.dn), E=D&&lgDueBefore(R.st,D), k="miss_"+R.slot+"_"+R.i;
+function lgSbMiss(R,at,u){ if(typeof lgHSbBack==="function") lgHSbBack(R,at,u)/* LEDGERHDROP (E): a plan row's drop since */; if(!R||!R.slot||R.st.house) return; const D=lgSbDay(R.wk,R.dn), E=D&&lgDueBefore(R.st,D), k="miss_"+R.slot+"_"+R.i;
   [D,E].forEach(function(T){ const L=T&&((routineLog[R.kid]||{})[T.wk]||{})[T.dn], x=L&&L[k], b=x&&x.drop&&x.drop.bid, A=bank[R.kid]&&bank[R.kid].adjustments;
     if(x&&(x.at||0)>=at){ delete L[k]; u["routineLog/"+R.kid+"/"+T.wk+"/"+T.dn+"/"+k]=null; if(b&&A&&A[b]){ delete A[b]; u["bank/"+R.kid+"/adjustments/"+b]=null; } } }); }   // C3: and the drop it took
 function lgSbDone(u){ const ks=" "+Object.keys(u||{}).join(" ");
@@ -2276,6 +2276,16 @@ function lgHExcuseUndo(kid,iso,id){ if(!lgHOk()) return false; const x=lgHDropOf
   D["miss_h_"+id]=kp.log; delete D["wave_h_"+id]; u[x.P+"miss_h_"+id]=kp.log; u[x.P+"wave_h_"+id]=null;
   if(kp.line&&bid){ bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{}; bank[kid].adjustments[bid]=kp.line; u["bank/"+kid+"/adjustments/"+bid]=kp.line; }
   delete x.m.x; u["houseDay/"+iso+"/miss/"+id+"/x"]=null; lgHUp(u); lgHRe(); return true; }
+// ↩ Send back's Undo (LEDGERSB lgSbMiss, from lgSbUndo / lgFlagUndo) on a plan row: the tick is back, so a drop the day's build filed for
+// that turn since the send-back (its line's at >= the send-back's, or later than the tick put back) goes too — the "— not done" line, the
+// drop's note and its hdrop_ bank line — into the Undo's own one update (u). Left alone: a drop filed before, one given back or excused,
+// another chore's, a grown-up's. Nothing is written here (the Undo writes u only when db && !_dryRun()).
+function lgHSbBack(R,at,u){ const id=R&&R.st&&R.st.house, kid=R&&R.kid, ti=R&&amIso(R.dn), dr=ti&&id&&((houseDayData[ti]||{}).done||{})[id], t0=(R&&R.rec&&R.rec.at)||(dr&&dr.at)||0; if(!id||!hhIsKid(kid)||!(at>0)||!ti) return;
+  const A=bank[kid]&&bank[kid].adjustments; Object.keys(houseDayData||{}).forEach(function(iso){ const r=houseDayData[iso], m=r&&r.miss&&r.miss[id];
+    if(!m||m.who!==kid||!m.out||m.x||!(iso>ti)||!(m.since<=ti)) return; const w=hdWkDay(m.since), L=w&&((routineLog[kid]||{})[w.wk]||{})[w.dn], x=L&&L["miss_h_"+id], t=x&&x.drop, a=(x&&x.at)||0;
+    if(!x||(t&&t.gb)||!(a>=at||(t0>0&&a>t0))) return;
+    delete L["miss_h_"+id]; u["routineLog/"+kid+"/"+w.wk+"/"+w.dn+"/miss_h_"+id]=null; delete r.miss[id]; u["houseDay/"+iso+"/miss/"+id]=null;
+    if(t&&t.bid&&A&&A[t.bid]){ delete A[t.bid]; u["bank/"+kid+"/adjustments/"+t.bid]=null; } }); }
 // LEDGERHDROP_END
 // LEDGERZERO_START — a 0 ⭐ daily's −1 on its 📒 Ledger row (missed-chores design §2.8 and §4, slice C6; C3's LEDGERDROP pattern and gate).
 // index.html CHOREZERO files the day's line (routineLog/<kid>/<wk>/<day>/zero_<chore>, .zero) and the bank line. Here, on that day's row:

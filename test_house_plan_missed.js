@@ -59,6 +59,7 @@ const BEFORE_IDX = /*PAIRS_IDX*/[
 ], BEFORE_HJS = /*PAIRS_HJS*/[
   ["function hpOv(){ return {rotations:(typeof hhTurnsAll===\"function\"&&hhTurnsAll())||{},kids:(typeof SL_KIDS!==\"undefined\"?SL_KIDS:ROSTER).slice(),slots:SL_SLOTS.slice(),rotPeriod:Object.assign({},(typeof rotationPeriod!==\"undefined\"&&rotationPeriod)||{}),on:hpIsIso(hpEngine().on)?hpEngine().on:hpToday(),minDefault:HH_MIN_DEFAULT,missed:(typeof hdMissedOv===\"function\")?hdMissedOv():undefined}; }   // MISSEDPLAN (slice E): the waits, 📌 and 🔄 the plan would use\n","function hpOv(){ return {rotations:(typeof hhTurnsAll===\"function\"&&hhTurnsAll())||{},kids:(typeof SL_KIDS!==\"undefined\"?SL_KIDS:ROSTER).slice(),slots:SL_SLOTS.slice(),rotPeriod:Object.assign({},(typeof rotationPeriod!==\"undefined\"&&rotationPeriod)||{}),on:hpIsIso(hpEngine().on)?hpEngine().on:hpToday(),minDefault:HH_MIN_DEFAULT}; }\n"],
   ["    if(typeof lgHDropDay===\"function\") lgHDropDay(out,kid,D);   // 📒 LEDGERHDROP (slice E): the plan's own drops that morning, and what a skipped plan row paid\n",""],
+  ["function lgSbMiss(R,at,u){ if(typeof lgHSbBack===\"function\") lgHSbBack(R,at,u)/* LEDGERHDROP (E): a plan row's drop since */; if(!R||!R.slot||R.st.house) return; const D=lgSbDay(R.wk,R.dn), E=D&&lgDueBefore(R.st,D), k=\"miss_\"+R.slot+\"_\"+R.i;\n","function lgSbMiss(R,at,u){ if(!R||!R.slot||R.st.house) return; const D=lgSbDay(R.wk,R.dn), E=D&&lgDueBefore(R.st,D), k=\"miss_\"+R.slot+\"_\"+R.i;\n"],
   ["  const wt=Object.keys(r.wait||{}).filter(function(id){ return r.wait[id].who===who&&J[id]; });   // MISSEDDAY (slice E): skipped earlier, no room today — still theirs, not on their list\n  if(wt.length) h+='<div style=\"'+HP_HEAD+'\">Waiting with '+esc(hhWhoName(who))+' · no room today ('+wt.length+')</div>'+wt.map(function(id){ const x=r.wait[id], j=J[id]; return hpRow(id,j.emoji,j.label,hqChip(hqPlanNote(j,x.late,t))+_hhChip('not on their list today','#f3f4f6','#6b7280')+_hhChip(x.mins+' min','#f3f4f6','#475569')); }).join('');\n  if(over.length) h+='<div style=\"'+HP_HEAD+';border-top:2px solid #fde68a;padding-top:8px\">Didn’t fit anyone today ('+over.length+') — '+((typeof hdMissedOn===\"function\"&&hdMissedOn(t))?'tried again tomorrow until its wait runs out':'first in line tomorrow')+'</div>'+over.map(function(id){ const o=r.over[id], j=J[id], gd=hpGrabDone(t,id); return hpRow(id,j.emoji,j.label,_hhChip(hhWhoName(o.turn)+'’s turn','#f3f4f6','#475569')+_hhChip(o.mins+' min','#f3f4f6','#475569')+hpGrabChip(t,id)+(mom&&!gd?'<span onclick=\"event.stopPropagation()\">'+hpGiveSel(t,id,\"\")+'</span>':''),gd||undefined); }).join('');\n","  if(over.length) h+='<div style=\"'+HP_HEAD+';border-top:2px solid #fde68a;padding-top:8px\">Didn’t fit anyone today ('+over.length+') — first in line tomorrow</div>'+over.map(function(id){ const o=r.over[id], j=J[id], gd=hpGrabDone(t,id); return hpRow(id,j.emoji,j.label,_hhChip(hhWhoName(o.turn)+'’s turn','#f3f4f6','#475569')+_hhChip(o.mins+' min','#f3f4f6','#475569')+hpGrabChip(t,id)+(mom&&!gd?'<span onclick=\"event.stopPropagation()\">'+hpGiveSel(t,id,\"\")+'</span>':''),gd||undefined); }).join('');\n"],
   ["  const rec=p?Object.assign({},p,{who:who,order:mx,why:\"given\"}):{who:who,mins:o.mins,order:mx,why:\"given\",late:o.late||0,k:o.k,since:o.since}; const from=p?(p.from||p.who):o.turn; if(from&&from!==who) rec.from=from; else delete rec.from; delete rec.sk;   // MISSEDDAY: given away pays the new person in full\n","  const rec=p?Object.assign({},p,{who:who,order:mx,why:\"given\"}):{who:who,mins:o.mins,order:mx,why:\"given\",late:o.late||0,k:o.k,since:o.since}; const from=p?(p.from||p.who):o.turn; if(from&&from!==who) rec.from=from; else delete rec.from;\n"],
   ["  if(s.wait) Object.keys(Object.assign({},r.wait,s.wait)).forEach(function(id){ if(JSON.stringify((r.wait||{})[id]||null)!==JSON.stringify(s.wait[id]||null)) upd[B+\"wait/\"+id]=s.wait[id]||null; });   // MISSEDDAY\n",""],
@@ -393,6 +394,61 @@ const lgRow = (d, kid, name) => (JSON.parse(d.run("JSON.stringify(lgDayData(" + 
   for (let n = 0; n <= 4; n++) await go(Y.w, n, 7);
   const dw = writes(Y.w, my).filter(e => e.dev === "devA" || e.dev === "devB");
   ok("dry run: two devices on ?dryrun=1, Mon–Fri — they build no day and write no note, log line or bank line (the days in the database were built by the world's own boot device)", !dw.some(e => /houseDay|miss_h_|hdrop_|bank/.test(e.path + " " + (e.keys || []).join(","))), dw.slice(0, 5).map(e => e.op + " " + e.path));
+}
+
+// ════════════════════════════════════════ C2 · ↩ Send back's Undo on a plan row ════════════════════════════════════════
+console.log("\n── C2 · ↩ Send back and its Undo on a plan row whose turn the plan then dropped (L5 × E) ──");
+const FSB = () => ({
+  a_vac: K({ label: "Vacuum the den", emoji: "🧹", who: "kid_a", slot: "chores", cad: "wk:1", minutes: 10, pts: 10, order: 1 }),
+  a_bins: K({ label: "Wash the bins", emoji: "🗑", who: "kid_a", slot: "chores", cad: "wk:1", minutes: 5, pts: 10, order: 2 }),
+  b_vac: K({ label: "Sweep the porch", emoji: "🧹", who: "kid_b", slot: "chores", cad: "wk:1", minutes: 5, pts: 10, order: 1 }),
+  c_tub: K({ label: "Scrub the tub", emoji: "🛁", who: "kid_c", slot: "chores", cad: "wk:1", minutes: 5, pts: 22, order: 1 }),
+  d_rug: K({ label: "Shake the rugs", emoji: "🧶", who: "kid_d", slot: "chores", cad: "wk:1", minutes: 5, pts: 10, order: 1 }),
+  d_mat: K({ label: "Shake the mat", emoji: "🟫", who: "kid_d", slot: "chores", cad: "wk:1", minutes: 5, pts: 10, order: 2 }) });
+const sbWorld = async hjs => { const S = await mkW(IDX, hjs, { jobs: FSB(), people: P(60, 60, 60, 60) }); S.A.run("confirm=function(){ return true; };1"); return S; };
+const sbI = (d, kid, id, dn) => d.run("(function(){ const d0=day; day=" + J(dn) + "; try{ return (rtStepsFor('chores'," + J(kid) + ",false," + J(dn) + ")||[]).findIndex(function(x){ return x&&x.house===" + J(id) + "; }); } finally{ day=d0; } })()");
+const sbSend = (S, kid, id, dn, a) => { const i = sbI(S.A, kid, id, dn); return S.A.run("lgSendBack(" + J(kid) + ",activeWk()," + J(dn) + ",'s:chores:" + i + "'," + J(a) + ")"); };
+const sbUndo = (S, kid, id, dn) => { const i = sbI(S.A, kid, id, dn); return S.A.run("lgSbUndo(" + J(kid) + ",activeWk()," + J(dn) + ",'s:chores:" + i + "')"); };
+const lines = (w, kid, re) => Object.entries(adj(w, kid)).filter(([k, a]) => re.test(k + " " + a.note)).map(([k, a]) => [k, a.amount]);
+{ const S = await sbWorld(HJS), { w } = S;
+  for (let n = 0; n <= 2; n++) await go(w, n, 7);
+  await go(w, 3, 8); ["kid_a:a_vac", "kid_b:b_vac", "kid_d:d_rug", "kid_d:d_mat"].forEach(x => { const [k, id] = x.split(":"); tickPlan(S.A, k, id); }); await w.flush();
+  const paid = id => (day(w, isoN(3)).done || {})[id] && day(w, isoN(3)).done[id].pts;
+  ok("(setup) Thu 12/10, the last day of their 2-day wait: four skipped Tuesday chores ticked, each paid 6 (10 → 8 → 6)", ["a_vac", "b_vac", "d_rug", "d_mat"].every(id => paid(id) === 6));
+  const sa = sbSend(S, "kid_a", "a_vac", "thursday", "m"), sb = sbSend(S, "kid_b", "b_vac", "thursday", "w"), sd1 = sbSend(S, "kid_d", "d_rug", "thursday", "m"), sd2 = sbSend(S, "kid_d", "d_mat", "thursday", "m"); await w.flush();
+  ok("(setup) Mom sends them back the same day: Kid A's and both of Kid D's \"just a mistake\", Kid B's 🚩 \"wasn't done\"", sa && sb && sd1 && sd2 && !paid("a_vac") && !paid("b_vac"));
+  await go(w, 4, 7); const rF = day(w, isoN(4));
+  ok("(setup) Fri: the day's build drops each of them (not done when the day was laid), and Kid A's unticked bins and Kid C's tub too", ["a_vac", "a_bins", "b_vac", "c_tub", "d_rug", "d_mat"].every(id => rF.miss[id] && rF.miss[id].drop && rF.miss[id].drop.n > 0), Object.keys(rF.miss));
+  S.A.run("lgHDropGive('kid_d','2026-12-11','d_rug'); lgHExcuse('kid_d','2026-12-11','d_mat')"); await w.flush();
+  await go(w, 4, 10); const ic = sbI(S.A, "kid_c", "c_tub", "thursday"); S.A.run("mdKidTick('chores','kid_c','thursday'," + ic + ")"); await w.flush();
+  const sc = sbSend(S, "kid_c", "c_tub", "thursday", "m"); await w.flush();
+  ok("(setup) Kid C's tub, dropped this morning, ticked late for Thursday by Mom at 10:00 and then sent back", sc === true);
+  const keep = { rug: J(logLines(w, "kid_d", /^miss_h_d_rug$/)), mat: J(logLines(w, "kid_d", /^(miss|wave)_h_d_mat$/)), cn: J(day(w, isoN(4)).miss.c_tub), cl: J(lines(w, "kid_c", /hdrop_/)), dB: J(adj(w, "kid_d")), bins: J(lines(w, "kid_a", /a_bins|Wash the bins · not done/)) };
+  await go(w, 4, 11); const m = w.mark(); const ua = sbUndo(S, "kid_a", "a_vac", "thursday"); await w.flush(); const ws = WS(w, m);
+  const rA = day(w, isoN(4)), va = lines(w, "kid_a", /Vacuum the den/);
+  ok("Undo (just a mistake): Thursday's tick is back, paid 6 as it was", ua === true && paid("a_vac") === 6);
+  ok("…and the drop Friday's build filed since goes with it: no \"— not done\" line, no note on Friday, no hdrop_ line — Kid A's Vacuum lines add up to +6 again", logLines(w, "kid_a", /^miss_h_a_vac$/).length === 0 && !(rA.miss || {}).a_vac && !lines(w, "kid_a", /hdrop_.*a_vac/).length && va.reduce((a, x) => a + x[1], 0) === 6, { va, miss: rA.miss && rA.miss.a_vac });
+  ok("…all in the Undo's own one update (targeted paths: the tick, the log line, the note, the bank line)", ws.length === 1 && /^update  \[/.test(ws[0]) && ["miss_h_a_vac", "houseDay/2026-12-11/miss/a_vac", "hdrop_week5_tuesday_kid_a_a_vac"].every(p => ws[0].indexOf(p) >= 0), ws);
+  const g = JSON.parse(S.A.run("JSON.stringify(lgDayData('kid_a',0))")).gone.map(x => x.nm);
+  ok("…the 📒 Ledger's Friday has no ✖ for that turn; Kid A's other drop (the bins, never ticked) is still there, untouched", !g.some(x => /Vacuum/.test(x)) && g.some(x => /Wash the bins/.test(x)) && J(lines(w, "kid_a", /a_bins|Wash the bins · not done/)) === keep.bins, g);
+  const fl = logLines(w, "kid_b", /./).find(l => l.flagged); S.A.run("lgFlagUndo('step','kid_b'," + J(fl._wk + "/" + fl._dn + "/" + fl._k) + ",0)"); await w.flush();
+  ok("🚩 Wasn't done's Undo (the 📒's, the Click-off Log's and 🧾's — all lgFlagUndo): the tick back and that turn's drop gone the same way", paid("b_vac") === 6 && logLines(w, "kid_b", /^miss_h_b_vac$/).length === 0 && !(day(w, isoN(4)).miss || {}).b_vac && !lines(w, "kid_b", /hdrop_/).length);
+  sbUndo(S, "kid_c", "c_tub", "thursday"); await w.flush();
+  ok("left alone: a drop filed BEFORE the send-back and the late tick (Kid C's tub, dropped at 7:00): its note, its line and its −4 stay", J(day(w, isoN(4)).miss.c_tub) === keep.cn && J(lines(w, "kid_c", /hdrop_/)) === keep.cl && keep.cl !== "[]");
+  const kpMat = logLines(w, "kid_d", /^wave_h_d_mat$/).length && clone(day(w, isoN(4)).miss.d_mat.x.c3.log);   // Mom's device still shows the mat's "— not done" (as if the excuse came from another device and her log listener is behind)
+  S.A.run("(function(){ const w=hdWkDay('2026-12-08'); routineLog.kid_d[w.wk][w.dn].miss_h_d_mat=" + J(kpMat) + "; })()");
+  sbUndo(S, "kid_d", "d_rug", "thursday"); sbUndo(S, "kid_d", "d_mat", "thursday"); await w.flush();
+  S.A.run("(function(){ const w=hdWkDay('2026-12-08'); delete routineLog.kid_d[w.wk][w.dn].miss_h_d_mat; })()");
+  const dB = adj(w, "kid_d"), dn = Object.values(dB).filter(a => !/Shake the (rugs|mat)$/.test(a.note) || a.amount < 0);
+  ok("left alone: a drop already given back (Kid D's rugs) — its line with gb stays; nothing is returned twice", J(logLines(w, "kid_d", /^miss_h_d_rug$/)) === keep.rug && /"gb"/.test(keep.rug) && !Object.keys(dB).some(k => /hdrop_.*d_rug/.test(k)));
+  ok("left alone: an excused drop (Kid D's mat), even on a device still showing its old \"— not done\" line — its note's x, its waved line and its kept lines stay", J(logLines(w, "kid_d", /^(miss|wave)_h_d_mat$/)) === keep.mat && !!((day(w, isoN(4)).miss || {}).d_mat || {}).x);
+  ok("…and Kid D's bank is up by exactly the two ticks (+6 +6: their \"↩︎ Mom undid\" lines gone); her drop lines unchanged", (() => { const b0 = JSON.parse(keep.dB), sum = o => Object.values(o).reduce((x, y) => x + (y.amount || 0), 0); return sum(dB) - sum(b0) === 12 && J(Object.keys(dB).filter(k => /hdrop_/.test(k))) === J(Object.keys(b0).filter(k => /hdrop_/.test(k))); })(), Object.keys(dB));
+}
+{ // the block absent (LEDGERHDROP out, LEDGERSB's one call kept): L5 runs exactly as main's — the Undo works, the plan's drop simply stays
+  const H0 = HJS.replace(/^ *\/\/ LEDGERHDROP_START[^\n]*\n[\s\S]*?^ *\/\/ LEDGERHDROP_END\n/m, ""), S = await sbWorld(H0), { w } = S;
+  for (let n = 0; n <= 2; n++) await go(w, n, 7); await go(w, 3, 8); tickPlan(S.A, "kid_a", "a_vac"); await w.flush(); sbSend(S, "kid_a", "a_vac", "thursday", "m"); await w.flush(); await go(w, 4, 7);
+  let u = null, err = ""; try { u = sbUndo(S, "kid_a", "a_vac", "thursday"); } catch (e) { err = String(e.message || e); } await w.flush();
+  ok("with LEDGERHDROP absent the call in lgSbMiss is a no-op (typeof-guarded): the Undo still works as main's (tick back, the plan's drop stays)", !err && u === true && (day(w, isoN(3)).done || {}).a_vac && lines(w, "kid_a", /hdrop_.*a_vac/).length === 1, [err, u, lines(w, "kid_a", /./)]);
 }
 
 // ════════════════════════════════════════ D · 8 weeks ════════════════════════════════════════
