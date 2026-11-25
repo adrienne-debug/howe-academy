@@ -21,13 +21,13 @@ A study only. Nothing in the app changed. No data was written. Every claim carri
 4. number bonds / part–whole for Julian (the cards exist in the Math Fluency Path, but no kid is on that stage);
 5. place value past 100, number lines, and big numbers for the older kids.
 
-**Units** (your add-on, §1f). Today the notebook and the math unit (🧮 Math Fluency Path) meet only through shared drill cards. No kid is on the unit, and it prints no notebook pages. Nothing a child does on a notebook number page is recorded or flows back. The plan makes the unit the **one source**: set a kid's number stage once on the unit, and every surface follows it in its own form: drill, notebook, games, sprints. You confirmed this is what "interchangeable" means ("used by mastery, unit, notebook, games etc"). One number-skills picture per kid then says what needs review (§6a).
+**Units** (your add-on, §1f). Today the notebook and the math unit (🧮 Math Fluency Path) meet only through shared drill cards. No kid is on the unit, and it prints no notebook pages. Nothing a child does on a notebook number page is recorded or flows back. The plan makes the unit the **one source**: set a kid's number stage once on the unit, and every surface follows it in its own form: drill, notebook, games, sprints. You confirmed this is what "interchangeable" means ("used by mastery, unit, notebook, games etc"). One number-skills picture per kid then says what needs review (§6a). And there needn't be one home for all math (your answer to question 2): each area (number, shapes, patterns, measuring, data) gets its own unit, several running at once, shown side by side.
 
 **Every grade, and following the drills** (your later add-ons, §1g). No grade's notebook math follows what the child is studying in math today. Each notebook runs on its own track, and a 7th grader's prints no math. The Pre-K notebook keeps printing letters Julian passed off in drills (it's at F; his drills are at S), and after a gap it jumps ahead by the calendar. The plan gives each layer one job: the book/unit teaches, drills automate, the notebook applies and reviews in a different form with light "is it sticking?" checks, and Math Reasoning stays the spiral. Simple follow-the-drills rules (§6d) make the notebook skip what's passed off and slow down when drills stall.
 
 **Before Singapore Dimensions with Julian**, the strands that must be solid are counting, how-many, seeing small amounts, comparing, and part–whole to 5 and then 10. Naming numerals past 20 is nice, but it is not the gate. 📚 + 💡 A five-minute check a parent can run is in §3.
 
-**The plan (§6)** is 14 small slices, built around one source of number content: the math unit. Each one is useful on its own, and each keeps the rule that **notebooks complement drills**: the drill practises quick naming and recall, and the notebook asks the child to *make, show, place or explain*. First comes a five-minute "Where is this child?" check for any kid at any level. Then Julian's numerals past 20 (your ask), making the notebook follow the unit and the drills, a quick-look drill, a "make it" page, and the review loop. **12 questions for you are in §7**, each with my suggested answer.
+**The plan (§6)** is 18 small slices (number first, then shapes, patterns, measuring and data as their own areas), built around one source of number content: the math unit. Each one is useful on its own, and each keeps the rule that **notebooks complement drills**: the drill practises quick naming and recall, and the notebook asks the child to *make, show, place or explain*. First comes a five-minute "Where is this child?" check for any kid at any level. Then Julian's numerals past 20 (your ask), making the notebook follow the unit and the drills, a quick-look drill, a "make it" page, and the review loop. **12 questions for you are in §7**, each with my suggested answer.
 
 ---
 
@@ -399,6 +399,23 @@ Code: `juCurriculumFromMastery`, `juWeekPicks`, `juLetterStart`, `juNumberStart`
 
 **The short answer** 🔍: the drill, the 1st-grade notebook, the practice games, the card sprints and the paper drill already use the **same cards**. The Pre-K notebook keeps its **own place**. The older kids' number box, the Number Thinking ladder, the Book Sprints and the School Room keep their **own copies**. The Math Fluency Path *is* the source for those cards, but no kid is on it yet.
 
+### 4j. Math areas beyond number in the app today, and running several at once 🔍
+
+| Area | Unit | Mastery decks | Notebook | Ladder / banks |
+|---|---|---|---|---|
+| **Number** | 🧮 Math Fluency Path, stages 1–8 (numbers → + − → × ÷ → fractions, decimals, squares, powers of 10, primes, units, signs). No kid enrolled | Numbers, Counting, Number Sense, partners, Math Facts | §4b, §4f | Number Thinking; the boys' number banks |
+| **Shapes / geometry** | 🔷 **Shapes Path**, 3 stages: basic shapes → more flat shapes → solid shapes (`SP_STAGES`), with a tap-each-side counting drill (`SHAPE_SIDES`). **No kid enrolled** (the Oct 26 hook-up of Julian isn't in the data) | Julian: Shapes 20 cards, Colors 11. Ellis: "Mathematical Reasoning" 12 cards (polygons, triangles, parallel lines, equivalent fractions) | Pre-K "Shape & Color" card every day (trace, name, colour); "⭐ Shapes Path" level switch. Lucy: a symmetry "finish the other half" page in her brain breaks | — |
+| **Patterns** | Not found (no unit) | Not found | Pre-K: none outside the ladder. Lucy: an uploaded pattern picture in her brain breaks (`luPageBb3`) | Number ladder: repeating patterns (Pre-K 22, K 12), bead strings (4, 8), growing patterns (8, 20); growing / two-step series in 2nd–3rd. **Off for every kid** |
+| **Measurement: length, weight, capacity** | Not found | Ellis: **Measurements** 15 cards (foot, yard, mile, kilogram, cup, pint …). Math Fluency Path stage 8 has customary and metric unit cards (no kid has them) | **Not found** (no compare-length, heavier/lighter or measuring page in any notebook) | — |
+| **Time and calendar** | Not found | Not found | Pre-K: Days & Seasons and This Month pages (calendar words). Lucy: month pages | Lincoln's bank: 21 elapsed-time items |
+| **Money** | Not found | Not found | A fixed **"Money & Life Skills"** extra page in Ellis's and Lincoln's notebooks (save / spend / share, interest), the same every week (`enPageMoneyLife`) | — |
+| **Data / graphs** | Not found | Not found | Not found | — |
+
+**Can a kid run several at once today?**
+- **Several units at once: yes.** Lincoln is on 8 units. The Geography Path has all four kids. Each unit has its own kid row, its own decks and (if on) its own notebook insert. The Games grid works per deck, so it works across units.
+- **Several stages of one unit at once: no.** A kid has **one current stage per unit** (`kidStage/<kid>`). Earlier stages' cards keep reviewing after ➡ moving up, but only one stage is "now". Parallel tracks inside one unit: **not found**.
+- **Curriculum lanes** (`curriculum/lanes`) are for book subjects on the schedule. They run their members in order, or alternate them in an A-A-B pattern. They're not for units.
+
 ---
 
 ## 5. The rules every slice keeps 💡
@@ -410,7 +427,7 @@ These are your standing rules, applied to number sense:
 3. **The app never supplies the answer.** The page gives the *numeral* and the child makes the amount, or it gives the *amount* and the child writes the numeral, never both. Answers print only on the Grown-Up Guide / Companion, as now.
 4. **Alone, except the littlest.** Pre-K/K pages are read aloud by a grown-up or by the tablet's 🔊. From 1st grade up, one short line a child can read.
 5. **A first-year homeschool mom can run it.** Each page has a one-line "what to look for" in the Grown-Up Guide, with no teaching words.
-6. **One home for each control.** A kid's number *level* (stage) lives in one place: the kid's row on the 🧮 Math Fluency Path unit. The drill and the notebook both read it. The Notebook tab only switches the number pages on or off and shows the stage read-only. Dad sees and uses the same controls (§6a).
+6. **One home for each control.** A kid's *level* in each math area (stage) lives in one place: the kid's row on that area's unit (🧮 Math Fluency Path for number, 🔷 Shapes Path for shapes, and so on). The drill and the notebook both read it. The Notebook tab only switches the number pages on or off and shows the stage read-only. Dad sees and uses the same controls (§6a).
 7. **Nothing of one family leaks.** All items are made by rule from numbers, dots, shapes and the kid's own counting picture. No names, no themes from another family.
 8. **Singapore Dimensions stays textbook-only.** The notebook never prints the chapter's own practice and never stands in for a lesson. It may *know* which chapters are finished, so it can review **earlier** chapters in a different form.
 9. **Math Reasoning stays the spiral layer.** Nothing here adds a second spiral or copies Math Reasoning items. The notebook's number box for the older kids stays test-format practice, and the light checks (§6c) are one or two taps a week, not a spiral.
@@ -422,7 +439,42 @@ These are your standing rules, applied to number sense:
 
 Sizes are rough: **S** = about one session's build, one page or one deck; **M** = two or three sessions; **L** = bigger. Each slice is its own PR, described first, built only on your yes.
 
-### 6a. The design: one source of number content, used by every surface
+### 6a. One home per math area, and one source inside each
+
+**Your answer to question 2, 2026-11-25:** *"no there can be more than one if need be unless it makes sense but i can see differnet areas needing to be ran at the same time, such as like patterns and weight and geometry etc but its okay if different areas can run interchangeable"*
+
+So there's **no single home forced on everything**. Each math area gets its own home, several areas run **at the same time**, and inside each area your answer to question 1 still holds.
+
+⚠️ *My reading of your last clause (from the hub's note; please confirm or correct)*: each area's content is still **set up once and used by every surface** (drill, unit, notebook, games …), and a kid can be on **several areas at once, each at its own stage**.
+
+**The areas, and what belongs at each level** (📚 Common Core K–6 domains and the Dimensions scope; the Dimensions pre-K line "match/sort, compare sizes, patterns" is checked, the rest is from the standards' domain list and not re-checked line by line):
+
+| Area | Pre-K / K | 1st–2nd | 3rd–4th | 5th–6th |
+|---|---|---|---|---|
+| **Number** (this study) | §2 strands 1–7 | tens and ones, to 1,000, + − | × ÷, to 1,000,000, fractions start | fractions, decimals, ratio, negatives |
+| **Patterns** | repeat (AB, ABB, ABC), copy, extend, make your own; growing patterns | number patterns, skip counting | rules for series and tables | rules with letters (early algebra) |
+| **Shapes / geometry** | name, sort and build flat and solid shapes; position words | shape parts, halves and quarters of a shape | angles, lines, area and perimeter | area, volume, coordinates |
+| **Measurement** (weight, length, capacity, time, money) | compare: longer/shorter, heavier/lighter, holds more; order three things; daily routine and calendar words | measure with units (cm, inch); time to the hour, half hour, then 5 minutes; coins and dollars | mass and liquid volume; elapsed time; converting units | converting within systems; volume |
+| **Data** | sort and count into groups | picture and bar graphs | line plots, scaled graphs | averages, simple statistics |
+
+**My suggestion: several units (one per area), not one unit with parallel tracks.** Why:
+- The app **already** runs several units at once, each kid at their own stage, each with its own kid row, decks, Games grid cells and notebook insert switch 🔍 (§4j).
+- One unit with parallel tracks would need a new engine. Today a unit has **one** current stage per kid.
+- Two of the homes exist already: 🧮 Math Fluency Path = Number, 🔷 Shapes Path = geometry. New ones would be a **Patterns Path**, a **Measuring Path** (weight, length, capacity, time, money), and later **Data**.
+- Your words allow either, so I don't think this needs a question. Say if you'd rather have one big math unit.
+
+**How the notebook picks from several running areas** (a rule a mom can check at a glance) 💡:
+1. **One math ask per school day**, on the weekly "Math play" page. That's at most 5 a week, so a page or a week never overloads.
+2. **Number takes about half the days** (2–3 a week). The other running areas **take turns** on the rest, one area per day.
+3. **"Needs review" jumps the line.** An area with something flagged gets the next free day, one step easier.
+4. **An area with no kid stage prints nothing.** Turning an area on is just starting the kid on its unit.
+5. **Light checks** (§6c) follow the same turns: one or two a week across all areas, not per area.
+
+**What you see, side by side:** the kid's tab on the Units page (🧒, which already lists a kid's units with their rung counts 🔍) gets one line per running area. For example: *"🧮 Number · stage 2 · counting solid · quick look working on it · 🔷 Shapes · stage 2 · fine · 🔁 Patterns · ABB needs review"*. The same lines feed the existing "🔁 Giving trouble this week" card, grouped by area.
+
+**Inside each area:** everything below applies to *each* area's unit, not only Number.
+
+#### One source inside an area, used by every surface (Number as the example)
 
 Your words, 2026-11-25: "interchangeable" *"means used by mastery, unit, notebook, games etc"*, and the units, notebook and drills should go together so you can tell when something in numbers needs review. Here is the shape I suggest. It keeps "every control has one home", and your rule that no surface repeats another's task in the same form.
 
@@ -499,11 +551,11 @@ It shows on the unit's kid row and on Mom's existing "🔁 Giving trouble this w
 |---|---|---|---|---|---|---|
 | **1** | **"Where is this child?" — the five-minute number check** | Two versions: *Little* (Pre-K–1st) and *Big* (2nd–6th+) | Neither. It's a **grown-up page**: 8 short asks you say out loud, with pennies or the page's own dots, and a tick for each: *easy · working on it · not yet*. Each row names its strand and the Math Fluency Path stage to start | Print it; or on your phone/tablet tap the ticks. Nothing for the child to read | Results saved on the kid's row of the Math Fluency Path ("checked 11/25: counting easy · quick look working on it …"), with a nudge to check again in 6–8 weeks | S (print) + S (saving) |
 | **2** | **Julian's numerals past 20 — decades first** (your ask) | Pre-K / K, any kid | **Drill**: a new Math Fluency Path stage "Numbers 21–100": the decades (10, 20 … 100), then one decade per family, with the crossings (29, 30, 31) together. Same see-it-say-it flash as now. **Notebook**: the Number of the Day already shows 21–100 as tens and ones | Drill on the tablet (Mom marks) | Mastery's ladder and heat map; the unit's kid row | S |
-| **3** | **One source for every surface** (scope widened 2026-11-25 by your answer to Q1) | Every level | **Wiring only**: each Math Fluency Path card gets its strand and its forms. A kid's stage on the unit decides the drill cards, which number pages print, which number rounds the games offer, and what the card sprints run. The Notebook tab and the Games grid show the stage read-only with a link. The Pre-K notebook's separate number place gives way to the stage | — | "Numbers: follows stage N" on the Notebook tab and the Games grid | M–L |
+| **3** | **One source for every surface** (scope widened 2026-11-25 by your answers to Q1 and Q2) | Every level | **Wiring only, built for any area's unit** (Number first): each card gets its strand and its forms. A kid's stage on the unit decides the drill cards, which number pages print, which number rounds the games offer, and what the card sprints run. The Notebook tab and the Games grid show the stage read-only with a link. The Pre-K notebook's separate number place gives way to the stage | — | "Numbers: follows stage N" on the Notebook tab and the Games grid | M–L |
 | **4** | **Follow the drills** (§6d) — letters, numbers, shapes, sight words | Pre-K, K, 1st | **Notebook only**: skip what's passed off, slow down when drills stall, resume at the drill front after a gap, keep the Number of the Day within one decade of the drill front. A plain note says why | Both | A line on the notebook planner and the Grown-Up Guide | M |
 | **5** | **Quick Look** (seeing small exact amounts at a glance — not the dot-cloud "guess which has more" games the research doubts 📚) | Pre-K → 1st (1–5, then 6–10 as "5 and some", then ten-frames to 20) | **Drill** (a new path stage's deck): a dot pattern shows for about 2 seconds, then it's gone and the child says or taps how many. **Notebook complement**: "Show it": a numeral and an *empty* frame, and the child draws the dots. **Games** (scope added 2026-11-25): the same cards in Match (pattern ↔ numeral) and Sort it ("5 and some" / "less than 5"), not a second flash game | Drill: tablet. Page: pencil or pen | Mastery ladder; Guide row "does he draw 7 as 5 and 2?" | M |
 | **6** | **"Make it" page** (making a set, one-to-one) | Pre-K, K | **Notebook**: a weekly page, one ask per school day: "Draw 6 dots in the ten-frame", "Color 4 of the balloons", "Draw one more than this". **Drill** stays "count what you see", so it's the reverse task | Pencil or tablet pen; the 🔊 reads the ask | Guide answer page: what a right one looks like ("did he stop at 6?") | M |
-| **7** | **The review loop and light "is it sticking?" checks** (§6a, §6c) | Every level | **Both**: one tap a day for you on each number page (*got it · not yet*), on the ✅ Grade sheet or the tablet. Plus one or two light checks a week on something learned 3–6 weeks ago. These, the check, and the misses from the drill, games and sprints (scope added 2026-11-25) make the one number-skills picture. "Needs review" brings the page back easier and pulls the drill cards forward | Both | The unit's kid row, plus the existing "🔁 Giving trouble this week" card | M |
+| **7** | **The review loop and light "is it sticking?" checks** (§6a, §6c; scope widened 2026-11-25: one line per running area, side by side, on the kid's Units tab) | Every level | **Both**: one tap a day for you on each number page (*got it · not yet*), on the ✅ Grade sheet or the tablet. Plus one or two light checks a week on something learned 3–6 weeks ago. These, the check, and the misses from the drill, games and sprints (scope added 2026-11-25) make the one number-skills picture. "Needs review" brings the page back easier and pulls the drill cards forward | Both | The unit's kid row, plus the existing "🔁 Giving trouble this week" card | M |
 | **8** | **Number Train** (counting words in order) | Pre-K → 2nd | **Game**: the ABC Train's engine with numbers, its cars **taken from the kid's own stage cards** (scope changed 2026-11-25: no list of its own). Next number 1–20 → start anywhere to 100 → **counting back** → by tens, and from 7 (7, 17, 27 …). The app never places a car for him. **Notebook complement**: "Fill the path": a number path with a start and gaps, written by the child | Game: tablet. Page: both | Game log + level-ups, as the ABC Train does now | M |
 | **9** | **Number bonds** (part–whole) | Pre-K end (5) → K (10) → 1st (teens = 10 + some) | **Drill**: the Math Fluency Path's *existing* stage 5 "Number partners" cards. **Notebook**: a bond picture with the **whole** given and two empty parts, plus a five-frame the child colours *any way they like* and writes the parts. Many right answers | Both | Guide: "Did she find more than one way?" | M |
 | **10** | **Tens and ones** | K end → 2nd | **Notebook**: "Build it" (given 47, draw 4 sticks and 7 dots), "What number is this?", "4 tens or 40 ones — the same?", 10 more / 10 less on a hundred-chart row. **Drill**: flip cards "4 tens and 7 ones → 47", "47: how many tens?" plus the existing "10 + 4" teen cards | Both | Guide includes the "show me what the 4 means" check 📚 (Ross; Kamii) | M |
@@ -511,6 +563,10 @@ It shows on the unit's kid row and on Mom's existing "🔁 Giving trouble this w
 | **12** | **The older grades build on their math book** (§6c) | 1st, 4th, 6th, 7th | **Notebook**: a chapter list for each kid's math book, the way Lucy's phonogram card reads her LOE lessons. The notebook knows what's been *finished*, and its light checks and number-line / big-number pages review **earlier** chapters. A 7th grader's starter notebook gets the number box and the ladder's 7th-grade level. **Not** the current lesson (Dimensions stays textbook-only) | Both | The unit's kid row | M per book |
 | **13** | **Big numbers** (1,000 → 100,000 and more) | 2nd → 4th (Lincoln/Ellis catch-up if needed) | **Notebook**: "10 of these make one of those" chain, reading numbers in comma groups, real-life sizes. **Drill**: read a big numeral aloud, only once the check says place value is solid | Both | Guide + Mastery | M |
 | **14** | **Catch-up paths for an older child** | Any kid whose check shows a gap | Uses slices 5–13 at the child's own age, with plain grown-up-looking pages (no baby pictures), started from the same unit stage | Both | The check again at the end | S each |
+| **15** | **Second area: Shapes** (nearly free) | Pre-K → 2nd | The 🔷 Shapes Path unit and decks already exist, and the Pre-K notebook already prints a Shape of the Day. This slice puts Shapes through the same wiring (slices 3, 4, 7) and adds its notebook form: "build it" and "find it" (draw a triangle with a long side; circle the shapes with 4 corners). The drill stays "name it" | Both | Its line on the kid's Units tab | S–M |
+| **16** | **Patterns area** | Pre-K → 3rd | A **Patterns Path** unit. Its content can start from the number ladder's existing pattern items (repeating, bead strings, growing: 74 items in Pre-K and K 🔍). Drill: "what comes next?" Notebook: *make* and *extend* your own (colour the next three; make an ABB with stamps). Game: a pattern train | Both | Its line on the kid's Units tab | M |
+| **17** | **Measuring area** (weight, length, capacity, time, money) | Pre-K → 4th | A **Measuring Path** unit. Pre-K/K compare (heavier/lighter, longer/shorter, holds more, using real things at home, with a picture to circle); then units, time, coins. Ellis's Measurements deck and stage 8's unit cards move into it | Both; Pre-K pages are "find two things at home" with a grown-up | Its line on the kid's Units tab | M–L |
+| **18** | **Data area** | K → 6th | Sort-and-count pages, then picture and bar graphs from the kid's own things (toys, weather) | Both | Its line | M |
 
 **Why this order** 💡:
 - Slice 1 tells you where every kid is.
@@ -521,6 +577,7 @@ It shows on the unit's kid row and on Mom's existing "🔁 Giving trouble this w
 - 8–11 follow the natural order.
 - 12 brings the older grades in.
 - 13 and 14 reuse everything.
+- 15–18 add the other areas (your answer to Q2), each through the same wiring. Shapes first, because it's nearly free.
 
 ### 6c. The notebook builds on the math unit — every grade 💡
 
@@ -580,12 +637,12 @@ Your words: *"if a number is passed off or a letter is passed off and it hadn't 
 
 ## 7. Questions for you (12)
 
-Most important first; questions 1–9 unblock slices 1–4. Question 1 is answered. Two more (marked ⚠️) check that I read your words right.
+Most important first; questions 1–9 unblock slices 1–4. Questions 1 and 2 are answered. Two more (marked ⚠️) check that I read your words right.
 
 | # | Question | My suggested answer | Why |
 |---|---|---|---|
 | 1 | ✅ **Answered 2026-11-25.** "Interchangeable" means: *"it means used by mastery, unit, notebook, games etc"* | — (built into §6a and slices 3, 5, 7, 8) | Every surface uses the one source, each in its own form |
-| 2 | Make the **🧮 Math Fluency Path** the one source of number content for every surface, and the base every grade's notebook math builds on (with each kid's math book alongside)? And which number game comes first? | **Yes; the Number Train first** (counting order is the strand the games can add best; "Which one?" with "hear it, tap it" already works on a Numbers deck if its rule accepts it, not checked) | It already owns every number deck and has per-kid stages; a second unit would split the picture |
+| 2 | ✅ **Answered 2026-11-25.** One home for everything? *"no there can be more than one if need be unless it makes sense but i can see differnet areas needing to be ran at the same time, such as like patterns and weight and geometry etc but its okay if different areas can run interchangeable"* | — (built into §6a: one unit per area, several running at once; ⚠️ my reading of her last clause is marked there) | Number stays the first area built; Shapes, Patterns and Measuring follow as later slices |
 | 3 | ⚠️ **"Extra features that help ensure their units and drills are working"**: did you mean one or two light "is it sticking?" checks a week, on things learned 3–6 weeks ago, in a different form, with your one tap? (*My reading.*) | **Yes, one or two a week** (§6c) | It shows whether learning held, without adding a spiral (Math Reasoning is the spiral) or a test |
 | 4 | **Bypass**: skip a letter or number the drills have passed off (monthly or graduated) if the notebook hasn't shown it yet, but give it **one** light look-back in a different form? | **Yes, skip, with one look-back** | Matches your words; one spaced look-back helps memory without repeating the drill |
 | 5 | ⚠️ **Slow down**: when a deck's drill hasn't moved in **3 weeks** (or there's been no drill session in 10 school days), the notebook stops new items, re-shows the ones being learned, and tells you why. Right reading, and right "a while"? | **Yes, 3 weeks / 10 school days** | Long enough not to stall over a sick week, short enough to catch a real stall |
@@ -599,7 +656,8 @@ Most important first; questions 1–9 unblock slices 1–4. Question 1 is answer
 
 **Defaults I'd use unless you say otherwise** 💡:
 - Quick Look: the child taps a numeral; Mom can switch to marking.
-- New number pages go on one weekly "Number play" page, not on the daily page, which has no room.
+- New math pages go on one weekly "Math play" page (one ask per school day, shared by the running areas, §6a), not on the daily page, which has no room.
+- The Number Train is the first number game.
 - "Number Thinking": on for Lucy now, Julian after the "make it" page.
 - "Follow the drills": one switch per kid on the Notebook tab's level card.
 - Everything is offered to the beta families too; nothing names a child.
@@ -669,4 +727,4 @@ The full research notes, organised by strand, are in the hub's shared notes fold
 
 ---
 
-*Study made 2026-11-25. Read-only GETs: `mastery/julian`, `mastery/lucy`, `notebookSettings/{julian,lucy,ellis,lincoln}` (ladders, cursors), `mastery/julian_settings`, `mastery/{ellis,lincoln}` (deck counts), `unitStudies/<each unit>/{enrolled,kidStage,nbInsert}`, `curriculum/subjects/{julian,lucy}`. No writes, no app code changed. §1f–§1g, §4d, §4f–§4i, §6a, §6c–§6d, rules 8–10 and the slice and question changes were added later the same day, after Mom's three notes (units; every grade; following the drills) and her answer to question 1.*
+*Study made 2026-11-25. Read-only GETs: `mastery/julian`, `mastery/lucy`, `notebookSettings/{julian,lucy,ellis,lincoln}` (ladders, cursors), `mastery/julian_settings`, `mastery/{ellis,lincoln}` (deck counts), `unitStudies/<each unit>/{enrolled,kidStage,nbInsert}`, `curriculum/subjects/{julian,lucy}`. No writes, no app code changed. §1f–§1g, §4d, §4f–§4i, §6a, §6c–§6d, rules 8–10 and the slice and question changes were added later the same day, after Mom's three notes (units; every grade; following the drills) and her answers to questions 1 and 2.*
