@@ -4316,8 +4316,9 @@ function _obDecide(e,cb){
       if(p&&typeof p.then==="function") p.then(function(){ cb(true); },function(){ cb(null); }); else cb(null);
     });
   };
-  if(e.u) _obRead(e.u,function(uv){ if(uv===undefined) return cb(null); if(uv!==null) return cb(false); go(); });   // e.g. a claim on a card that's now checked
-  else go();
+  const g=function(){ if(!e.k) return go(); _obRead(e.k[0],function(kv){ if(kv===undefined) return cb(null); if(_obCanon(kv)!==_obCanon(e.k[1])) return cb(false); go(); }); };   // SPOTONE/L5: only while e.g. a ↩ Send back's 🚩 is still there (its Undo took it off → nothing to redo)
+  if(e.u) _obRead(e.u,function(uv){ if(uv===undefined) return cb(null); if(uv!==null) return cb(false); g(); });   // e.g. a claim on a card that's now checked
+  else g();
 }
 function obReplay(){
   try{
@@ -7343,7 +7344,7 @@ function chSettingsClickoffLogHTML(){
   // Click-off Log (accountability)
   h+='<div class="rules-wrap" style="margin-top:20px">';
   h+='<div class="rules-hdr">🕵️ Click-off Log</div>';
-  h+='<div class="rules-sub">Every routine check-off this week, newest first. If a kid checked off something they did NOT actually do, tap ⚠️ −100 to dock 100 points.</div>';
+  h+='<div class="rules-sub">Every routine check-off this week, newest first. If a kid checked off something they did NOT actually do, tap ⚠️ '+flagLbl()+(spPenalty().on?' to dock '+spPenalty().pts+' points.':' to mark it.')+'</div>';
   var _rlwk=activeWk();
   [...ROSTER].forEach(function(kid){
     var kc=SL_KCOL[kid]||"#f59e0b";
@@ -7366,7 +7367,8 @@ function chSettingsClickoffLogHTML(){
       var dlbl=(typeof DAY_LBL!=="undefined"&&DAY_LBL[e._day])||e._day||"";
       h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)'+(e.flagged?';opacity:.6':'')+'">';
       h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">'+((typeof flagMarkTxt==="function"&&flagMarkTxt(e))||'−100')+'</span>':'')+((e.drop&&e.drop.n)?' <span style="color:#b91c1c;font-weight:800">'+(e.drop.gb?'−'+e.drop.n+' ⭐ given back':'−'+e.drop.n+' ⭐')+'</span>':'')/* CHOREDROP: what the drop took */+((e.zero&&e.zero.n)?' <span style="color:#b91c1c;font-weight:800">'+(e.zero.gb?'−1 ⭐ given back':'−1 ⭐')+'</span>':'')/* CHOREZERO */+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
-      if(on&&!e.flagged&&(typeof ckLogCanDock!=="function"||ckLogCanDock())) h+='<button onclick="rlogFlag(\''+kid+'\',\''+_rlwk+'\',\''+e._day+'\',\''+e._key+'\')" title="Didn\'t actually do it — dock 100 points" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ −100</button>';
+      if(on&&!e.flagged&&(typeof ckLogCanDock!=="function"||ckLogCanDock())) h+='<button onclick="rlogFlag(\''+kid+'\',\''+_rlwk+'\',\''+e._day+'\',\''+e._key+'\')" title="Didn\'t actually do it — '+(spPenalty().on?'dock '+spPenalty().pts+' points':'mark it')+'" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ '+flagLbl()+'</button>';
+      else if(e.flagged) h+=flagUndoBtn("step",kid,_rlwk+"/"+e._day+"/"+e._key);   // FLAGONE: undo
       h+='</div>';
     });
     if(entries.length>60) h+='<div style="font-size:11px;color:var(--muted);padding:6px 0">Showing the 60 most recent of '+entries.length+'.</div>';
@@ -18316,8 +18318,8 @@ function luAwayRowsHTML(bare){ if(!luParentOk()) return ""; const A=luAwayList()
 //   switch flips (they were fixed at the draw); it applies from the next draw. All off → no draw, the card says it's paused.
 //   Writes: settings/spotCheck/types/<type> set (one switch per tap).
 //   −100 if not done (her ask 2026-10-15: "the option to take off -100 because it's the rules if not done"): the same sheet has
-//   "✗ Not done also takes off [100] ⭐" with an on/off switch, at settings/spotCheck/penalty = {on,pts}. Missing = OFF (DeWalt
-//   shares this code; Adrienne turns it on for Howe). When on, ✗ Not done does the undo above (the item's own stars back) AND
+//   "✗ Not done also takes off [100] ⭐" with an on/off switch, at settings/spotCheck/penalty = {on,pts}. Missing = ON at 100 (her
+//   answer 2026-11-21 to the ledger design's question 2, "ON at 100"; was OFF: DeWalt shares this code). When on, ✗ Not done does the undo above (the item's own stars back) AND
 //   bankDirect(kid,−pts,"🔎 Spot check: not done — <item>"); the confirm names both amounts; the result and 📜 record carry pen.
 //   Writes: settings/spotCheck/penalty/on · settings/spotCheck/penalty/pts set; bank/<kid>/adjustments/<id> (bankDirect).
 //   🔎 on Mom's afternoon checklist (her ask 2026-10-15: "make the spot check go to Mom's afternoon checklist and say spot
@@ -18359,8 +18361,8 @@ function spSetType(ty){
   if(_spWrite()) db.ref("settings/spotCheck/types/"+ty).set(v);
   if(typeof _cuRe==="function") _cuRe(); return true;
 }
-// −pts on ✗ Not done — off unless she turned it on.
-function spPenalty(){ const p=(spotSet&&spotSet.penalty)||{}; const n=parseInt(p.pts,10); return {on:p.on===true,pts:(n>0?Math.min(n,10000):100)}; }
+// −pts on ✗ Not done — on at 100 unless she turned it off (FLAGONE: the one penalty, also the 🚩's and ↩ Send back's).
+function spPenalty(){ const p=(spotSet&&spotSet.penalty)||{}; const n=parseInt(p.pts,10); return {on:p.on!==false,pts:(n>0?Math.min(n,10000):100)}; }
 function _spSetPen(k,v){
   spotSet=Object.assign({},spotSet); spotSet.penalty=Object.assign({},spotSet.penalty||{}); spotSet.penalty[k]=v; spotSetOnValue(spotSet);
   if(_spWrite()) db.ref("settings/spotCheck/penalty/"+k).set(v);
@@ -18440,9 +18442,10 @@ function spResolve(kid,j,r){
   const iso=_spIso(), rec=spDay(kid,iso); if(!rec||!rec.picks||!rec.picks[j]) return false;
   if(rec.results&&rec.results[j]) return false;
   const p=rec.picks[j], pen=spPenalty(), _nt=pen.on&&typeof starTakeOk==="function"&&!starTakeOk(kid); if(_nt) pen.on=false;   // STARRULES
+  const _fm=r==="no"&&pen.on&&typeof flagSpotMark==="function"?flagSpotMark(kid,p):""; if(_fm) pen.on=false;   // SPOTONE: already marked 🚩 → no more stars
   if(r==="no"){
     if(typeof confirm==="function"&&!confirm("Not done?\n\n“"+(p.label||"")+"” goes back to not done for "+((typeof KID_NAME!=="undefined"&&KID_NAME[kid])||cap(kid))+(p.pts>0?", and its "+p.pts+" ⭐ come back off":"")+"."
-      +(pen.on?"\n\nThe rule: −"+pen.pts+" ⭐ more for not doing it.":"")+(_nt?"\n\n"+starTakeWhy(kid)+", so nothing more comes off.":""))) return false;
+      +(pen.on?"\n\nThe rule: −"+pen.pts+" ⭐ more for not doing it.":"")+(_nt?"\n\n"+starTakeWhy(kid)+", so nothing more comes off.":"")+(_fm?"\n\nIt is already marked 🚩 by "+_fm+", so no more stars come off.":""))) return false;
     if(p.kind==="step"){
       let i=p.i; const steps=(p.slot==="morning"&&typeof morningStepsFor==="function")?morningStepsFor(kid):(rtStepsFor(p.slot,kid,false,p.d)||[]);
       if(!steps[i]||(steps[i].label||"")!==p.label){ const f=steps.findIndex(function(s){ return s&&(s.label||"")===p.label; }); if(f>=0) i=f; }   // the list was edited since the draw
@@ -19649,9 +19652,33 @@ let ckLogOpen=false;
 // asks, then marks the line with penalty 0 and takes nothing. An old mark (no flagBy) draws as before.
 function flagWho(){ return (typeof momHere==="function"&&momHere())?"mom":"dad"; }
 function flagWhoName(w){ return w==="dad"?"Dad":"Mom"; }
-function flagMarkTxt(r){ return r&&r.flagBy?"🚩 by "+flagWhoName(r.flagBy)+" · "+(r.penalty===0?"no stars taken":"−100"):""; }
-function flagOffAsk(kid,label){ return "Mark a false check-off for "+cap(kid)+"?\n\n\""+label+"\"\n\n"+starTakeWhy(kid)+", so no stars come off. The line just gets its 🚩 mark."; }
+function flagMarkTxt(r){ return r&&r.flagBy?"🚩 "+(r.sb?"Wasn't done · ":"")+"by "+flagWhoName(r.flagBy)+" · "+(r.penalty===0?"no stars taken":"−"+(-r.penalty||100)):""; }   // FLAGONE: the amount taken
+function flagOffAsk(kid,label){ return "Mark a false check-off for "+cap(kid)+"?\n\n\""+label+"\"\n\n"+(arguments[2]?"The 🔎 spot check's ✗ already took "+arguments[2]+" ⭐":starTakeOk(kid)?"The penalty is off":starTakeWhy(kid))+", so no stars come off. The line just gets its 🚩 mark."; }
 // FLAGWHO_END
+// FLAGONE_START — one 🚩 record for the Click-off Log's ⚠️, 🧾's −100 and the 📒 Ledger's ↩ Send back ▸ Wasn't done (DESIGN_chore_ledger
+// _2026-11-21 §5 "one record", slice L5). The amount is the ONE penalty (spPenalty, the 🔎 Spot check ⚙, on at 100 unless set): 0 when
+// it is off, Take stars away is off for the kid, or ⏸ — the line is still marked, penalty 0. The minus line has a FIXED id per marked line
+// (flg_<wk>_<day>_<key>; a school card flg_<WK>_<id>), kept on the mark as flagBid: two taps or two devices write one line, and "undo"
+// (house.js lgFlagUndo, fetched on the tap) takes it and the mark off. Writes only when db && !_dryRun().
+function flagN(kid,kind,ref){ const P=spPenalty(); return P.on&&starTakeOk(kid)&&!(kind&&flagSpotTook(kid,kind,ref))?P.pts:0; }
+// SPOTONE (hub 2026-11-24, "one record, never twice"): the 🔎 spot check's ✗ and the 🚩 never both take the penalty for one tick.
+// flagSpotTook: the ✗ that already took it for that tick (a step: its list, words and day, judged after this tick) → its amount, or 0.
+// flagSpotMark: the tick the spot pick names already carries the 🚩 → who marked it ("Mom" / "Dad"), or "" (its ✗ then takes none).
+function flagSpotTook(kid,kind,ref){ const r=flagRec(kind,kid,ref), q=String(ref).split("/"), x=(typeof spDay==="function"&&spDay(kid,kind==="task"?_spIso():amIso(q[1])))||{}, R=x.results||{}; let n=0;
+  const P=x.picks||{}; Object.keys(P).forEach(function(j){ const p=P[j]||{}, s=R[j]; if(s&&s.r==="no"&&s.pen&&(kind==="task"?p.kind==="task"&&p.id===ref:p.kind==="step"&&r&&p.slot===r.slot&&p.label===r.label&&p.d===q[1]&&q[0]===activeWk()&&(r.at||0)<=(s.at||0))) n=s.pen; });
+  return n; }
+function flagSpotMark(kid,p){ let b=null; if(p.kind==="task") b=(histState||{})[p.id];
+  else { const L=((routineLog[kid]||{})[activeWk()]||{})[p.d]||{}; Object.keys(L).forEach(function(k){ const x=L[k]; if(x&&x.act==="on"&&x.slot===p.slot&&x.label===p.label&&(!b||(x.at||0)>(b.at||0))) b=x; }); }
+  return b&&b.flagged?flagWhoName(b.flagBy):""; }
+function flagLbl(){ const P=spPenalty(); return P.on?"−"+P.pts:"🚩 Mark"; }
+function flagLine(kid,id,n,note){ const A=(bank[kid]=bank[kid]||{}).adjustments=bank[kid].adjustments||{}; if(A[id]) return;
+  A[id]={amount:-n,note:note,ts:nowTs(),iso:new Date().toISOString(),src:"earn",wk:activeWk(),day:day}; if(db&&!_dryRun()) db.ref("bank/"+kid+"/adjustments/"+id).set(A[id]); }   // not the 📮 outbox: a replay after its Undo would bring it back (as C3's drop line)
+function flagSet(kid,rec,path,id,note,who,x,n){ if(n==null) n=flagN(kid); const p={flagged:true,penalty:n?-n:0,flagTs:nowTs(),flagBy:who};
+  if(n){ p.flagBid=id; flagLine(kid,id,n,note); } Object.assign(p,x||{}); Object.assign(rec,p); if(db&&!_dryRun()) db.ref(path).update(p); return p; }
+function flagRec(kind,kid,ref){ if(kind==="task") return (histState||{})[ref]||null; const p=String(ref).split("/"); return (((routineLog[kid]||{})[p[0]]||{})[p[1]]||{})[p[2]]||null; }
+function flagUndoBtn(kind,kid,ref){ const r=flagRec(kind,kid,ref); return r&&r.flagBy&&(r.flagBid||r.penalty===0)&&ckLogCanDock()?'<button onclick="event.stopPropagation();flagUndo(\''+kind+'\',\''+kid+'\',\''+ref+'\')" title="Take the 🚩 off'+(r.sb?' and put the tick back':'')+'" style="flex-shrink:0;padding:2px 7px;border-radius:7px;border:1px solid #d1d5db;background:#fff;color:#374151;font-size:10.5px;font-weight:700;cursor:pointer">undo</button>':''; }
+function flagUndo(kind,kid,ref){ if(!ckLogCanDock()) return; if(typeof lgFlagUndo==="function") return lgFlagUndo(kind,kid,ref,1); haLazyLoad("house").then(function(){ if(typeof lgFlagUndo==="function") lgFlagUndo(kind,kid,ref,1); },function(){}); }
+// FLAGONE_END
 // DADGATE (her answer 2026-11-24: "Yes, ask for code"): the card is Mom's and Dad's link's (ckLogCanSee); the −100 and the 🚩 mark are
 // Mom's, or Dad's with his code in (dadAwardOk) — the same gate as his other star buttons. Locked, he sees every line and mark, no −100.
 function ckLogCanSee(){ try{ return momHere()||_kioskD(); }catch(e){ return false; } }
@@ -19682,29 +19709,25 @@ function ckLogToday(){
 }
 function ckLogDock(kind,kid,ref,label){
   if(!ckLogCanDock()) return;
-  const who=(typeof momHere==="function"&&momHere())?"mom":"dad", off=typeof starTakeOk==="function"&&!starTakeOk(kid);   // FLAGWHO: Take stars away off → the 🚩 mark, no stars (as the Click-off Log's ⚠️)
+  const who=(typeof momHere==="function"&&momHere())?"mom":"dad", sp=flagSpotTook(kid,kind,ref), n=flagN(kid,kind,ref), off=!n;   // FLAGWHO · FLAGONE: no penalty (off, Take stars away off, ⏸, SPOTONE) → the 🚩 mark, no stars
   if(kind==="step"){
     const p=ref.split("/"); const rec=(((routineLog[kid]||{})[p[0]]||{})[p[1]]||{})[p[2]]; if(!rec||rec.flagged) return;
-    if(!confirm(off?flagOffAsk(kid,rec.label||label||""):"Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||label||"")+"\"")) return;
-    if(!off) bankDirect(kid,-100,"🚩 false check-off dock — "+(rec.label||label||"")+" · by "+flagWhoName(who));   // FLAGWHO
-    const patch={flagged:true,penalty:off?0:-100,flagTs:nowTs(),flagBy:who}; Object.assign(rec,patch);
-    if(db&&!_dryRun()) db.ref("routineLog/"+kid+"/"+p[0]+"/"+p[1]+"/"+p[2]).update(patch);
+    if(!confirm(off?flagOffAsk(kid,rec.label||label||"",sp):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||label||"")+"\"")) return;
+    flagSet(kid,rec,"routineLog/"+kid+"/"+p[0]+"/"+p[1]+"/"+p[2],"flg_"+p.join("_"),"🚩 false check-off dock — "+(rec.label||label||"")+" · by "+flagWhoName(who),who,null,n);   // FLAGWHO · FLAGONE
   } else {
     const h=histState[ref]; if(!h||h.flagged) return;
-    if(!confirm((off?flagOffAsk(kid,label||""):"Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(label||"")+"\"")+"\n\n(The card stays checked — use “"+cw("fixFalse")+"” in the subject sheet to undo the record.)")) return;
-    if(!off) bankDirect(kid,-100,"🚩 false check-off dock — "+(label||"")+" · by "+flagWhoName(who));   // FLAGWHO
-    const patch={flagged:true,penalty:off?0:-100,flagTs:nowTs(),flagBy:who}; Object.assign(h,patch);
+    if(!confirm((off?flagOffAsk(kid,label||"",sp):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(label||"")+"\"")+"\n\n(The card stays checked — use “"+cw("fixFalse")+"” in the subject sheet to undo the record.)")) return;
+    const patch=flagSet(kid,h,WK+"/history/"+ref,"flg_"+WK+"_"+ref,"🚩 false check-off dock — "+(label||"")+" · by "+flagWhoName(who),who,null,n);   // FLAGWHO · FLAGONE
     try{ const hs=ld(WK+"_history")||{}; if(hs[ref]){ Object.assign(hs[ref],patch); sv(WK+"_history",hs); } }catch(e){}
-    if(db&&!_dryRun()) db.ref(WK+"/history/"+ref).update(patch);
   }
-  dbg("🚩 "+(off?"mark, no stars,":"dock −100")+" "+kid+" ("+kind+") by "+who+": "+(label||""));
+  dbg("🚩 "+(off?"mark, no stars,":"dock −"+n)+" "+kid+" ("+kind+") by "+who+": "+(label||""));
   if(typeof renderAll==="function") renderAll();
 }
 function ckLogToggle(){ ckLogOpen=!ckLogOpen; if(typeof renderAll==="function") renderAll(); }
 function mdCardCheckLog(){
   try{
     if(!ckLogCanSee()) return "";   // DADGATE
-    const items=ckLogToday(), canDock=ckLogCanDock(); if(!items.length) return "";
+    const items=ckLogToday(), canDock=ckLogCanDock(), fl=flagLbl(), fP=spPenalty(); if(!items.length) return "";   // FLAGONE
     const byKid={}; items.forEach(i=>{ (byKid[i.kid]=byKid[i.kid]||[]).push(i); });
     const kids=Object.keys(byKid).sort((a,b)=>((typeof ROSTER!=="undefined"&&ROSTER)||[]).indexOf(a)-((typeof ROSTER!=="undefined"&&ROSTER)||[]).indexOf(b));
     const docked=items.filter(i=>i.flagged).length;
@@ -19719,13 +19742,13 @@ function mdCardCheckLog(){
           h+='<span style="font-size:11px;color:var(--muted);flex:0 0 62px">'+esc(i.ts)+'</span>';
           h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">'+(i.kind==="step"?'🧹 ':'')+esc(i.label)+(i.pts?' <span style="color:#b45309;font-weight:700">+'+i.pts+'⭐</span>':'')+'</span>';
           if(i.kind==="wave") h+='<span style="flex-shrink:0;font-size:11px;font-weight:800;color:#6b7280">🙋 waved</span>';   // WAVE: nothing to dock
-          else if(i.flagged) h+='<span title="'+(i.penalty===0?'marked, no stars taken':'docked −100')+'" style="flex-shrink:0;font-size:11px;font-weight:800;color:#b91c1c">'+(flagMarkTxt(i)||'🚩 −100')+'</span>';   // FLAGWHO
-          else if(canDock) h+='<button onclick="event.stopPropagation();ckLogDock(\''+i.kind+'\',\''+i.kid+'\',\''+i.ref.replace(/'/g,"\\'")+'\',\''+esc(i.label).replace(/'/g,"\\'")+'\')" title="Didn’t actually do it — dock 100" style="flex-shrink:0;padding:3px 9px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">−100</button>';
+          else if(i.flagged) h+='<span title="'+(i.penalty===0?'marked, no stars taken':'docked −'+(-i.penalty||100))+'" style="flex-shrink:0;font-size:11px;font-weight:800;color:#b91c1c">'+(flagMarkTxt(flagRec(i.kind,i.kid,i.ref)||i)||'🚩 −100')+'</span>'+flagUndoBtn(i.kind,i.kid,i.ref);   // FLAGWHO · FLAGONE: undo
+          else if(canDock) h+='<button onclick="event.stopPropagation();ckLogDock(\''+i.kind+'\',\''+i.kid+'\',\''+i.ref.replace(/'/g,"\\'")+'\',\''+esc(i.label).replace(/'/g,"\\'")+'\')" title="Didn’t actually do it — '+(fP.on?'dock '+fP.pts:'mark it')+'" style="flex-shrink:0;padding:3px 9px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+fl+'</button>';
           h+='</div>';
         });
       });
-      h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px">A dock takes 100 ⭐ from the Star Bank and marks the line. A school card stays checked — use “'+cw("fixFalse")+'” in the subject sheet to undo the record.</div>';
-      if(!canDock) h+='<div style="font-size:11.5px;color:#6b7280;margin-top:6px">🔒 Put your code in under Star controls to use −100.</div>';   // DADGATE: a locked Dad
+      h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px">A dock takes '+(fP.on?fP.pts+' ⭐ from the Star Bank':'no stars (the penalty is off)')+' and marks the line. A school card stays checked — use “'+cw("fixFalse")+'” in the subject sheet to undo the record.</div>';
+      if(!canDock) h+='<div style="font-size:11.5px;color:#6b7280;margin-top:6px">🔒 Put your code in under Star controls to use '+fl+'.</div>';   // DADGATE: a locked Dad
       h+='</div>';
     }
     h+='</div>';
@@ -19740,7 +19763,7 @@ function rlDadToggle(){ rlDadOpen=!rlDadOpen; if(typeof renderAll==="function") 
 function rlDadDoorHTML(){
   if(!_kioskD()) return "";
   return '<div onclick="rlDadToggle()" style="margin:10px 12px 0;background:#fff;border-radius:12px;padding:10px 14px;display:flex;font-size:12.5px;font-weight:800;color:#4c1d95;cursor:pointer;box-shadow:0 4px 20px rgba(43,122,120,0.13)">🕵️ Click-off Log (this week)<span style="margin-left:auto">'+(rlDadOpen?'▲':'›')+'</span></div>'
-    +(rlDadOpen?'<div style="margin:0 12px">'+chSettingsClickoffLogHTML()+(ckLogCanDock()?'':'<div style="font-size:11.5px;color:#6b7280;margin-top:6px">🔒 Put your code in under Star controls to use ⚠️ −100.</div>')+'</div>':'');
+    +(rlDadOpen?'<div style="margin:0 12px">'+chSettingsClickoffLogHTML()+(ckLogCanDock()?'':'<div style="font-size:11.5px;color:#6b7280;margin-top:6px">🔒 Put your code in under Star controls to use ⚠️ '+flagLbl()+'.</div>')+'</div>':'');
 }
 // DADSPOTLOG_END
 // LEDGER_START — 📒 the Ledger's button on 🧒 Kids today (DESIGN_chore_ledger_2026-11-21 §2, L1: "moms day as a button to a pop up",
@@ -89236,12 +89259,9 @@ function rlogFlag(kid,wk,d,key){
   if(!(typeof ckLogCanDock==="function"?ckLogCanDock():momHere())) return;   // DADSPOTLOG: Mom, or Dad's link with his code
   const rec=routineLog[kid]&&routineLog[kid][wk]&&routineLog[kid][wk][d]&&routineLog[kid][wk][d][key];
   if(!rec||rec.flagged) return;
-  const off=typeof starTakeOk==="function"&&!starTakeOk(kid), who=typeof flagWho==="function"?flagWho():"mom";   // FLAGWHO: Take stars away off → the 🚩 mark, no stars
-  if(!confirm(off?flagOffAsk(kid,rec.label||""):"Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||"")+"\"")) return;
-  if(!off) bankDirect(kid,-100,"🚩 false check-off dock"+(typeof flagWhoName==="function"?" · by "+flagWhoName(who):""));
-  const patch={flagged:true,penalty:off?0:-100,flagTs:nowTs(),flagBy:who};
-  Object.assign(rec,patch);
-  if(db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("routineLog/"+kid+"/"+wk+"/"+d+"/"+key).update(patch);
+  const sp=flagSpotTook(kid,"step",wk+"/"+d+"/"+key), n=flagN(kid,"step",wk+"/"+d+"/"+key), off=!n, who=typeof flagWho==="function"?flagWho():"mom";   // FLAGWHO · FLAGONE: no penalty (off, Take stars away off, ⏸, SPOTONE) → the 🚩 mark, no stars
+  if(!confirm(off?flagOffAsk(kid,rec.label||"",sp):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||"")+"\"")) return;
+  flagSet(kid,rec,"routineLog/"+kid+"/"+wk+"/"+d+"/"+key,"flg_"+wk+"_"+d+"_"+key,"🚩 false check-off dock"+(typeof flagWhoName==="function"?" · by "+flagWhoName(who):""),who,null,n);   // FLAGONE
   renderAll();
 }
 // ── Accountability: "Morning not done by <hour> -> lose tech" house rule ──
