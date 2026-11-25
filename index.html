@@ -1901,6 +1901,7 @@ function routineDateISO(dn){
   const _iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
   try{
     if(dn===_todayDay) return _iso(new Date());
+    { const _lg=(typeof lwListISO==="function")?lwListISO(dn):null; if(_lg) return _lg==="off"?null:_lg; }   // 📅 LISTWK: a gap week's own dates (a calendar day off has none, as in a built week)
     const s=(typeof DAY_DT==="object"&&DAY_DT)?DAY_DT[dn]:null;
     if(!s) return null;
     const d=new Date(s+", "+new Date().getFullYear());
@@ -1990,6 +1991,7 @@ function morningComplete(kid,d){
 function toggleMrOpen(kid){ mrOpen[kid]=(mrOpen[kid]!==false)?false:true; renderSkylight(); }
 function toggleMorningStep(kid,i){
   if(!routineEditable()){ _rtBlockedToast(); return; }
+  if(typeof lwHold==="function"&&lwHold()) return;   // 📅 LISTWK: the seconds before a real week builds — the tap waits ("One moment — this week is loading")
   { const _hs=morningStepsFor(kid)[i], _mk=slState[activeWk()+"_"+day+"_"+kid+"_mstep"+i]; if(_hs&&_hs.house&&typeof hdToggle==="function"){ hdToggle("morning",kid,i,_hs); return; }   // 🚪 HOUSEDAY: a plan row is checked by chore
     if(_mk&&_mk.done&&_mk.hd&&typeof hdUnmark==="function"&&hdUnmark("morning",kid,i,_mk)) return; }   // …and an old row the plan marked done un-checks through the plan (no double pay across OFF / ON)
   const wk=activeWk(), _slB=slBefore();   // SLTARGET
@@ -2121,6 +2123,7 @@ let _rlWin={key:"", refs:[], full:false, loading:false};
 function rlPrevWk(wk){ const m=/^week(\d+)$/.exec(String(wk||"")); return (m&&+m[1]>1)?"week"+(+m[1]-1):""; }
 function rlWindowWeeks(wk){ return [wk,rlPrevWk(wk)].filter(Boolean); }
 function rlWindowAttach(wk){
+  if(typeof listWk==="function") wk=listWk(wk||undefined);   // 📅 LISTWK: the routine-log window follows the list week (the board's week, or this calendar week's own)
   if(typeof db==="undefined"||!db) return;
   const wks=rlWindowWeeks(wk||activeWk()), kids=[...ROSTER], key=wks.join(",")+"|"+kids.join(",");
   if(_rlWin.key===key) return;   // already listening to exactly these
@@ -2216,6 +2219,7 @@ function rtStepsFor(slot,kid,raw,dayName){
 // A "free day" member step (free:true) is a placeholder turn: the kid holding it
 // today sees nothing from this rotation (it renders as asneeded = never due).
 function _rtRotDayNum(dayName){
+  { const _lg=(typeof lwListISO==="function")?lwListISO(dayName):null; if(_lg){ const q=(_lg==="off")?new Date():gwParseDate(_lg); return Math.round(Date.UTC(q.getFullYear(),q.getMonth(),q.getDate())/864e5); } }   // 📅 LISTWK: a gap week's own dates (a day off: today, as when a built week's dates leave it out)
   let d=new Date();
   if(dayName&&typeof DAY_DT!=="undefined"&&DAY_DT[dayName]){
     const p=new Date(DAY_DT[dayName]+", "+d.getFullYear());
@@ -2384,6 +2388,7 @@ function _amLog(kid,wk,dn,rec){
 // TODAY's Morning record follows the carries when one is added, taken back or closed from its own list — the same tail as
 // toggleMorningStep (list record, ⏱ day start, 🏁 list bonus, 🏆 day bonus), and only when done-ness actually flips.
 function _amSettleToday(kid){
+  if(typeof lwHold==="function"&&lwHold(true)) return;   // 📅 LISTWK: the seconds before a real week builds — an automatic write waits too
   const wk=activeWk(), d=_todayDay, mk=wk+"_"+d+"_"+kid+"_morning", prev=slState[mk], _pd=day;
   try{ day=d;
     const all=morningComplete(kid,d); if(!!(prev&&prev.done)===!!all) return;
@@ -2446,6 +2451,7 @@ function amSendRest(kid,d){
 // The kid's tap on a carried row of the Morning list (or Mom's, through amMomTick). See the three writes in the header.
 function amToggle(kid,id){
   if(!routineEditable()){ _rtBlockedToast(); return; }
+  if(typeof lwHold==="function"&&lwHold()) return;   // 📅 LISTWK: the seconds before a real week builds — the tap waits ("One moment — this week is loading")
   const it=amCarry[kid]&&amCarry[kid][id], iso=amIso(day); if(!it||!iso||!it.dueIso||it.dueIso>iso) return;
   if(it.done&&!amDoneBy(it,iso)) return;                        // finished on a later day than the tab on screen
   const now=!it.done, label=it.label||"Chore", wk=activeWk(), _slB=slBefore();
@@ -2677,6 +2683,7 @@ function toggleRtStep(slot,kid,i){
     return;
   }
   if(!routineEditable()){ _rtBlockedToast(); return; }  // stars ride this path too — a stray tap paid the wrong day
+  if(typeof lwHold==="function"&&lwHold()) return;   // 📅 LISTWK: the seconds before a real week builds — the tap waits ("One moment — this week is loading")
   { const _hs=rtStepsFor(slot,kid)[i], _mk=slState[activeWk()+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i]; if(_hs&&_hs.house&&typeof hdToggle==="function"){ hdToggle(slot,kid,i,_hs); return; }   // 🚪 HOUSEDAY: a plan row is checked by chore
     if(_mk&&_mk.done&&_mk.hd&&typeof hdUnmark==="function"&&hdUnmark(slot,kid,i,_mk)) return; }   // …and an old row the plan marked done un-checks through the plan (no double pay across OFF / ON)
   const wk=activeWk(), sk=wk+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i, cur=slState[sk], now=!(cur&&cur.done), _slB=slBefore();   // SLTARGET
@@ -2723,7 +2730,7 @@ function toggleRtStep(slot,kid,i){
 //   "none" = not scheduled: hidden from every kid list (what "asneeded" used to mean; new chores land here).
 const _CAD_DOW={monday:0,tuesday:1,wednesday:2,thursday:3,friday:4,saturday:5,sunday:6};
 function cadDowIdx(dn){ return _CAD_DOW[dn]; }
-function cadDateNum(dn){ try{ var dt=(typeof DAY_DT!=="undefined")&&DAY_DT[dn]; return dt?Math.floor(new Date(dt).getTime()/86400000):null; }catch(e){ return null; } }
+function cadDateNum(dn){ try{ var _lg=(typeof lwDayDt==="function")?lwDayDt(dn):null, dt=_lg?(_lg==="off"?null:_lg):((typeof DAY_DT!=="undefined")&&DAY_DT[dn]);   /* 📅 LISTWK: a gap week's own dates, in DAY_DT's words (a day off has none) */ return dt?Math.floor(new Date(dt).getTime()/86400000):null; }catch(e){ return null; } }
 function cadDueOn(cad,dn){
   if(!cad||cad==="daily")return true;
   // "asneeded" and "none" are never DUE (as-needed still renders as an optional row; none is hidden).
@@ -3430,6 +3437,7 @@ let tab="schedule", day=todayDay(), kid="all";
 // Only follow when the view was actually tracking today; a day Mom deliberately opened stays.
 let _dayRollSeen=todayDay();
 function dayRollCheck(){
+  try{ if(typeof lwCheck==="function") lwCheck(); }catch(e){}   // 📅 LISTWK: the list week moved (a day roll, a calendar or plan change) → its listener follows
   const now=todayDay();
   if(now===_dayRollSeen) return false;
   const wasOnToday=(day===_dayRollSeen);
@@ -4486,15 +4494,7 @@ function attachWeekListeners(wk){
   });
   fbWeekRefs.push(r18);
 
-  const r2=db.ref(wk+"/sl");
-  r2.on("value",s=>{
-    if(isUploading) return;
-    const v=s.val()||{};
-    const merged={...v};
-    Object.keys(slState).forEach(k=>{ if(!merged[k]) merged[k]=slState[k]; });
-    slState=merged; sv(wk+"_sl",slState); renderAllSoon();
-  });
-  fbWeekRefs.push(r2);
+  lwAttachSl(wk);   // 📅 LISTWK: the sl listener follows the list week (the board's week, or this calendar week's own)
 
   const r3=db.ref(wk+"/supplies");
   r3.on("value",s=>{
@@ -5583,12 +5583,13 @@ function nowTs(){
 }
 
 // ── SKYLIGHT ──────────────────────────────────────────────────────
-function activeWk(){ return weekData.week||WK; }
+function activeWk(){ const w=weekData.week||WK; return (typeof listWk==="function")?listWk(w):w; }   // 📅 LISTWK: the list code's week — the board's week, or this calendar week's own list token when the board isn't this week
 function slKey(who,slot){ return activeWk()+"_"+day+"_"+who+"_"+slot; }
 function getSlot(who,slot){ return slState[slKey(who,slot)]||{done:false,ts:""}; }
 
 function toggleSlot(who,slot){
   if(!routineEditable()){ _rtBlockedToast(); return; }
+  if(typeof lwHold==="function"&&lwHold()) return;   // 📅 LISTWK: the seconds before a real week builds — the tap waits ("One moment — this week is loading")
   const k=slKey(who,slot), cur=getSlot(who,slot);
   const ts=cur.done?"":nowTs(), _slB=slBefore();   // SLTARGET
   slState[k]={done:!cur.done,ts};
@@ -6639,7 +6640,7 @@ function bankHeldList(kid){
     .map(function(id){ return Object.assign({id:id},adjs[id]); })
     .sort(function(a,b){ return String(a.iso||"").localeCompare(String(b.iso||"")); });
 }
-function bankHeldToday(kid,d){ let n=0; bankHeldList(kid).forEach(function(a){ if(a.wk===WK&&a.day===d) n+=(a.amount||0); }); return n; }
+function bankHeldToday(kid,d){ let n=0; bankHeldList(kid).forEach(function(a){ if(a.wk===(typeof listWk==="function"?listWk(WK):WK)&&a.day===d) n+=(a.amount||0); }); return n; }   // 📅 LISTWK: the wages stamp's list week
 function bankHeldRelease(kid,id){
   if(!momHere()) return;
   const a=bank[kid]&&bank[kid].adjustments&&bank[kid].adjustments[id]; if(!a||!a.held) return;
@@ -6678,9 +6679,9 @@ function bankDirectRemove(kid,id){
 // Claim tile stay pool-only because there "winnings" is exactly what they mean.
 // (Entries written before the wk/day stamp existed fall out of day/week views but
 // are always in the bank balance itself.)
-function bankEarnedDay(kid,d){ const adjs=(bank[kid]&&bank[kid].adjustments)||{}; let n=0; Object.keys(adjs).forEach(id=>{ const a=adjs[id]; if(a&&!a.held&&a.src==="earn"&&a.wk===WK&&a.day===d) n+=(a.amount||0); }); return n; }
-function bankEarnedWeek(kid){ const adjs=(bank[kid]&&bank[kid].adjustments)||{}; let n=0; Object.keys(adjs).forEach(id=>{ const a=adjs[id]; if(a&&!a.held&&a.src==="earn"&&a.wk===WK) n+=(a.amount||0); }); return n; }
-function earnedDayTotal(kid,d){ return getKidDayPoints(kid,d)+bankEarnedDay(kid,d); }
+function bankEarnedDay(kid,d){ const adjs=(bank[kid]&&bank[kid].adjustments)||{}; let n=0; Object.keys(adjs).forEach(id=>{ const a=adjs[id]; if(a&&!a.held&&a.src==="earn"&&a.wk===(typeof listWk==="function"?listWk(WK):WK)&&a.day===d) n+=(a.amount||0); }); return n; }
+function bankEarnedWeek(kid){ const adjs=(bank[kid]&&bank[kid].adjustments)||{}; let n=0; Object.keys(adjs).forEach(id=>{ const a=adjs[id]; if(a&&!a.held&&a.src==="earn"&&a.wk===(typeof listWk==="function"?listWk(WK):WK)) n+=(a.amount||0); }); return n; }
+function earnedDayTotal(kid,d){ return ((d===_todayDay&&typeof lwGap==="function"&&lwGap())?0:getKidDayPoints(kid,d))+bankEarnedDay(kid,d); }   // 📅 LISTWK: today on a week the board doesn't hold — no pool from last school week
 function earnedWeekTotal(kid){ return getKidPoints(kid)+bankEarnedWeek(kid); }
 
 let slotSpinDay=null;
@@ -9606,6 +9607,96 @@ function _bwkBuildComing(today){
   return !!(dd&&Object.keys(dd).length);
 }
 // 📅 BOARDWK_END
+// 📅 LISTWK_START — the lists get their own week by the calendar (DESIGN_break_week_2026-11-24 §3 Option 4 Rule B, §5 row 2; her
+//   go 2026-11-24). A week the plan does not cover builds no school week, so the board keeps LAST school week and every list
+//   record filed by week + day name was last week's: a break Tuesday showed last Tuesday's ticks, a tap un-ticked them and took
+//   the star back, "earned today" was last Tuesday's. The lists now ask one question first: is the board's week this week
+//   (boardWeekIsThisWeek())? Yes → the list week IS the board's week — every key, path and write byte-for-byte what it was.
+//   No → the list week is this calendar week's own token, "gap" + the Monday's date (a Sunday counted as the coming Monday):
+//   gap20261221. The data shapes are unchanged (<token>/sl/<token>_<day>_<kid>_…, routineLog/<kid>/<token>/<day>, waved/<token>,
+//   techOff/<kid>/<token>, a bank stamp wk:<token>), so every list writer works with the new token. activeWk() — the list
+//   code's week — asks listWk(); the few school-week readers (brain breaks, the trophy live week, the lesson roadmap, the
+//   Schedule's week number, the week's supplies) ask schoolWk(). Nothing about cards, the board or the week builder changes.
+function schoolWk(){ return weekData.week||WK; }
+// this calendar week's own list token, or null when the board's week is this week
+function lwGap(){
+  try{
+    if(typeof boardWeekIsThisWeek!=="function"||boardWeekIsThisWeek()) return null;
+    const d=gwParseDate(_schoolWeekDateFor(_todayStr())); if(!d||isNaN(d.getTime())) return null;
+    d.setDate(d.getDate()-((d.getDay()+6)%7));
+    return "gap"+d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0");
+  }catch(e){ return null; }
+}
+function listWk(w){ if(w===undefined) w=schoolWk(); const g=lwGap(); return g||w; }
+// The real date of a weekday of the list week (a gap week has no meta.dates): Monday + offset, Sunday the day before. null → not a gap.
+function lwDateISO(dn){
+  const g=lwGap(); if(!g) return null;
+  const OFF={sunday:-1,monday:0,tuesday:1,wednesday:2,thursday:3,friday:4,saturday:5}; if(!(dn in OFF)) return null;
+  const d=new Date(+g.slice(3,7),+g.slice(7,9)-1,+g.slice(9,11)); d.setDate(d.getDate()+OFF[dn]);
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+// …the date as the list code reads it: a whole-family calendar day off has none, exactly as a built week's meta.dates leave it out
+function lwListISO(dn){ const iso=lwDateISO(dn); if(!iso) return null; if(typeof smapIsOff==="function"&&smapIsOff(iso)) return "off"; return iso; }
+function lwDayDt(dn){ const iso=lwListISO(dn); if(!iso||iso==="off") return iso; return gwParseDate(iso).toLocaleDateString("en-US",{month:"long",day:"numeric"}); }
+// The sl listener lives here, on the list week: attachWeekListeners asks lwAttachSl(wk); lwCheck() moves it when the answer
+// changes (a day roll, a calendar or plan change — asked by dayRollCheck every minute, on wake and focus, and by a tap) —
+// the old listener off first, so nothing leaks or fires twice. Moving onto a gap week starts that week's own map.
+let _lwRef=null, _lwAt=null;
+function lwAttachSl(wk){
+  try{ if(_lwRef) _lwRef.off(); }catch(e){} _lwRef=null; _lwAt=null;
+  if(typeof db==="undefined"||!db) return;
+  const lwk=listWk(wk);
+  if(lwk!==wk){ slState=ld(lwk+"_sl")||{}; }
+  _lwAt=lwk;
+  const r2=db.ref(lwk+"/sl");
+  r2.on("value",s=>{
+    if(isUploading) return;
+    const v=s.val()||{};
+    const merged={...v};
+    Object.keys(slState).forEach(k=>{ if(!merged[k]) merged[k]=slState[k]; });
+    slState=merged; sv(lwk+"_sl",slState); renderAllSoon();
+  });
+  _lwRef=r2; fbWeekRefs.push(r2);
+}
+function lwCheck(){
+  try{
+    if(_lwAt===null||typeof db==="undefined"||!db) return false;
+    const now=listWk(WK); if(now===_lwAt) return false;
+    if(now===WK) slState=ld(WK+"_sl")||{};
+    lwAttachSl(WK);
+    try{ if(typeof rlWindowAttach==="function") rlWindowAttach(WK); }catch(e){}
+    if(typeof renderAll==="function") renderAll();
+    return true;
+  }catch(e){ return false; }
+}
+// THE SECONDS BEFORE A REAL WEEK BUILDS: today is past the board's week by every source and a week for today will build
+// (Sunday 00:00, a tablet waking on Monday). boardWeekIsThisWeek() says yes then, so the list week is still last week's — a tap
+// would land in, or un-tick, last week. The lists hold taps with one plain line until the week lands. The hold never traps a
+// family: it lasts at most LW_HOLD_MS from the moment this device first saw it today; after that a tap goes through as it did
+// before this slice (into the board's week).
+const LW_HOLD_MS=5*60*1000;
+let _lwHoldSeen=null;   // {iso, at}
+function lwLoading(){
+  try{
+    if(typeof weekData==="undefined"||_activeWeekEmpty()) return false;
+    const today=_todayStr(), eff=_schoolWeekDateFor(today), p=_bwkPlanSat(), o=_bwkOwnSat(), read=[p,o].filter(Boolean);
+    if(o==="unsure"||!read.length||read.some(x=>eff<=x)) return false;
+    return !!_bwkBuildComing(today);
+  }catch(e){ return false; }
+}
+// quiet = an automatic writer (the laundry line's ticks, the morning carry's settle): it just waits, with no line.
+function lwHold(quiet){
+  try{
+    try{ lwCheck(); }catch(e){}
+    if(!lwLoading()){ _lwHoldSeen=null; return false; }
+    const iso=_todayStr(), now=Date.now();
+    if(!_lwHoldSeen||_lwHoldSeen.iso!==iso) _lwHoldSeen={iso:iso,at:now};
+    if(now-_lwHoldSeen.at>=LW_HOLD_MS) return false;
+    if(!quiet&&typeof gwShowToast==="function") gwShowToast("One moment \u2014 this week is loading");
+    return true;
+  }catch(e){ return false; }
+}
+// 📅 LISTWK_END
 // First weekday strictly after today that isn't a calendar off-day and sits in a
 // real plan week — i.e. the day school actually picks back up. Capped so a
 // misconfigured calendar can never loop forever.
@@ -10003,7 +10094,7 @@ function boardStatPop(kid,slot,d){
     const sp=(day===_todayDay&&typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek())?0:getKidDayPoints(kid,day);   // 📅 BWNOWEEK: no star pool listed as today's from last school week (wages: slice 2)
     if(sp) rows.push({lab:"🎰 School spins (pool"+(getPointClaim(kid,day)?", "+getPointClaim(kid,day).status:", unclaimed")+")",done:true,ts:"",amt:sp});
     const adjs=(bank[kid]&&bank[kid].adjustments)||{};
-    Object.keys(adjs).map(id=>adjs[id]).filter(a=>a&&a.src==="earn"&&a.wk===WK&&a.day===day)
+    Object.keys(adjs).map(id=>adjs[id]).filter(a=>a&&a.src==="earn"&&a.wk===(typeof listWk==="function"?listWk(WK):WK)&&a.day===day)
       .sort((a,b)=>String(a.ts).localeCompare(String(b.ts)))
       .forEach(a=>rows.push({lab:a.note||"earned",done:true,ts:a.ts||"",amt:a.amount||0}));
   } else { const names={afternoon:"☀️ Afternoon",chores:"🧹 Chores",evening:"🌙 Evening"}; title=names[slot]||slot;
@@ -12194,7 +12285,7 @@ function bbLogPatch(k,key,upd){ if(!key) return; if(db) db.ref("brainBreaks/"+k+
 function bbLogRemove(k,key){ if(!key) return; if(db) db.ref("brainBreaks/"+k+"/log/"+key).remove(); const lg=(brainBreaks[k]||{}).log; if(lg&&lg[key]) delete lg[key]; }
 function bbBaseEntry(k,by){
   const t=bbNextTask(k);
-  return {ts:Date.now(),dateKey:bbTodayKey(),wk:activeWk(),day:_todayDay,by:by,
+  return {ts:Date.now(),dateKey:bbTodayKey(),wk:(typeof schoolWk==="function"?schoolWk():activeWk()),day:_todayDay,by:by,
     taskId:t?t.id:null,taskTitle:t?t.title:null,subject:t?(taskSubject(t)||null):null};
 }
 
@@ -16817,6 +16908,7 @@ function llPutAway(lid){ const LD=(typeof laundryData!=="undefined"&&laundryData
 function llKidRowLineDone(st){ const t=llToday(), e=llDayLog(t)[st.line], LD=(typeof laundryData!=="undefined"&&laundryData)||{};
   if(st.laundry===true) return !!e; if(st.laundry==="lineFold"){ const o=(typeof llOutFor==="function")?llOutFor(st.line,t):null; return !!e&&!o&&!(e.load&&(LD[e.load]||(typeof laundrySplitHung==="function"&&laundrySplitHung(e.load)))); } return false; }   // LAUNDRY_SPLIT: done only when the hung half is away too · LAUNDRY_SYNC: and no earlier day's load of it is still out
 function llSyncKidRows(){ if(typeof slState==="undefined"||typeof activeWk!=="function"||typeof _todayDay!=="string"||typeof rtStepsFor!=="function") return 0;
+  if(typeof lwHold==="function"&&lwHold(true)) return 0;   // 📅 LISTWK: the seconds before a real week builds — an automatic write waits too
   const wk=activeWk(), dn=_todayDay, before=(typeof slBefore==="function")?slBefore():null, ts=(typeof nowTs==="function")?nowTs():""; let n=0;
   llPeople().slice(2).forEach(function(kid){ if(!llDrivesKid(kid)) return;
     [["morning","mstep"],["afternoon",((typeof RT_ABBR!=="undefined"&&RT_ABBR.afternoon)||"a")+"step"]].forEach(function(p){ let ch=false;
@@ -19271,7 +19363,7 @@ function tsLabelIso(label,today){
 function tsWeekDays(today){
   const map={}; const A=(typeof archive!=="undefined"&&archive)||{};
   Object.keys(A).forEach(function(wk){ const a=A[wk]; if(!a||!a.dates) return; Object.keys(a.dates).forEach(function(dn){ const iso=tsLabelIso(a.dates[dn],today); if(iso) map[iso]={wk:wk,dn:String(dn).toLowerCase(),live:false}; }); });
-  let live=""; try{ live=(typeof activeWk==="function")?activeWk():((typeof WK!=="undefined")?WK:""); }catch(e){}
+  let live=""; try{ live=(typeof schoolWk==="function")?schoolWk():(typeof activeWk==="function")?activeWk():((typeof WK!=="undefined")?WK:""); }catch(e){}
   const dd=(typeof DAY_DT==="object"&&DAY_DT)||{};
   Object.keys(dd).forEach(function(dn){ const iso=tsLabelIso(dd[dn],today); if(iso) map[iso]={wk:live,dn:String(dn).toLowerCase(),live:true}; });
   return map;
@@ -23635,7 +23727,7 @@ function blOnBought(id,it){
   const r=it&&it.ref; if(!r||typeof r!=="object") return "";
   const D=blDb(); let did="";
   if(r.lr&&r.wk){
-    const cur=(typeof activeWk==="function")?activeWk():"";
+    const cur=(typeof schoolWk==="function")?schoolWk():(typeof activeWk==="function")?activeWk():"";
     try{ if(r.wk===cur&&typeof supplies!=="undefined"&&supplies){ supplies[r.lr]=true; if(typeof sv==="function") sv(r.wk+"_supplies",supplies); }
          else if(typeof lrWk==="function"&&r.wk===lrWk(1)&&typeof lrTicksNext!=="undefined"&&lrTicksNext){ lrTicksNext[r.lr]=true; if(typeof sv==="function") sv(r.wk+"_supplies",lrTicksNext); } }catch(e){}
     if(D) D.ref(r.wk+"/supplies/"+r.lr).set(true);   // the Sunday list's own tick, for the week the item was sent for
@@ -27104,7 +27196,7 @@ function mpSchBody(){
 let mpSchWkOff=0, mpSchWkDay=null;
 const mpSchWkCache={};   // "weekN" → {wn, tasks:[], checked:{}, dates:{}, loading, failed}
 function _mpSchWkCurNum(){
-  const w=(typeof activeWk==="function"?activeWk():WK)||"";
+  const w=(typeof schoolWk==="function"?schoolWk():typeof activeWk==="function"?activeWk():WK)||"";
   const m=/(\d+)/.exec(w); return m?parseInt(m[1],10):1;
 }
 function mpSchWkNum(){ return _mpSchWkCurNum()+mpSchWkOff; }
@@ -29013,8 +29105,8 @@ function bbTrendsHtml(focusKids,KC){
 
   // ── stat chips ──
   const finished=entries.filter(e=>e.completed).length, byKidStart=entries.filter(e=>e.by==="kid").length;
-  const wkNow=parseInt(((activeWk()||"").match(/\d+/)||[0])[0])||0;
-  const thisWk=entries.filter(e=>e.wk===activeWk()).length;
+  const wkNow=parseInt((((typeof schoolWk==="function"?schoolWk():activeWk())||"").match(/\d+/)||[0])[0])||0;
+  const thisWk=entries.filter(e=>e.wk===(typeof schoolWk==="function"?schoolWk():activeWk())).length;
   const chip=(big,small)=>'<div style="background:var(--bg);border-radius:10px;padding:8px 12px"><div style="font-size:18px;font-weight:800">'+big+'</div><div style="font-size:10px;color:var(--muted)">'+small+'</div></div>';
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:8px;margin-bottom:14px">'+
     chip(entries.length,"breaks logged")+
@@ -29930,6 +30022,7 @@ function loadJson(){
           }
         });
         const snapSl=ld(activeWK+"_sl")||slState||{};
+        const _lwG=(typeof lwGap==="function")?lwGap():null, _lwSl=slState;   // 📅 LISTWK (hub review 2026-11-25): in a gap week the lists are the gap week's — a same-week regenerate leaves them alone (no swap, no save, no whole-node write over the board week's lists)
         // Re-attach cross-week carry-over tasks:
         const _dk=completedLessonKeys();  // lessons already done under ANY id (content-matched) — or walked back
         // Pass 1 — grab any _c tasks still alive in weekData.tasks whose base isn't in the new JSON.
@@ -29964,16 +30057,17 @@ function loadJson(){
         for(const id in snapChecked){ if(!commitIds.has(id)) delete snapChecked[id]; }
         for(const id in snapHist){ if(!commitIds.has(id)) delete snapHist[id]; }
         WK=activeWK; weekData=d; checked=snapChecked; slState=snapSl;
+        if(_lwG) slState=_lwSl;   // 📅 LISTWK (hub review 2026-11-25): in a gap week the lists are the gap week's — a same-week regenerate leaves them alone (the gap map stays in memory)
         applyWeekMeta(d);
         sv(WK+"_tasks",d.tasks); sv(WK+"_babysitter",d.babysitter||null);
-        sv(WK+"_checked",snapChecked); sv(WK+"_history",snapHist); sv(WK+"_sl",snapSl);
+        sv(WK+"_checked",snapChecked); sv(WK+"_history",snapHist); if(!_lwG) sv(WK+"_sl",snapSl);   // 📅 LISTWK (hub review 2026-11-25): in a gap week the lists are the gap week's — a same-week regenerate leaves them alone
         sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
         if(db){
           const obj={};d.tasks.forEach(t=>obj[t.id]=t);
           db.ref(WK+"/tasks").set(obj);
           db.ref(WK+"/checked").set(snapChecked);
           db.ref(WK+"/history").set(snapHist);
-          if(Object.keys(snapSl).length) db.ref(WK+"/sl").set(snapSl);
+          if(Object.keys(snapSl).length&&!_lwG) db.ref(WK+"/sl").set(snapSl);   // 📅 LISTWK (hub review 2026-11-25): in a gap week the lists are the gap week's — a same-week regenerate leaves them alone
           if(d.babysitter) db.ref(WK+"/babysitter").set(d.babysitter);
           db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
         }
@@ -41748,7 +41842,7 @@ function _lrHash(str){ let h=5381; for(let i=0;i<str.length;i++){ h=((h<<5)+h+st
 function lrLaySig(){
   try{
     const parts=[(typeof currData!=="undefined")?currData:null,(typeof weekData!=="undefined")?weekData:null,(typeof calendarData!=="undefined")?calendarData:null];
-    return [lrToday(),(typeof activeWk==="function")?activeWk():"",_lrHash(JSON.stringify(parts))].join("|");
+    return [lrToday(),(typeof schoolWk==="function")?schoolWk():(typeof activeWk==="function")?activeWk():"",_lrHash(JSON.stringify(parts))].join("|");
   }catch(e){ return null; }   // can't fingerprint → never reuse
 }
 function lrLaidLessonsCached(kid,fromISO,toISO,sig){
@@ -41765,7 +41859,7 @@ function lrSlug(s){ return String(s||"").toLowerCase().replace(/[.#$\/\[\]]/g,""
 // Stable: kid + subject + kind + item — the same item on two lessons of one subject is one tick, and a re-lay keeps it.
 function lrItemId(kid,sk,kind,name){ return "lr_"+kid+"_"+sk+"_"+kind+"_"+lrSlug(name); }
 function lrNextWk(wk){ const m=/^week(\d+)$/.exec(String(wk||"")); return m?"week"+(parseInt(m[1],10)+1):""; }
-function lrWk(w){ const cur=(typeof activeWk==="function")?activeWk():(typeof WK!=="undefined"?WK:""); return w?lrNextWk(cur):cur; }
+function lrWk(w){ const cur=(typeof schoolWk==="function")?schoolWk():(typeof activeWk==="function")?activeWk():(typeof WK!=="undefined"?WK:""); return w?lrNextWk(cur):cur; }
 let lrTicksNext={}, lrTicksNextWk="";
 function lrTicked(id,w,ticks0,ticks1){ const t=w?(ticks1||lrTicksNext):(ticks0||((typeof supplies!=="undefined"&&supplies)||{})); return !!t[id]; }
 // "by Thu" inside the next week, "by today", "by 10/30" further out, "was due 10/20" when it slipped.
@@ -97099,6 +97193,7 @@ function gwCommit(){
     try{ const _np=gwNoPastNew(d.tasks,weekData.tasks||[],{dates:d.dates||DAY_DT,checked:snapChecked,claimed:(typeof claimed!=="undefined"&&claimed)||{},noCarry:subjNoCarry,consumed:id=>_gwConsumedCard(id,d&&d.week)});   // REGENNOPAST
       if(_np.length) dbg("📅 past days (regenerate): left off "+_np.length+" new card(s) — "+_np.map(t=>t.who+" "+t.day.slice(0,3)+" "+(t.title||t.subjectKey||"")).join(", ")); }catch(eNP){ try{ dbg("past-day guard skip: "+eNP); }catch(e2){} }
     const snapSl=ld(activeWK+"_sl")||slState||{};
+    const _lwG=(typeof lwGap==="function")?lwGap():null, _lwSl=slState;   // 📅 LISTWK (hub review 2026-11-25): in a gap week the lists are the gap week's — a same-week regenerate leaves them alone (no swap, no save, no whole-node write over the board week's lists)
     // Re-attach carry-overs (rebaselined subjects sit out — the rebuild absorbed them)
     const newIds=new Set(d.tasks.map(t=>t.id));
     // ── Ghost filter: an UNCHECKED carry-over whose lesson already lives in the new
@@ -97140,9 +97235,10 @@ function gwCommit(){
     for(const id in snapChecked){ if(!commitIds.has(id)) delete snapChecked[id]; }
     for(const id in snapHist){ if(!commitIds.has(id)) delete snapHist[id]; }
     WK=activeWK; weekData=d; checked=snapChecked; slState=snapSl;
+    if(_lwG) slState=_lwSl;   // 📅 LISTWK (hub review 2026-11-25): in a gap week the lists are the gap week's — a same-week regenerate leaves them alone (the gap map stays in memory)
     applyWeekMeta(d);
     sv(WK+"_tasks",d.tasks); sv(WK+"_babysitter",d.babysitter||null);
-    sv(WK+"_checked",snapChecked); sv(WK+"_history",snapHist); sv(WK+"_sl",snapSl);
+    sv(WK+"_checked",snapChecked); sv(WK+"_history",snapHist); if(!_lwG) sv(WK+"_sl",snapSl);   // 📅 LISTWK (hub review 2026-11-25): in a gap week the lists are the gap week's — a same-week regenerate leaves them alone
     sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
     try{ if(typeof rbLog==="function") rbLog("regenerate","all",0,d.week||""); }catch(e){}   // ↻ for the daily-miss tracker
     try{ if(typeof prExtraCore==="function"){ const _px=prExtraCore(d.tasks,prExtraCtx({checked:snapChecked})); if(_px.added.length){ dbg("🎯 catch-up (regenerate): +"+_px.added.length+" extra sitting(s)"); if(typeof seqFillNormalize==="function") seqFillNormalize(d.tasks,"regenerate+catchup"); sv(WK+"_tasks",d.tasks); } } }catch(ePX){ dbg("catch-up skip: "+ePX); }
@@ -97153,7 +97249,7 @@ function gwCommit(){
       db.ref(WK+"/tasks").set(obj);
       db.ref(WK+"/checked").set(snapChecked);
       db.ref(WK+"/history").set(snapHist);
-      if(Object.keys(snapSl).length) db.ref(WK+"/sl").set(snapSl);
+      if(Object.keys(snapSl).length&&!_lwG) db.ref(WK+"/sl").set(snapSl);   // 📅 LISTWK (hub review 2026-11-25): in a gap week the lists are the gap week's — a same-week regenerate leaves them alone
       if(d.babysitter) db.ref(WK+"/babysitter").set(d.babysitter);
       db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
     }
