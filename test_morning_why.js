@@ -68,11 +68,18 @@ const FAM = () => ({
   c_mat: K({ label: "Shake the mat", emoji: "🧺", who: "kid_c", slot: "chores", cad: "wk:3", pts: 5, order: 4 }),
   d_blind: K({ label: "Dust the blinds", emoji: "🪟", who: "kid_d", slot: "chores", cad: "wk:1", pts: 10, order: 1 })
 });
+// the second family (S · Z · W): L5's ↩ Send back on a 🌅 row, C6's 0 ⭐ daily beside a 🌅 carry
+const FAM2 = () => ({
+  a_win: K({ label: "Wipe the window", emoji: "🪟", who: "kid_a", slot: "chores", cad: "wk:1", pts: 15, order: 1 }),
+  a_sink: K({ label: "Wipe the sink", emoji: "🧽", who: "kid_a", slot: "chores", cad: "wk:0", pts: 3, order: 2 }),
+  b_fish: K({ label: "Feed the fish", emoji: "🐟", who: "kid_b", slot: "chores", cad: "daily", pts: 0, order: 1 }),
+  b_porch: K({ label: "Sweep the porch", emoji: "🧹", who: "kid_b", slot: "chores", cad: "wk:0", pts: 3, order: 2 })
+});
 const dOf = n => new Date(2026, 10, 30 + n), isoN = n => { const d = dOf(n); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
 const go = (w, n, h, mi) => { const d = dOf(n); return w.at(d.getFullYear(), d.getMonth() + 1, d.getDate(), h, mi || 0); };
 const CAP = "globalThis.__pop='';document.body.insertAdjacentHTML=function(p,h){ globalThis.__pop=h; };globalThis.__toast=[];gwShowToast=function(m){ __toast.push(m); };tab='moms-plan';1";
-async function mkWorld(index, hjs) {
-  const w = await W.world({ index, household: { jobs: FAM(), people: clone(W.PEOPLE), meta: { takeover: 1, engine: { mode: "preview", on: "2026-11-09" } } }, tree: { config: clone(W.FX.db.config) } });
+async function mkWorld(index, hjs, fam) {
+  const w = await W.world({ index, household: { jobs: (fam || FAM)(), people: clone(W.PEOPLE), meta: { takeover: 1, engine: { mode: "preview", on: "2026-11-09" } } }, tree: { config: clone(W.FX.db.config) } });
   const A = w.boot("A", "devA", { mom: true }), B = w.boot("B", "devB"), Dd = w.boot("D", "devD"), Kk = w.boot("Kk", "devK");
   Dd.run("HA_LS.setItem('ha_kiosk','dad');1"); Kk.run("HA_LS.setItem('ha_kiosk','routines');1");
   for (const d of [A, B, Dd, Kk]) { d.run(CAP); d.run(hjs); }
@@ -327,6 +334,85 @@ console.log("\n── G · kids never see the question; the streak; the daily co
 ok("G · a kid's device: no \"ignored\", 🙈 or the question on any kid screen, any day (lists, Kids' Corner, its stars)", kidSaw.length === 0, kidSaw);
 ok("G · P2's streak, Tue 12/08's Chores: kid_a and kid_c (ignored) break it (−1) where the app before passed the day over (0); kid_b (closed = not their fault) passes it over as before, and breaks it once Mom changes it to ignored", S.ls[0] === -1 && S.ls[1] === 0 && S.ls[2] === 0 && S.ls[3] === 0 && S.ls[4] === -1 && S.ls[5] === 0 && S.ls[6] === -1, S.ls);
 ok("G · C5's daily count (hub's default: an ignored send is still not a miss): Make the bed's missed days Wed–Fri equal the app before's", (S.dly || []).length === 3 && S.dly.every(x => x[0] === x[1]), S.dly);
+
+
+// ── S · Z · W: what landed since (L5 ↩ Send back, C6 0 ⭐ dailies) and two gaps ──
+console.log("\n── S · L5's ↩ Send back on a 🌅 row (\"a:\" carries, amMomTick) ──");
+const T = await mkWorld(IDX, HJS, FAM2), TB = await mkWorld(BASE_IDX, BASE_HJS, FAM2), tw = T.w;
+const tIx = {}, tix = (kid, label) => tIx[kid + label] != null ? tIx[kid + label] : (tIx[kid + label] = idxOf(T.A, kid, label));
+const tCar = (kid, label) => carry(tw, kid, label), tId = (kid, label) => (Object.entries((root(tw).amCarry || {})[kid] || {}).filter(([, r]) => r && r.label === label)[0] || [])[0];
+const zeroOf = V => { const L = (root(V.w).routineLog || {}).kid_b || {}, o = []; Object.keys(L).forEach(wk => Object.keys(L[wk] || {}).forEach(dn => Object.keys(L[wk][dn] || {}).forEach(q => { if (/^zero_/.test(q)) o.push(dn + " " + q + " " + J(noTs(L[wk][dn][q]))); }))); return o.sort().concat(Object.entries(adj(V.w, "kid_b")).filter(([id]) => /^czero_/.test(id)).map(([id, a]) => id + " " + J(noTs(a))).sort()); };
+const lgBtns = (h, name) => (lgRows(h).filter(r => r.indexOf(name) >= 0)[0] || "").split("<button").length - 1;
+const ex2 = {}; let wkT = "";
+for (let n = 7; n <= 12; n++) {
+  for (const V of [T, TB]) { const X = V === T, vw = V.w, vA = V.A;
+    await go(vw, n, 8); drawAll(V.B, ["kid_a", "kid_b"]); await vw.flush();
+    if (n === 7) { await go(vw, n, 19);
+      const send = (kid, label, why) => { const i = tix(kid, label); if (X) ANS(vA, "amAsk('chores'," + J(kid) + ",'monday'," + i + ")", why); else vA.run("amSend('chores'," + J(kid) + ",'monday'," + i + ")"); };
+      send("kid_a", "Wipe the sink", "ignored"); send("kid_b", "Sweep the porch", "ignored"); send("kid_b", "Feed the fish", "ignored"); }
+    if (n === 8) { await go(vw, n, 19); const i = tix("kid_a", "Wipe the window"); if (X) ANS(vA, "amAsk('chores','kid_a','tuesday'," + i + ")", "ignored"); else vA.run("amSend('chores','kid_a','tuesday'," + i + ")"); }
+    await vw.flush();
+  }
+  const A = T.A, B = T.B; wkT = A.run("activeWk()");
+  if (n === 9) {   // Wed: kid_a ticks the ignored window (pays 12 of 15); Mom sends it back, both ways, and Undoes each
+    const id = tId("kid_a", "Wipe the window"), ref = "a:" + id, b0 = bal(B, "kid_a"), args = J("kid_a") + "," + J(wkT) + ",'wednesday'," + J(ref);
+    B.run("(function(){ day=_todayDay; amToggle('kid_a'," + J(id) + "); })()"); await tw.flush(); const bT = bal(B, "kid_a");
+    const lg0 = LG(A, "lgGo('kid_a',0,0)");
+    ok("S · Wed 12/09: kid_a ticks the ignored window on her Morning list: +12 (of 15); the 📒 Ledger's 🌅 row has ↩ Send back (and no 🙈 words on a ticked row)", bT === b0 + 12 && /lgSbAskSet\('kid_a\|/.test(lgRows(lg0).filter(r => r.indexOf("Wipe the window") >= 0)[0] || "") && !/ignored/.test(lgRowOf(lg0, "Wipe the window")), [bT - b0, lgRowOf(lg0, "Wipe the window")]);
+    let m = tw.mark(); const r1 = A.run("lgSendBack(" + args + ",'m')"); await tw.flush(); const c1 = tCar("kid_a", "Wipe the window");
+    const row1 = lgRowOf(LG(A, "lgGo('kid_a',0,0)"), "Wipe the window"), kid1 = amRow(kidList(B, "kid_a"), "Wipe the window");
+    ok("S · ↩ Send back · Just a mistake: the un-tick takes back exactly the 12 it paid; the carry is open again and still \"ignored\"; no amz line, no bank line of C4's", r1 === true && bal(B, "kid_a") === b0 && !c1.done && c1.why === "ignored" && !WS(tw, m).some(x => /amz_|camz_/.test(x)), [r1, bal(B, "kid_a") - b0, c1.why, WS(tw, m)]);
+    ok("…the 📒 row reads \"not done yet · 🙈 ignored · pays 12 of 15 ⭐ ↩ sent back · just a mistake Undo\"; the kid's row \"15 → 12 ⭐\" (today's number, as before the tick)", /not done yet · 🙈 ignored · pays 12 of 15 ⭐ ↩ sent back · just a mistake Undo/.test(row1) && kid1 === "<s style=\"opacity:.6\">15</s> → 12 ⭐", [row1, kid1]);
+    A.run("lgSbUndo(" + args + ")"); await tw.flush(); const c2 = tCar("kid_a", "Wipe the window");
+    ok("S · its Undo: the tick is back as it was (done.pts 12, why \"ignored\"), the bank +12 again", bal(B, "kid_a") === bT && c2.done && c2.done.pts === 12 && c2.why === "ignored", [bal(B, "kid_a") - b0, c2.done, c2.why]);
+    const pen = A.run("flagN('kid_a')"); m = tw.mark(); const r2 = A.run("lgSendBack(" + args + ",'w')"); await tw.flush();
+    ok("S · ↩ Send back · 🚩 Wasn't done: the 12 come off and L5's penalty (" + pen + " ⭐) — nothing more from C4 (no amz line today: it is not after 0)", r2 === true && bal(B, "kid_a") === b0 - pen && !tCar("kid_a", "Wipe the window").done && !WS(tw, m).some(x => /amz_|camz_/.test(x)), [r2, bal(B, "kid_a") - b0, pen]);
+    const mk = A.run("(function(){ const M=lgSbMarks('kid_a'); const k=Object.keys(M)[0]; return k?M[k].ref:''; })()");
+    A.run("lgFlagUndo('step','kid_a'," + J(mk) + ",0)"); await tw.flush(); const c3 = tCar("kid_a", "Wipe the window");
+    ok("…its Undo (the 🚩's): the tick and its 12 back, the penalty back; still \"ignored\"", !!mk && bal(B, "kid_a") === bT && c3.done && c3.done.pts === 12 && c3.why === "ignored", [mk, bal(B, "kid_a") - b0, c3.done]);
+  }
+  if (n === 10) {   // Thu: kid_a's 3 ⭐ sink (Mon, ignored: Tue 2 · Wed 1 · Thu 0) ticked at zero; kid_b's porch the same, left open
+    const id = tId("kid_a", "Wipe the sink"), b0 = bal(B, "kid_a"); B.run("(function(){ day=_todayDay; amToggle('kid_a'," + J(id) + "); })()"); await tw.flush();
+    ok("S · Thu 12/10: kid_a ticks the ignored sink at zero: +0 ⭐; no line (zero is not \"after 0\")", bal(B, "kid_a") === b0 && tCar("kid_a", "Wipe the sink").done.pts === 0 && amzLines(tw, "kid_a").length === 0, [bal(B, "kid_a") - b0, amzLines(tw, "kid_a")]);
+  }
+  if (n === 11) {   // Fri: Mom sends back Thursday's sink tick (Just a mistake), a draw, then her Undo
+    const id = tId("kid_a", "Wipe the sink"), ref = "a:" + id, args = J("kid_a") + "," + J(wkT) + ",'thursday'," + J(ref), b0 = bal(B, "kid_a");
+    ok("S · Fri 12/11 8 AM: the sink was done Thursday → Friday files nothing", amzLines(tw, "kid_a").length === 0);
+    const r = A.run("lgSendBack(" + args + ",'m')"); await tw.flush(); const c = tCar("kid_a", "Wipe the sink");
+    drawAll(B, ["kid_a"]); await tw.flush(); const L = amzLines(tw, "kid_a");
+    ok("S · Mom sends back Thursday's tick (Just a mistake): open again, still \"ignored\" — the next draw files Friday's −1 (20% of 3) like any open turn after 0 (decision 14)", r === true && !c.done && c.why === "ignored" && L.length === 1 && L[0].amz.n === 1 && L[0].amz.day === "2026-12-11" && bal(B, "kid_a") === b0 - 1, [r, c.done, L.map(l => l.amz), bal(B, "kid_a") - b0]);
+    ex2.row = lgRowOf(LG(A, "lgGo('kid_a',-1,0)"), "Wipe the sink");
+    A.run("lgSbUndo(" + args + ")"); await tw.flush(); const c2 = tCar("kid_a", "Wipe the sink");
+    ok("S · its Undo: Thursday's tick is back exactly (done Thu, 0 ⭐), still \"ignored\"", c2.done && c2.done.iso === "2026-12-10" && c2.done.pts === 0 && c2.why === "ignored", c2.done);
+    ex2.stray = { lines: amzLines(tw, "kid_a").length, bank: bal(B, "kid_a") - b0 };   // reported to the hub (not a check): Friday's −1 stays after the Undo
+    console.log("  NOTE · after the Undo Friday's −1 line " + (ex2.stray.lines ? "STAYS (bank " + ex2.stray.bank + ")" : "is gone") + " — L5's lgSbMiss takes back C3's line in this case, not C4's (see the report)");
+    // kid_b's porch (3 ⭐, Mon, ignored) is after 0 today: its line beside C6's 0 ⭐ fish line
+    const D = A.run("(function(){ const x=lgDayData('kid_b',0); let t=0,a=0; x.lists.forEach(function(L){ L.rows.forEach(function(r){ t+=r.tk||0; a+=r.atk||0; }); }); return [x.taken,t,a]; })()");
+    ok("Z · Fri 12/11, kid_b: C6's 0 ⭐ fish (−1 ⭐) and C4's porch (−1 ⭐ after 0) on the same 📒 day — its \"taken\" adds both (" + D[0] + ")", D[1] === 1 && D[2] === 1 && D[0] === 2 && /taken 2 ⭐/.test(top(LG(A, "lgGo('kid_b',0,0)"))), D);
+    const pid = tId("kid_b", "Sweep the porch"); B.run("(function(){ day=_todayDay; amToggle('kid_b'," + J(pid) + "); })()"); await tw.flush();
+    const lp = LG(A, "lgGo('kid_b',0,0)"), nb = lgBtns(lp, "Sweep the porch");
+    ok("S · the porch ticked after its line was filed: the 🌅 row has ↩ Send back and ⭐ Give stars back — no ➖ Excuse (two buttons at most, design §3)", nb === 2 && /lgSbAskSet/.test(lp) && !/lgAmzExcuse\('kid_b'/.test(lp) && /lgAmzGive\('kid_b'/.test(lp), [nb, lgRowOf(lp, "Sweep the porch")]);
+  }
+  if (n === 12) {
+    const za = zeroOf(T), zb = zeroOf(TB);
+    ok("Z · C6 beside C4: kid_b's 0 ⭐ fish lines and −1 bank lines Mon–Sat equal the app before's exactly (an ignored send is not a C6 miss, as for C5)", za.length > 0 && J(za) === J(zb), [za, zb]);
+    const fid = tId("kid_b", "Feed the fish");
+    ok("Z · the fish's own 🌅 carry (0 ⭐, sent as ignored): pays 0, never a line after 0 (20% of 0 is nothing)", T.A.run("amPay('kid_b',amCarry.kid_b[" + J(fid) + "],'2026-12-12')") === 0 && T.A.run("amCostN('kid_b',amCarry.kid_b[" + J(fid) + "],'2026-12-12')") === null && !amzLines(tw, "kid_b").some(l => /fish/.test(l.label)));
+  }
+}
+console.log("\n── W · the answer: only Mom (or an unlocked Dad), only the two real words ──");
+{ const A = T.A, id = Object.keys((root(tw).amCarry || {}).kid_b || {}).filter(k => !(root(tw).amCarry.kid_b[k] || {}).done && root(tw).amCarry.kid_b[k].why === "ignored")[0];
+  ok("W · (setup) an open ignored carry to test on", !!id, id);
+  const tryW = (d, v) => { const m = tw.mark(); const r = d.run("amWhySet('kid_b'," + J(id) + "," + J(v) + ")"); return { r, w: writes(tw, m).length, why: d.run("(amCarry.kid_b[" + J(id) + "]||{}).why") }; };
+  const kk = tryW(T.Kk, "notfault"), kb = tryW(T.B, "notfault"); T.Dd.run("dadUnlocked=false;1"); const kd = tryW(T.Dd, "notfault");
+  ok("W · w11: a kid's device (Kids' Corner, a family device without Mom) and a locked Dad cannot change Mom's answer: amWhySet refused, nothing written, \"ignored\" stays", [kk, kb, kd].every(x => x.r === false && x.w === 0 && x.why === "ignored"), [kk, kb, kd]);
+  const bad = ["lazy", "", "IGNORED", null].map(v => tryW(A, v));
+  ok("W · w15: Mom's device takes only \"ignored\" / \"notfault\": \"lazy\", \"\", \"IGNORED\", null refused, nothing written", bad.every(x => x.r === false && x.w === 0 && x.why === "ignored"), bad);
+  await go(tw, 12, 19); const m = tw.mark(); A.run("amSend('chores','kid_a','saturday'," + tix("kid_a", "Wipe the sink") + ",false,'lazy')"); await tw.flush();
+  const nw = Object.values((root(tw).amCarry || {}).kid_a || {}).filter(r => r && r.fromDay === "saturday");
+  ok("W · w15: a send with any other word stores no `why` (not their fault: full stars)", nw.length === 1 && !("why" in nw[0]), nw);
+  const g = tryW(A, "notfault"); ok("W · …and Mom's own change still works: ONE write, \"notfault\"", g.r === true && g.w === 1 && g.why === "notfault", g);
+}
 
 if (process.env.MWHY_DUMP) fs.writeFileSync(process.env.MWHY_DUMP, J(S.dump));
 try { fs.unlinkSync(BASE_IDX); } catch (e) {}
