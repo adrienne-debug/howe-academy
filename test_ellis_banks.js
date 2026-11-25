@@ -26,7 +26,8 @@ ok(!/\b(Lincoln|Lucy|Julian|Adrienne|Howe)\b/.test(JSON.stringify([cq, cv, qb, l
 
 console.log("No banks = built-in boxes, unchanged");
 const plain = H.generate("ellis", base());
-ok(/Iowa Reading — Test Prep/.test(plain.student) && /Language — Fix It Up/.test(plain.student) && /Iowa Math — Problem Solving/.test(plain.student), "built-in three boxes print");
+// EL_OLDPASS_OUT (her call 2026-11-24, "Delete them"): the old built-in passages are gone — no bank, no reading box
+ok(!/Iowa Reading — Test Prep/.test(plain.student) && /Language — Fix It Up/.test(plain.student) && /Iowa Math — Problem Solving/.test(plain.student), "built-in language and math boxes print; no old passage box (EL_OLDPASS_OUT)");
 ok(!/🧠 CogAT/.test(plain.student) && !/Rule to remember/.test(plain.student) && !/Synonyms:/.test(plain.student), "no bank markup without banks");
 ok(plain.wordBankCursor === undefined && plain.cogatBankCursor === undefined && plain.convBankCursor === undefined && plain.quantBankCursor === undefined, "no cursors handed back without banks");
 
@@ -51,9 +52,9 @@ const wk7 = H.generate("ellis", Object.assign(base(), banks(), { weekNum: 32 }))
 ok(wk7.wordBankCursor && wk7.wordBankCursor.day === 31, "week 7 of the bank starts at item 31");
 ok(/word-big">eager</.test(wk7.student), "week 7 prints word 31 (eager)");
 const before = H.generate("ellis", Object.assign(base(), banks(), { weekNum: 25 }));
-ok(/Iowa Reading — Test Prep/.test(before.student) && before.wordBankCursor === undefined, "a week before the start week prints built-ins and stores no cursor");
+ok(/Iowa Math — Problem Solving/.test(before.student) && !/Iowa Reading — Test Prep/.test(before.student) && !/🧠 CogAT/.test(before.student) && before.wordBankCursor === undefined, "a week before the start week prints built-ins (no old passage) and stores no cursor");
 const only = H.generate("ellis", Object.assign(base(), { convBank: banks().convBank }));
-ok(/Iowa Reading — Test Prep/.test(only.student) && /✏️ Spelling — Which word/.test(only.student) && /Iowa Math — Problem Solving/.test(only.student), "one loaded bank replaces only its own box");
+ok(!/Iowa Reading — Test Prep/.test(only.student) && /✏️ Spelling — Which word/.test(only.student) && /Iowa Math — Problem Solving/.test(only.student), "one loaded bank replaces only its own box");
 ok(only.convBankCursor && only.wordBankCursor === undefined, "only the loaded bank hands back a cursor");
 
 console.log("Shared planners");
