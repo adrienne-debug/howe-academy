@@ -12,7 +12,7 @@
  *   kid_b 🛁 Hang the towel (Evening, 0 ⭐, never done) — Take stars away Off Thu 12/10, On again Sat 12/12 · 🐱 Feed the cat (Morning 2 ⭐, ticked
  *         every day so every week has ticks)
  *   kid_c 0 ⭐ Evening rows never done but one not-a-miss on Thu 12/10: ✕ today · ➖ Excuse · 🌅 sent · its log says ticked · from Thu 12/10;
- *         🧼 Wash face ✕ today on Sat 12/12 before anyone draws;
+ *         🧼 Wash face ✕ today on Sat 12/12 before anyone draws; 🪮 Comb hair ✕ today on Thu 12/10 before anyone draws (a run of 3);
  *         🧸 Toys away (Chores, 0 ⭐) on a vacation day that paused the Chores list (Thu 12/10)
  *   kid_d 🪥 Brush teeth (Morning, 0 ⭐, never done) — 😷 Kid Off Thu 12/10; a balance from 0 to below zero
  * The setting: Mom "No stop" Tue 12/15 · Dad (his code in) "Stops after 5" Thu 12/17 · ⏸ Pause On Fri 12/18, Off Sat 12/19.
@@ -51,6 +51,7 @@ const FAM = () => ({
   c_from: K({ label: "Lights off", emoji: "💡", who: "kid_c", slot: "evening", from: "2026-12-10", order: 4 }),
   c_none: K({ label: "Brush hair", emoji: "🪮", who: "kid_c", slot: "evening", order: 5 }),
   c_w0: K({ label: "Wash face", emoji: "🧼", who: "kid_c", slot: "evening", order: 7 }),
+  c_w3: K({ label: "Comb hair", emoji: "🪮", who: "kid_c", slot: "evening", order: 8 }),
   c_cal: K({ label: "Toys away", emoji: "🧸", who: "kid_c", slot: "chores", area: "cleaning", order: 6 }),
   d_teeth: K({ label: "Brush teeth", emoji: "🪥", who: "kid_d", slot: "morning", order: 0 })
 });
@@ -88,7 +89,9 @@ const WS = (w, m) => writes(w, m).map(e => e.op + " " + e.path + (e.keys ? " [" 
 const noTs = x => JSON.parse(J(x), (k, v) => (k === "ts" || k === "at" || k === "iso") ? "·" : v);
 const canon = x => JSON.stringify(x, (k, v) => (v && typeof v === "object" && !Array.isArray(v)) ? Object.keys(v).sort().reduce((o, q) => { o[q] = v[q]; return o; }, {}) : v);
 // the tree without C6's own data: zero_ log lines, czero_ bank lines, starRules/zero, and the connection diary
-const noC6 = t => { t = noTs(t); Object.values(t.routineLog || {}).forEach(K1 => Object.values(K1 || {}).forEach(W1 => Object.values(W1 || {}).forEach(D1 => { Object.keys(D1 || {}).forEach(k => { if (/^zero_/.test(k)) delete D1[k]; }); })));
+// (a tick's log line has a push id, which depends on how many devices booted; the day's push lines are compared as a sorted list)
+const noC6 = t => { t = noTs(t); Object.values(t.routineLog || {}).forEach(K1 => Object.values(K1 || {}).forEach(W1 => Object.keys(W1 || {}).forEach(dn => { const D1 = W1[dn] || {}, P = [];
+    Object.keys(D1).forEach(k => { if (/^zero_/.test(k)) delete D1[k]; else if (/^-P\d+$/.test(k)) { P.push(canon(D1[k])); delete D1[k]; } }); if (P.length) D1._push = P.sort(); })));
   Object.values(t.bank || {}).forEach(b => { if (b && b.adjustments) Object.keys(b.adjustments).forEach(id => { if (/^czero_/.test(id)) delete b.adjustments[id]; }); });
   const R = ((t.household || {}).meta || {}).starRules; if (R) delete R.zero; delete t.connDiary; delete t.settings;
   return canon(JSON.parse(J(t), (k, v) => (v && typeof v === "object" && !Array.isArray(v) && !Object.keys(v).length) ? undefined : v)); };
@@ -127,6 +130,7 @@ for (let n = 0; n <= 16; n++) {
     if (iso === "2026-12-17" && isX) { Dd.run("dadUnlocked=true;1"); const m = w.mark(); T.flip2 = { r: Dd.run("lgRuleZero(5)") }; await w.flush(); T.flip2.ws = WS(w, m); T.flip2.v = w.get("household/meta/starRules/zero"); Dd.run("dadUnlocked=false;1"); }
     if (iso === "2026-12-18") A.run("lgRulePause()");                            // ⏸ Pause On (Fri)
     if (iso === "2026-12-19") A.run("lgRulePause()");                            // …Off (Sat): it starts clean
+    if (iso === "2026-12-10") A.run("(function(){ day=_todayDay; rtWave('evening','kid_c','thursday'," + idxOf(A, "evening", "kid_c", "Comb hair") + "); })()");   // ✕ today before any draw (a run of 3)
     if (iso === "2026-12-12") A.run("(function(){ day=_todayDay; rtWave('evening','kid_c','saturday'," + idxOf(A, "evening", "kid_c", "Wash face") + "); })()");   // ✕ today before any draw
     if (iso === "2026-12-07") { const b = A.run("bankBalance('kid_d')"); if (b) A.run("bankGiveDock('kid_d',-1," + b + ",'(a test) start at 0')"); }
     await w.flush();
@@ -152,6 +156,15 @@ for (let n = 0; n <= 16; n++) {
       const m2 = w.mark(); G.run("slState[__k]=__keep;routineLog.kid_a=__lk;__hold.splice(0).forEach(function(f){ f(); });1"); await w.flush();   // the server's answer: its listeners first, then once()
       T.gate2.after = WS(w, m2).filter(x => /zero_a_floss|czero_\w+_a_floss/.test(x)); T.gate2.n = G.run("rtZeroRun('evening','kid_a'," + fi + "," + st + ")"); w.devs.splice(w.devs.indexOf(G), 1);
     }
+    // another day's tab on screen (hub's review): drawing every list on yesterday's or tomorrow's tab files nothing
+    if (iso === "2026-12-09" && isX) { await go(w, n, 6, 30); const m = w.mark(), tabs = {};
+      for (const tb of ["tuesday", "thursday"]) { A.run("(function(){ day=" + J(tb) + "; rtOpen={}; ROSTER.forEach(function(k){ SL_SLOTS.forEach(function(s){ s==='morning'?mrIndividualHTML(k):rtSlotHTML(s,k); }); }); day=_todayDay; })()"); await w.flush();
+        tabs[tb] = A.run("Object.keys(((routineLog.kid_a||{})[activeWk()]||{}).wednesday||{}).filter(function(k){ return /^zero_/.test(k); }).length"); }
+      T.tab = { ws: WS(w, m).filter(x => /zero/.test(x)), tabs }; }
+    // a dry-run device (no server wait, no re-check) on Thu: a row ✕'d today is not filed even on its own screen (hub's review)
+    if (iso === "2026-12-10" && isX) { await go(w, n, 6, 30); const Dq = w.boot("Dq", "devDq"); Dq.run(CAP); Dq.run("HA_LS.setItem('ha_dryrun','1');1"); await w.flush();
+      drawKid(Dq, "kid_c"); await w.flush(); drawKid(Dq, "kid_c"); await w.flush();
+      T.dqW = Dq.run("JSON.stringify(Object.keys(((routineLog.kid_c||{})[activeWk()]||{}).thursday||{}).filter(function(k){ return /^zero_/.test(k); }).sort())"); w.devs.splice(w.devs.indexOf(Dq), 1); }
     // dry-run (K): a device with ?dryrun=1 notices first and writes nothing
     if (iso === "2026-12-13" && isX) {
       const Dr = w.boot("Dr", "devDr"); Dr.run(CAP); Dr.run("HA_LS.setItem('ha_dryrun','1');1"); await w.flush();
@@ -164,6 +177,9 @@ for (let n = 0; n <= 16; n++) {
     await go(w, n, 7); drawAll(A, skip); drawAll(B, skip); await w.flush();
     for (let r = 0; r < (iso === "2026-12-09" || iso === "2026-12-10" ? 10 : 1); r++) drawAll(Kk, skip);
     await w.flush(); drawAll(B, skip); await w.flush();   // a second look (Sunday: last week's ticks have landed)
+    if (iso === "2026-12-10" && isX) { const st = (s, k, l) => "rtStepsFor(" + J(s) + "," + J(k) + ",false,_todayDay)[" + idxOf(A, s, k, l) + "]";
+      T.off = { kidOff: [A.run("rtDailyMissed('morning','kid_d'," + idxOf(A, "morning", "kid_d", "Brush teeth") + "," + st("morning", "kid_d", "Brush teeth") + ",1)"), A.run("rtZeroRun('morning','kid_d'," + idxOf(A, "morning", "kid_d", "Brush teeth") + "," + st("morning", "kid_d", "Brush teeth") + ")")],
+        cal: [A.run("rtDailyMissed('chores','kid_c'," + idxOf(A, "chores", "kid_c", "Toys away") + "," + st("chores", "kid_c", "Toys away") + ",1)"), A.run("rtZeroRun('chores','kid_c'," + idxOf(A, "chores", "kid_c", "Toys away") + "," + st("chores", "kid_c", "Toys away") + ")")] }; }
     // the ticks (the same on both)
     await go(w, n, 8);
     const tickM = (d, kid, label) => { const i = idxOf(d, "morning", kid, label); d.run("(function(){ day=_todayDay; toggleMorningStep(" + J(kid) + "," + i + "); })()"); };
@@ -287,7 +303,12 @@ ok("N · ✕ today on Sat before anyone drew (Wash face): no Sat line though the
 ok("N · ➖ Excuse on Thu (the ledger): the same, and Thu's own −1 given back", canon(R("kid_c", "Rinse the cup")) === canon(exp(never)) && czLines(w, "kid_c").filter(a => /Rinse the cup/.test(a.note) && a.day === "thursday" && a.wk === S.wk[5]).length === 0, R("kid_c", "Rinse the cup"));
 ok("N · a row that starts Thu 12/10 (its from): nothing before; Sat 12/12 −1 (2) … Wed 12/16 (6); Thu 12/17 stopped", canon(R("kid_c", "Lights off")) === canon(exp({ "2026-12-12": 2, "2026-12-13": 3, "2026-12-14": 4, "2026-12-15": 5, "2026-12-16": 6 })), R("kid_c", "Lights off"));
 ok("N · a vacation day that paused the Chores list (Thu): no Chores list drawn that day, so no Thu line; Fri / Sat nothing; Sun −1 (2) …", canon(R("kid_c", "Toys away")) === canon(exp({ "2026-12-09": 2, "2026-12-13": 2, "2026-12-14": 3, "2026-12-15": 4, "2026-12-16": 5, "2026-12-17": 6 })), R("kid_c", "Toys away"));
-ok("N · 😷 Kid Off on Thu (kid_d): Thu's own −1 stands (it was for Tue and Wed); Fri / Sat nothing; Sun −1 (2) …", canon(R("kid_d", "Brush teeth")) === canon(exp(never)), R("kid_d", "Brush teeth"));
+ok("N · 😷 Kid Off on Thu (kid_d): nothing filed Thu though the run before it was 3 (hub's rule: a day the walk treats as not a miss files nothing); Fri / Sat nothing; Sun −1 (2) …", canon(R("kid_d", "Brush teeth")) === canon(exp({ "2026-12-09": 2, "2026-12-13": 2, "2026-12-14": 3, "2026-12-15": 4, "2026-12-16": 5, "2026-12-17": 6 })), R("kid_d", "Brush teeth"));
+ok("N · …the function on Thu: the walk says 3, rtZeroRun says 0 for the Kid Off kid; and the same for a list a calendar day off paused (Toys away: walk 3, rtZeroRun 0)", T.off && J(T.off.kidOff) === J([3, 0]) && J(T.off.cal) === J([3, 0]), T.off);
+ok("N · ✕ today on Thu before anyone drew (Comb hair, a run of 3): no Thu line; Fri / Sat nothing; Sun −1 (2) … Thu 12/17 (6)", canon(R("kid_c", "Comb hair")) === canon(exp({ "2026-12-09": 2, "2026-12-13": 2, "2026-12-14": 3, "2026-12-15": 4, "2026-12-16": 5, "2026-12-17": 6 })), R("kid_c", "Comb hair"));
+ok("N · …a dry-run device drawing that list on Thu (no server wait, no re-check): it files the plain rows on its own screen but not the ✕'d one", T.dqW && JSON.parse(T.dqW).indexOf("zero_c_none") >= 0 && JSON.parse(T.dqW).indexOf("zero_c_w3") < 0, T.dqW);
+ok("N · ✕ today AFTER this morning's −1 was filed (Wipe the sink, ✕ at 8 AM Thu from Mom's ✕ today): the −1 stays (only the 📒 Ledger's ➖ Excuse gives it back); the day after is not a miss", czLines(w, "kid_c").filter(a => /Wipe the sink/.test(a.note) && a.wk === S.wk[5] && a.day === "thursday").length === 1 && !w.get("routineLog/kid_c/" + S.wk[5] + "/thursday/zero_c_x/zero/gb"));
+ok("N · another day's tab on screen (Wed 12/9, before anyone drew): drawing every list on Tuesday's and Thursday's tab files nothing and writes nothing; back on today's tab it files as usual", T.tab && T.tab.ws.length === 0 && T.tab.tabs.tuesday === 0 && T.tab.tabs.thursday === 0 && R("kid_a", "Brush teeth")[key(4)] === 2, T.tab);
 
 console.log("\n── S · Take stars away, ⏸ Pause, before the slate ──");
 ok("S · kid_b's towel: Wed 12/9 −1; Take stars away Off Thu / Fri: recorded once, nothing taken (n:0 \"off\"); On again Sat: it starts clean — Sat, Sun nothing, Mon 12/14 −1 (2) … Thu 12/17 (5); ⏸ Fri: recorded, nothing taken (n:0 \"pause\"); Pause off Sat: starts clean, nothing", canon(R("kid_b", "Hang the towel")) === canon(exp({ "2026-12-09": 2, "2026-12-10": "0:off", "2026-12-11": "0:off", "2026-12-14": 2, "2026-12-15": 3, "2026-12-16": 4, "2026-12-17": 5, "2026-12-18": "0:pause" })), R("kid_b", "Hang the towel"));
@@ -327,6 +348,7 @@ ok("U · a flip never reaches back: Mon 12/14 (run 7, stopped) was never filed a
 const pan = LG(A, "lgRulesOpen=true;lgGo('kid_a',0,0)"); S.dump.rules = pan;
 ok("U · ⚙ Star rules (Mom): \"A 0 ⭐ daily not done 2 days in a row\" with [Stops after 5 ⭐] pressed and [No stop]", /A 0 ⭐ daily not done 2 days in a row/.test(txt(pan)) && /aria-pressed="true"[^>]*>Stops after 5 ⭐</.test(pan) && /aria-pressed="false"[^>]*>No stop</.test(pan), txt(pan).slice(0, 400));
 Dd.run("dadUnlocked=false;1"); const pD = LG(Dd, "lgRulesOpen=true;lgGo('kid_a',0,0)"), kD = LG(Kk, "lgRulesOpen=true;lgGo('kid_a',0,0)");
+ok("U · only 5 or 0: lgRuleZero(3), (\"5\"), (null), (undefined), (-1) are refused and write nothing", (() => { const m = w.mark(); const r = ["3", "'5'", "null", "undefined", "-1", "'0'"].map(v => A.run("lgRuleZero(" + v + ")")); return r.every(x => x === false) && writes(w, m).length === 0 && J(w.get("household/meta/starRules/zero")) === J({ stop: 5, by: "dad" }); })());
 ok("U · locked Dad's link and a kid's tablet: no setting, and lgRuleZero refused with no write", !/No stop/.test(pD) && !/No stop/.test(kD) && (() => { const m = w.mark(); const r = [Dd.run("lgRuleZero(0)"), Kk.run("lgRuleZero(0)"), B.run("typeof lgRuleZero")]; return r[0] === false && r[1] === false && writes(w, m).length === 0; })());
 ok("U · it lives in the ⚙ panel only: no other drawing of the app offers it", (() => { const s = fs.readFileSync(IDX, "utf8") + HJS; return (s.match(/lgRuleZero\(/g) || []).length === 2 && (s.match(/lgZeroSet\(/g) || []).length === 2; })());
 
