@@ -180,7 +180,7 @@ function reach(raw) {
   const all = U.concat(H); const names = new Set(HNAMES);
   const seen = new Map(), q = [], bad = [];
   U.forEach(u => { if (names.has(u.name) || LOADER.has(u.name)) return; const hit = HNAMES.find(n => mention(u.text, n)); if (hit) { seen.set(u.name, hit); q.push(u); } });
-  while (q.length) { const u = q.shift(); if (u.name === "renderHousehold" || u.name === "ledgerOpen") continue;   // 📒 LEDGER (L1): the ledger's own door, a tap (Mom mode / Dad's link)
+  while (q.length) { const u = q.shift(); if (u.name === "renderHousehold" || u.name === "ledgerOpen" || u.name === "flagUndo") continue;   // 📒 LEDGER (L1): the ledger's own door, a tap (Mom mode / Dad's link) · L5 FLAGONE: the 🚩 "undo" on the Click-off Log and 🧾, a tap (Mom / Dad's code)
     if (u.name.startsWith("<")) { bad.push(u.name + " ← " + seen.get(u.name)); continue; }
     const by = all.filter(v => v !== u && !names.has(v.name) && v.file === "index.html" && mention(v.text, u.name));
     const byHouse = H.some(v => mention(v.text, u.name));
