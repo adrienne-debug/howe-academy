@@ -7914,6 +7914,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       var rows = (Array.isArray(p.q) ? p.q : []).map(function (q, i) {
         var k = LR_LETTERS.indexOf(String(q.ans || "")), w = (k >= 0 && Array.isArray(q.c) && q.c[k] != null) ? q.c[k] : "";
         return '<div class="key-row"><div class="key-label" style="min-width:16px;">' + (i + 1) + '.</div><div><span class="key-ans">' + lrEsc(q.ans) + ' — ' + lrEsc(w) + '</span>' +
+          lrWfMark(pg, q) +   // LR_WFMARK: "✍ written first" after the answer of a question that printed write-first this week
           '<div class="lr-why">' + lrEsc(q.why) + '</div></div></div>';
       }).join("\n");
       return '  <div class="key-section" style="flex-shrink:0;">\n    <div class="key-head">' + cap(pg.day) + ' — “' + lrEsc(p.title) + '” · ' + lrEsc(pg.x.label) + ' · passage ' + pg.x.num + ' of ' + pg.x.of + '</div>\n' +
@@ -8105,6 +8106,17 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
   // Which built notebooks print the reading ladder besides the 1st-grade one (nbLadReadPages asks).
   function lr3Prints(g) { return !!(g && (g.build === generateEllis || g.build === generateLincoln)); }
   // NBLADREAD3_END
+
+  // LR_WFMARK_START — ✍ "written first" on the 1st-grade Teaching Companion's Read and Answer answers (her answer 2026-11-25 to
+  // "mark 'written first' questions on the Teaching Companion?": "Yes, mark them" — so Mom remembers to look at what was written).
+  // The mark goes after the right letter of each question that printed with writing lines this week: its page is a write-first
+  // page (pg.wf — set by lr3Flags from the reading ladder's "wf": one | both; only levels g3 and up) AND the question carries the
+  // passage file's writeFirst flag. Same words and look as the 4th- and 6th-grade parent page (lr3Parent's .lr-kwf), styled
+  // inline so the child's notebook (which shares this notebook's CSS) is byte for byte what it was. No write-first page → "".
+  function lrWfMark(pg, q) {
+    return (pg && pg.wf && lr3Flagged(q)) ? ' <span style="font-size:8.5px;font-weight:700;color:var(--lu-mid);">✍ written first</span>' : "";
+  }
+  // LR_WFMARK_END
 
   function generateLucy(ctx) {
     ctx = ctx || {};
