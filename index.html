@@ -5942,6 +5942,7 @@ function renderDayTabs(){
   const _pw=peekWeekAvailable();
   const peekBtn=_pw?('<button class="day-tab peek-tab" style="--day-color:#7c5295;flex-shrink:0" onclick="toggleSchedPeek()" title="Look ahead at next week">›<span style="font-size:9px;font-weight:700;display:block">Next wk</span></button>'):'';
   if(scheduleBreakToday()){ const _dt=document.getElementById("day-tabs"); if(_dt) _dt.innerHTML=peekBtn+suppBtn; return; }
+  if(typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek()){ const _dt=document.getElementById("day-tabs"); if(_dt) _dt.innerHTML=peekBtn+suppBtn; return; }   // 📅 BWNOWEEK: a week the board doesn't hold draws no day picker, as a break does
   const at=getActiveTasks();
   let ds=at.length
     ?[...new Set(at.map(t=>t.day))].sort((a,b)=>DAYS.indexOf(a)-DAYS.indexOf(b))
@@ -6473,7 +6474,7 @@ function showPaceToast(taskId, doneMinOverride, opts){
 
   // Anti-cheat: check if this task (or day bonus) already earned a spin
   const alreadySpun=hasSpun(taskId);
-  const dayBonusClaimed=hasDayBonus(t.who, taskDay);
+  const dayBonusClaimed=hasDayBonus(t.who, taskDay)||(taskDay===_todayDay&&typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek());   // 📅 BWNOWEEK: no day-bonus spin today on last school week's cards
   const _once=(typeof spinOnceHas==="function")&&spinOnceHas(taskId);   // 🎰 SPINONCE: this card already spun — never another, not even the day bonus
 
   // Per-kid timing gate: when enabled, only early/within-window completions earn a spin.
@@ -7088,6 +7089,7 @@ let _celebNpText=null;
 function celebrateDayComplete(kid,d0){
   const d=d0||day;
   if(hasCelebrated(kid,d)) return;
+  if(d===_todayDay&&typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek()) return;   // 📅 BWNOWEEK: no day celebration today on last school week's cards (and no celeb_used write)
   markCelebrated(kid,d);
   const _fs=(typeof famCelebAfterSong==="function")?famCelebAfterSong(kid,d):null;   // 🏡 finished after family time → its song
   _showCelebration(kid, cap(kid)+" finished the day!", _fs?{occasion:"day",song:_fs}:{occasion:"day"});
@@ -9505,11 +9507,14 @@ function scheduleBreakToday(){
 //   scheduleBreakToday() returns a break (holiday, vacation, cleaning day — the Schedule tab's own test, never a second one) there
 //   are no school cards TODAY, and every screen and gate that asks about today's school work asks schoolOffToday(). Today only:
 //   past and future days, the week views, effectiveDay, the week builder and which week is active are not changed. Reads only.
-function schoolOffToday(){ try{ return !!scheduleBreakToday(); }catch(e){ return false; } }
+// 📅 BWNOWEEK (slice 1 of DESIGN_break_week_2026-11-24, 2026-11-24): …and also a day whose week the board doesn't hold — a week the plan
+//   doesn't cover with no calendar break (every week after the plan ends), the weekend days of a break — boardWeekIsThisWeek().
+function schoolOffToday(){ try{ return !!scheduleBreakToday()||(typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek()); }catch(e){ return false; } }
 // The one plain line a "today" agenda draws where its school cards would be — the words and look of Kids' Corner's break line.
 function brkTodayLineHTML(){
-  let b=null; try{ b=scheduleBreakToday(); }catch(e){ b=null; } if(!b) return "";
-  return '<div style="padding:22px 14px;text-align:center;font-size:15px;font-weight:700;color:var(--muted)">'+(b.type==="cleaning"?'No school today \u2014 it\u2019s cleaning day \u{1F9FD}':'No school today \u2014 '+esc(b.name)+' \u{1F389}')+'</div>';
+  let b=null; try{ b=scheduleBreakToday(); }catch(e){ b=null; } if(!b&&typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek()) b={type:"noweek"};   // 📅 BWNOWEEK: no break behind it (the line below draws her answer 1's words)
+  if(!b) return "";
+  return '<div style="padding:22px 14px;text-align:center;font-size:15px;font-weight:700;color:var(--muted)">'+(b.type==="noweek"?'No school week planned \u{1F389}':b.type==="cleaning"?'No school today \u2014 it\u2019s cleaning day \u{1F9FD}':'No school today \u2014 '+esc(b.name)+' \u{1F389}')+'</div>';   // 📅 BWNOWEEK: no break behind it — her answer 1's words alone
 }
 // Mom's 🗓 Schedule ▸ Today and Dad's ▸ All on a break day: the line, then only the rows that are not school cards — Mom's laundry,
 // meal-prep and house blocks (momAgendaHtml with no cards), Dad's own column (extra) — as each agenda draws a day with no cards.
@@ -9522,6 +9527,68 @@ function brkTodayAgendaHTML(who,d,extra){
   return brkTodayLineHTML()+rest;
 }
 // 🏖 BRKTODAY_END
+// 📅 BOARDWK_START — "is the week on the board this week?" (DESIGN_break_week_2026-11-24 §3 Option 4 Rule A; her "Yes, build it"
+//   2026-11-24). A week the plan does not cover (a full break week, a two-week break, every week after the plan ends) builds no
+//   week, so the board keeps LAST school week and every record filed by week + day name is last week's (a forfeited Tuesday pool
+//   was claimable again on the break's Tuesday). The question, read-only: is today — a Sunday counted as the coming Monday, as
+//   _schoolWeekDateFor does — inside the active week's own Sunday–Saturday? Two sources say where that week is: the plan's range
+//   for its number (gwWeekDateRange(currWeekNum()), which carries the year) and the week's own meta.dates (DAY_DT, no year — read
+//   with gwCheckTsMs's December/January rule). "Not this week" needs EVERY source that can be read to put today after the week's
+//   Saturday (hub review 2026-11-24): a plan label renumbered by Align after the week was built, removed, or a week generated by
+//   hand under another number can make the plan point at an earlier week while the week's own dates are today's — then it is
+//   this week. FAIL OPEN: whenever the answer can't be worked out it is TRUE — the app as before. That
+//   is: the active week empty (a brand-new family, nothing loaded yet); no dates at all; the curriculum not loaded; today BEFORE
+//   the active week (a week built early is not stale); a plan week for today that will build (due, running, or waiting to be
+//   adopted — Sunday 00:00, a tablet waking on Monday); a meta.dates day read as more than 300 days ago (the year guess is
+//   unsure); any exception. A wrong "false" on a school day would take every child's Claim button away. Pure: no write. Asked
+//   many times a render (every school guard), so the answer is kept for the same day, week, plan, dates, calendar and overrides
+//   objects, and never longer than 3 seconds (a calendar edited in place).
+let _bwkMemo=null;
+function boardWeekIsThisWeek(){
+  try{
+    if(typeof weekData==="undefined"||_activeWeekEmpty()) return true;
+    const today=_todayStr(), now=Date.now(), m=_bwkMemo, cd=(typeof currData!=="undefined")?currData:null;
+    const key=today+"|"+WK+"|"+((cd&&cd.lastEdit)||"");
+    if(m&&m.key===key&&m.cd===cd&&m.dt===DAY_DT&&m.cal===calendarData&&m.so===scheduleOverrides&&now>=m.at&&now-m.at<3000) return m.v;
+    const eff=_schoolWeekDateFor(today), p=_bwkPlanSat(), o=_bwkOwnSat(), read=[p,o].filter(Boolean);
+    let v, why;
+    if(o==="unsure"){ v=true; why="own dates unsure"; }
+    else if(!read.length){ v=true; why="no dates"; }
+    else if(read.some(x=>eff<=x)){ v=true; why=(p&&eff<=p?"plan":"")+(p&&eff<=p&&o&&eff<=o?"+":"")+(o&&eff<=o?"own":"")+" says this week"; }
+    else { v=_bwkBuildComing(today); why=(v?"a week for today will build; ":"")+(p&&o?"plan+own":p?"plan":"own")+" say after the week"; }   // past the active week by every source: stale — unless a week for today is about to build
+    _bwkMemo={key:key,cd:cd,dt:DAY_DT,cal:calendarData,so:scheduleOverrides,at:now,v:v,why:why};
+    return v;
+  }catch(e){ return true; }
+}
+function _bwkIso(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+// The active week's Saturday by the plan's range for its number (ISO), or null when the plan has none.
+function _bwkPlanSat(){
+  const r=(currData&&currData.weekDays&&currData.lessons)?gwWeekDateRange(currWeekNum()):null;
+  if(!r||!r.start) return null;
+  const m=gwParseDate(r.start); m.setDate(m.getDate()+5); return _bwkIso(m);
+}
+// …and by the week's own meta.dates: ISO, null when they can't be read, "unsure" when a day reads as more than 300 days ago.
+function _bwkOwnSat(){
+  const dd=(typeof DAY_DT==="object"&&DAY_DT)||{}, OFF={monday:0,tuesday:1,wednesday:2,thursday:3,friday:4,saturday:5,sunday:-1};
+  for(const dn of Object.keys(OFF)){
+    if(!dd[dn]) continue;
+    const t=gwCheckTsMs(dd[dn]); if(isNaN(t)) return null;
+    const d=new Date(t); d.setHours(12,0,0,0);
+    if(new Date().getTime()-d.getTime()>300*864e5) return "unsure";
+    d.setDate(d.getDate()+5-OFF[dn]); return _bwkIso(d);
+  }
+  return null;
+}
+// Today is past the active week: will a week build for today? (Then the board is about to move — leave everything as it is.)
+function _bwkBuildComing(today){
+  if(!currData||!currData.weekDays||!currData.lessons) return true;   // the plan isn't here: can't tell
+  const wn=weekNumForDate(today);
+  if(!wn) return false;                       // no plan week holds today: nothing builds (a break the plan skips, the plan's end)
+  if(wn<=currWeekNum()) return true;          // the plan disagrees with the board's own dates: can't tell
+  const dd=gwReadWeek(wn,true);               // what the builder reads first; nothing → "No curriculum data found" (an all-off week)
+  return !!(dd&&Object.keys(dd).length);
+}
+// 📅 BOARDWK_END
 // First weekday strictly after today that isn't a calendar off-day and sits in a
 // real plan week — i.e. the day school actually picks back up. Capped so a
 // misconfigured calendar can never loop forever.
@@ -9916,7 +9983,7 @@ function boardStatPop(kid,slot,d){
     getActiveTasks().filter(t=>t.who===kid&&effectiveDay(t)===day&&!t.id.endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title))
       .forEach(t=>{ const cv=checked[t.id]; rows.push({lab:t.title||"",done:!!cv,ts:(cv&&cv.ts)||(typeof cv==="string"?cv:"")}); });
   } else if(slot==="stars"){ title="⭐ Today's stars";
-    const sp=getKidDayPoints(kid,day);
+    const sp=(day===_todayDay&&typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek())?0:getKidDayPoints(kid,day);   // 📅 BWNOWEEK: no star pool listed as today's from last school week (wages: slice 2)
     if(sp) rows.push({lab:"🎰 School spins (pool"+(getPointClaim(kid,day)?", "+getPointClaim(kid,day).status:", unclaimed")+")",done:true,ts:"",amt:sp});
     const adjs=(bank[kid]&&bank[kid].adjustments)||{};
     Object.keys(adjs).map(id=>adjs[id]).filter(a=>a&&a.src==="earn"&&a.wk===WK&&a.day===day)
@@ -10202,6 +10269,7 @@ function renderSchedule(el){
   // friendly "no school" card. Top nav stays, so Admin/Pace are still reachable.
   const _brk=scheduleBreakToday();
   if(_brk){ el.innerHTML=(_brk.type==="cleaning"&&typeof hhCleanCardHTML==="function")?hhCleanCardHTML():renderScheduleBreakCard(_brk); return; }   // 🧽 CLEANINGDAY
+  if(typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek()){ el.innerHTML=renderScheduleBreakCard({name:"No school week planned",type:"noweek"}); return; }   // 📅 BWNOWEEK: …and a week the board doesn't hold gets the same card, in her answer 1's words (no last-week cards, no 💰 Claim box)
   function _dayDate(d){
     if(DAY_DT[d]) return DAY_DT[d];
     // ☀️ SUNDAY_DISPLAY (2026-10-04, her ask): the week stores Mon–Fri dates only, so Sunday showed no date. Sunday is
@@ -32081,6 +32149,7 @@ function _setPointClaim(kid,d,rec){
   else { pointClaims[kid][WK][d]=rec; obSet("pointClaims/"+kid+"/"+WK+"/"+d,rec,_pw); }
 }
 function claimDayPoints(kid,d){
+  if(typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek()){ if(typeof gwShowToast==="function") gwShowToast("No school today \u2014 nothing to claim"); return; }   // 📅 BWCLAIM: the board is last school week — its stars aren't today's (a forfeited day was claimable again)
   if(!spinClaimGateDone(kid,d)){ if(typeof gwShowToast==="function") gwShowToast("Finish all your school cards, Afternoon and Chores first"); return; }   // gate: school + afternoon + chores
   const ex=getPointClaim(kid,d);
   if(ex&&(ex.status==="claimed"||ex.status==="cashed")) return;
@@ -46869,7 +46938,7 @@ function kcPointsHTML(k){
     const cards=_kcTodayCards(k); const cardsDone=cards.filter(function(t){ return typeof checked!=="undefined"&&checked&&checked[t.id]; }).length;
     const spinLeft=cards.length>0&&cardsDone<cards.length&&!(typeof hasDayBonus==="function"&&hasDayBonus(k,dn));
     // 🎰 spins live in the day's pool until claimed + approved — never counted as banked here
-    const spun=(typeof getKidDayPoints==="function")?getKidDayPoints(k,dn):0;
+    const spun=(typeof getKidDayPoints==="function"&&!(typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek()))?getKidDayPoints(k,dn):0;   // 📅 BWNOWEEK: no star pool for today from last school week
     const banked=(typeof bankEarnedDay==="function")?bankEarnedDay(k,dn):0;
     const claim=(typeof getPointClaim==="function")?getPointClaim(k,dn):null;
     const gateOk=(typeof spinClaimGateDone==="function")&&spinClaimGateDone(k,dn);
@@ -46900,7 +46969,7 @@ function kcPointsHTML(k){
     const heldT=(typeof bankHeldToday==="function")?bankHeldToday(k,dn):0;
     if(heldT>0) h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9"><span style="flex:0 0 78px;font-weight:800;color:#5b21b6">\u{1F575} Checked?</span><span style="flex:1;color:#475569">waiting for Mom to check your chores</span><span style="font-weight:800;color:#5b21b6">+'+heldT+' \u2B50</span></div>';
     if(spun>0) h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9;flex-wrap:wrap"><span style="flex:0 0 78px;font-weight:800;color:#7c3aed">\u{1F3B0} Spins</span><span style="flex:1;color:#475569">'+spinNote+'</span><span style="font-weight:800;color:#7c3aed">+'+spun+' \u2B50</span>'
-      +(canClaim?'<button onclick="event.stopPropagation();claimDayPoints(\''+k+'\',\''+dn+'\')" style="flex-basis:100%;margin-top:4px;padding:'+(big?'11px':'9px')+';border-radius:12px;border:none;background:#7c3aed;color:#fff;font-size:'+(big?'15px':'13px')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F3B0} Claim my spins \u2192 Mom</button>':'')+'</div>';
+      +(canClaim&&!(typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek())/* 📅 BWCLAIM: no Claim on last school week's stars */?'<button onclick="event.stopPropagation();claimDayPoints(\''+k+'\',\''+dn+'\')" style="flex-basis:100%;margin-top:4px;padding:'+(big?'11px':'9px')+';border-radius:12px;border:none;background:#7c3aed;color:#fff;font-size:'+(big?'15px':'13px')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F3B0} Claim my spins \u2192 Mom</button>':'')+'</div>';
     h+='</div></div>';
     return h;
   }catch(e){ return ''; }
@@ -46920,7 +46989,7 @@ function kcTodayHTML(k){
 // days live on their calendar.
 function _kcTodayCards(k){
   try{
-    if(typeof scheduleBreakToday==="function"&&scheduleBreakToday()) return [];   // 🏖 KC_BREAK (her report 2026-11-24: "if they're on break, there shouldn't be anything there"): a break day (holiday, vacation, cleaning day) has no school cards — the Schedule tab's own rule. On a break week the active week is still last week's, whose cards matched today's day name. The list, the 📖 School line and the 🙋 picker all follow from here.
+    if(typeof schoolOffToday==="function"&&schoolOffToday()) return [];   // 🏖 KC_BREAK → 📅 BWNOWEEK: asks schoolOffToday() (a break day, or a week the board doesn't hold) (her report 2026-11-24: "if they're on break, there shouldn't be anything there"): a break day (holiday, vacation, cleaning day) has no school cards — the Schedule tab's own rule. On a break week the active week is still last week's, whose cards matched today's day name. The list, the 📖 School line and the 🙋 picker all follow from here.
     const dn=_todayDay;
     const srcTasks=(typeof displacedResult!=="undefined"&&displacedResult)?displacedResult.tasks:((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
     const laid=dsDoneAtTime(mlQueueLay(dsRetime(srcTasks)));   // ✓ done cards at their real time
@@ -46950,7 +47019,8 @@ function kcSchoolHTML(k){
     }
     if(!times.length){
       let _brk=null; try{ _brk=(typeof scheduleBreakToday==="function")?scheduleBreakToday():null; }catch(e){}   // 🏖 KC_BREAK: a break day names the break
-      h+='<div style="padding:22px 14px;text-align:center;font-size:15px;font-weight:700;color:var(--muted)">'+(_brk?(_brk.type==="cleaning"?'No school today \u2014 it\u2019s cleaning day \u{1F9FD}':'No school today \u2014 '+esc(_brk.name)+' \u{1F389}'):'No school cards today \u{1F389}')+'</div>';
+      if(!_brk&&typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek()) _brk={type:"noweek"};   // 📅 BWNOWEEK: no break behind it (the line below draws her answer 1's words)
+      h+='<div style="padding:22px 14px;text-align:center;font-size:15px;font-weight:700;color:var(--muted)">'+(_brk?(_brk.type==="noweek"?'No school week planned \u{1F389}':_brk.type==="cleaning"?'No school today \u2014 it\u2019s cleaning day \u{1F9FD}':'No school today \u2014 '+esc(_brk.name)+' \u{1F389}'):'No school cards today \u{1F389}')+'</div>';   // 📅 BWNOWEEK: no break behind it — her answer 1's words alone
     } else {
       const paused=!!bbActive(k);
       h+='<div class="time-slots"'+((paused||!unlocked)?' style="opacity:.35;pointer-events:none;filter:grayscale(.4)'+(unlocked?'':';filter:blur(2px)')+'"':'')+'>';
@@ -86254,6 +86324,7 @@ function mlEveningSweep(force){
   try{
     if(typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return false;
     if(typeof fbTasksLoaded!=="undefined"&&!fbTasksLoaded) return false;
+    if(typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek()) return false;   // 📅 BWNOWEEK: the sweep rests on last school week — nothing moved, no marker written
     const marker=(eveningSweeps||{})[_todayDay];
     if(!_mlSweepDue(_mlNowMin(),marker,force)) return false;
     if(typeof lockHeldByOther==="function"&&lockHeldByOther()) return false;
@@ -86276,6 +86347,7 @@ function mlEveningSweep(force){
 // — dialogs are dead in the kiosk browsers.
 function mlSweepEarly(){
   if(!momHere()) return;
+  if(typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek()){ if(typeof gwShowToast==="function") gwShowToast("No school week on the board \u2014 nothing to push"); return; }   // 📅 BWNOWEEK: the true reason, not "another device is updating"
   if(!_mlSweepArmed){ _mlSweepArmed=true; setTimeout(function(){ if(_mlSweepArmed){ _mlSweepArmed=false; if(typeof renderAll==="function") renderAll(); } },6000); if(typeof renderAll==="function") renderAll(); return; }
   _mlSweepArmed=false;
   const ran=mlEveningSweep(true);
@@ -87533,6 +87605,7 @@ function dsMomClashes(tasks){
 // in the day cannot move the day again.
 function dsAutoStart(kid){
   try{
+    if(typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek()) return;   // 📅 BWNOWEEK: no day start on a week the board doesn't hold (it would land in last school week's record)
     if(dsFor(kid)) return;
     const now=new Date(); const t=fromMin(now.getHours()*60+now.getMinutes());
     if(!dayStarts[_todayDay]) dayStarts[_todayDay]={};
