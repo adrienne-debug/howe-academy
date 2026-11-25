@@ -242,7 +242,7 @@
     A: ["Alligator", "🐊"], B: ["Bear", "🐻"], C: ["Cat", "🐱"],
     D: ["Dog", "🐶"], E: ["Egg", "🥚"], F: ["Fish", "🐟"],
     G: ["Goat", "🐐"], H: ["Hat", "🎩"], I: ["Igloo", "🧊"],
-    J: ["Julian!", "⭐"], K: ["Kite", "🪁"], L: ["Lion", "🦁"],
+    J: ["Jet", "✈️"], K: ["Kite", "🪁"], L: ["Lion", "🦁"],   // NB_LOOKFIX: J is no child's name (lfLook gives a J-named child theirs)
     M: ["Mouse", "🐭"], N: ["Nest", "🪺"], O: ["Owl", "🦉"],
     P: ["Pig", "🐷"], Q: ["Queen", "👑"], R: ["Rabbit", "🐰"],
     S: ["Sun", "☀️"], T: ["Turtle", "🐢"], U: ["Umbrella", "☂️"],
@@ -1077,7 +1077,7 @@
     var cap = (ctx.reviewCap == null) ? JU_REVIEW_CAP : Math.max(0, Math.min(5, parseInt(ctx.reviewCap, 10) || 0));
     cur = juNumbersWeek(cur, juNumberStart(ctx.numberCursor, wk, cur.numbersFront), dayCount, ctx.juPicks);   // JU_NUMBERS_AHEAD: same list as the print, so the planner matches the pages
     var picks = juWeekPicks(wk, cur, dayCount, cap, ctx.juPicks, juLetterStart(ctx.letterCursor, wk, cur.letters.length));
-    return juPlanShape(cur, picks, wk, dayCount, ["letters", "numbers", "shapes", "colors", "animals"]);
+    return juPlanShape(cur, picks, wk, dayCount, (ctx.countPic === "animal" || ctx.countPic === "picture") ? pkPlanSubs(pkCountPicLook(ctx), ctx) : ["letters", "numbers", "shapes", "colors", "animals"]);   // NB_COUNTPIC
   }
   // The planner's shape for a week's picks: every item a slot can take (🔁 flags) + the day-by-day slots. Shared by
   // the dinosaur Pre-K planner and the construction notebook's (CBPLAN).
@@ -1319,7 +1319,9 @@
     // dashed so he can see "how many more to 10". 1–10 = one frame, 11–20 = two frames,
     // 21–100 = tens and ones (juCountVisual).
     // A theme with its own counting picture (construction: 🚜) counts the kid's Mastery counting picture instead of the animal.
-    var countVis = juCountVisual(n, T.countEmoji ? (countEmoji || T.countEmoji) : aemoji), countAni = countVis.ani;
+    // NB_COUNTPIC: generatePreK passes {pic} — the one answer (pkCountPic) to "what does the number card count"; "" = the animal.
+    var countVis = juCountVisual(n, (countEmoji && typeof countEmoji === "object") ? (countEmoji.pic || aemoji)
+      : T.countEmoji ? (countEmoji || T.countEmoji) : aemoji), countAni = countVis.ani;
 
     var tidx = dowIndex(day);
     var ar = aroundDay(day), yest = ar[0], tod = ar[1], tom = ar[2];
@@ -1574,6 +1576,7 @@
     ctx = ctx || {};
     T = pkOwnName(T || JU_THEME, ctx);   // NBNAME: a name set on the Notebook tab reaches a kid's own look too
     T = pkOwnGrade(T, ctx);   // NBLEVEL: the kid's grade word reaches a kid's own look too
+    T = lfLook(T, ctx, kidId);   // NB_LOOKFIX: the look's own words, and the J line for a J-named child
     lv = lv || JU_LEVEL;
     var weekData = ctx.weekData || {};
     if (Array.isArray(weekData)) weekData = weekData[0] || {};
@@ -1622,7 +1625,8 @@
     var numStart = juNumberStart(ctx.numberCursor, wkInt || 1, cur.numbersFront);
     var curWk = juNumbersWeek(cur, numStart, days.length, ctx.juPicks);   // JU_NUMPICK (🚜 CBPLAN): a number Mom picks on the planner joins the list
     var picks = juWeekPicks(pickWk, curWk, days.length, reviewCap, ctx.juPicks, letterStart);
-    if (ctx.planOnly) { var _pl = juPlanShape(curWk, picks, wkInt || 1, days.length, pkPlanSubs(T)); _pl.days = days.slice(); _pl.lowercase = !!lv.nbLowercase; return { plan: _pl }; }   // 🚜 CBPLAN: the planner reads these exact picks
+    var countPic = pkCountPic(T, ctx);   // NB_COUNTPIC: what the number card counts — the page, the guide and the plan all ask this
+    if (ctx.planOnly) { var _pl = juPlanShape(curWk, picks, wkInt || 1, days.length, pkPlanSubs(T, ctx)); _pl.days = days.slice(); _pl.lowercase = !!lv.nbLowercase; return { plan: _pl }; }   // 🚜 CBPLAN: the planner reads these exact picks
     var curCover = cur;
     if (curWk.numbersFromFront) {
       var wkNums = (picks.numbers || []).map(function (s2) { return curWk.numbers[s2.idx]; }).filter(function (v, i2, a) { return a.indexOf(v) === i2; });
@@ -1640,7 +1644,7 @@
     if (xpOn(ctx, "thisMonth")) { var _jym = /\b(\d{4})\b/.exec(weekDates || ""); var _jmp = juPageMonth(weekNum, weekDates, dates, _jym ? _jym[1] : "", P); if (_jmp) parts.push(nbTagXp(ctx, _jmp, "thisMonth", "This Month")); }
     for (var i = 0; i < days.length; i++) {
       parts.push(nbTag(ctx, juPageDaily(weekNum, days[i], dates[days[i]] || "", i, curWk, juDayPick(curWk, picks, i),
-        xpStrip(pagesForDay(ctx, null, days[i], PREK_EXTRA_PAGES), T.xpColors[0], T.xpColors[1], T.xpColors[2]), T, lv, ctx.countEmoji), days[i], "Daily page"));
+        xpStrip(pagesForDay(ctx, null, days[i], PREK_EXTRA_PAGES), T.xpColors[0], T.xpColors[1], T.xpColors[2]), T, lv, countPic), days[i], "Daily page"));
     }
     var uT = UNIT_INSERT_THEMES[T.unitTheme];
     (ctx.units || []).forEach(function (ins) { nbTagUnit(ctx, ins, unitInsertPages(ins, weekNum, uT)).forEach(function (p) { parts.push(p); }); });
@@ -1651,7 +1655,7 @@
     // A legacy kid's own guide while the levels are the ones it was written for; otherwise the guide built from the levels.
     var guide = (T.parent && pkSameLevel(lv, T.parentLevel || JU_LEVEL)) ? T.parent : pkPageParent;
     var parent = juHtmlHead(weekNum, T.guideTitle, css, T.fonts) + "\n" +
-      guide(weekNum, weekDates, curSum, ctx.teachNotes || "", T, picks, lv) + "\n</body>\n</html>";
+      guide(weekNum, weekDates, curSum, ctx.teachNotes || "", pkCountPicGuide(T, countPic), picks, lv) + "\n</body>\n</html>";   // NB_COUNTPIC
 
     var out = { student: student, parent: parent };
     // the app persists this to notebookSettings/<kid>/letterCursor after a print, so the
@@ -1740,7 +1744,7 @@
       guide: { animalIcon: "🐟", nameIcon: "🦈", countWord: "sea friend", letterExample: "S — /s/ — Shark", closeColors: ["#b9e6dc", "#134e48"],
         pathRow: ["🌊", "Swim the Waves", "Pencil-control warm-up: help the shark swim the dotted waves to the shell. The sea changes every day — little ripples, big swells, a deep dive. No \"right\" way."] },
       xpColors: ["#0284c7", "#f0f9ff", "#075985"], unitTheme: "shark",
-      curOpt: { animals: SH_ANIMALS, animalEmoji: SH_ANIMAL_EMOJI, animalFallback: "🐟" }
+      curOpt: { animals: SH_ANIMALS, animalEmoji: SH_ANIMAL_EMOJI, animalFallback: "🐟" }, soundWords: SH_SOUND_WORDS   // NB_LOOKFIX: its own sound words
     };
   }
 
@@ -2066,7 +2070,7 @@
       css: JU_CSS, fonts: null, P: { eyebrow: gr, footer: nm + " · " + gr, emoji: "🦕", abcTitle: "🦕 Sing your ABCs!", lowerFirst: false },
       guide: { animalIcon: "🦁", nameIcon: "🦕", countWord: "animal", letterExample: "A — /a/ — Alligator", closeColors: ["#d6ebb0", "#33450f"],
         pathRow: ["〰️", "Trace the Path", "Pencil-control warm-up: help the animal reach the egg along the dotted line. No \"right\" way."] },
-      xpColors: ["#d97706", "#fffbeb", "#92400e"], unitTheme: "dino", curOpt: null
+      xpColors: ["#d97706", "#fffbeb", "#92400e"], unitTheme: "dino", curOpt: null, soundWords: DN_SOUND_WORDS   // NB_LOOKFIX: its own sound words
     };
   }
   // 🚜 Construction for any kid: the construction notebook's look — charcoal + safety yellow, block sign lettering, the
@@ -2085,9 +2089,54 @@
       css: CB_CSS, fonts: CB_FONTS, P: { eyebrow: gr, footer: nm + " · " + gr, emoji: "🚜", abcTitle: "🚜 Sing your ABCs!", lowerFirst: false },
       guide: { animalIcon: "🦁", nameIcon: "🦺", countWord: "picture", letterExample: "T — /t/ — Truck", closeColors: ["#d6ebb0", "#33450f"],
         pathRow: ["〰️", "Drive to the Job Site", "Pencil-control warm-up: drive the machine along the dotted road. No \"right\" way."] },
-      xpColors: ["#ea580c", "#fff7ed", "#9a3412"], unitTheme: "construction", curOpt: null
+      xpColors: ["#ea580c", "#fff7ed", "#9a3412"], unitTheme: "construction", curOpt: CN_CUR_OPT   // NB_LOOKFIX: its own animal friends
     };
   }
+  // NB_LOOKFIX_START — each of the first three Pre-K looks carries its own words (her words 2026-11-24, on the three spots
+  // PLAN_notebook_looks_2026-11-23.md §4 found the first looks borrowing from each other: "Yes, fix them"). Before:
+  //  1. the dinosaur and shark looks had no sound-picture words, so once letter sounds were on they printed the construction
+  //     look's ("d says /d/ · dig ⛏️", hammer, truck, saw) — now DN_SOUND_WORDS and SH_SOUND_WORDS;
+  //  2. the construction look had no animal friends, so its cover and guide listed the dinosaur look's (T-Rex,
+  //     Brachiosaurus) and an animal with no picture printed 🦕 — now CN_CUR_OPT, four builder friends;
+  //  3. the shared letter list's J was one child's name, typed into the code. Now no name is: the J rule (lfLook) prints
+  //     "J is for <name>! ⭐" — the form the name printed in before — when the notebook's own child's name starts with J,
+  //     and the look's own J word for anyone else. The rule covers the first three looks (and the two kids' own looks,
+  //     which are the dinosaur and construction looks for them); the newer looks keep their own J word as built.
+  // Sound words follow the newer looks' rule: short vowels, hard consonants, a clear picture, nothing from another look
+  // unless it is already one of this look's own letter words. A look changes words and pictures ONLY: the construction
+  // look still counts its counting picture, not the animal (a separate later step makes that a setting), and which letters,
+  // numbers, animals and cards drive a page is unchanged. Pictures are emoji. test_nb_lookfix.js builds the baseline from
+  // this file with the block and its marked call sites taken out.
+  var DN_SOUND_WORDS = {
+    a: ["alligator", "🐊"], b: ["bone", "🦴"], c: ["cat", "🐱"], d: ["dinosaur", "🦕"], e: ["egg", "🥚"], f: ["footprints", "👣"],
+    g: ["goat", "🐐"], h: ["hatch", "🐣"], i: ["igloo", "🧊"], j: ["jet", "✈️"], k: ["kite", "🪁"], l: ["lizard", "🦎"], m: ["mammoth", "🦣"],
+    n: ["nest", "🪺"], o: ["ox", "🐂"], p: ["palm tree", "🌴"], q: ["queen", "👑"], r: ["rabbit", "🐰"], s: ["sun", "☀️"], t: ["t-rex", "🦖"],
+    u: ["umbrella", "☂️"], v: ["volcano", "🌋"], w: ["whale", "🐳"], x: ["fox", "🦊"], y: ["yo-yo", "🪀"], z: ["zebra", "🦓"]
+  };
+  var SH_SOUND_WORDS = {
+    a: ["anchor", "⚓"], b: ["boat", "⛵"], c: ["crab", "🦀"], d: ["dolphin", "🐬"], e: ["egg", "🥚"], f: ["fish", "🐟"], g: ["goggles", "🥽"],
+    h: ["hook", "🪝"], i: ["igloo", "🧊"], j: ["jellyfish", "🪼"], k: ["kite", "🪁"], l: ["lobster", "🦞"], m: ["mask", "🤿"], n: ["nest", "🪺"],
+    o: ["octopus", "🐙"], p: ["pufferfish", "🐡"], q: ["queen", "👑"], r: ["reef", "🪸"], s: ["shark", "🦈"], t: ["turtle", "🐢"],
+    u: ["umbrella", "⛱️"], v: ["volcano", "🌋"], w: ["whale", "🐳"], x: ["fox", "🦊"], y: ["yo-yo", "🪀"], z: ["zebra", "🦓"]
+  };
+  // Builders, like the look: the cover's "My Animal Friends" and the guide for a kid with no Animals deck. A deck animal
+  // keeps the picture it had; these names get one, and an animal with no picture gets a paw print instead of a dinosaur.
+  var CN_CUR_OPT = { animals: [["Beaver", "🦫"], ["Ant", "🐜"], ["Bee", "🐝"], ["Bird", "🐦"]],
+    animalEmoji: { beaver: "🦫", ant: "🐜", bee: "🐝", bird: "🐦", spider: "🕷️" }, animalFallback: "🐾" };
+  var LF_J_LOOKS = { dino: 1, construction: 1, shark: 1 };
+  // T = the look once the notebook's name and grade word are in. A kid's own look (no T.key — it is the kid's
+  // native look, GENERATORS[kid].prek.native) takes any piece it lacks from that look, so it prints the same fixed words.
+  function lfLook(T, ctx, kidId) {
+    var g = (kidId && Object.prototype.hasOwnProperty.call(GENERATORS, kidId)) ? GENERATORS[kidId] : null;
+    var key = T.key || (g && g.prek && g.prek.native) || "";
+    if (!LF_J_LOOKS[key] || !NB_THEMES[key]) return T;
+    var out = Object.assign({}, T);
+    if (!T.key) { var N = NB_THEMES[key].theme(ctx || {}); if (!out.soundWords) out.soundWords = N.soundWords; if (!out.curOpt) out.curOpt = N.curOpt; }
+    var nm = String(T.traceNameMixed || "");
+    if (/^j/i.test(nm)) out.letterWords = Object.assign({}, T.letterWords, { J: [nm + "!", "⭐"] });
+    return out;
+  }
+  // NB_LOOKFIX_END
 
   // The Grown-Up Guide built from the levels and the look (T.guide), for every kid without a guide of their own. With all
   // switches off it is the shark guide as merged 2026-11-08, word for word. It never guesses the child's pronouns.
@@ -2213,7 +2262,7 @@
   // plan.days = the days that get a page; plan.look = the look on; plan.lowercase = little letters. Any Pre-K notebook has
   // one — except where the planner lives in the app already (prek.ownPlanner: the dinosaur notebook's juPlanPreview card).
   var PK_PLAN_SUBS = ["letters", "numbers", "shapes", "colors"];
-  function pkPlanSubs(T) { return (T && T.countEmoji) ? PK_PLAN_SUBS : PK_PLAN_SUBS.concat(["animals"]); }
+  function pkPlanSubs(T, ctx) { return pkCountPic(T, ctx).counts === "picture" ? PK_PLAN_SUBS : PK_PLAN_SUBS.concat(["animals"]); }   // NB_COUNTPIC
   function pkHasPlan(kid, opt) { var g = GENERATORS[kid], sp = pkSpec(kid, opt || {}); return !!sp && !(g && g.prek && g.prek.ownPlanner); }
   function pkPlanFor(kid, ctx) {
     if (!pkHasPlan(kid, ctx)) return null;
@@ -2224,6 +2273,43 @@
     return r.plan;
   }
   // CBPLAN_END
+  // NB_COUNTPIC_START — what the Pre-K number card counts, per kid, for ANY look (looks study §4 row 4 / §17 q3; her answer
+  // 2026-11-24: "Make it a setting"). notebookSettings/<kid>/countPic = "animal" | "picture" (the app passes it as ctx.countPic).
+  // Nothing saved = the look's own rule, so every notebook prints what it printed before: a look with its own counting picture
+  // (T.countEmoji — construction 🚜) counts the kid's Mastery counting picture (ctx.countEmoji), else its own; every other look
+  // counts the animal of the day. "picture" on any look = the kid's Mastery counting picture (the look's own when it has one and
+  // the kid has none); no picture at all = the animal, with fallback:true so the app can say so — never an empty frame.
+  // "animal" = the animal of the day on every look, construction too. ONE answer for the daily page's number card, the guide's
+  // Number of the Day row, the week's plan rows (pkPlanSubs — the animal reaches paper exactly when it is counted) and the
+  // trouble card's decks (NBNEEDS reviewDecks).
+  function pkCountPic(T, ctx) {
+    var lookPic = (T && T.countEmoji) || "", own = String((ctx && ctx.countEmoji) || ""), c = ctx && ctx.countPic;
+    var def = lookPic ? "picture" : "animal", choice = (c === "animal" || c === "picture") ? c : def;
+    if (choice === "animal") return { counts: "animal", pic: "", choice: choice, def: def, fallback: false };
+    var pic = own || lookPic;
+    return pic ? { counts: "picture", pic: pic, choice: choice, def: def, fallback: false }
+      : { counts: "animal", pic: "", choice: choice, def: def, fallback: true };
+  }
+  // The guide's "Touch and count each ___" word follows the answer; the look's own word whenever the answer is the look's own.
+  function pkCountPicGuide(T, cp) {
+    if (!T || cp.counts === (T.countEmoji ? "picture" : "animal")) return T;
+    return Object.assign({}, T, { guide: Object.assign({}, T.guide || {}, { countWord: cp.counts === "picture" ? "picture" : "animal" }) });
+  }
+  // The look a dinosaur-notebook kid wears, for its own planner card (juPlanPreview has no kid): the picked look, else its own.
+  function pkCountPicLook(ctx) {
+    var k = nbThemeKey(ctx);
+    try { return (k && k !== "dino") ? NB_THEMES[k].theme(ctx, JU_LEVEL) : JU_THEME; } catch (e) { return JU_THEME; }
+  }
+  // For the Notebook tab's look card: null when the kid's notebook has no number card (not a Pre-K notebook); else the answer,
+  // plus the look's own picture. opt = { notebookTheme, nbLevel, countPic, countEmoji } — the app's view of the kid.
+  function nbCountPicFor(kid, opt) {
+    opt = opt || {};
+    var sp = pkSpec(kid, opt); if (!sp) return null;
+    var T = sp.T;
+    if (!T) { try { T = NB_THEMES[sp.key].theme(opt, sp.L); } catch (e) { return null; } }
+    return Object.assign({ look: sp.key, lookPic: (T && T.countEmoji) || "" }, pkCountPic(T, opt));
+  }
+  // NB_COUNTPIC_END
   // NBNEEDS_START — 🔁 "Giving trouble this week" (study step 1 "See it", her yes 2026-11-23: "I really want these notebooks to
   // complement their drills and study sessions, not be redundant, and be very customizable per kid, and to help add extra
   // practice where necessary"). The app's Mom card (index.html NBNEEDS) lists each kid's trouble cards and says, per deck,
@@ -2243,7 +2329,7 @@
       var T = sp.T;
       if (!T) { try { T = NB_THEMES[sp.key].theme(opt, sp.L); } catch (e) { T = null; } }
       var name = { letters: sp.L.nbLowercase ? "Lowercase" : "Letters", numbers: "Numbers", shapes: "Shapes", colors: "Colors", animals: "Animals" };
-      return { readsCap: true, decks: pkPlanSubs(T).map(function (s) { return { deck: name[s], how: "comes back 🔁 on a daily page", cap: true }; }) };
+      return { readsCap: true, decks: pkPlanSubs(T, opt).map(function (s) { return { deck: name[s], how: "comes back 🔁 on a daily page", cap: true }; }) };
     }
     var g = GENERATORS[kid];
     if (g && g.build === generateLucy) {
@@ -2263,8 +2349,8 @@
   // it on for a child). The content is two static files beside the app — ladders/number_thinking.json (one question = one item)
   // and ladders/read_and_answer.json (one passage with all its questions = one item); index.html NBLADDER loads them lazily and
   // keeps each kid's place at notebookSettings/<kid>/ladders/<number|reading> = { on, lv, opt, cur }.
-  // Nothing here touches the DOM or Firebase, and NO generator reads ctx.ladders yet: every notebook prints what it printed
-  // before. Slices 2–6 put the items on the pages (they call ladders.next with ctx.ladders' state).
+  // Nothing here touches the DOM or Firebase. Only the 1st-grade notebook reads ctx.ladders (reading, NBLADREAD — slice 2);
+  // every other notebook prints what it printed before. Later slices put the other items on the pages.
   //  • A ladder climbs: the items of the kid's level in order (`o`), then the next level in the ladder's own order. It never wraps
   //    and never starts over; past the last level → `end`.
   //  • The number ladder's 4th- and 6th-grade rungs are not in the file — they are the question banks Mom keeps on the Notebook
@@ -2394,7 +2480,7 @@
   // This week's items. state = { lv, opt, cur } (lv = the level Mom picked, or the grade's default); wk = the notebook's week
   // number; n = how many (default LADDER_PER_WEEK). → { kind, items:[{ lv, label, i, num, of, id, item }], stop, end, cursor }
   // (cursor = { week, lv, from, adv, opt })
-  // — cursor = the place to save after the week prints (slices 2–6 save it; nothing does in slice 1), or null when there is no
+  // — cursor = the place to save after the week prints (the app saves it after a print — NBLADREAD for reading), or null when there is no
   // level to start from. A bank rung reached part-way → the items before it + stop:{ lv, label, bank:true }.
   function ladderNext(track, state, wk, n) {
     state = state || {};
@@ -2554,20 +2640,22 @@
         return '<div class="' + (big ? "lp-big" : "") + '">' + (parts.length > 1 ? '<div class="lp-part">Part ' + (idx + 1) + (LAD_GROWN[x.lv] ? ' — a grown-up reads each one aloud' : '') + '</div>' : '') +
           x.qs.map(function (q) {
             qn++;
+            var pq = (typeof ladPicQ === "function") ? ladPicQ(q, qn, x.lv) : null;   // 🎨 NBLADPIC: the picture, when the question has one
+            if (pq) return pq;
             var lines = String(q.text || "").split(" / ").map(function (s) { return '<div class="lp-nline">' + ladEsc(s) + '</div>'; }).join("");
             return '<div class="lp-q"><div class="lp-stem">' + qn + '.</div>' + lines +
               (LAD_GROWN[x.lv] && q.say ? '<div class="lp-say">Read aloud: “' + ladEsc(q.say) + '”</div>' : '') + ladChoices(q.c, !!LAD_GROWN[x.lv]) + '</div>';
           }).join("") + '</div>';
       }).join("");
       child.push('<div class="page lp-child">' + ladHead("Number check", kidName, grown) + nameLine +
-        '<div class="lp-how">' + (grown ? "A grown-up reads each question aloud. Circle the letter of the answer." : "Find what comes next or what is missing. Circle the letter of the answer.") + '</div>' + body + '</div>');
+        '<div class="lp-how">' + (grown ? ((typeof LADPIC_HOW === "string" && body.indexOf("lp-pq") >= 0) ? LADPIC_HOW : "A grown-up reads each question aloud. Circle the letter of the answer.") : "Find what comes next or what is missing. Circle the letter of the answer.") + '</div>' + body + '</div>');
       qn = 0;
       parent.push(parentTop("Number check") +
         ladPairNote(track, pr).map(function (s) { return '<p class="lp-rule">' + ladEsc(s) + '</p>'; }).join("") +
         '<div class="lp-part">How to choose</div>' + ladRuleLines(track, pr, "Part").map(function (s) { return '<p class="lp-rule">' + ladEsc(s) + '</p>'; }).join("") +
         parts.map(function (x, idx) {
           return '<div class="lp-part">Part ' + (idx + 1) + ' — ' + ladEsc(track.levels[x.lv].label) + '</div>' +
-            x.qs.map(function (q) { qn++; return '<div class="lp-key"><b>' + qn + '. ' + ladEsc(q.ans) + '</b> ' + ladEsc(ladAnsText(q.c, q.ans, !!LAD_GROWN[x.lv])) + ' — <span class="lp-why">' + ladEsc(q.rule || "") + '</span></div>'; }).join("");
+            x.qs.map(function (q) { qn++; return '<div class="lp-key"><b>' + qn + '. ' + ladEsc(q.ans) + '</b> ' + ladEsc(ladAnsText(q.c, q.ans, !!LAD_GROWN[x.lv])) + ' — <span class="lp-why">' + ladEsc(q.rule || "") + '</span>' + ((typeof ladPicKeyNote === "function") ? ladPicKeyNote(q, x.lv) : "") + '</div>'; }).join("");
         }).join("") + tail + '</div>');
     }
     return { child: child, parent: parent, pair: pr };
@@ -2585,6 +2673,316 @@
   var NB_LADDERS = { kinds: LADDER_KINDS, perWeek: LADDER_PER_WEEK, defaultLevel: ladderDefaultLevel, word: ladWord, track: ladTrack,
     levels: ladderLevels, where: ladderWhere, next: ladderNext, placementPair: ladderPlacementPair, placementPages: ladderPlacementPages,
     placementDoc: ladderPlacementDoc };
+  // NBLADPIC_START — 🎨 the number ladder's pictures, drawn (notebooks study; her words 2026-11-24 "Build it"). Every Pre-K and K
+  // question in ladders/number_thinking.json is a picture RECIPE (item.pic), and a few 1st/2nd-grade ones carry one too; this
+  // block draws them as the app's own SVG (no DOM, no emoji, no brand) and puts them on the placement printout. No weekly
+  // notebook page uses them yet (a later slice does — see ladders.picture below).
+  //  • ladders.picture(item, opts) → { kind, pic, choices:[svg…], w, h, cw } or null. pic = the picture, choices = one picture
+  //    per choice, in the item's own order (A, B, C …), every one the same size. opts (all px) = { w, h: the most the picture
+  //    may take; choice: each choice's square; tokMax: the biggest a pattern token gets; cellMax: the biggest a counted mark's
+  //    cell gets } — small in a notebook box, big on a tablet. A kind or token it doesn't know → null, and the caller prints the
+  //    plain-words line as before (never a broken picture).
+  //  • Black-and-white safe: each of the six colours has its OWN fill style as well as its colour — red solid, blue stripes,
+  //    yellow dots, green slanted stripes, purple cross-hatch, orange checks — on a pale tint of the colour, with a dark outline
+  //    in the colour's own dark shade. The same token draws the same markup in a picture and in a choice. Shapes differ by
+  //    outline already (circle, square, triangle, star, heart; beads round, cube, tube).
+  //  • Count-safe: counted things (dots, blocks, stars, hearts, circles) sit in rows of at most five, evenly spaced, never
+  //    overlapping, the second row starting under the first (a ten-frame's way). The "about how many" dots are scattered on
+  //    purpose (seeded from the recipe, so the same question draws the same dots). A missing spot is an empty dashed box the
+  //    same size as its neighbours.
+  //  • Nothing marks the answer: no answer text, no attribute, no alt text; choices are drawn in the item's order, all the same
+  //    size and stroke. Box sizes come from the numbers the child can see (never from the hidden one).
+  var LP_COL = {   // mark = the fill style's colour, bg = the tint under it, line = the outline
+    red: { fill: "solid", mark: "#dc2626", bg: "", line: "#7f1d1d" },
+    blue: { fill: "stripes", mark: "#1d4ed8", bg: "#dbeafe", line: "#1e3a8a" },
+    yellow: { fill: "dots", mark: "#a16207", bg: "#fde047", line: "#713f12" },
+    green: { fill: "slant", mark: "#15803d", bg: "#dcfce7", line: "#14532d" },
+    purple: { fill: "hatch", mark: "#7e22ce", bg: "#f3e8ff", line: "#3b0764" },
+    orange: { fill: "checks", mark: "#ea580c", bg: "#ffedd5", line: "#7c2d12" }
+  };
+  var LP_COL_ORDER = ["red", "blue", "yellow", "green", "purple", "orange"];
+  // 80×80 glyphs — the Pre-K notebook's own shapes (juSvgShape), the triangle set level so a row of tokens lines up.
+  var LP_SHAPE = {
+    circle: '<circle cx="40" cy="40" r="33"',
+    square: '<rect x="9" y="9" width="62" height="62" rx="7"',
+    triangle: '<polygon points="40,9 74,68 6,68"',
+    star: '<polygon points="40,6 48,29 72,30 53,44 60,68 40,54 20,68 27,44 8,30 32,29"',
+    heart: '<path d="M40 70 C8 48 12 22 30 22 C38 22 40 30 40 30 C40 30 42 22 50 22 C68 22 72 48 40 70 Z"'
+  };
+  var LP_BEAD = {
+    round: '<circle cx="40" cy="40" r="28"',
+    cube: '<rect x="13" y="13" width="54" height="54" rx="6"',
+    tube: '<rect x="2" y="23" width="76" height="34" rx="15"'
+  };
+  var LP_INK = "#374151", LP_SOFT = "#9ca3af", LP_FONT = "'DM Sans', system-ui, sans-serif";
+  var LP_DEF = { w: 380, h: 80, choice: 80, tokMax: 60, cellMax: 22 };
+  function lpHas(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+  function lpF(x) { return String(Math.round(x * 100) / 100); }
+  function lpInt(v, lo, hi) { var n = typeof v === "number" ? v : (/^\d+$/.test(String(v)) ? parseInt(v, 10) : NaN); return (n === Math.floor(n) && n >= lo && n <= hi) ? n : null; }
+  function lpPattern(c) {
+    var k = LP_COL[c], m = ' fill="' + k.mark + '"', body, size = 16, tr = "";
+    if (k.fill === "stripes") body = '<rect width="16" height="7"' + m + '/>';
+    else if (k.fill === "dots") body = '<circle cx="4" cy="4" r="4.2"' + m + '/><circle cx="12" cy="12" r="4.2"' + m + '/>';
+    else if (k.fill === "slant") { body = '<rect width="7" height="16"' + m + '/>'; tr = ' patternTransform="rotate(45)"'; }
+    else if (k.fill === "hatch") { size = 14; body = '<rect width="14" height="3.2"' + m + '/><rect width="3.2" height="14"' + m + '/>'; tr = ' patternTransform="rotate(45)"'; }
+    else { size = 20; body = '<rect width="10" height="10"' + m + '/><rect x="10" y="10" width="10" height="10"' + m + '/>'; }
+    return '<pattern id="nblp-' + c + '" patternUnits="userSpaceOnUse" width="' + size + '" height="' + size + '"' + tr + '>' +
+      '<rect width="' + size + '" height="' + size + '" fill="' + k.bg + '"/>' + body + '</pattern>';
+  }
+  // A token ("green-star", "red-tube") → its 80×80 glyph markup, or null.
+  function lpGlyph(t) {
+    var m = /^([a-z]+)-([a-z]+)$/.exec(String(t == null ? "" : t));
+    if (!m || !lpHas(LP_COL, m[1])) return null;
+    var bead = lpHas(LP_BEAD, m[2]), sh = bead ? LP_BEAD[m[2]] : lpHas(LP_SHAPE, m[2]) ? LP_SHAPE[m[2]] : null;
+    if (!sh) return null;
+    var k = LP_COL[m[1]], fill = k.fill === "solid" ? k.mark : "url(#nblp-" + m[1] + ")";
+    return '<g class="nbl-tok">' + sh + ' fill="' + fill + '" stroke="' + k.line + '" stroke-width="3.5" stroke-linejoin="round"/>' +
+      (bead ? '<circle cx="40" cy="40" r="5" fill="#fff" stroke="' + k.line + '" stroke-width="2.5"/>' : '') + '</g>';
+  }
+  function lpPut(glyph, x, y, px) { return '<g transform="translate(' + lpF(x) + ' ' + lpF(y) + ') scale(' + Math.round(px / 80 * 1e4) / 1e4 + ')">' + glyph + '</g>'; }
+  function lpSvg(w, h, inner) {
+    var used = {}, defs = "";
+    inner.replace(/url\(#nblp-([a-z]+)\)/g, function (s, c) { used[c] = 1; return s; });
+    LP_COL_ORDER.forEach(function (c) { if (used[c]) defs += lpPattern(c); });
+    w = Math.ceil(w - 0.01); h = Math.ceil(h - 0.01);
+    return '<svg xmlns="http://www.w3.org/2000/svg" class="nbl-svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" aria-hidden="true">' +
+      (defs ? '<defs>' + defs + '</defs>' : '') + inner + '</svg>';
+  }
+  function lpBlank(x, y, w, h) {
+    var sw = Math.max(1.6, Math.min(w, h) * 0.045);
+    return '<rect class="nbl-blank" x="' + lpF(x + sw) + '" y="' + lpF(y + sw) + '" width="' + lpF(w - 2 * sw) + '" height="' + lpF(h - 2 * sw) + '" rx="' + lpF(Math.min(w, h) * 0.14) +
+      '" fill="#fff" stroke="#4b5563" stroke-width="' + lpF(sw) + '" stroke-dasharray="' + lpF(sw * 2.6) + ' ' + lpF(sw * 1.8) + '"/>';
+  }
+  function lpFrame(x, y, w, h) {
+    return '<rect x="' + lpF(x + 1) + '" y="' + lpF(y + 1) + '" width="' + lpF(w - 2) + '" height="' + lpF(h - 2) + '" rx="' + lpF(Math.min(w, h) * 0.14) + '" fill="#fff" stroke="' + LP_SOFT + '" stroke-width="1.6"/>';
+  }
+  // One counted mark centred at (cx, cy) in a cell of `cell` px — dots, blocks, stars, hearts, circles.
+  var LP_MARKS = { dots: 1, blocks: 1, stars: 1, hearts: 1, circles: 1 };
+  function lpMark(kind, cx, cy, cell) {
+    var s = cell * 0.8 / 80;
+    if (kind === "dots") return '<circle class="nbl-m" cx="' + lpF(cx) + '" cy="' + lpF(cy) + '" r="' + lpF(cell * 0.34) + '" fill="' + LP_INK + '"/>';
+    if (kind === "circles") return '<circle class="nbl-m" cx="' + lpF(cx) + '" cy="' + lpF(cy) + '" r="' + lpF(cell * 0.3) + '" fill="#fff" stroke="' + LP_INK + '" stroke-width="' + lpF(cell * 0.1) + '"/>';
+    if (kind === "blocks") return '<rect class="nbl-m" x="' + lpF(cx - cell * 0.4) + '" y="' + lpF(cy - cell * 0.4) + '" width="' + lpF(cell * 0.8) + '" height="' + lpF(cell * 0.8) + '" rx="' + lpF(cell * 0.1) +
+      '" fill="#d1d5db" stroke="' + LP_INK + '" stroke-width="' + lpF(Math.max(1, cell * 0.09)) + '"/>';
+    var dy = kind === "hearts" ? -6 : -2;
+    return '<g class="nbl-m" transform="translate(' + lpF(cx - 40 * s) + ' ' + lpF(cy + (dy - 40) * s) + ') scale(' + lpF(s) + ')">' + (kind === "stars" ? LP_SHAPE.star : LP_SHAPE.heart) + ' fill="' + LP_INK + '"/></g>';
+  }
+  // n marks in rows of at most five, top-left first; sp = spacing in cells (1 = packed, more = spread out). → markup.
+  function lpGridDims(n) { return { c: Math.max(1, Math.min(5, n)), r: Math.max(1, Math.ceil(n / 5)) }; }
+  function lpGrid(n, kind, x, y, cell, sp) {
+    sp = sp || 1;
+    var out = "";
+    for (var i = 0; i < n; i++) out += lpMark(kind, x + ((i % 5) * sp + 0.5) * cell, y + (Math.floor(i / 5) * sp + 0.5) * cell, cell);
+    return '<g class="nbl-grp">' + out + '</g>';
+  }
+  // A group centred in a box (bx, by, bw, bh).
+  function lpGridIn(n, kind, bx, by, bw, bh, cell, sp) {
+    sp = sp || 1;
+    var d = lpGridDims(n), gw = ((d.c - 1) * sp + 1) * cell, gh = ((d.r - 1) * sp + 1) * cell;
+    return lpGrid(n, kind, bx + (bw - gw) / 2, by + (bh - gh) / 2, cell, sp);
+  }
+  function lpSlot(s) { return '<g class="nbl-slot">' + s + '</g>'; }
+  // ── the picture kinds ──
+  // pattern / beads: a row of tokens, the missing one(s) an empty box; beads sit on a string.
+  function lpSeqPic(p, o, beads) {
+    if (!Array.isArray(p.seq) || p.seq.length < 2 || p.seq.length > 24) return null;
+    var gl = p.seq.map(function (t) { return t == null ? "" : lpGlyph(t); });
+    if (gl.some(function (g, i) { return p.seq[i] != null && !g; })) return null;
+    var n = p.seq.length, gap = beads ? 0.12 : 0.18;
+    var tok = Math.min(o.h, o.tokMax, o.w / (n + (n - 1) * gap)), W = n * tok + (n - 1) * gap * tok, out = "";
+    if (beads) out += '<line x1="0" y1="' + lpF(tok / 2) + '" x2="' + lpF(W) + '" y2="' + lpF(tok / 2) + '" stroke="#6b7280" stroke-width="' + lpF(Math.max(1.5, tok * 0.06)) + '" stroke-linecap="round"/>';
+    gl.forEach(function (g, i) { var x = i * tok * (1 + gap); out += lpSlot(g ? lpPut(g, x, 0, tok) : lpBlank(x, 0, tok, tok)); });
+    return { w: W, h: tok, svg: lpSvg(W, tok, out) };
+  }
+  // grow: frames of dots or blocks, one more (or fewer) each time; the missing frame empty.
+  function lpGrowPic(p, o) {
+    if (!lpHas(LP_MARKS, p.unit) || (p.unit !== "dots" && p.unit !== "blocks") || !Array.isArray(p.seq) || p.seq.length < 2 || p.seq.length > 8) return null;
+    var vals = p.seq.map(function (v) { return v == null ? null : lpInt(v, 0, 20); });
+    if (vals.some(function (v, i) { return p.seq[i] != null && v == null; })) return null;
+    var known = vals.filter(function (v) { return v != null; }), d = lpGridDims(Math.max.apply(null, known.concat([1]))), k = vals.length, pad = 0.35, gapF = 0.6;
+    var cell = Math.min(o.cellMax, o.w / (k * (d.c + 2 * pad) + (k - 1) * gapF), o.h / (d.r + 2 * pad));
+    var fw = (d.c + 2 * pad) * cell, fh = (d.r + 2 * pad) * cell, out = "";
+    vals.forEach(function (v, i) {
+      var x = i * (fw + gapF * cell);
+      out += lpSlot(v == null ? lpBlank(x, 0, fw, fh) : lpFrame(x, 0, fw, fh) + lpGrid(v, p.unit, x + pad * cell, pad * cell, cell));
+    });
+    var W = k * fw + (k - 1) * gapF * cell;
+    return { w: W, h: fh, svg: lpSvg(W, fh, out) };
+  }
+  // compare: two boxes, left and right; "tricky" spreads the smaller group out wider (count, don't look).
+  function lpComparePic(p, o) {
+    var L = p.left || {}, R = p.right || {}, l = lpInt(L.n, 0, 20), r = lpInt(R.n, 0, 20);
+    if (l == null || r == null || !lpHas(LP_MARKS, L.item) || !lpHas(LP_MARKS, R.item)) return null;
+    var big = lpGridDims(Math.max(l, r, 1)), tricky = p.layout === "tricky" && l !== r, sm = Math.min(l, r), sd = lpGridDims(Math.max(sm, 1));
+    var sp = tricky ? Math.max(1.7, sd.c > 1 ? (big.c + 1) / sd.c * 1.15 : 1) : 1;
+    var bwC = Math.max(big.c, tricky ? (sd.c - 1) * sp + 1 : 0) + 0.8, bhC = Math.max(big.r, tricky ? (sd.r - 1) * sp + 1 : 0) + 0.8, gapC = 1.2;
+    var cell = Math.min(o.cellMax, o.w / (2 * bwC + gapC), o.h / bhC), bw = bwC * cell, bh = bhC * cell, out = "";
+    [[l, L.item, 0], [r, R.item, bw + gapC * cell]].forEach(function (s) {
+      out += lpSlot(lpFrame(s[2], 0, bw, bh) + lpGridIn(s[0], s[1], s[2], 0, bw, bh, cell, (tricky && s[0] === sm) ? sp : 1));
+    });
+    var W = 2 * bw + gapC * cell;
+    return { w: W, h: bh, svg: lpSvg(W, bh, out) };
+  }
+  // trains: two train cars of dots, the same size, joined.
+  function lpTrainsPic(p, o) {
+    if (!Array.isArray(p.cars) || p.cars.length !== 2) return null;
+    var a = lpInt(p.cars[0], 0, 20), b = lpInt(p.cars[1], 0, 20);
+    if (a == null || b == null) return null;
+    var d = lpGridDims(Math.max(a, b, 1)), cwC = d.c + 0.8, chC = d.r + 0.8, gapC = 1.1, wheelC = 0.8;
+    var cell = Math.min(o.cellMax, o.w / (2 * cwC + gapC), o.h / (chC + wheelC)), cw = cwC * cell, ch = chC * cell, out = "";
+    var x2 = cw + gapC * cell, wr = cell * 0.34;
+    out += '<line x1="' + lpF(cw - 2) + '" y1="' + lpF(ch * 0.72) + '" x2="' + lpF(x2 + 2) + '" y2="' + lpF(ch * 0.72) + '" stroke="' + LP_INK + '" stroke-width="' + lpF(Math.max(2, cell * 0.16)) + '" stroke-linecap="round"/>';
+    [[a, 0], [b, x2]].forEach(function (s) {
+      var x = s[1];
+      out += lpSlot('<rect x="' + lpF(x + 1) + '" y="1" width="' + lpF(cw - 2) + '" height="' + lpF(ch - 2) + '" rx="' + lpF(cell * 0.3) + '" fill="#fff" stroke="' + LP_INK + '" stroke-width="2"/>' +
+        '<circle cx="' + lpF(x + cw * 0.25) + '" cy="' + lpF(ch + wr) + '" r="' + lpF(wr) + '" fill="' + LP_INK + '"/><circle cx="' + lpF(x + cw * 0.75) + '" cy="' + lpF(ch + wr) + '" r="' + lpF(wr) + '" fill="' + LP_INK + '"/>' +
+        lpGridIn(s[0], "dots", x, 0, cw, ch, cell));
+    });
+    var W = 2 * cw + gapC * cell, H = ch + 2 * wr + 1;
+    return { w: W, h: H, svg: lpSvg(W, H, out) };
+  }
+  // estimate: n dots scattered on purpose (seeded — the same question draws the same dots), none touching.
+  function lpRand(seed) { var a = seed | 0; return function () { a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  function lpEstimatePic(p, o) {
+    var n = lpInt(p.n, 1, 200);
+    if (n == null || (p.as != null && p.as !== "dots")) return null;
+    var W = Math.min(o.w, o.h * 4.2), H = o.h, m = 5, r = Math.min(o.cellMax * 0.3, Math.sqrt((W - 2 * m) * (H - 2 * m) / n) * 0.24), pts = null;
+    for (var tryN = 0; tryN < 12 && !pts; tryN++) {
+      var rnd = lpRand(lpInt(p.seed, 0, 1e9) || 1), got = [], gap = r * 2.7;
+      for (var i = 0; i < n && got; i++) {
+        var placed = false;
+        for (var t = 0; t < 3000 && !placed; t++) {
+          var x = m + r + rnd() * (W - 2 * m - 2 * r), y = m + r + rnd() * (H - 2 * m - 2 * r);
+          if (got.every(function (q) { return (q[0] - x) * (q[0] - x) + (q[1] - y) * (q[1] - y) >= gap * gap; })) { got.push([x, y]); placed = true; }
+        }
+        if (!placed) got = null;
+      }
+      if (got) pts = got; else r *= 0.88;
+    }
+    if (!pts) return null;
+    var out = lpFrame(0, 0, W, H) + '<g class="nbl-grp">' + pts.map(function (q) { return '<circle class="nbl-m" cx="' + lpF(q[0]) + '" cy="' + lpF(q[1]) + '" r="' + lpF(r) + '" fill="' + LP_INK + '"/>'; }).join("") + '</g>';
+    return { w: W, h: H, svg: lpSvg(W, H, out) };
+  }
+  // parts: the whole on top, its two parts under it — the known part's dots and an empty box (on the side the "?" is on).
+  function lpPartsPic(p, o, text) {
+    var b = lpInt(p.whole, 0, 20), a = lpInt(p.part, 0, 20);
+    if (b == null || a == null || a > b || (p.as != null && p.as !== "dots")) return null;
+    var d = lpGridDims(Math.max(b, 1)), pwC = d.c + 0.8, phC = d.r + 0.8, gapC = 0.6, vC = 0.5;
+    var cell = Math.min(o.cellMax, o.w / (2 * pwC + gapC), o.h / (2 * phC + vC)), pw = pwC * cell, ph = phC * cell, W = 2 * pw + gapC * cell, y2 = ph + vC * cell;
+    var left = /^\s*\?/.test(String(text || "")), kx = left ? pw + gapC * cell : 0, bx = left ? 0 : pw + gapC * cell;
+    var out = lpSlot(lpFrame(0, 0, W, ph) + lpGridIn(b, "dots", 0, 0, W, ph, cell));
+    var known = lpSlot(lpFrame(kx, y2, pw, ph) + lpGridIn(a, "dots", kx, y2, pw, ph, cell)), blank = lpSlot(lpBlank(bx, y2, pw, ph));
+    out += left ? blank + known : known + blank;
+    return { w: W, h: y2 + ph, svg: lpSvg(W, y2 + ph, out) };
+  }
+  // pairs: [x dots] → [y dots] for each pair; the last one's answer an empty box.
+  function lpPairsPic(p, o) {
+    if (!Array.isArray(p.pairs) || p.pairs.length < 2 || p.pairs.length > 4 || (p.as != null && p.as !== "dots")) return null;
+    var vals = [], bad = false;
+    p.pairs.forEach(function (pr) {
+      if (!Array.isArray(pr) || pr.length !== 2) { bad = true; return; }
+      var x = lpInt(pr[0], 0, 20), y = pr[1] == null ? null : lpInt(pr[1], 0, 20);
+      if (x == null || (pr[1] != null && y == null)) bad = true;
+      vals.push([x, y]);
+    });
+    if (bad) return null;
+    var known = [];
+    vals.forEach(function (v) { known.push(v[0]); if (v[1] != null) known.push(v[1]); });
+    var d = lpGridDims(Math.max.apply(null, known.concat([1]))), bwC = d.c + 0.6, bhC = d.r + 0.6, arC = 1.4, gapC = 1.3, P = vals.length;
+    var cell = Math.min(o.cellMax, o.w / (P * (2 * bwC + arC) + (P - 1) * gapC), o.h / bhC), bw = bwC * cell, bh = bhC * cell, out = "", x = 0;
+    var box = function (v, at) { return lpSlot(v == null ? lpBlank(at, 0, bw, bh) : lpFrame(at, 0, bw, bh) + lpGridIn(v, "dots", at, 0, bw, bh, cell)); };
+    vals.forEach(function (v) {
+      var ax = x + bw + cell * 0.25, ae = x + bw + arC * cell - cell * 0.25, ay = bh / 2, hd = cell * 0.35;
+      out += box(v[0], x) + '<path d="M' + lpF(ax) + ' ' + lpF(ay) + ' H' + lpF(ae) + ' M' + lpF(ae - hd) + ' ' + lpF(ay - hd) + ' L' + lpF(ae) + ' ' + lpF(ay) + ' L' + lpF(ae - hd) + ' ' + lpF(ay + hd) +
+        '" fill="none" stroke="#6b7280" stroke-width="' + lpF(Math.max(1.6, cell * 0.14)) + '" stroke-linecap="round" stroke-linejoin="round"/>' + box(v[1], x + bw + arC * cell);
+      x += 2 * bw + arC * cell + gapC * cell;
+    });
+    var W = x - gapC * cell;
+    return { w: W, h: bh, svg: lpSvg(W, bh, out) };
+  }
+  var LP_KINDS = { pattern: function (p, o) { return lpSeqPic(p, o, false); }, beads: function (p, o) { return lpSeqPic(p, o, true); },
+    grow: lpGrowPic, compare: lpComparePic, trains: lpTrainsPic, estimate: lpEstimatePic, parts: lpPartsPic, pairs: lpPairsPic };
+  // ── the choices ──  as = the recipe's choicesAs: tokens, sides (left / right / same), dots or blocks (that many), numbers.
+  var LP_SIDES = { left: "this side", right: "this side", same: "the same" };
+  function lpChoice(c, as, px, mx) {
+    var s = String(c == null ? "" : c), out;
+    if (as === "tokens") {
+      var g = lpGlyph(s);
+      if (!g) return null;
+      var tp = px * 0.8, bead = lpHas(LP_BEAD, s.split("-")[1]);
+      out = (bead ? '<line x1="' + lpF(px * 0.04) + '" y1="' + lpF(px / 2) + '" x2="' + lpF(px * 0.96) + '" y2="' + lpF(px / 2) + '" stroke="#6b7280" stroke-width="' + lpF(Math.max(1.5, tp * 0.06)) + '" stroke-linecap="round"/>' : '') +
+        lpPut(g, (px - tp) / 2, (px - tp) / 2, tp);
+    } else if (as === "sides") {
+      if (!lpHas(LP_SIDES, s)) return null;
+      var bw = px * 0.3, bh = px * 0.42, by = px * 0.1, lx = px * 0.08, rx = px * 0.62, sw = lpF(Math.max(1.5, px * 0.03));
+      var on = function (x) { return '<rect x="' + lpF(x) + '" y="' + lpF(by) + '" width="' + lpF(bw) + '" height="' + lpF(bh) + '" rx="' + lpF(px * 0.05) + '" fill="#4b5563" stroke="' + LP_INK + '" stroke-width="' + sw + '"/>'; };
+      var off = function (x) { return '<rect x="' + lpF(x) + '" y="' + lpF(by) + '" width="' + lpF(bw) + '" height="' + lpF(bh) + '" rx="' + lpF(px * 0.05) + '" fill="#fff" stroke="' + LP_SOFT + '" stroke-width="' + sw + '" stroke-dasharray="' + lpF(px * 0.04) + ' ' + lpF(px * 0.03) + '"/>'; };
+      var half = function (x) { return '<rect x="' + lpF(x) + '" y="' + lpF(by) + '" width="' + lpF(bw) + '" height="' + lpF(bh) + '" rx="' + lpF(px * 0.05) + '" fill="#d1d5db" stroke="' + LP_INK + '" stroke-width="' + sw + '"/>'; };
+      out = s === "left" ? on(lx) + off(rx) : s === "right" ? off(lx) + on(rx) :
+        half(lx) + half(rx) + '<path d="M' + lpF(px * 0.42) + ' ' + lpF(by + bh * 0.38) + ' H' + lpF(px * 0.58) + ' M' + lpF(px * 0.42) + ' ' + lpF(by + bh * 0.62) + ' H' + lpF(px * 0.58) + '" stroke="' + LP_INK + '" stroke-width="' + lpF(px * 0.045) + '" stroke-linecap="round"/>';
+      out += '<text x="' + lpF(px / 2) + '" y="' + lpF(px * 0.82) + '" text-anchor="middle" font-family="' + LP_FONT + '" font-size="' + lpF(px * 0.15) + '" font-weight="700" fill="#4b5563">' + LP_SIDES[s] + '</text>';
+    } else if (as === "dots" || as === "blocks") {
+      var n = lpInt(s, 0, 20);
+      if (n == null) return null;
+      var d = lpGridDims(Math.max(mx || n, 1)), cell = Math.min(px * 0.86 / d.c, px * 0.86 / d.r, px * 0.3);
+      out = lpGridIn(n, as, 0, 0, px, px, cell);
+    } else if (as === "numbers") {
+      if (!/^[−-]?\d{1,4}$/.test(s)) return null;
+      out = '<text x="' + lpF(px / 2) + '" y="' + lpF(px * 0.5) + '" dy="0.35em" text-anchor="middle" font-family="' + LP_FONT + '" font-size="' + lpF(px * (s.length >= 3 ? 0.4 : 0.54)) + '" font-weight="700" fill="#1f2937">' + s.replace("-", "−") + '</text>';
+    } else return null;
+    return lpSvg(px, px, out);
+  }
+  // The question's picture + its choices, or null (an unknown kind or token: the caller keeps the plain-words line).
+  function ladPicture(item, opts) {
+    var p = item && item.pic, o = {};
+    if (!p || typeof p !== "object" || !lpHas(LP_KINDS, p.kind) || !Array.isArray(item.c) || !item.c.length) return null;
+    Object.keys(LP_DEF).forEach(function (k) { o[k] = (opts && opts[k] > 0) ? +opts[k] : LP_DEF[k]; });
+    var pic = LP_KINDS[p.kind](p, o, item.text);
+    if (!pic) return null;
+    var as = p.choicesAs === "blocks" || p.choicesAs === "dots" || p.choicesAs === "sides" || p.choicesAs === "tokens" || p.choicesAs === "numbers" ? p.choicesAs : null;
+    if (!as) return null;
+    var mx = 0;
+    if (as === "dots" || as === "blocks") item.c.forEach(function (c) { var n = lpInt(c, 0, 20); if (n != null && n > mx) mx = n; });
+    var ch = item.c.map(function (c) { return lpChoice(c, as, o.choice, mx); });
+    if (ch.some(function (s) { return !s; })) return null;
+    return { kind: p.kind, pic: pic.svg, choices: ch, w: Math.ceil(pic.w - 0.01), h: Math.ceil(pic.h - 0.01), cw: Math.ceil(o.choice - 0.01) };
+  }
+  // ── on the placement printout ──  A question with a picture: the picture and its choices, big; for Pre-K / K the say line is
+  // printed small for the grown-up to read aloud. The plain-words line goes to the parent sheet next to the answer and the rule
+  // — except 1st/2nd grade's number puzzles and pairs (LADPIC_OWN_TEXT), whose numbers ARE the question: the picture sits beside
+  // them as a helper. Sizes: 6 questions (Pre-K + K) fit one page; measured in test_nb_ladpic.js.
+  var LADPIC_SIZE = { grown: { w: 380, h: 80, choice: 80 }, alone: { w: 380, h: 72, choice: 54 } };
+  var LADPIC_OWN_TEXT = { parts: 1, pairs: 1 };
+  function ladPicMoved(q, lv) { return !!(q && q.pic && (LAD_GROWN[lv] || !lpHas(LADPIC_OWN_TEXT, q.pic.kind))); }
+  function ladPicQ(q, qn, lv) {
+    var grown = !!LAD_GROWN[lv], P = ladPicture(q, grown ? LADPIC_SIZE.grown : LADPIC_SIZE.alone);
+    if (!P) return null;
+    var head;
+    if (grown) head = '<div class="lp-pqh"><span class="lp-stem">' + qn + '.</span>' + (q.say ? '<span class="lp-say">Read aloud: “' + ladEsc(q.say) + '”</span>' : '') + '</div>';
+    else if (ladPicMoved(q, lv)) head = '<div class="lp-pqh"><span class="lp-stem">' + qn + '. ' + ladEsc(q.say || "") + '</span></div>';
+    else head = '<div class="lp-stem">' + qn + '.</div>' + String(q.text || "").split(" / ").map(function (s) { return '<div class="lp-nline">' + ladEsc(s) + '</div>'; }).join("");
+    return '<div class="lp-q lp-pq">' + head + '<div class="lp-pqrow"><div class="lp-pic">' + P.pic + '</div><div class="lp-pcs">' +
+      P.choices.map(function (s, i) { return '<span class="lp-pc"><span class="lp-l">' + LAD_LETTERS.charAt(i) + '</span>' + s + '</span>'; }).join("") + '</div></div></div>';
+  }
+  // The parent sheet's extra line for a question whose plain words left the child's sheet.
+  function ladPicKeyNote(q, lv) {
+    return (ladPicMoved(q, lv) && ladPicture(q, LAD_GROWN[lv] ? LADPIC_SIZE.grown : LADPIC_SIZE.alone)) ? '<div class="lp-ptx">the picture: ' + ladEsc(q.text || "") + '</div>' : '';
+  }
+  var LADPIC_HOW = "A grown-up reads each question aloud. Circle the answer — the picture or its letter.";
+  var LADPIC_CSS =
+    ".lp-pq { margin-top: 8px; }\n" +
+    ".lp-pqh { display: flex; align-items: baseline; gap: 8px; }\n" +
+    ".lp-pqh .lp-say { margin-top: 0; }\n" +
+    ".lp-pqrow { display: flex; align-items: center; gap: 16px; margin-top: 4px; }\n" +
+    ".lp-pic { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; }\n" +
+    ".lp-pcs { flex: none; display: flex; gap: 12px; }\n" +
+    ".lp-pc { position: relative; display: block; border: 2px solid #9ca3af; border-radius: 12px; padding: 3px; line-height: 0; background: #fff; }\n" +
+    ".lp-pc .lp-l { position: absolute; top: -8px; left: -8px; margin: 0; background: #fff; line-height: 16px; }\n" +
+    ".nbl-svg { display: block; }\n" +
+    ".lp-ptx { font-size: 11.5px; color: #6b7280; margin: 1px 0 0 26px; }\n";
+  LADDER_CSS += LADPIC_CSS;   // always in the placement stylesheet (a sheet with no picture just doesn't use it)
+  NB_LADDERS.picture = ladPicture;
+  // NBLADPIC_END
   // NBLADDER_END
 
   /* ============================================================================
@@ -4127,6 +4525,90 @@ ${extraStrip || ""}
     NB_THEMES[k] = { label: LK2[k].label, chip: LK2[k].chip, planTitle: LK2[k].planTitle, theme: function (ctx) { return lk2Theme(k, ctx); } };
   });
   // NB_LOOKS2_END
+  // NB_LOOKS3_START — three more Pre-K looks: 📓 Plain, 🐴 Horses, ⚽ Sports (her words 2026-11-24 on the looks plan's next
+  // three: "All three now"; PLAN_notebook_looks_2026-11-23.md §10 and §12). Each is a whole look made with the NB_LOOKS2
+  // helpers (lk2Words, lk2Path, lk2Css, lk2Theme) — so this block needs that one above it — and fills every piece those
+  // looks fill: its own colours and print tints, cover, day badges, letter words (consonants only, so each also works as the
+  // letter's sound word), sound words, J word, warm-up strip, guide words, animal friends, plan-card title and unit colours.
+  //  • 📓 Plain is the look for a child who wants no theme: no mascot beyond 📓, no picture row, the plain day name for a
+  //    badge, no motto, the plainest words ("Daily Page", "Great job!", "Hi, name!"), and the slate and teal of the starter
+  //    notebook (its unit pages use the starter notebook's own colours).
+  //  • 🐴 Horses: saddle brown + sky, "Saddle Up!", the horse trots the dotted trail to the barn.
+  //  • ⚽ Sports: field green + white yard lines, "Game On!", the ball rolls the dotted line into the goal.
+  // A look changes words, pictures and colours ONLY — the same letters, numbers, shapes, animals, level switches and page
+  // count as any other look, so none has a counting picture of its own. Pictures are emoji and our own SVG; nothing names a
+  // child, a brand or a character. They come after the six looks in the picker; nothing changes for a kid until a grown-up
+  // picks one (test_nb_looks3.js builds that baseline with this block taken out).
+  var LK3 = {
+    plain: {
+      label: "Plain (Pre-K 📓)", chip: "📓 Plain", planTitle: "📓 This week’s plan", noName: "Little Learner", emoji: "📓", nameIcon: "✏️", shapeStroke: "#475569",
+      coverSub: "trace · count · color · draw", coverBadge: "📓 This Week", coverRow: "", drawCap: "✏️ Draw a picture of YOU!",
+      badges: { monday: "Monday", tuesday: "Tuesday", wednesday: "Wednesday", thursday: "Thursday", friday: "Friday" },
+      words: lk2Words({ J: ["Juice", "🧃"] }),
+      path: function (idx) { return lk2Path("Trace the line!", "🟢", "🔴", idx, "#94a3b8", "none"); },
+      css: lk2Css({
+        v: { dark: "#1e293b", deep: "#0f766e", mid: "#0d9488", light: "#cbd5e1", pale: "#f8fafc", green: "#0f766e", gpale: "#f0fdfa", gold: "#0d9488",
+          gpale2: "#f8fafc", blue: "#334155", bpale: "#f1f5f9", ink: "#1e293b", muted: "#64748b", border: "#e2e8f0", trace: "#cbd5e1", ntTrace: "#64748b" },
+        print: { dark: "#18212f", light: "#bcc7d4", pale: "#eef2f6", gpale: "#ddf6f1", gpale2: "#eef2f6", bpale: "#e4e9ef", trace: "#b6c1ce", ntTrace: "#556275", muted: "#536176", border: "#cfd7e1" },
+        accent: "#0f766e",
+        badge: ["rgba(15,118,110,0.3)", "rgba(203,213,225,0.5)"], label: "#64748b", hint: "#94a3b8", numCard: ["#99f6e4", "#a7e3da", "#c5ece6"]
+      }),
+      guide: { animalIcon: "🐾", nameIcon: "✏️", countWord: "animal", letterExample: "B — /b/ — Bear", closeColors: ["#99f6e4", "#134e4a"],
+        pathRow: ["✏️", "Trace the Line", LK2_GROWN + "the pencil follow the dotted line to the red dot. The line" + LK2_EACH_DAY] },
+      xpColors: ["#0f766e", "#f0fdfa", "#134e4a"],
+      unit: UNIT_INSERT_THEMES.generic,
+      curOpt: { animals: [["Cat", "🐱"], ["Dog", "🐶"], ["Rabbit", "🐰"], ["Mouse", "🐭"]], animalEmoji: {}, animalFallback: "🐾" },
+      // the plainest words: no mascot in the hello, the "I feel?" face or the "great job" line, and the daily page is the Daily Page
+      plain: function (T) { return { hello: "Hi, " + T.name + "!", moodEmoji: "🙂", badgeDefault: "Great job!", dayTitle: "Daily Page" }; }
+    },
+    horses: {
+      label: "Horses (Pre-K 🐴)", chip: "🐴 Horses", planTitle: "🐴 This week’s riding plan", noName: "Little Rider", emoji: "🐴", nameIcon: "🥕", shapeStroke: "#6b4f3a",
+      coverSub: "trace · count · color · ride", coverBadge: "🐴 Saddle Up!", coverRow: "🐴 🌾 🥕 🏇 🌄", drawCap: "✏️ Draw YOU riding a horse!",
+      badges: { monday: "🐴 Saddle Up! New Week", tuesday: "🐎 Giddy Up!", wednesday: "🥕 Halfway, Rider!", thursday: "🌄 Almost There!", friday: "⭐ Horse Star!" },
+      words: lk2Words({ C: ["Carrot", "🥕"], H: ["Horse", "🐴"], J: ["Jeans", "👖"], M: ["Mountain", "⛰️"], P: ["Pony", "🐎"], R: ["Rider", "🏇"], S: ["Sunrise", "🌄"] }),
+      path: function (idx) { return lk2Path("Trot to the barn!", "🐴", "🛖", idx, "#b45309", "#e0f2fe"); },
+      css: lk2Css({
+        v: { dark: "#4a2c17", deep: "#8b4513", mid: "#a0522d", light: "#f1d5b8", pale: "#fbf4ec", green: "#0369a1", gpale: "#f0f9ff", gold: "#ca8a04",
+          gpale2: "#fefce8", blue: "#1d4ed8", bpale: "#eff6ff", ink: "#2a1d14", muted: "#7a6656", border: "#e6d8cb", trace: "#d2bfae", ntTrace: "#8c735f" },
+        print: { dark: "#3f2514", light: "#ecc7a1", pale: "#f7e9db", gpale: "#e0f0fb", gpale2: "#fbf5cf", bpale: "#e2ecfd", trace: "#c4ae9b", ntTrace: "#7a6250", muted: "#665444", border: "#d9c6b5" },
+        accent: "repeating-linear-gradient(90deg, #8b4513 0 14px, #7dd3fc 14px 18px)",
+        badge: ["rgba(160,82,45,0.3)", "rgba(241,213,184,0.5)"], label: "#9a6b4f", hint: "#d9b99f", numCard: ["#bae6fd", "#b4d8ec", "#cde4f0"]
+      }),
+      guide: { animalIcon: "🐴", nameIcon: "🥕", countWord: "animal", letterExample: "P — /p/ — Pony", closeColors: ["#bae6fd", "#0c4a6e"],
+        pathRow: ["🛖", "Trot to the Barn", LK2_GROWN + "the horse trot the dotted trail to the barn. The trail" + LK2_EACH_DAY] },
+      xpColors: ["#8b4513", "#fbf4ec", "#4a2c17"],
+      unit: { GD:"#4a2c17", GM:"#a0522d", GL:"#f1d5b8", GP:"#fbf4ec", GOLD:"#ca8a04", GOLDD:"#a16207", CREAM:"#fefce8", EXTRA:"#0369a1" },
+      curOpt: { animals: [["Pony", "🐎"], ["Donkey", "🫏"], ["Goat", "🐐"], ["Sheep", "🐑"]],
+        animalEmoji: { pony: "🐴", donkey: "🫏", mule: "🫏", goat: "🐐", sheep: "🐑", lamb: "🐑" }, animalFallback: "🐾" }
+    },
+    sports: {
+      label: "Sports (Pre-K ⚽)", chip: "⚽ Sports", planTitle: "⚽ This week’s game plan", noName: "Little Champ", emoji: "⚽", nameIcon: "🏅", shapeStroke: "#3f5a4c",
+      coverSub: "trace · count · color · play", coverBadge: "⚽ Game On!", coverRow: "⚽ 🏀 ⚾ 🏈 🏆", drawCap: "✏️ Draw YOU scoring a goal!",
+      badges: { monday: "⚽ Game On! New Week", tuesday: "🏀 Bounce Bounce!", wednesday: "⚾ Halfway, Champ!", thursday: "🏈 Almost There!", friday: "🏆 Sports Star!" },
+      words: lk2Words({ B: ["Ball", "⚽"], G: ["Goal", "🥅"], J: ["Jersey", "👕"], M: ["Medal", "🏅"], R: ["Racket", "🏸"], T: ["Trophy", "🏆"] }),
+      path: function (idx) { return lk2Path("Kick it to the goal!", "⚽", "🥅", idx, "#16a34a", "#dcfce7"); },
+      css: lk2Css({
+        v: { dark: "#064e3b", deep: "#047857", mid: "#10b981", light: "#a7f3d0", pale: "#ecfdf5", green: "#c2410c", gpale: "#fff7ed", gold: "#d97706",
+          gpale2: "#fffbeb", blue: "#0369a1", bpale: "#f0f9ff", ink: "#10241c", muted: "#5b7268", border: "#d1e7dd", trace: "#b0cbbf", ntTrace: "#6a8378" },
+        print: { dark: "#053f30", light: "#93eec4", pale: "#dcf8ec", gpale: "#fdead6", gpale2: "#fdf3d3", bpale: "#e3f1fb", trace: "#9fbcaf", ntTrace: "#5a7268", muted: "#4b5f56", border: "#bcd9cb" },
+        accent: "repeating-linear-gradient(90deg, #047857 0 20px, #ffffff 20px 23px)",
+        badge: ["rgba(16,185,129,0.3)", "rgba(167,243,208,0.5)"], label: "#4f8a72", hint: "#a3cfbd", numCard: ["#fed7aa", "#f6caa0", "#fbd9bd"]
+      }),
+      guide: { animalIcon: "🐾", nameIcon: "🏅", countWord: "animal", letterExample: "G — /g/ — Goal", closeColors: ["#fed7aa", "#7c2d12"],
+        pathRow: ["🥅", "Kick to the Goal", LK2_GROWN + "the ball roll the dotted line into the goal. The line" + LK2_EACH_DAY] },
+      xpColors: ["#047857", "#ecfdf5", "#064e3b"],
+      unit: { GD:"#064e3b", GM:"#10b981", GL:"#a7f3d0", GP:"#ecfdf5", GOLD:"#d97706", GOLDD:"#b45309", CREAM:"#fffbeb", EXTRA:"#c2410c" },
+      curOpt: { animals: [["Cheetah", "🐆"], ["Kangaroo", "🦘"], ["Eagle", "🦅"], ["Tiger", "🐯"]],
+        animalEmoji: { cheetah: "🐆", leopard: "🐆", kangaroo: "🦘", eagle: "🦅" }, animalFallback: "🐾" }
+    }
+  };
+  Object.keys(LK3).forEach(function (k) {   // into the picker (after the six looks) and the unit-page colour table
+    LK2[k] = LK3[k];   // lk2Theme reads a look from LK2
+    UNIT_INSERT_THEMES[k] = LK3[k].unit;
+    NB_THEMES[k] = { label: LK3[k].label, chip: LK3[k].chip, planTitle: LK3[k].planTitle,
+      theme: function (ctx) { var T = lk2Theme(k, ctx); return LK3[k].plain ? Object.assign(T, LK3[k].plain(T)) : T; } };
+  });
+  // NB_LOOKS3_END
   // SPELLPAGE_START — 📝 the weekly Spelling page (her ask 2026-10-04: "the list of their words that they will be learning
   // that week starting on their learning day … and the spelling checkup section"). Built by the app (ctx.spelling, see
   // nbSpellCtx in index.html); every kid's notebook adds it right after the unit pages. One page: "This Week's Words"
@@ -6995,6 +7477,182 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     "  .lm-strip-svg { display:block; flex:1; min-width:0; }\n";
   // LU_MATH_END
 
+  // NBLADREAD_START — 📖 "Read and answer" in the 1st-grade notebook: slice 2 of the notebook ladders (notebooks study, her
+  // words 2026-11-23/24: "Build it"; the reading passage "twice a week sounds great"; for 1st grade "She reads them" — the child
+  // reads the passage AND the questions alone, so the 1st-grade questions are in easy words). The ladder engine
+  // (HoweNotebooks.ladders) picks the week's passages; index.html hands them in as ctx.ladders.reading = { on, ready, next, days, … }.
+  // This block puts them on paper, and only for this notebook:
+  //  • one page per passage, on the week's 2nd and 4th school day from the notebook's own day list (a short week uses the days
+  //    it has; one school day → one page), or on the days Mom ticks on the Ladders card (ctx.ladders.reading.days, e.g.
+  //    "tuesday thursday"; a ticked day that isn't a school day this week moves to the next school day, else the one before).
+  //  • the pages go after End of Week and My Words, so every daily page / brain-break back pair keeps its sheet, and the
+  //    paper-doll padding (counted from the pages before it) still lands the dolls on a sheet front. Each page is headed with
+  //    its day ("Tuesday — Read and answer"), and on the tablet it is tagged for that day (NBT_TODAY).
+  //  • the passage in big type, then its questions with lettered choices to circle — the same markup for every choice: no
+  //    answer, no hint, no why line on the child's page, none in an attribute. The right letters, the right choice's words and
+  //    the why lines go on a second Companion page (the first is full).
+  //  • the place the week took goes back to the app as out.readingCursor; the app saves it (…/ladders/reading/cur) after a
+  //    print, PDF or tablet send, so next week picks up after these passages and the same week built again is the same.
+  // Off, not loaded yet, or nothing left on the ladder → nothing here runs and every page is byte for byte what it was.
+  var LR_WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday"];
+  var LR_LETTERS = "ABCDEFGH";
+  function lrEsc(v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  // The saved day ticks ("tuesday thursday") → known school weekdays in week order, at most two. Anything else → [] (the default).
+  function lrSavedDays(saved) {
+    var seen = {}, out = [];
+    String(saved == null ? "" : saved).toLowerCase().split(/[\s,]+/).forEach(function (d) { if (LR_WEEK.indexOf(d) >= 0 && !seen[d]) { seen[d] = 1; out.push(d); } });
+    return out.sort(function (a, b) { return LR_WEEK.indexOf(a) - LR_WEEK.indexOf(b); }).slice(0, 2);
+  }
+  // Which of this week's school days get a reading page. days = the notebook's own list; saved = the Ladders card's ticks.
+  // Default: the 2nd and 4th school day; a slot past the end of a short week takes the latest school day not already used.
+  function lrDays(days, saved) {
+    days = Array.isArray(days) ? days : [];
+    var want = lrSavedDays(saved), pick = [], wi = function (d) { return LR_WEEK.indexOf(d); };
+    var free = function (k) { return k >= 0 && k < days.length && pick.indexOf(days[k]) < 0; };
+    var take = function (k) { if (free(k)) pick.push(days[k]); };
+    if (want.length) want.forEach(function (d) {
+      var at = days.indexOf(d), k;
+      if (!free(at)) { at = -1; for (k = 0; k < days.length; k++) if (wi(days[k]) > wi(d) && free(k)) { at = k; break; } }
+      if (at < 0) for (k = days.length - 1; k >= 0; k--) if (wi(days[k]) < wi(d) && free(k)) { at = k; break; }
+      take(at);
+    });
+    else [1, 3].forEach(function (i) {
+      var at = free(i) ? i : -1;
+      if (at < 0) for (var k = days.length - 1; k >= 0; k--) if (free(k)) { at = k; break; }
+      take(at);
+    });
+    return pick.sort(function (a, b) { return days.indexOf(a) - days.indexOf(b); });
+  }
+  // This week's reading pages: { pages:[{ day, x }], cursor } — x is the engine's item { lv, label, i, num, of, id, item } —
+  // or null when nothing should print. Fewer days than items (a one-day week, one tick) → fewer pages, and the cursor says so.
+  function lrWeek(ctx, days) {
+    var r = ctx && ctx.ladders && ctx.ladders.reading;
+    if (!r || r.on !== true || !r.ready || !r.next || !Array.isArray(r.next.items) || !r.next.items.length) return null;
+    var on = lrDays(days, r.days), items = r.next.items.filter(function (x) { return x && x.item && x.item.text; });
+    var n = Math.min(on.length, items.length), pages = [];
+    if (!n || items.length !== r.next.items.length) return null;   // a passage of the wrong shape → print none rather than a broken page
+    for (var i = 0; i < n; i++) pages.push({ day: on[i], x: items[i] });
+    return { pages: pages, cursor: r.next.cursor ? Object.assign({}, r.next.cursor, { adv: n }) : null };
+  }
+  // Type sizes by level: big for the youngest readers, smaller as passages and questions get longer (measured in
+  // test_nb_ladread.js against the shortest and longest passage of every level — none clips).
+  // A passage much longer than its level's usual (LR_HEAVY: letters of text + questions + choices, a poem line counting 30
+  // more) steps down one size; the smallest size is 12.5px — the size of a printed test passage.
+  var LR_TIER = { g1: 1, g2: 2, g3: 3, g4: 3, g5: 4, g6: 5, g78: 6 };
+  var LR_HEAVY = { 1: 1e9, 2: 1e9, 3: 1500, 4: 1800, 5: 1900, 6: 2350, 7: 1e9 };
+  //            how  title text  lh    gap stem  n   choice l   indent psgPad
+  var LR_SIZES = { 1: [18, 27, 27, 1.6, 28, 23, 32, 23, 34, 42, "14px 22px 12px"], 2: [16, 22, 21, 1.55, 18, 18, 27, 18, 28, 37, "11px 18px 9px"],
+    3: [14, 19, 16.5, 1.5, 14, 15, 23, 15, 23, 31, "10px 16px 8px"], 4: [13, 17, 14, 1.45, 10, 13.5, 21, 13, 21, 29, "9px 15px 7px"],
+    5: [12.5, 16.5, 13.5, 1.43, 9, 13, 20, 12.5, 20, 28, "8px 14px 6px"], 6: [12.5, 16, 13, 1.42, 8, 12.5, 19, 12.5, 19, 27, "8px 14px 6px"],
+    7: [12, 15.5, 12.5, 1.4, 7, 12, 18, 12, 18, 26, "7px 13px 5px"] };
+  function lrLoad(p) {
+    var q = Array.isArray(p.q) ? p.q : [], txt = String(p.text || "");
+    return txt.length + (p.kind === "poem" ? 30 * txt.split("\n").length : 0) +
+      q.reduce(function (a, x) { return a + String((x && x.text) || "").length + (Array.isArray(x && x.c) ? x.c.join("").length : 0); }, 0);
+  }
+  function lrTier(lv, p) { var t = LR_TIER[lv] || 5; return lrLoad(p) > LR_HEAVY[t] ? t + 1 : t; }
+  var LR_CSS = "\n  /* NBLADREAD — Read and answer */\n" +
+    "  .lr-body { padding:12px 46px 8px; }\n" +
+    "  .lr-how { flex-shrink:0; font-weight:800; color:var(--lu-dark); background:var(--lu-gpale); border:1.5px solid #e8d9a8; border-radius:9px; padding:5px 14px; }\n" +
+    "  .lr-psg { flex-shrink:0; background:var(--lu-pale); border:1.5px solid var(--lu-light); border-radius:12px; }\n" +
+    "  .lr-title { font-family:'Fredoka One',cursive; color:var(--lu-mid); line-height:1.2; margin-bottom:4px; }\n" +
+    "  .lr-text p { color:var(--ink); margin-bottom:0.45em; }\n" +
+    "  .lr-text p:last-child { margin-bottom:0; }\n" +
+    "  .lr-qs { display:flex; flex-direction:column; padding-top:4px; }\n" +
+    "  .lr-stem { display:flex; align-items:flex-start; gap:9px; font-weight:800; color:var(--ink); line-height:1.3; }\n" +
+    "  .lr-n { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; background:var(--lu-pink); color:white; font-family:'Fredoka One',cursive; }\n" +
+    "  .lr-cs { display:flex; flex-wrap:wrap; align-items:center; gap:5px 30px; margin-top:6px; }\n" +
+    "  .lr-cs.lr-col { flex-direction:column; align-items:flex-start; }\n" +
+    "  .lr-cs.lr-grid { display:grid; grid-template-columns:1fr 1fr; gap:4px 22px; align-items:start; }\n" +
+    "  .lr-grid .lr-c { align-items:flex-start; }\n" +
+    "  .lr-text.lr-two { display:grid; grid-template-columns:1fr 1fr; gap:0 30px; align-items:start; }\n" +
+    "  .lr-two > div > p { margin-bottom:0.45em; }\n" +
+    "  .lr-c { display:inline-flex; align-items:center; color:var(--ink); font-weight:600; line-height:1.3; }\n" +
+    "  .lr-l { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; border:2px solid var(--lu-mid); border-radius:50%; background:white; color:var(--lu-dark); font-weight:800; margin-right:9px; }\n" +
+    "  .lr-why { font-size:10.5px; color:var(--muted); line-height:1.45; }\n" +
+    Object.keys(LR_SIZES).map(function (t) {
+      var s = LR_SIZES[t], c = "  .lr-t" + t;
+      return c + " .lr-how { font-size:" + s[0] + "px; }\n" + c + " .lr-psg { padding:" + s[10] + "; }\n" + c + " .lr-title { font-size:" + s[1] + "px; }\n" +
+        c + " .lr-text p { font-size:" + s[2] + "px; line-height:" + s[3] + "; }\n" + c + " .lr-qs { gap:" + s[4] + "px; }\n" + c + " .lr-stem { font-size:" + s[5] + "px; }\n" +
+        c + " .lr-n { width:" + s[6] + "px; height:" + s[6] + "px; font-size:" + Math.round(s[6] * 0.58) + "px; }\n" + c + " .lr-cs { margin-left:" + s[9] + "px; }\n" +
+        c + " .lr-c { font-size:" + s[7] + "px; }\n" + c + " .lr-l { width:" + s[8] + "px; height:" + s[8] + "px; font-size:" + Math.round(s[8] * 0.55) + "px; }\n";
+    }).join("");
+  // The passage: paragraphs as written; a poem keeps its lines (a blank line = a new verse), and a long poem from 3rd grade up
+  // reads in two columns, whole verses in each (plain grid columns — the PDF maker doesn't follow CSS text columns), so its
+  // short lines don't take the whole page.
+  function lrText(p, t) {
+    var s = String(p.text || "");
+    if (p.kind === "poem") {
+      var vs = s.split(/\n\s*\n/).filter(function (v) { return v.trim(); });
+      var ps = vs.map(function (v) { return '<p>' + v.split("\n").map(lrEsc).join("<br>") + '</p>'; });
+      if (!(t >= 3 && vs.length > 1 && s.split("\n").length > 8)) return { two: false, html: ps.join("") };
+      var lines = vs.map(function (v) { return v.split("\n").length; }), all = lines.reduce(function (a, b) { return a + b; }, 0), k = 0, run = 0;
+      while (k < vs.length - 1 && run + lines[k] / 2 < all / 2) { run += lines[k]; k++; }   // the verse that crosses the middle starts the right column
+      k = Math.max(1, k);
+      return { two: true, html: '<div>' + ps.slice(0, k).join("") + '</div><div>' + ps.slice(k).join("") + '</div>' };
+    }
+    return { two: false, html: s.split(/\n+/).filter(function (v) { return v.trim(); }).map(function (v) { return '<p>' + lrEsc(v) + '</p>'; }).join("") };
+  }
+  // The choices, all with the same markup (no mark on the right one): in a row when they're all short, two across when none
+  // is long for the type size, else one per line.
+  var LR_GRID_MAX = { 1: 16, 2: 22, 3: 34, 4: 40, 5: 42, 6: 44, 7: 46 };
+  function lrChoices(cs, t) {
+    cs = Array.isArray(cs) ? cs : [];
+    var lens = cs.map(function (c) { return String(c).length; }), mx = Math.max.apply(null, lens.concat([0]));
+    var row = mx <= 22 && cs.join("").length <= 48, grid = !row && cs.length > 2 && mx <= (LR_GRID_MAX[t] || 34);
+    return '<div class="lr-cs' + (row ? "" : grid ? " lr-grid" : " lr-col") + '">' + cs.map(function (c, i) {
+      return '<span class="lr-c"><span class="lr-l">' + LR_LETTERS.charAt(i) + '</span>' + lrEsc(c) + '</span>'; }).join("") + '</div>';
+  }
+  // The child's page. x = the engine's item; the kid-facing words are short enough for a 1st grader to read alone.
+  function lrPage(wn, day, dateStr, x) {
+    var p = x.item || {}, qs = Array.isArray(p.q) ? p.q : [], lv = x.lv || p.lv || "", t = lrTier(lv, p);
+    var how = t <= 2 ? "Read it. Then circle the best answer." : "Read the passage. Then read each question and circle the letter of the best answer.";
+    var tx = lrText(p, t);
+    return '<div class="page-label">Read and Answer — ' + cap(day) + '</div>\n<div class="page">\n' +
+      luStdHeader("Read and Answer · " + lrEsc(x.label || "") + " reading", cap(day) + " — Read and answer", "read it · think · circle", cap(day), lrEsc(dateStr), "📖 I can read!") +
+      '\n<div class="body lr-body lr-t' + t + '">\n' +
+      '  <div class="lr-how">📖 ' + how + '</div>\n' +
+      '  <div class="lr-psg"><div class="lr-title">' + lrEsc(p.title) + '</div><div class="lr-text' + (tx.two ? " lr-two" : "") + '">' + tx.html + '</div></div>\n' +
+      '  <div class="lr-qs">' + qs.map(function (q, i) {
+        return '<div class="lr-q"><div class="lr-stem"><span class="lr-n">' + (i + 1) + '</span><span>' + lrEsc(q && q.text) + '</span></div>' + lrChoices(q && q.c, t) + '</div>';
+      }).join("\n") + '</div>\n' +
+      '</div>\n' + luFooter("Read and Answer", "Week " + wn + " · " + lrEsc(x.label || "") + " · passage " + x.num + " of " + x.of) + '\n</div>';
+  }
+  // The grown-up's page: for each reading page — the day, title and level, each question's right letter + the right
+  // choice's words, and the why line (the words in the passage that prove it).
+  function lrCompanion(wn, weekDates, week) {
+    var secs = week.pages.map(function (pg) {
+      var p = pg.x.item || {};
+      var rows = (Array.isArray(p.q) ? p.q : []).map(function (q, i) {
+        var k = LR_LETTERS.indexOf(String(q.ans || "")), w = (k >= 0 && Array.isArray(q.c) && q.c[k] != null) ? q.c[k] : "";
+        return '<div class="key-row"><div class="key-label" style="min-width:16px;">' + (i + 1) + '.</div><div><span class="key-ans">' + lrEsc(q.ans) + ' — ' + lrEsc(w) + '</span>' +
+          '<div class="lr-why">' + lrEsc(q.why) + '</div></div></div>';
+      }).join("\n");
+      return '  <div class="key-section" style="flex-shrink:0;">\n    <div class="key-head">' + cap(pg.day) + ' — “' + lrEsc(p.title) + '” · ' + lrEsc(pg.x.label) + ' · passage ' + pg.x.num + ' of ' + pg.x.of + '</div>\n' +
+        '    <div class="key-body">' + rows + '</div>\n  </div>';
+    }).join("\n");
+    return '<div class="page-label">Teaching Companion — Read and Answer · answers</div>\n<div class="page">\n' +
+      '<div class="header companion-header">\n  <div>\n    <div class="header-eyebrow">Teaching Companion · Read and Answer</div>\n' +
+      '    <div class="header-name">Read and Answer <span class="parent-badge">answers · not for the child</span></div>\n' +
+      '    <div class="header-sub">the right letter · the words that prove it</div>\n  </div>\n' +
+      '  <div class="header-right">\n    <div class="header-week">Week ' + wn + '</div>\n    <div class="header-date">' + weekDates + '</div>\n  </div>\n</div>\n<div class="accent-bar"></div>\n' +
+      '<div class="body" style="gap:10px;padding-top:10px;">\n' +
+      '  <div class="teach-banner" style="flex-shrink:0;"><strong style="font-size:9px;letter-spacing:0.06em;text-transform:uppercase;">How to use this page —</strong> ' +
+      'Your child reads the passage and the questions alone and circles one letter for each — help with a word only if asked. Check it together afterward. ' +
+      'If an answer is off, read the words in the “why” line together and let your child find the answer again, rather than giving it.</div>\n' +
+      secs + '\n' +
+      '  <div style="flex-shrink:0;font-size:10px;color:var(--muted);line-height:1.45;">From the reading ladder on the Notebook tab (the Ladders card): the level and the days are set there. Next week picks up right after these passages.</div>\n' +
+      '</div>\n' + luFooter("Teaching Companion · Not for the child", "Week " + wn + " · " + weekDates) + '\n</div>';
+  }
+  // For the app's Ladders card (index.html asks; it names no notebook): does this kid's notebook print a ladder?
+  // opt = the app's view of the kid: { notebookTheme, nbLevel } (a Pre-K look builds a Pre-K notebook — not this one).
+  function nbLadReadPages(kid, opt) {
+    opt = opt || {};
+    var g = pkSpec(kid, opt) ? null : GENERATORS[kid];
+    return { reading: !!(g && g.build === generateLucy), number: false };
+  }
+  // NBLADREAD_END
+
   function generateLucy(ctx) {
     ctx = ctx || {};
     _nbLvCtx = ctx;   // NBLEVEL: the grade word the page builders print (lvG)
@@ -7013,6 +7671,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     var words = luWordsWeek(ctx, days.length);   // LU_WORDS: the week's sight words, or null → nothing new prints
     var math = luMathWeek(ctx, wn, days.length);   // LU_MATH: the week's facts from the Math Facts cards, or null → the old subtraction block
     if (math) focus = [focus[0], math.focus];   // LU_MATH: the focus card describes the deck
+    var lread = lrWeek(ctx, days);   // NBLADREAD: this week's Read and answer pages from the reading ladder, or null → nothing new prints
     var prevStats = ctx.prevStats || {};   // dashes until the shared history wiring
     var category = LUCY_DATA.category_order[((wn - 1) % LUCY_DATA.category_order.length + LUCY_DATA.category_order.length) % LUCY_DATA.category_order.length];
     var curMonth = days.length ? monthFromDate(dates[days[0]] || "") : "";
@@ -7040,6 +7699,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     });
     parts.push(nbTag(ctx, luPageEndOfWeek(wn, weekDates, blends, subtraction, days, tasks, math), "last", "End of week"));   // LU_MATH
     luMyWordsPages(ctx, words, wn).forEach(function (p) { parts.push(nbTagXp(ctx, p, "myWords", "My Words")); });   // LU_WORDS: after End of Week, so the day/back pairs don't move
+    if (lread) lread.pages.forEach(function (pg) { parts.push(nbTag(ctx, lrPage(wn, pg.day, dates[pg.day] || "", pg.x), pg.day, "Read and answer")); });   // NBLADREAD: after End of Week + My Words, so every pair stays put
 
     // Paper dolls — doll figure (always) + this week's outfit, each on its OWN sheet with a blank
     // back so Lucy can cut them out without losing anything on the reverse. Goes last in the book.
@@ -7051,11 +7711,14 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     }
 
     var luCss = (phono ? LU_PHONO_CSS : "") + (words ? LU_WORDS_CSS : "") + (math ? LU_MATH_CSS : "");   // LU_WORDS · LU_MATH
+    if (lread) luCss += LR_CSS;   // NBLADREAD
     var student = luShell(parts.join("\n"), "Lucy's Notebook — Week " + wn, luCss);
     var companion = luPageTeachingCompanion(wn, weekDates, days, tasks, blends, subtraction, ctx.teachNotes || "", words, math);   // LU_MATH
+    if (lread) companion += "\n" + lrCompanion(wn, weekDates, lread);   // NBLADREAD: the answers + why lines, on a Companion page of their own
     var parent = luShell(companion, "Lucy's Parent Companion — Week " + wn, luCss);
     var out = { student: student, parent: parent };
     if (words) out.wordCursor = words.cursor;   // LU_WORDS: the app saves it (notebookSettings/<kid>/wordCursor) so next week continues
+    if (lread && lread.cursor) out.readingCursor = lread.cursor;   // NBLADREAD: the app saves it (…/ladders/reading/cur) after a print
     return out;
   }
 
@@ -7495,6 +8158,25 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     return emojiToImages(applySafariPrintFit(binding ? applyBindingMargin(doc) : doc));
   }
 
+  // NB_LOOKPICK_START — 🎨 a look's own small picture, for the Kids' Corner look picker (her decisions 2026-11-24: "Kid picks
+  // from mine" — Mom ticks which looks a kid may use and, with two or more ticked, the kid picks among them; Pre-K kids too,
+  // "Yes, with pictures"; "it would need to be on their kids corner"). The app draws each big button from this, so no look
+  // is ever typed into index.html and a child who can't read yet can still choose: the look's mascot, its picture row (the
+  // cover's row) and a colour swatch (the colours of its extra-page strip), all from the look's own theme, built with no
+  // child's name in it. Read only: nothing here changes what any notebook prints.
+  // key → { key, emoji, row: [pictures], colors: ["#main", "#pale", "#deep"], label } — or null for a key that isn't a look.
+  function lookCard(key) {
+    var k = String(key == null ? "" : key);
+    if (!k || !Object.prototype.hasOwnProperty.call(NB_THEMES, k) || !NB_THEMES[k] || typeof NB_THEMES[k].theme !== "function") return null;
+    var D = NB_THEMES[k], T = null;
+    try { T = D.theme({}, PK_LEVEL_DEFAULT); } catch (e) { T = null; }
+    if (!T) return null;
+    var row = String(T.coverRow || "").split(/\s+/).filter(function (x) { return !!x; });
+    var colors = (T.xpColors || []).filter(function (c) { return typeof c === "string" && /^#[0-9a-fA-F]{3,8}$/.test(c); });
+    return { key: k, emoji: String(T.emoji || row[0] || ""), row: row, colors: colors, label: String(D.chip || D.label || k) };
+  }
+  // NB_LOOKPICK_END
+
   window.HoweNotebooks = {
     version: "1-julian",
     fontsOk: FONTS_OK,
@@ -7517,8 +8199,11 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     // 🚜 CBPLAN: any Pre-K notebook's planner (opt/ctx = the kid's notebookTheme / nbLevel, so a themed kid has one too)
     hasPlan: pkHasPlan,
     planFor: pkPlanFor,
+    countPicFor: nbCountPicFor,         // NB_COUNTPIC: what this kid's number card counts (Notebook tab look card)
+    lookCard: lookCard,                 // 🎨 NB_LOOKPICK: a look's mascot, picture row and colours (Kids' Corner look picker)
     reviewDecks: nbReviewDecks,         // 🔁 NBNEEDS: which drill decks this kid's notebook brings back to paper (Notebook tab card)
-    ladders: NB_LADDERS,                // 📚 NBLADDER: the two notebook ladders — engine + placement (slice 1; no page reads them yet)
+    ladders: NB_LADDERS,                // 📚 NBLADDER: the two notebook ladders — engine + placement (the 1st-grade notebook prints reading)
+    ladderPages: nbLadReadPages,        // 📖 NBLADREAD: does this kid's notebook print a ladder? (the Ladders card's note)
     lincolnBuiltinQ3: function (wk, i) { return lnPick(LINCOLN_DATA.banks.conventions, wk, i); },   // the day's built-in conventions item (Mom's answer check)
     convBankPlan: lnConvBankPlan,       // Lincoln's conventions bank: same, for the Q3 slot
     quantBankPlan: lnQuantBankPlan,     // Lincoln's number-reasoning bank: same, for the Q2 math slot

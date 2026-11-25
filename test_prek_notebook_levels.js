@@ -100,7 +100,8 @@ ok(/learn-lab">Little letters/.test(o.student) && /I know my BIG letters!/.test(
    /Little letters/.test(plain.student) === false, "nbLowercase: the little letter of the day in handwriting order (c first; name only until a sound card), cover lists little letters + a BIG-letters card");
 ok(/Trace the little c ➜/.test(o.student) && !/find-row/.test(noStyle(o.student)), "…traced the kindergarten way, no find-it rows unless that switch is on");
 o = ju({ nbLowercase: true }, { masteryItems: [].concat(mi("Lowercase", ["a", "b"]), mi("Letter Sounds", ["a"])) });
-ok(/a says \/a\/ · apple 🍎/.test(o.student) && /Sounds are on for: <strong>a<\/strong>/.test(o.parent), "…a Letter Sounds card turns the sound on (and the guide says which)");
+// NB_LOOKFIX (2026-11-24): the dinosaur look prints its own sound word here (was the construction list's "apple")
+ok(/a says \/a\/ · alligator 🐊/.test(o.student) && /Sounds are on for: <strong>a<\/strong>/.test(o.parent), "…a Letter Sounds card turns the sound on (and the guide says which)");
 o = ju({ nbFindIt: true });
 ok(/class="find-row fit"/.test(o.student) && /Circle every A/.test(o.student) && /Circle little A/.test(o.student) && /Find<br>it/.test(o.student), "nbFindIt with capitals: circle every A, find its little letter; a Find-it to-do chip");
 ok(/\.find-row \{/.test(o.student) && /\.find-row\.fit \.find-cell/.test(o.student), "…the find-it CSS rides along on a look that never had it");
@@ -113,8 +114,9 @@ ok(days(o.student) === 4 && days(ju({}, { weekData: { dates, tasks: tasksFor("ju
    "nbSkipNoSchoolDays: no page on the kid's no-card day (only when the week has the kid's cards)");
 
 console.log("looks: dinosaurs / construction / sharks for any Pre-K notebook");
-// NB_LOOKS2 (2026-11-23): three more looks follow the first three in the picker — space, farm, forest (test_nb_looks2.js)
-ok(JSON.stringify(Object.keys(NB.themes)) === '["dino","construction","shark","space","farm","forest"]' && NB.themes.dino.chip === "🦕 Dinosaurs" && NB.themes.construction.chip === "🚜 Construction" && NB.themes.shark.chip === "🦈 Sharks", "the first three looks lead the picker, in order");
+// NB_LOOKS2 (2026-11-23): three more looks follow the first three in the picker — space, farm, forest (test_nb_looks2.js);
+// NB_LOOKS3 (2026-11-24): then plain, horses, sports (test_nb_looks3.js)
+ok(JSON.stringify(Object.keys(NB.themes)) === '["dino","construction","shark","space","farm","forest","plain","horses","sports"]' && NB.themes.dino.chip === "🦕 Dinosaurs" && NB.themes.construction.chip === "🚜 Construction" && NB.themes.shark.chip === "🦈 Sharks", "the first three looks lead the picker, in order");
 ok(NB.generate("julian", base({ masteryItems: juItems, notebookTheme: "dino" })).student === NB.generate("julian", base({ masteryItems: juItems })).student &&
    NB.generate("caleb", base({ masteryItems: cbItems, notebookTheme: "construction" })).student === NB.generate("caleb", base({ masteryItems: cbItems })).student, "a kid's own look picked on purpose = the original, word for word");
 o = NB.generate("julian", base({ masteryItems: juItems, notebookTheme: "construction", kidName: "Julian" }));
@@ -122,7 +124,8 @@ ok(o.prekTheme === "construction" && /Drive to the job site!/.test(o.student) &&
    "Julian in construction: the machines, block lettering, his name, still his capitals — no other kid's words");
 ok(!("from" in o.letterCursor), "…his letter rotation stays on the school week (the look doesn't move his place)");
 o = NB.generate("caleb", base({ masteryItems: cbItems, notebookTheme: "shark", kidName: "Caleb", nbGrade: "Kindergarten" }));
-ok(o.prekTheme === "shark" && /Swim the waves!/.test(o.student) && /c says \/c\/ · cat/.test(o.student) && /Kindergarten/.test(o.student) && /class="find-row fit"/.test(o.student) && "from" in o.letterCursor,
+// NB_LOOKFIX (2026-11-24): the shark look's own sound word for c is crab (was the construction list's "cat")
+ok(o.prekTheme === "shark" && /Swim the waves!/.test(o.student) && /c says \/c\/ · crab/.test(o.student) && /Kindergarten/.test(o.student) && /class="find-row fit"/.test(o.student) && "from" in o.letterCursor,
    "Caleb in sharks: the ocean look, still his little letters, find-it, grade and own-week rotation");
 o = NB.generate("kid9", base({ masteryItems: juItems, notebookTheme: "dino", kidName: "Finn" }));
 const banned = /Julian|JULIAN|Caleb|Howe|DeWalt|Burris|I am 4!|his big brothers/;
@@ -140,11 +143,11 @@ ok(I.pkSpec("kid9", { notebookTheme: "shark" }).L.ownWeeks === true && I.pkSpec(
 
 console.log("the picker's options (HoweNotebooks.notebookOptions)");
 let op = NB.notebookOptions("julian", { isPreK: true });
-ok(op.looks.map(l => l.key).join() === "dino,construction,shark,space,farm,forest" && op.current === "dino" && op.prek && op.levels.length === 5 && op.levels.every(d => d.on === false) && op.extraPages.length === 3, "Julian: six looks, his own on, five switches off, his three extra pages");
+ok(op.looks.map(l => l.key).join() === "dino,construction,shark,space,farm,forest,plain,horses,sports" && op.current === "dino" && op.prek && op.levels.length === 5 && op.levels.every(d => d.on === false) && op.extraPages.length === 3, "Julian: six looks, his own on, five switches off, his three extra pages");
 op = NB.notebookOptions("caleb", { isPreK: false, notebookTheme: "shark", nbLevel: { nbTeens: false } });
 ok(op.current === "shark" && op.levels.find(d => d.key === "nbTeens").on === false && op.levels.find(d => d.key === "nbLowercase").on === true, "Caleb (school-age on his roster): still a Pre-K notebook — looks + switches, saved choices shown");
 op = NB.notebookOptions("d3", { isPreK: true });
-ok(op.looks.map(l => l.key).join() === ",dino,construction,shark,space,farm,forest" && op.current === "" && !op.prek && op.levels === null && op.extraPages.length === 0, "a Pre-K kid on the starter notebook: Starter + the six looks; no switches until a look is picked");
+ok(op.looks.map(l => l.key).join() === ",dino,construction,shark,space,farm,forest,plain,horses,sports" && op.current === "" && !op.prek && op.levels === null && op.extraPages.length === 0, "a Pre-K kid on the starter notebook: Starter + the six looks; no switches until a look is picked");
 op = NB.notebookOptions("d3", { isPreK: true, notebookTheme: "shark" });
 ok(op.prek && op.current === "shark" && op.levels.length === 5 && op.extraPages.map(p => p.key).join() === "abc,daysSeasons,thisMonth", "…with a look: the level switches AND the ABC / Days & Seasons / This Month pages show — no kid id involved");
 op = NB.notebookOptions("lincoln", {});

@@ -125,8 +125,8 @@ console.log("\n── A · Take stars away ON: as before, plus who ──");
   ok("🧾's −100 on a school card (Mom): the same writes as before; the bank line ends \" · by Mom\"; drawn \"🚩 by Mom · −100\"", J(e.w) === J(f.w) && e.w.length === 2 && J(e.h) === J(f.h) && e.h.flagBy === "mom" && J(e.bank) === J([[-100, "🚩 false check-off dock — Math page 12 · by Mom"]]) && />🚩 by Mom · −100<\/span>/.test(e.ck), [e.w, f.w, e.h]);
   ok("a kid's device: both refused, nothing written (as before)", await (async () => { const r = []; for (const S of [N, O]) { const k = logKey(S.A, "kid_c", "Toys in the bin"), m = S.w.mark();
     S.Kk.run("rlogFlag('kid_c','" + k.join("','") + "')"); S.Kk.run("ckLogDock('step','kid_c'," + J(k.join("/")) + ",'Toys in the bin')"); await S.w.flush(); r.push(S.w.since(m).length); } return J(r) === J([0, 0]); })());
-  ok("Dad's link, code in: the Click-off Log's rlogFlag still refuses (Mom's; the Log is not on his link), nothing written", await (async () => { const r = []; for (const S of [N, O]) { const k = logKey(S.A, "kid_c", "Toys in the bin"), m = S.w.mark();
-    r.push(S.Dd.run("rlogFlag('kid_c','" + k.join("','") + "')")); await S.w.flush(); r.push(S.w.since(m).length); } return J(r) === J([null, 0, null, 0]); })());
+  ok("Dad's link, locked: the Click-off Log's rlogFlag refuses, nothing written (with his code it marks: test_dad_spot_log.js, DADSPOTLOG)", await (async () => { const r = []; for (const S of [N, O]) { const k = logKey(S.A, "kid_c", "Toys in the bin"), m = S.w.mark();
+    S.Dd.run("dadUnlocked=false;1"); r.push(S.Dd.run("rlogFlag('kid_c','" + k.join("','") + "')")); S.Dd.run("dadUnlocked=true;1"); await S.w.flush(); r.push(S.w.since(m).length); } return J(r) === J([null, 0, null, 0]); })());
 }
 
 // ── B ──
