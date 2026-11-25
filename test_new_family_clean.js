@@ -47,11 +47,6 @@ const KNOWN = [
   { item: "4", what: "the built-in Mom code on Settings (\"Current PIN\")", cat: "pin", pages: ["Admin ▸ settings", "Admin ▸ rules", "Mom's Day ▸ sset"], near: /Current PIN/ },
   { item: "4", what: "the built-in Dad code in Settings' Dad code box", cat: "pin", pages: ["Admin ▸ settings", "Admin ▸ rules", "Mom's Day ▸ sset"], near: /Dad code . lets Dad give stars/ },
   { item: "4", what: "the built-in Dad code printed on Mom HQ ▸ Screens & links (\"Star code\")", cat: "pin", pages: ["Mom's Day ▸ hq", "Admin ▸ hq"], near: /Star code/ },
-  { item: "5", what: "\"Lucy's iPad runs independently of the boys'\" in the Family rules audit checklist", cat: "kid", pages: ["Admin ▸ settings", "Admin ▸ rules", "Mom's Day ▸ sset"], near: /iPad runs independently/ },
-  { item: "6", what: "\"Julian first; more kids coming.\" on Generate Week", cat: "kid", pages: ["Mom's Day ▸ gen", "Admin ▸ generate"], near: /first; more kids coming/ },
-  { item: "7", what: "printed flash cards headed \"🦕 Julian\"", cat: "kid", pages: ["Mastery ▸ 🖨 Print flash cards"] },
-  { item: "8", what: "note-box hint \"Note (move to Tue, give to Lucy, …)\" on a Review row", cat: "kid", pages: ["Household ▸ review row"], near: /give to/ },
-  { item: "8", what: "star-box hint \"e.g. helped Lucy without being asked\"", cat: "kid", pages: ["Mom's Day ⭐ give stars box"], near: /helped .* without being asked/ },
   { item: "11", what: "\"Morning routine not done\" on 🔴 Now for kids who have no morning list", cat: "morningAlarm", pages: ["Home Base", "Home Base ▸ afternoon", "Home Base ▸ night", AT("Home Base")] },
 ];
 
