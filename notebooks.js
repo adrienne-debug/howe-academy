@@ -3207,6 +3207,13 @@
   }
   var LNT_CSS_PK = lntCss({ dark: "var(--ju-deep)", mid: "var(--ju-mid)", pale: "var(--ju-pale)", light: "var(--ju-light)", num: "var(--ju-deep)" });
   var LNT_CSS_LU = lntCss({ dark: "var(--lu-dark)", mid: "var(--lu-mid)", pale: "var(--lu-pale)", light: "var(--lu-light)", num: "var(--lu-pink)" });
+  // LU_LOOKA_START — the 1st-grade copy of this sheet takes its typed colours from the 1st-grade palette (LU_PAL tokens,
+  // painted with the rest of that notebook), so the Number thinking page and its Companion page follow the picked colour set:
+  // the amber "grown-up" tag and "say" line turn with the golds; white and the greys are colours every set keeps. The Pre-K
+  // copy (LNT_CSS_PK) is never touched.
+  var LU_LNT_TOK = { "#fff": "fff", "#92400e": "tagInk", "#fef3c7": "tagBg", "#fcd34d": "tagLine", "#4b5563": "boxLine", "#6b7280": "muted", "#9ca3af": "pcLine", "#f0f0f0": "rule" };
+  LNT_CSS_LU = LNT_CSS_LU.replace(/#[0-9a-f]{6}\b|#[0-9a-f]{3}\b/gi, function (v) { return LU_LNT_TOK[v.toLowerCase()] ? "{{lu:" + LU_LNT_TOK[v.toLowerCase()] + "}}" : v; });
+  // LU_LOOKA_END
   function lntKeyRow(n, ans, rule, pic, where) {
     return '<div class="lnt-key"><span class="lnt-key-n">' + n + '.</span><div><span class="lnt-key-a">' + ans + '</span> <span class="lnt-key-r">— ' + rule + '</span>' +
       (pic ? '<div class="lnt-key-p">the picture: ' + pic + '</div>' : '') + '</div><span class="lnt-key-w">' + where + '</span></div>';
@@ -6556,7 +6563,8 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
     },
     warm: {   // the golds — turned to its warm colour, or kept
       gold: "#d97706", gpale: "#fffbeb", gpalePrint: "#fdf3d3", goldLine: "#e8d9a8", goldWash: "#fffdf5", goldInk: "#4a3800",
-      aheadInk: "#fde68a", aheadBg: "rgba(217,119,6,0.2)"
+      aheadInk: "#fde68a", aheadBg: "rgba(217,119,6,0.2)",
+      tagInk: "#92400e", tagBg: "#fef3c7", tagLine: "#fcd34d"
     },
     keep: {   // the same on every colour set: ink, greys, white, the four seasons, paper/screen tags, pace badges, the safety box
       ink: "#1c1c1e", muted: "#6b7280", mutedPrint: "#555c67", border: "#d1d5db", borderPrint: "#b9bec7", white: "#ffffff",
@@ -6569,7 +6577,8 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
       safetyLine: "#fecdd3", safetyInk: "#9f1239", safetyBold: "#be123c", winterBg: "#eff6ff", winterLine: "#bfdbfe",
       winterInk: "#2563eb", springBg: "#f0fdf4", springLine: "#bbf7d0", springInk: "#16a34a", summerBg: "#fffbeb",
       summerLine: "#fde68a", summerInk: "#d97706", fallBg: "#fff7ed", fallLine: "#fed7aa", fallInk: "#c2410c",
-      seasonLine: "#ddd", seasonInk: "#333"
+      seasonLine: "#ddd", seasonInk: "#333",
+      boxLine: "#4b5563", pcLine: "#9ca3af"
     },
     word: { rowWord: "purple" }   // the This Month page names the colour of this week's row
   };
@@ -8114,7 +8123,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
           '  <div class="footer" style="background:#1e2d40;">\n    <div class="footer-txt">Teaching Companion · Parent Reference</div>\n    <div class="footer-snake">' + (o.emoji || "") + '</div>\n' +
           '    <div class="footer-txt">Week ' + o.wn + ' · ' + o.dates + '</div>\n  </div>\n\n</div>';
       } },
-    lu: { line: "#c4b5fd",
+    lu: { line: "{{lu:lilac}}",
       page: function (o) {
         return '<div class="page-label">Read and Answer — ' + cap(o.day) + (o.mode === "back" ? " (back)" : "") + '</div>\n<div class="page">\n' +
           luStdHeader("Read and Answer · " + o.lab + " reading", o.title, o.mode === "back" ? "check · circle" : "read it · think · write", cap(o.day), lrEsc(o.date), "📖 I can read!") +

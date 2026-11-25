@@ -51,7 +51,7 @@ ok("index.html: the marked lines in NBLADREAD — the note ×2, the waits ×2, t
 
 // ════════════════════════════════════ load: now + the baseline ════════════════════════════════════
 const HOOK = "_internal: {";
-const T_HOOK = HOOK + " lntWeek: lntWeek, lntQ: lntQ, lntPkPage: lntPkPage, lntLuPage: lntLuPage, lntPkAnswers: lntPkAnswers, lntLuCompanion: lntLuCompanion, LNT_PIC: LNT_PIC, LNT_CSS_PK: LNT_CSS_PK, LNT_CSS_LU: LNT_CSS_LU, luShell: luShell,";
+const T_HOOK = HOOK + " lntWeek: lntWeek, lntQ: lntQ, lntPkPage: lntPkPage, lntLuPage: lntLuPage, lntPkAnswers: lntPkAnswers, lntLuCompanion: lntLuCompanion, LNT_PIC: LNT_PIC, LNT_CSS_PK: LNT_CSS_PK, LNT_CSS_LU: LNT_CSS_LU, lntCssLuOwn: luPaint(LNT_CSS_LU, luLookPalette(\"\")), luShell: luShell,";
 const RET_NOW = "    return { reading: !!(g && g.build === generateLucy), number: lntPrints(kid, opt) };   // NBLADNUM: number questions print in the Pre-K / K and 1st-grade notebooks\n";
 let BASE = SRC.slice(0, B0) + SRC.slice(B1 + "  // NBLADNUM_END\n".length);
 ok("the nbLadReadPages line is there once (restored to number: false for the baseline)", BASE.split(RET_NOW).length === 2);
@@ -258,7 +258,7 @@ for (const [kid, extra, lv] of [[KPK[0], {}, "prek"], [KLU, {}, "g1"], ["kidt", 
   const out = gen(kid, mkCtx(kid, Object.assign({ ladders: nl({ lv }), nbPageTags: true }, extra))), np = numPages(out.student);
   ok(lv + ": the page is tagged as an any-time page of the week, 'Number thinking'", np.length === 1 && np[0].indexOf('<div class="page" data-nb-day="week" data-nb-name="Number thinking">') > 0);
   const oldT = genOld(kid, mkCtx(kid, Object.assign({ nbPageTags: true }, extra))).student;
-  const css = kid === KLU ? I.LNT_CSS_LU : I.LNT_CSS_PK;
+  const css = kid === KLU ? I.lntCssLuOwn : I.LNT_CSS_PK;   // LU_LOOKA: the 1st-grade sheet as it prints (own colours)
   const rest = out.student.replace(css, "").replace(np[0].replace(/^<div class="page-label">/, '<div class="page-label">') + "\n", "");
   ok(lv + ": every other page keeps the tags it had (the document is otherwise the same)", rest === oldT);
   ok(lv + ": paper (no tags) has no data-nb attributes on the page", numPages(gen(kid, mkCtx(kid, Object.assign({ ladders: nl({ lv }) }, extra))).student)[0].indexOf("data-nb-") < 0);
@@ -473,7 +473,7 @@ const PKID = KPK[0], OKID = KOLD[0];
   const kX = { lv: "k", label: "Kindergarten", num: 1, of: 60, item: TN.levels.k.items[0] }, gX = { lv: "g1", label: "1st grade", num: 2, of: 60, item: TN.levels.g1.items[1] };
   const addBox = (html, box, css) => html.replace("</style>", css + "</style>").split('<div class="page-label">').map((p, i) => { if (!i || !/^Daily Page/.test(p)) return i ? '<div class="page-label">' + p : p;
     const k = p.lastIndexOf('<div class="footer'), q = p.slice(0, k), j = q.lastIndexOf("</div>"); return '<div class="page-label">' + q.slice(0, j) + box + "\n" + q.slice(j) + p.slice(k); }).join("");
-  const kcases = [["1st grade", KLU, {}, gX, I.LNT_CSS_LU]].concat(LOOKS.map((th) => ["Pre-K " + th, "kidt", PKX("prek", th), kX, I.LNT_CSS_PK]), LOOKS.map((th) => ["K+find-it " + th, "kidt", Object.assign(PKX("k", th), { nbLevel: { nbFindIt: true, nbLowercase: true, nbTeens: true } }), kX, I.LNT_CSS_PK]));
+  const kcases = [["1st grade", KLU, {}, gX, I.lntCssLuOwn]].concat(LOOKS.map((th) => ["Pre-K " + th, "kidt", PKX("prek", th), kX, I.LNT_CSS_PK]), LOOKS.map((th) => ["K+find-it " + th, "kidt", Object.assign(PKX("k", th), { nbLevel: { nbFindIt: true, nbLowercase: true, nbTeens: true } }), kX, I.LNT_CSS_PK]));
   const kres = await Promise.all(kcases.map(async ([name, kid, extra, x, css]) => {
     const html = gen(kid, mkCtx(kid, extra)).student, a = await runK(html, "k0_" + name.replace(/\W+/g, "_")), b = await runK(addBox(html, small(x), css), "k1_" + name.replace(/\W+/g, "_"));
     if (!a || !b) return { name, skip: true };

@@ -5,7 +5,8 @@
 //       baseline: THIS tree with every LU_LOOKA block cut out and the folded colour literals put back (built below, no git) —
 //       across fixtures that turn on every optional part (My Words, the math block, phonograms, every extra page with a
 //       "pages today" strip, a unit insert, the Spelling page, paper dolls, picture uploads, the reading ladder's Read and
-//       answer pages + their Companion page at two levels, a 4-day week)
+//       answer pages + their Companion page at two levels, write-first days (a g3 level: the writing lines, the back page, the
+//       Notes pad), the number ladder's Number thinking page + its Companion page (at k, with the grown-up tag, and at g1), a 4-day week)
 //   (b) every colour set changes colours only: strip every colour value (and the one colour word, "this week is the … row")
 //       from two builds and the rest is identical — same pages, order, words, sizes, pictures
 //   (c) no colour literal is left in the notebook's own code outside the palette; every token has a value in every set
@@ -26,7 +27,7 @@ const NAMES = /\b(adrienne|andrew|julian|lincoln|ellis|lucy|sara|sarah|caleb|tay
 console.log("the blocks and the baseline");
 const S = "// LU_LOOKA_START", E = "// LU_LOOKA_END";
 const blocks = []; { let i = 0; while ((i = src.indexOf(S, i)) >= 0) { const j = src.indexOf(E, i); blocks.push([src.lastIndexOf("\n", i) + 1, src.indexOf("\n", j) + 1]); i = j; } }
-ok(blocks.length === 5 && src.split(E).length - 1 === 5 && blocks.every((b, n) => b[1] > b[0] && (n === 0 || b[0] > blocks[n - 1][1])), "five LU_LOOKA blocks, each marked start and end", blocks.length);
+ok(blocks.length === 6 && src.split(E).length - 1 === 6 && blocks.every((b, n) => b[1] > b[0] && (n === 0 || b[0] > blocks[n - 1][1])), "six LU_LOOKA blocks, each marked start and end", blocks.length);
 const INLINE = ['(g && g.lookOf) ? g.lookOf(opt) : ((looks[0] || {}).key || ""),   // LU_LOOKA: a notebook with colour sets says which is on', '((looks[0] || {}).key || ""),'];
 ok(src.split(INLINE[0]).length === 2, "one marked line outside the blocks (notebookOptions says which set is on)");
 const blockTxt = blocks.map(b => src.slice(b[0], b[1])).join("") + INLINE[0];
@@ -40,7 +41,7 @@ const OWN = K.luLookPalette("");
 let cut = src; for (let n = blocks.length - 1; n >= 0; n--) cut = cut.slice(0, blocks[n][0]) + cut.slice(blocks[n][1]);
 const tokens = cut.match(/\{\{lu:\w+\}\}/g) || [];
 const baseSrc = cut.replace(/\{\{lu:(\w+)\}\}/g, (m, n) => OWN[n]).replace(INLINE[0], INLINE[1]);
-ok(tokens.length === 275 && !/\{\{lu:/.test(baseSrc) && !/LU_LOOKA|luPaint|luLook/.test(baseSrc), "baseline: blocks cut, 274 colour literals + 1 colour word put back, nothing of the look left", tokens.length);
+ok(tokens.length === 276 && !/\{\{lu:/.test(baseSrc) && !/LU_LOOKA|luPaint|luLook|LU_LNT_TOK/.test(baseSrc), "baseline: blocks cut, 275 colour literals + 1 colour word put back, nothing of the look left", tokens.length);
 const NB = load(src), OLD = load(baseSrc), I = NB._internal, OI = OLD._internal;
 const kidsOf = (N) => Object.keys(N.GENERATORS).filter(k => N.GENERATORS[k].build === N._internal.generateLucy);
 const KID = kidsOf(NB)[0];
@@ -64,7 +65,10 @@ const unit = { emoji: "🐢", title: "Sea Turtles", learning: [{ name: "Shell", 
 const loe = [{ pg: "sh", sounds: "/sh/", lesson: 41 }, { pg: "th", sounds: "/th/", lesson: 42 }, { pg: "ee", sounds: "/ē/", lesson: 43 }];
 // the reading ladder the way index.html hands it over (nbLadderCtx): on, loaded, this week's items from the engine
 const READ = JSON.parse(fs.readFileSync(path.join(__dirname, "ladders", "read_and_answer.json"), "utf8")), TR = NB.ladders.track("reading", READ);
-const rl = (lv) => { const st = { on: true, lv: lv, opt: false, cur: null, days: null }; return { reading: Object.assign({}, st, { lvFrom: "saved", ready: true, next: NB.ladders.next(TR, st, 12, 2) }) }; };
+const rl = (lv, wf) => { const st = { on: true, lv: lv, opt: false, cur: null, days: null }; return { reading: Object.assign({}, st, { lvFrom: "saved", ready: true, wf: wf || "", next: NB.ladders.next(TR, st, 12, 2) }) }; };
+// …and the number ladder (5 questions a week)
+const NUM = JSON.parse(fs.readFileSync(path.join(__dirname, "ladders", "number_thinking.json"), "utf8")), TN = NB.ladders.track("number", NUM);
+const nl = (lv) => { const st = { on: true, lv: lv, opt: false, cur: null }; return { number: Object.assign({}, st, { lvFrom: "saved", ready: true, next: NB.ladders.next(TN, st, 12, 5) }) }; };
 const base = (extra) => Object.assign({ weekNum: "week12", weekDates: "Nov 16–20, 2026", weekData: { dates, tasks }, extraPages: {} }, extra || {});
 const full = (extra) => base(Object.assign({ masteryItems: items, extraPages: extraOn, loe, units: [unit], teachNotes: "Short day Wednesday.", ladders: rl("g1"),
   personal: { address: ["12 Elm Road", "Springfield"], phone: "555-0100" }, dolls: { doll: PNG, outfit: PNG }, dotdot: PNG, coloring: PNG, symmetry: PNG, pattern: PNG, maze: PNG,
@@ -74,12 +78,18 @@ const FIX = {
   full: full(),
   fullSpelling: full({ spelling: { title: "Spelling", sections: [{ label: "Mon–Tue", lesson: 3, words: ["cat", "hat", "sat"] }], practice: ["mat"] } }),
   readingG4: full({ ladders: rl("g4") }),
+  writeFirst: full({ ladders: rl("g3", "both") }),
+  numberK: full({ ladders: Object.assign(rl("g1"), nl("k")) }),
+  numberG1: full({ ladders: Object.assign(rl("g3", "one"), nl("g1")) }),
   fourDays: full({ weekData: { dates: { monday: dates.monday, tuesday: dates.tuesday, wednesday: dates.wednesday, thursday: dates.thursday }, tasks } })
 };
 const fo = I.generateLucy(FIX.full), fs2 = I.generateLucy(FIX.fullSpelling);
 const has = (h, re) => re.test(h);
 ok([/Months of the Year/, /This Month/, /All About Me/, /My Words/, /Extra pages today:|Pages to do today:/, /Sea Turtles/, /Paper doll/, /slabel ph/, /lm-card/, /lw-/, /iVBORw0KGgo/, /Read and answer/, /lr-how/].every(re => has(fo.student, re)) && /Spelling/.test(fs2.student),
   "the full fixture prints every optional part (extra pages + strip, My Words, unit insert, paper dolls, phonograms, math block, uploads, Read and answer; Spelling in its twin)");
+const wf = I.generateLucy(FIX.writeFirst), nk = I.generateLucy(FIX.numberK), n1 = I.generateLucy(FIX.numberG1);
+ok(/lr-wl/.test(wf.student) && /\(back\)/.test(wf.student) && /NBLADREAD3 — write-first/.test(wf.student), "write-first (g3): the writing lines, the back page and their sheet print");
+ok(/class="lnt-say"/.test(nk.student) && !/class="lnt-say"/.test(n1.student) && /lnt-q/.test(n1.student) && /Number/.test(n1.parent), "the number ladder: Number thinking + its Companion page; at k the amber \"Read aloud\" line prints (the amber tag style rides in the same sheet)");
 ok((fo.student.match(/class="page-label">Read and Answer — /g) || []).length === 2 && /lr-/.test(fo.parent) && /lr-/.test(I.generateLucy(FIX.readingG4).student), "the reading ladder prints two Read and answer pages + its Companion page (levels g1 and g4)");
 
 console.log("(a) nothing saved → byte for byte today's notebook");
@@ -117,6 +127,15 @@ SETS.forEach(L => Object.keys(FIX).forEach(f => {
   if ((o.student.match(/class="page"/g) || []).length !== (own.student.match(/class="page"/g) || []).length) onlyBad.push(L.key + "/" + f + " page count");
 }));
 ok(!onlyBad.length && changed === SETS.length * Object.keys(FIX).length * 2, SETS.length + " sets × " + Object.keys(FIX).length + " fixtures × student + parent: with every colour value and the row word taken out, identical to its own look — and every build did change colour", onlyBad.slice(0, 2).join(" | "));
+{ const build = (fx, t) => I.generateLucy(Object.assign({}, fx, { notebookTheme: t })).student;
+  const own = build(FIX.numberK, "") + build(FIX.writeFirst, ""), AMB = ["#92400e", "#fef3c7", "#fcd34d"];
+  // the golds are re-hued only by a set with a warm colour (Plain); Ocean, Forest and Horse keep them, as their gold cards do
+  const pl = build(FIX.numberK, "col-plain"), Pp = K.luLookPalette("col-plain"), sea = build(FIX.numberK, "col-ocean") + build(FIX.writeFirst, "col-ocean"), Po = K.luLookPalette("col-ocean");
+  ok(AMB.every(v => own.indexOf(v) > 0 && pl.indexOf(v) < 0) && pl.indexOf("color:" + Pp.tagInk + "; line-height:1.3;") > 0 && sea.indexOf("color:" + Po.tagInk + "; line-height:1.3;") > 0 && Po.tagInk === "#92400e",
+    "the Number thinking page's amber (\"Read aloud\" line, grown-up tag) moves with the golds: re-hued on Plain, kept on the sets that keep their golds");
+  ok(own.indexOf(".lr-wl { border-bottom:1.5px solid #c4b5fd; }") > 0 && sea.indexOf(".lr-wl { border-bottom:1.5px solid " + Po.lilac + "; }") > 0 && Po.lilac !== "#c4b5fd", "…and the write-first lines and Notes pad turn with the purples"); }
+{ const pk = Object.keys(NB.GENERATORS).filter(k => NB.GENERATORS[k].prek).concat(["kid9"]);
+  ok(pk.every(k => ["", "col-ocean"].every(t => { const c = base({ notebookTheme: t || undefined, isPreK: true, nbGrade: "Pre-K", ladders: nl("k") }); if (k === "kid9") c.notebookTheme = "dino"; const a2 = NB.generate(k, c), b2 = OLD.generate(k, c); return a2.student === b2.student && a2.parent === b2.parent && /lnt-q/.test(a2.student); })), "a Pre-K notebook with the number ladder on builds exactly as before (its copy of the sheet is untouched)"); }
 const thisMonth = (key) => (I.generateLucy(Object.assign({}, FIX.full, { notebookTheme: key })).student.match(ROW_RE) || [])[0];
 ok(thisMonth("") === "this week is the purple row" && SETS.every(L => thisMonth(L.key) === "this week is the " + L.rowWord + " row"), "the one colour word follows the set: purple · " + SETS.map(L => L.rowWord).join(" · "));
 const KEEPV = Object.keys(K.LU_PAL.keep);
@@ -131,12 +150,19 @@ console.log("(c) no colour literal left in the notebook's code");
 const a0 = src.indexOf("  var LUCY_CSS = "), a1 = src.indexOf("\n  }\n", src.indexOf("  function generateLucy(ctx) {"));
 let region = src.slice(a0, a1);
 blocks.forEach(b => { if (b[0] > a0 && b[1] < a1) region = region.replace(src.slice(b[0], b[1]), ""); });
+// NBLADREAD3's look table also holds the 4th- and 6th-grade notebooks' own reading-page colours (its tf: and ln: entries) —
+// not this notebook's: they are left out of the scan by entry; its lu: entry (this notebook's) is scanned.
+{ const t0 = region.indexOf("    tf: { map:"), t1 = region.indexOf("    lu: { line:");
+  ok(t0 > 0 && t1 > t0 && region.lastIndexOf("NBLADREAD3_START", t0) > 0, "the older notebooks' reading-page looks (tf:, ln:) found inside NBLADREAD3 and left out of the scan");
+  if (t0 > 0 && t1 > t0) region = region.slice(0, t0) + region.slice(t1); }
 const unitLine = src.split("\n").find(l => /^\s+\w+:\s+\{ GD:"\{\{lu:dark\}\}"/.test(l)) || "";
 const LIT = /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|(?::\s*|fill="|stroke=")(white|black|transparent|red|blue|green|yellow|purple|pink|orange|gr[ae]y|gold|navy|teal)\b(?!-)/g;
 const left = (region + unitLine).replace(/\{\{lu:\w+\}\}/g, "").match(LIT) || [];
 ok(!left.length && region.length > 100000 && region.indexOf("NBLADREAD_START") > 0, "none in the sheet, the page code, the math pictures, the reading page, the strip call or the unit-page colours (" + Math.round(region.length / 1000) + " KB scanned)", left.slice(0, 5).join(" "));
 ok(/\{\{lu:dark\}\}/.test(unitLine) && /"\{\{lu:bbPink\}\}", "\{\{lu:ppale\}\}", "\{\{lu:pink\}\}"/.test(region), "the unit-page colours and the \"pages today\" strip read the palette");
-const used = new Set(tokens.map(t => t.slice(5, -2))), names = Object.keys(OWN);
+const lntMap = (/var LU_LNT_TOK = (\{[^}]*\})/.exec(blockTxt) || [])[1];
+const used = new Set(tokens.map(t => t.slice(5, -2)).concat(lntMap ? Object.values(JSON.parse(lntMap)) : [])), names = Object.keys(OWN);
+ok(lntMap && Object.keys(JSON.parse(lntMap)).length === 8, "the Number thinking sheet's 8 typed colours map to palette entries in the 1st-grade copy only");
 ok(names.every(n => used.has(n)) && [...used].every(n => names.includes(n)), names.length + " palette entries, each used, and every token has one", names.filter(n => !used.has(n)).concat([...used].filter(n => !names.includes(n))).join());
 ok(SETS.every(L => { const P = K.luLookPalette(L.key); return names.every(n => n === "rowWord" ? /^[a-z]+$/.test(P[n]) : K.luRgbOf(P[n]) || /^(white|transparent)$/.test(P[n])); }), "every set gives every entry a real colour");
 ok(Object.keys(K.LU_PAL.word).length === 1, "one word in the palette (the row's colour name)");
@@ -149,7 +175,7 @@ const ratio = (a, b) => { const x = lumOf(a), y = lumOf(b); return (Math.max(x, 
 const PAIRS = [["ink", "pale"], ["ink", "ppale"], ["ink", "gpale"], ["ink", "palePrint"], ["ink", "ppalePrint"], ["ink", "gpalePrint"], ["ink", "light"],
   ["dark", "pale"], ["dark", "light"], ["dark", "gpale"], ["dark", "palePrint"], ["dark", "lightPrint"], ["pink", "pale"], ["pink", "ppale"], ["pink", "gpale"], ["pink", "white"],
   ["pink", "ppalePrint"], ["mid", "pale"], ["mid", "white"], ["mid", "gpale"], ["goldInk", "gpale"], ["goldInk", "gpalePrint"], ["fff", "dark"], ["fff", "darkPrint"], ["fff", "mid"], ["fff", "compHead"],
-  ["fff", "gold"], ["plight", "dark"], ["bbPink", "white"], ["violet", "white"], ["trace", "white"], ["safetyInk", "safetyBg"], ["muted", "white"]];
+  ["fff", "gold"], ["plight", "dark"], ["bbPink", "white"], ["violet", "white"], ["trace", "white"], ["safetyInk", "safetyBg"], ["muted", "white"], ["tagInk", "tagBg"], ["tagInk", "white"]];
 const bodyText = PAIRS.filter(p => OWN[p[0]] && ratio(OWN[p[0]], OWN[p[1]]) >= 4.5);
 let cBad = [], worst = 99;
 SETS.forEach(L => { const P = K.luLookPalette(L.key); PAIRS.forEach(([t, b]) => {
