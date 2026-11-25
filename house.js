@@ -1795,6 +1795,7 @@ function lgDayData(kid,k){
         if(typeof lgSbRow==="function") lgSbRow(r,kid,D,"a:"+it.id);   // ↩ LEDGERSB
         rows.push(r); });
       steps.forEach(function(st,i){ if(!st||(D.prev&&st.house)) return; let r=lgRow(slot,kid,D,i,st); if(typeof lgXRow==="function") r=lgXRow(r,slot,kid,D,i,st);   // ➖ LEDGERX (L3): Excuse / Undo on the row
+        if(r&&typeof lgZeroRow==="function") lgZeroRow(r,slot,kid,D,i,st);   // LEDGERZERO (C6): a 0 ⭐ daily's −1
         if(!r) return;
         if(D.prev&&st.rot) r.nm="🔄 a job that takes turns";   // last week's turn is not worked out again here (rtApplyRot reads this week's dates)
         if(typeof lgSbRow==="function") lgSbRow(r,kid,D,"s:"+slot+":"+i);   // ↩ LEDGERSB (L5): Send back / what it did
@@ -1813,6 +1814,7 @@ function lgDayData(kid,k){
   } finally { day=pd; _prevSlWk=pw; }
   out.lists.forEach(function(L){ L.rows.forEach(function(r){ out.earned+=(r.pts||0)+(r.gb||0); out.short+=r.sh||0; out.held+=r.held||0; if(r.c===0) out.open++; }); });
   out.taken=0; out.gone.forEach(function(r){ out.taken+=r.tk||0; });   // LEDGERDROP: what came off the bank
+  out.lists.forEach(function(L){ L.rows.forEach(function(r){ out.taken+=r.tk||0; }); });   // LEDGERZERO: a 0 ⭐ daily's −1
   return out;
 }
 // ── drawing ──
@@ -1976,6 +1978,7 @@ function lgExcuse(kid,wk,dn,slot,i,here,g){
   if(!lgXCan(slot,kid,E,i,st)){ lgXDone(); return false; }   // done, excused already (this device or another), or not a row that can be
   rtWave(slot,kid,E.dn,i,E.wk,st); const on=lgWaved(slot,kid,E,i);
   if(on&&!st.house&&typeof lgDropOff==="function") lgDropOff(kid,E,slot,i);   // LEDGERDROP: anything the drop took goes back, kept for Undo
+  if(on&&typeof lgZeroOff==="function") lgZeroOff(kid,E,slot,i,st);   // LEDGERZERO: that day's −1 goes back
   if(on&&!st.house) lgXMissOff(kid,E,slot,i);   // LEDGERXLOG: its "— not done" line out
   if(on&&here&&here!==E.iso) lgXJ[kid+"|"+here+"|"+slot+"|"+i]={wk:E.wk,dn:E.dn,g:g?1:0};
   lgXDone(); return on; }
@@ -1985,6 +1988,7 @@ function lgExcuseUndo(kid,wk,dn,slot,i){
   if(!st.house&&typeof lgDropKept==="function"){ const kp=lgDropKept(kid,E,slot,i); if(kp) lgDropOn(kid,E,slot,i,kp); }   // LEDGERDROP: what Excuse kept goes back exactly, BEFORE the ✕ record goes (no device files it afresh in between, and the filing below then finds the line there)
   rtWave(slot,kid,E.dn,i,E.wk,st); const off=!lgWaved(slot,kid,E,i);
   if(off&&!st.house) lgXMissOn(kid,E,slot,i,st);   // LEDGERXLOG: and back
+  if(off&&typeof lgZeroOn==="function") lgZeroOn(kid,E,slot,i,st);   // LEDGERZERO: and back
   if(off) Object.keys(lgXJ).forEach(function(k){ const v=lgXJ[k]; if(v.wk===E.wk&&v.dn===E.dn&&k.split("|")[0]===kid&&k.split("|").slice(2).join("|")===slot+"|"+i) delete lgXJ[k]; });
   lgXDone(); return off; }
 // LEDGERX_END
@@ -2043,7 +2047,7 @@ function lgRulesHTML(){
     +'<span style="display:inline-flex;align-items:center;gap:6px">Take stars away '+lgRSw(lgRTakeOn(k),"lgRuleTake('"+k+"')","Take stars away for "+lgName(k))+'</span></div>'; });
   if(P) h+='<div style="font-size:11.5px;font-weight:700;color:#92400e;padding-top:2px">Paused: these count again when you turn ⏸ off.</div>';
   h+='<div style="'+sub+';margin-top:4px"><b>Stars fall when late:</b> a chore done after its day pays a little less each day. Off: it pays its full stars.<br>'
-    +'<b>Take stars away:</b> the 🔎 Spot check\'s extra stars, the Click-off Log\'s ⚠️, 🧾 Today\'s check-offs\' −100 and ↩ Send back\'s 🚩 Wasn\'t done. Off: they take nothing from that kid.</div></div>'
+    +'<b>Take stars away:</b> the 🔎 Spot check\'s extra stars, the Click-off Log\'s ⚠️, 🧾 Today\'s check-offs\' −100 and ↩ Send back\'s 🚩 Wasn\'t done. Off: they take nothing from that kid.</div></div>'+(typeof lgZeroSet==="function"?lgZeroSet(sep,sub):'')
     +'<div style="'+sep+'">'+lgRLine("Penalty: "+(pen.on?pen.pts+" ⭐":"off"),"Changed on the 🔎 Spot check card's ⚙ (its ✗ Not done). The Click-off Log's ⚠️, 🧾 and ↩ Send back's 🚩 Wasn't done use it too.","lgRulesGoSpot()")
     +lgRLine("Mom checks before pay: "+(cv.length?"on for "+cv.join(", "):"off"),"Changed in Chores & Stars ▸ Points.","lgRulesGoPoints()")+'</div>';
   return h+'</div>'; }
@@ -2224,6 +2228,37 @@ function hoDrop(X,id,n){ if(!X.dr){ X.dr={}; Object.keys(routineLog||{}).forEach
     Object.keys(D).forEach(function(q){ const t=D[q]&&D[q].drop; if(t&&t.n>0&&t.due&&t.job) X.dr[t.job+"|"+t.due]={n:t.n,gb:!!t.gb}; }); }); }); }); }
   return X.dr[id+"|"+_hhIsoOf(n)]||null; }
 // LEDGERDROP_END
+// LEDGERZERO_START — a 0 ⭐ daily's −1 on its 📒 Ledger row (missed-chores design §2.8 and §4, slice C6; C3's LEDGERDROP pattern and gate).
+// index.html CHOREZERO files the day's line (routineLog/<kid>/<wk>/<day>/zero_<chore>, .zero) and the bank line. Here, on that day's row:
+// "−1 ⭐ this morning: not done 2 days in a row" with ⭐ Give stars back (Mom, or Dad's link with his code: lgDropOk), and the day's
+// "taken". Give back = ONE update: the bank line removed + zero.gb = {by, ts, at, line}; Undo puts that exact line back. ➖ Excuse on the
+// row gives it back too (gb.x) and its Undo puts it back. The day's line is never removed, so no device files that day again.
+// ⚙ Star rules: "Stops after 5 ⭐" / "No stop" for the whole family, household/meta/starRules/zero = {stop:5|0}, one write per tap.
+function lgZeroOf(kid,D,slot,st){ const k=st&&rtDailyRow(st,1)?"zero_"+rtZeroKey(slot,kid,st):"", L=k&&(((routineLog[kid]||{})[D.wk]||{})[D.dn]||{})[k], z=L&&L.zero;
+  return z?{z:z,line:z.bid?lgDropLine(kid,z.bid):null,p:"routineLog/"+kid+"/"+D.wk+"/"+D.dn+"/"+k}:null; }
+function lgZeroRow(r,slot,kid,D,i,st){
+  const x=lgZeroOf(kid,D,slot,st); if(!x) return; const z=x.z, js="('"+kid+"','"+D.wk+"','"+D.dn+"','"+slot+"',"+i+")";
+  r.note=(r.note?r.note+" · ":"")+(z.n?"−1 ⭐ "+(D.k===0?"this":"that")+" morning: ":"")+"not done "+z.run+" days in a row";
+  if(!z.n){ r.note+=" · nothing taken ("+(z.why==="pause"?"⏸ paused":"Take stars away was off")+")"; return; }
+  if(z.gb){ if(z.gb.x) r.note+=", given back"; else r.gbH='<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="font-size:11.5px;font-weight:800;color:#b45309">⭐ '+(z.gb.by==="dad"?"Dad":"Mom")+' gave back +1 ⭐</span>'+(lgDropOk()?'<button onclick="lgZeroUndo'+js+'" style="border:1.5px solid var(--border);background:#fff;color:#374151;border-radius:8px;padding:2px 9px;font-size:11.5px;font-weight:700;cursor:pointer">Undo</button>':'')+'</span>'; return; }
+  if(!x.line){ r.note+=", not in the Star Bank now"; return; }
+  r.tk=1; if(lgDropOk()) r.gbH='<button onclick="lgZeroGive'+js+'" title="Put back the 1 ⭐ taken this morning. It still counts as not done." style="border:1.5px solid #f59e0b;background:#fffbeb;color:#92400e;border-radius:8px;padding:2px 9px;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap">⭐ Give stars back</button>'; }
+// The taps: the row is read again now (never trusted from the drawing).
+function lgZeroAt(kid,wk,dn,slot,i){ if(!lgDropOk()||!lgXArgOk(kid,slot,i)) return null; const E=lgDropDay(wk,dn), st=E&&lgXStep(slot,kid,E,i); return st?lgZeroOf(kid,E,slot,st):null; }
+function lgZeroGb(kid,x,ex){ const gb={by:momHere()?"mom":"dad",ts:nowTs(),at:Date.now(),line:x.line}, u={}; if(ex) gb.x=1;
+  x.z.gb=gb; delete bank[kid].adjustments[x.z.bid]; u[x.p+"/zero/gb"]=gb; u["bank/"+kid+"/adjustments/"+x.z.bid]=null; lgDropUp(u); }
+function lgZeroUn(kid,x){ const u={}, ln=x.z.gb.line; delete x.z.gb; bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{}; bank[kid].adjustments[x.z.bid]=ln;
+  u[x.p+"/zero/gb"]=null; u["bank/"+kid+"/adjustments/"+x.z.bid]=ln; lgDropUp(u); }
+function lgZeroGive(kid,wk,dn,slot,i){ const x=lgZeroAt(kid,wk,dn,slot,i), ok=!!x&&x.z.n>0&&!x.z.gb&&!!x.line; if(ok) lgZeroGb(kid,x,0); lgDropDone(); return ok; }
+function lgZeroUndo(kid,wk,dn,slot,i){ const x=lgZeroAt(kid,wk,dn,slot,i), ok=!!x&&!!x.z.gb&&!x.z.gb.x&&!!x.z.gb.line&&!x.line; if(ok) lgZeroUn(kid,x); lgDropDone(); return ok; }
+// ➖ Excuse (LEDGERX) on that day's row gives it back; its Undo puts it back exactly.
+function lgZeroOff(kid,E,slot,i,st){ const x=lgZeroOf(kid,E,slot,st); if(x&&x.z.n>0&&!x.z.gb&&x.line) lgZeroGb(kid,x,1); }
+function lgZeroOn(kid,E,slot,i,st){ const x=lgZeroOf(kid,E,slot,st); if(x&&x.z.gb&&x.z.gb.x&&x.z.gb.line&&!x.line) lgZeroUn(kid,x); }
+// ⚙ the setting (LEDGERRULES' panel and gate)
+function lgRuleZero(v){ if(!lgRulesOk()||(v!==0&&v!==5)||(rtZeroStop()?5:0)===v) return false; return lgRWrite("zero",lgRBy({stop:v})); }
+function lgZeroSet(sep,sub){ const s=rtZeroStop(), b=function(on,v,t){ return '<button onclick="lgRuleZero('+v+')" aria-pressed="'+on+'" style="border:1.5px solid '+(on?'#16a34a':'var(--border)')+';background:'+(on?'#dcfce7':'#fff')+';color:'+(on?'#166534':'#6b7280')+';border-radius:8px;padding:2px 9px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap">'+t+'</button>'; };
+  return '<div style="display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap;'+sep+'"><span style="flex:1 1 200px"><b>A 0 ⭐ daily not done 2 days in a row</b><span style="display:block;'+sub+'">1 ⭐ comes off each morning until it is done. Stops after 5: then nothing more until it is done once. Take stars away off for a kid: nothing is taken.</span></span>'+b(s,5,"Stops after 5 ⭐")+b(!s,0,"No stop")+'</div>'; }
+// LEDGERZERO_END
 // HOUSESWITCH_START — 🚪 the real switch and today's stored plan on 👤 By person (Household by room, step 4; DESIGN §4.3 doors, §5 last
 // bullet, her yes 2026-11-17). Mom only. ON first PROVES a houseDay save works (houseDay/<today>/hello) and only then writes
 // household/meta/engine = {mode:"on", on:<today>} together with each house chore's last-done date filled once from the 8 weeks of

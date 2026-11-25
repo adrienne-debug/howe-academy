@@ -37,14 +37,15 @@ const IDX = process.env.LGX_INDEX || path.join(__dirname, "index.html"), HJS = f
 const once = (src, what, from, to, label) => { const n = typeof from === "string" ? src.split(from).length - 1 : (src.match(from) || []).length;
   if (n !== 1) throw new Error("test_ledger_excuse: the app before cannot be built — " + label + " found " + n + "× in " + what + " (must be exactly once)"); return src.replace(from, () => to); };
 const noXLog = s => once(s, "index.html", /else delete routineLog\[kid\]\[w\]; if\(typeof _hhLogCache!=="undefined"\) _hhLogCache=null; \}\);   \/\/ LEDGERXLOG[^\n]*/, "else delete routineLog[kid][w]; });", "the routineLog listener's LEDGERXLOG line");
-const BASE_IDX = (() => { let s = noXLog(fs.readFileSync(path.join(__dirname, "index.html"), "utf8"));
+const C6 = require(path.join(__dirname, "test_fixtures", "carve_c6.js"));   // C6 (test_chore_zero_daily.js) is built on this: its app before goes too
+const BASE_IDX = (() => { let s = noXLog(C6.idx(fs.readFileSync(path.join(__dirname, "index.html"), "utf8")));
   s = once(s, "index.html", /^ {2}const wk0=arguments\[4\], st0=arguments\[5\];[^\n]*LEDGERX[^\n]*\n/m, "", "rtWave's two extra arguments");
   s = once(s, "index.html", "const wk=wk0||activeWk(), key=rtWaveKey(slot,i), steps=st0?[]:(", "const wk=activeWk(), key=rtWaveKey(slot,i), steps=(", "rtWave's week");
   s = once(s, "index.html", "st=st0||steps[i]; if(!st) return;", "st=steps[i]; if(!st) return;", "rtWave's row");
   s = once(s, "index.html", "const on=!(wk0?!!(((wavedData[wk]||{})[d]||{})[kid]||{})[key]:rtWaved(slot,kid,d,i));", "const on=!rtWaved(slot,kid,d,i);", "rtWave's on");
   if (/LEDGERX|wk0|st0/.test(s.slice(s.indexOf("// WAVE_START"), s.indexOf("// WAVE_END")))) throw new Error("test_ledger_excuse: the app before still mentions LEDGERX");
   const t = path.join(os.tmpdir(), "ledger_x_before_" + process.pid + ".html"); fs.writeFileSync(t, s); return t; })();
-const BASE_HJS = (() => { let s = fs.readFileSync(path.join(__dirname, "house.js"), "utf8");
+const BASE_HJS = (() => { let s = C6.hjs(fs.readFileSync(path.join(__dirname, "house.js"), "utf8"));
   s = once(s, "house.js", /^\/\/ LEDGERX_START[^\n]*\n[\s\S]*?^\/\/ LEDGERX_END\n/m, "", "the LEDGERX block");
   s = once(s, "house.js", "let r=lgRow(slot,kid,D,i,st); if(typeof lgXRow===\"function\") r=lgXRow(r,slot,kid,D,i,st);   // ➖ LEDGERX (L3): Excuse / Undo on the row\n        if(!r) return;", "const r=lgRow(slot,kid,D,i,st); if(!r) return;", "the row hook");
   s = once(s, "house.js", "(lgWaved(slot,kid,E,i)&&!(typeof lgXHere===\"function\"&&lgXHere(kid,D,slot,i,E)))) return;   // ➖ LEDGERX: excused here just now → kept in its spot", "lgWaved(slot,kid,E,i)) return;", "the gone hook");

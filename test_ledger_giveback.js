@@ -29,11 +29,12 @@ const IDX = process.env.LGB_INDEX || path.join(__dirname, "index.html"), HJS = f
 // ── the app before: this tree, L2 taken out ──
 const once = (src, what, from, to, label) => { const n = typeof from === "string" ? src.split(from).length - 1 : (src.match(from) || []).length;
   if (n !== 1) throw new Error("test_ledger_giveback: the app before cannot be built — " + label + " found " + n + "× in " + what + " (must be exactly once)"); return src.replace(from, to); };
-const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const C6 = require(path.join(__dirname, "test_fixtures", "carve_c6.js"));   // C6 (test_chore_zero_daily.js) is built on this: its app before goes too
+const BASE_IDX = (() => { let s = C6.idx(fs.readFileSync(path.join(__dirname, "index.html"), "utf8"));
   s = once(s, "index.html", /^ {4}if\(!now&&typeof bank!=="undefined"&&bank&&bank\[kid\]&&bank\[kid\]\.adjustments&&bank\[kid\]\.adjustments\["lgb_"\+sk\]\) bankDirectRemove\(kid,"lgb_"\+sk\);[^\n]*LEDGERGB[^\n]*\n/m, "", "the un-tick line");
   if (/LEDGERGB|"lgb_"/.test(s)) throw new Error("test_ledger_giveback: the app before still mentions LEDGERGB");
   const t = path.join(os.tmpdir(), "ledger_gb_before_" + process.pid + ".html"); fs.writeFileSync(t, s); return t; })();
-const BASE_HJS = (() => { let s = fs.readFileSync(path.join(__dirname, "house.js"), "utf8");
+const BASE_HJS = (() => { let s = C6.hjs(fs.readFileSync(path.join(__dirname, "house.js"), "utf8"));
   s = once(s, "house.js", /^\/\/ LEDGERGB_START[^\n]*\n[\s\S]*?^\/\/ LEDGERGB_END\n/m, "", "the LEDGERGB block");
   s = once(s, "house.js", /^ {4}if\(typeof lgGbRow==="function"\) lgGbRow\(r,slot,kid,D,i,st,E,p,full\);[^\n]*\n/m, "", "the lgRow hook");
   s = once(s, "house.js", "out.earned+=(r.pts||0)+(r.gb||0);", "out.earned+=r.pts||0;", "the totals hook");
