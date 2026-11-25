@@ -52353,7 +52353,7 @@ function nbtPrepDoc(doc){
 function nbtPages(doc){ return doc?Array.prototype.slice.call(doc.querySelectorAll(".page")):[]; }
 function nbtShowPage(){
   const v=nbtView, fr=document.getElementById("nbt-doc"); if(!v||!fr||!fr.contentDocument) return;
-  nbtPages(fr.contentDocument).forEach((p,i)=>{ if(i===v.page-1) p.classList.add("nbt-on"); else p.classList.remove("nbt-on"); });
+  nbtPages(fr.contentDocument).forEach((p,i)=>{ if(i===v.page-1&&!nbtWfLocked(v,i+1)) p.classList.add("nbt-on"); else p.classList.remove("nbt-on"); });   // ✍️ NBLADTAB_WF: a covered check page is never shown
   try{ HA_LS.setItem(v.key,String(v.page)); }catch(e){}
   nbtAnsFollow(); nbtShowAns();
   nbtAcDraw();   // NBT_AUTOCHK: this page's circles
@@ -52440,6 +52440,7 @@ function nbtBarRender(){
       btn(v.dirty?"💾 Save":"✓ Saved","nbtSave()",v.dirty)
     ):"");
   try{ const cv=document.getElementById("nbt-ink"); if(cv) cv.style.touchAction=v.penOnly?"pan-x pan-y":"none"; }catch(e){}   // 👆 as the workbooks: pencil-only lets a finger scroll
+  nbtWfTick(v);   // ✍️ NBLADTAB_WF: a write-first check page stays covered until its front is written
   nbtTodayRender();   // NBT_TODAY: the list follows every bar repaint (page, day, ink)
 }
 function nbtTool(t){ if(!nbtView) return; nbtView.tool=t; nbtBarRender(); }
@@ -52721,6 +52722,117 @@ function nbtTodayRender(){
   el.innerHTML=h;
 }
 // NBT_TODAY_END
+// NBLADTAB_WF_START — ✍️ a write-first day on the tablet: the choices stay covered until the child has written (notebook
+// ladders, tablet slice; her words 2026-11-24: reading "Write first some days" — paper = the choices on the back of the sheet,
+// tablet = the choices hidden until the child has written; and for every notebook page "no step may count on the kid covering
+// something or not peeking — the page itself hides the answer"). NBLADREAD3 prints a write-first day as two pages: the front
+// ("Read and answer" — the passage, and writing lines where a question is written first) and right after it the check page
+// ("Read and answer — check": those questions again WITH their choices, heading .lr-back). On paper the back of the sheet does
+// the hiding; on the tablet the next page is one ▶ away, so here the check page stays covered by a plain card ("Write your
+// answers first, then your choices show here") until the front page has writing on EVERY question that has lines.
+// "Has written" = the ink the tablet already saves for the front page (notebookWork/<kid>/<week>/<page>, the same read the
+// page's own ink load makes) — a stroke inside a question's own area (its words + its lines, in the page's 816 × 1056 units,
+// NBT_WF_PAD of slack). No "I wrote it" button. A page that can't be measured falls back to any writing on the front.
+// Once open it stays open for that week's copy: this device remembers it (HA_LS NBT_WF_LS, per kid · week · copy), and
+// writing already saved on the check page itself also means it was open — so erasing the front later never covers it again.
+// A grown-up (wbMomEyes, or Dad's unlocked link) always sees it. Nothing new is written to the database; the page markup,
+// printing and the PDF are untouched (all of this lives in the viewer). A week with write-first off has no check page, so
+// nothing here does anything. Works offline as the viewer does: the writing on screen opens it with no network at all.
+const NBT_WF_PAD=10;   // page px: writing this close to a question's area counts as writing on it
+const NBT_WF_LS="ha_nbt_wf";   // this device: {"<kid>|<week>|<copy ts>":[check page numbers]}, the newest few copies only
+function nbtWfParent(){ try{ return !!((typeof wbMomEyes==="function"&&wbMomEyes())||(typeof _kioskD==="function"&&_kioskD()&&typeof dadAwardOk==="function"&&dadAwardOk())); }catch(e){ return false; } }
+// the copy's write-first pairs: {check page: its front page} (1-based) — a check page is the page tagged "Read and answer —
+// check" or carrying the .lr-back heading; its front is the page right before it, when that page has writing lines
+function nbtWfPairs(doc){
+  const out={};
+  try{ const ps=nbtPages(doc);
+    ps.forEach((p,i)=>{ if(!i) return; const nm=(p.getAttribute&&p.getAttribute("data-nb-name"))||"";
+      if(!(nm==="Read and answer — check"||p.querySelector(".lr-back"))) return;
+      if(ps[i-1].querySelector(".lr-lines")) out[i+1]=i; });
+  }catch(e){}
+  return out;
+}
+function nbtWfPairsOf(v){
+  if(!v._wfPairs){ const fr=document.getElementById("nbt-doc"), doc=fr&&fr.contentDocument; if(!doc) return {}; v._wfPairs=nbtWfPairs(doc); }
+  return v._wfPairs;
+}
+// the front page's writing areas, in page units: one per question with lines — the whole question (its words + its lines).
+// A hidden page is shown for the measure only (same tick: never painted).
+function nbtWfBoxes(page){
+  if(!page||!page.querySelectorAll||!page.classList) return [];
+  const on=page.classList.contains("nbt-on"); if(!on) page.classList.add("nbt-on");
+  let out=[];
+  try{ out=Array.prototype.slice.call(page.querySelectorAll(".lr-q")).filter(q=>q.querySelector(".lr-lines")).map(q=>{
+    const r=q.getBoundingClientRect(), n=q.querySelector(".lr-n"); return {n:n?String(n.textContent||"").trim():"",x:r.left,y:r.top,w:r.width,h:r.height}; }); }catch(e){ out=[]; }
+  if(!on) page.classList.remove("nbt-on");
+  return out;
+}
+function nbtWfBoxesOf(v,p){ const fr=document.getElementById("nbt-doc"), doc=fr&&fr.contentDocument; return doc?nbtWfBoxes(nbtPages(doc)[p-1]):[]; }
+// the questions with lines that have no writing yet (their numbers); [] = all written. strokes = [{p:[[x,y]…]}], 0..1 of the page
+function nbtWfMissing(strokes,boxes){
+  const ss=(strokes||[]).filter(s=>s&&(s.p||[]).length), bs=(boxes||[]).filter(b=>b&&b.w>0&&b.h>0), P=NBT_WF_PAD;
+  if(!bs.length) return ss.length?[]:["?"];   // can't measure → any writing on the page counts
+  return bs.filter(b=>!ss.some(s=>s.p.some(q=>{ const x=q[0]*816, y=q[1]*1056; return x>=b.x-P&&x<=b.x+b.w+P&&y>=b.y-P&&y<=b.y+b.h+P; }))).map(b=>b.n||"?");
+}
+function nbtWfWritten(strokes,boxes){ return nbtWfMissing(strokes,boxes).length===0; }
+// open check pages: this view, else this device's memory of this copy
+function nbtWfKey(v){ let ts=0; try{ const b=(typeof nbtBuilt==="function")?nbtBuilt(v.kid,v.wk):null; ts=(b&&b.ts)||0; }catch(e){} return v.kid+"|"+v.wk+"|"+ts; }
+function nbtWfIsOpen(v,cp){
+  if(!v.wfOpen){ v.wfOpen={}; v._wfKey=nbtWfKey(v);
+    try{ const m=JSON.parse(HA_LS.getItem(NBT_WF_LS)||"{}")||{}; (m[v._wfKey]||[]).forEach(n=>{ v.wfOpen[n]=true; }); }catch(e){} }
+  return !!v.wfOpen[cp];
+}
+function nbtWfOpenIt(v,cp){
+  if(nbtWfIsOpen(v,cp)) return; v.wfOpen[cp]=true;
+  try{ let m={}; try{ m=JSON.parse(HA_LS.getItem(NBT_WF_LS)||"{}")||{}; }catch(e){ m={}; }
+    delete m[v._wfKey]; m[v._wfKey]=Object.keys(v.wfOpen).map(Number);
+    const ks=Object.keys(m); ks.slice(0,Math.max(0,ks.length-6)).forEach(k=>{ delete m[k]; });   // the newest six copies (two weeks × a few kids)
+    HA_LS.setItem(NBT_WF_LS,JSON.stringify(m)); }catch(e){}
+}
+// is page p a check page this viewer can't show yet? (never for a grown-up, never for any other page)
+function nbtWfLocked(v,p){
+  if(!v||!v.ready||nbtWfParent()) return false;
+  const pr=nbtWfPairsOf(v); if(!(p in pr)) return false;
+  return !nbtWfIsOpen(v,p);
+}
+// the front's saved writing, read once per open (the same path the page's own ink load reads)
+function nbtWfAsk(v,cp){
+  v._wfAsk=v._wfAsk||{}; if(v._wfAsk[cp]||typeof db==="undefined"||!db) return; v._wfAsk[cp]=1;
+  const pg=v._wfPairs[cp];
+  db.ref(nbtInkPath(v.kid,v.wk,pg)).once("value").then(s=>{ if(nbtView!==v) return; const d=s.val();
+    const st=(d&&d.s)?(Array.isArray(d.s)?d.s:Object.values(d.s)).map(k=>({p:Array.isArray(k&&k.p)?k.p:Object.values((k&&k.p)||{})})):[];
+    const miss=nbtWfMissing(st,nbtWfBoxesOf(v,pg)); v._wfMiss=v._wfMiss||{}; v._wfMiss[cp]=miss;
+    if(!miss.length) nbtWfOpenIt(v,cp);
+    if(v.page===cp) nbtWfApply(v);
+  }).catch(()=>{ delete v._wfAsk[cp]; });
+}
+// every bar repaint (page turn, ink load, stroke lifted): writing on a front opens its check page; a covered check page asks
+function nbtWfTick(v){
+  if(!v||!v.ready) return;
+  const pr=nbtWfPairsOf(v), cps=Object.keys(pr).map(Number);
+  if(cps.length&&!nbtWfParent()){
+    cps.forEach(cp=>{ if(pr[cp]!==v.page||nbtWfIsOpen(v,cp)) return; const miss=nbtWfMissing(v.strokes,nbtWfBoxesOf(v,v.page)); v._wfMiss=v._wfMiss||{}; v._wfMiss[cp]=miss; if(!miss.length) nbtWfOpenIt(v,cp); });
+    if((v.page in pr)&&!nbtWfIsOpen(v,v.page)){ if((v.strokes||[]).length) nbtWfOpenIt(v,v.page); else nbtWfAsk(v,v.page); }
+  }
+  nbtWfApply(v);
+}
+function nbtWfBack(){ const v=nbtView; if(!v) return; const f=nbtWfPairsOf(v)[v.page]; if(f) nbtGo(f-v.page); }
+// cover or uncover the page on screen: the check page itself is never shown under the card (not just hidden behind it)
+function nbtWfApply(v){
+  const fr=document.getElementById("nbt-doc"), hold=document.getElementById("nbt-hold"); if(!v||!fr||!hold) return;
+  const lock=nbtWfLocked(v,v.page), pg=nbtPages(fr.contentDocument)[v.page-1];
+  let el=document.getElementById("nbt-wf-lock");
+  if(!lock){ if(el){ el.remove(); if(pg) pg.classList.add("nbt-on"); } return; }   // just opened: the page shows where the card was
+  if(pg) pg.classList.remove("nbt-on");
+  if(!el){ el=document.createElement("div"); el.id="nbt-wf-lock"; hold.appendChild(el); }
+  const miss=((v._wfMiss||{})[v.page]||[]).filter(n=>n&&n!=="?");
+  el.style.cssText="position:absolute;inset:0;z-index:2;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:28px;box-sizing:border-box;text-align:center;line-height:1.4;font-family:'DM Sans',sans-serif";
+  el.innerHTML='<div style="font-size:46px">🔒</div>'+
+    '<div style="font-size:21px;font-weight:800;color:#1e3a8a;max-width:440px">Write your answers first, then your choices show here.</div>'+
+    (miss.length?'<div style="font-size:15px;font-weight:700;color:#475569">Still to write: '+(miss.length>1?miss.slice(0,-1).join(", ")+" and "+miss[miss.length-1]:miss[0])+'</div>':'')+
+    '<button onclick="nbtWfBack()" style="padding:9px 16px;border-radius:10px;border:1.5px solid #1d4ed8;background:#dbeafe;color:#1e3a8a;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">◀ Back to the questions</button>';
+}
+// NBLADTAB_WF_END
 // ── the cards: a Tablet kid's Morning / Closing Notebook card opens the notebook on that day's page (Mom's device: + the answer key) ──
 function nbtCardRows(t){
   try{
