@@ -49,8 +49,11 @@ if (process.argv.includes("--hashes")) { console.log(JSON.stringify(hashes(loadN
 // lincoln/empty·mastery·cursors·fourDay·picks refreshed ON PURPOSE 2026-11-24 (LN_ANSWER_SPREAD, test_ln_answer_spread.js): built-in choices reordered; block cut out → 1f57f4a9…/e33c9858…/52c51b7d… come back.
 // …and again ON PURPOSE 2026-11-25 (PK_DAILYFIT, test_prek_daily_fit.js): the daily page's fit rules join the shared Pre-K sheet and the
 // daily pages (the closing card's gaps, two row classes, one name size rule); with that block cut out the hashes above it come back exactly.
+// lincoln/* hashes refreshed ON PURPOSE 2026-11-25 (LN_KIDNAME, test_ln_kidname.js): five built-in number questions print the kid's
+// lincoln/* hashes refreshed ON PURPOSE 2026-11-25 (LN_KIDNAME, test_ln_kidname.js): five built-in number questions print the kid's
+// name with no he/his; with that block and its call line cut out of notebooks.js the old hashes come back exactly. (Values regenerated on the combined hub batch 2026-11-25: LN_KIDNAME on top of LN_ANSWER_SPREAD.)
 const BEFORE = {
- "lincoln/empty": "575d81da685d4a72", "lincoln/mastery": "575d81da685d4a72", "lincoln/cursors": "82c9d4e7d5942072", "lincoln/fourDay": "032e062d260350cc", "lincoln/picks": "575d81da685d4a72", "lincoln/theme": "2851b1b36aab33a8",
+ "lincoln/empty": "64ad2f9eebb0328f", "lincoln/mastery": "64ad2f9eebb0328f", "lincoln/cursors": "2f75e56984c7126c", "lincoln/fourDay": "8c8add563addce38", "lincoln/picks": "64ad2f9eebb0328f", "lincoln/theme": "2851b1b36aab33a8",
  "ellis/empty": "a55d33d52e9f7d79", "ellis/mastery": "a55d33d52e9f7d79", "ellis/cursors": "16a766f80275e76f", "ellis/fourDay": "3ed2059ef3ffd768", "ellis/picks": "a55d33d52e9f7d79", "ellis/theme": "2851b1b36aab33a8",
  "lucy/empty": "6396d3822f2d341e", "lucy/mastery": "6396d3822f2d341e", "lucy/cursors": "0917d7367019f92f", "lucy/fourDay": "85f73d959c6de9c2", "lucy/picks": "6396d3822f2d341e", "lucy/theme": "2851b1b36aab33a8",
  "julian/empty": "401ad528008c582e", "julian/mastery": "42cada3ce1f62e4e", "julian/cursors": "9ced125b47e37ccc", "julian/fourDay": "9129eed9fbe18768", "julian/picks": "b7a02da7fe0a42e9", "julian/theme": "2851b1b36aab33a8",
