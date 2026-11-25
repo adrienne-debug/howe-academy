@@ -243,7 +243,7 @@ if (BASE) {
     ok("…every write, the banks (full stars) and the whole database = the app before", N.writes === O.writes && N.tree === O.tree && /"amount":10\b/.test(N.banks), (() => { const x = N.writes.split("\n"), y = O.writes.split("\n"); const i = x.findIndex((l, j) => l !== y[j]); return [i, x[i], y[i]]; })()); }
   // H3 · the plan ON (slice E is the plan's part): a missed week after the slate, its late plan rows ticked
   const run3 = async index => { const { w, B } = await mkWorld(FAM(), CFG(), "on", index); const snaps = []; let ticked = 0;
-    for (let n = 6; n < 13; n++) { await go(w, n, 17); teeth(B); await w.flush();
+    for (let n = 6; n < 13; n++) { await go(w, n, 17); if (n > 6) teeth(B); await w.flush();   // 📅 LISTWK (break week slice 2, 2026-11-24): Sunday 5 PM is when this world's week 3 builds — a tap during the build now waits ("One moment — this week is loading"), where the app before filed it in week 2 — so no tap on that Sunday, on either side
       const s0 = ["kid_a", "kid_b", "kid_c", "kid_d"].map(k => draw(B, "chores", k));
       if (n >= 9) ["kid_a", "kid_b", "kid_d"].forEach(k => { const L = JSON.parse(B.run("(function(){ day=_todayDay; return JSON.stringify((rtStepsFor('chores','" + k + "',false,day)||[]).map(function(x,i){ return [x.label, !!x.house, x.hdLate||0, rtDoneOn('chores','" + k + "',day,i)]; })); })()"));
         L.forEach(([lb, house, late, done]) => { if (house && late > 0 && !done) { tick(B, "chores", k, lb); ticked++; } }); });
