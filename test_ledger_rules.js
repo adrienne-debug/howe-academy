@@ -31,7 +31,9 @@ const IDX = process.env.LR_INDEX || path.join(__dirname, "index.html"), HJS = fs
 // ── the app before: this tree, L4 taken out ──
 const once = (src, what, from, to, label) => { const n = typeof from === "string" ? src.split(from).length - 1 : (src.match(from) || []).length;
   if (n !== 1) throw new Error("test_ledger_rules: the app before cannot be built — " + label + " found " + n + "× in " + what + " (must be exactly once)"); return src.replace(from, () => to); };
-const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const C6 = require(path.join(__dirname, "test_fixtures", "carve_c6.js"));   // C6 (test_chore_zero_daily.js) is built on this: its app before goes too
+const L5 = require(path.join(__dirname, "test_fixtures", "ledger_l5_out.js"));   // L5 (FLAGONE) out of index.html first: it reworks the 🚩 lines
+const BASE_IDX = (() => { let s = C6.idx(L5.idx(fs.readFileSync(path.join(__dirname, "index.html"), "utf8")));
   const R = (a, b, l) => { s = once(s, "index.html", a, b, l); };
   R(/^\/\/ STARRULES_START[^\n]*\n[\s\S]*?^\/\/ STARRULES_END\n/m, "", "the STARRULES block");
   R('  const s=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");\n  return s>=RT_FALL_FROM&&s>=starFallFrom(arguments[2])?n:0;   // STARRULES: [2] = kid\n',
@@ -49,9 +51,10 @@ const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.ht
   R('const off=typeof starTakeOk==="function"&&!starTakeOk(kid), who=', "const off=false, who=", "the Click-off Log's gate (FLAGWHO: Take off marks with no stars)");
   R("+starTakeWhy(kid)+", "+", "FLAGWHO's words");
   R(', off=typeof starTakeOk==="function"&&!starTakeOk(kid);   // FLAGWHO', ", off=false;   // FLAGWHO", "🧾's gate (FLAGWHO: Take off marks with no stars)");
+  R("  const no=starTakeAt(kid,iso); if(no) return {n:0,why:no};   // the 📒 ⚙ switches, as they are at the drop\n", "", "C3's drop (CHOREDROP): its read of the switches");   // C3 reads L4's switches; without L4 a drop takes as if they were on
   if (/STARRULES|starTake|starFallFrom|starRules|arguments\[2\]\)/.test(s)) throw new Error("test_ledger_rules: the app before still mentions STARRULES");
   const t = path.join(os.tmpdir(), "ledger_rules_before_" + process.pid + ".html"); fs.writeFileSync(t, s); return t; })();
-const BASE_HJS = (() => { let s = fs.readFileSync(path.join(__dirname, "house.js"), "utf8");
+const BASE_HJS = (() => { let s = C6.hjs(fs.readFileSync(path.join(__dirname, "house.js"), "utf8"));
   const R = (a, b, l) => { s = once(s, "house.js", a, b, l); };
   R(/^\/\/ LEDGERRULES_START[^\n]*\n[\s\S]*?^\/\/ LEDGERRULES_END\n/m, "", "the LEDGERRULES block");
   R("const pay=rtFallPay(st,n,kid);   // ⚙ LEDGERRULES: that kid's switch", "const pay=rtFallPay(st,n);", "the ⏳ row's kid");
@@ -135,9 +138,10 @@ console.log("\n── A · every switch at its default: = the app before, every 
   const pen = S => { const m = S.w.mark(); const k1 = logKey(S.A, "kid_a", "Make the bed"), k2 = logKey(S.A, "kid_b", "Feed the dog");
     S.A.run("rlogFlag('kid_a','" + k1.join("','") + "')"); S.A.run("ckLogDock('step','kid_b'," + J(k2.join("/")) + ",'Feed the dog')");
     tick(S.Kk, "kid_c", "Toys in the bin"); spotPick(S.A, "kid_c", "Toys in the bin", 3); S.A.run("spResolve('kid_c',0,'no')");
-    return { w: J(writes(S.w, m)), db: J(S.w.db.tree.root), cf: S.A.run("JSON.stringify(__cf)"), toast: S.A.run("JSON.stringify(__toast)") }; };
+    const fx = x => x.replace(/adjustments\/(?:flg_[^"\\]*|bd[0-9a-z]+)/g, "adjustments/*").replace(/"(?:flg_[^"]*|bd[0-9a-z]+)":\{"amount":-100/g, '"*":{"amount":-100');   // L5: the 🚩's −100 has a fixed id (flg_<wk>_<day>_<key>), as the mark's flagBid
+    return { w: fx(J(writes(S.w, m))), db: fx(J(S.w.db.tree.root)).replace(/,"flagBid":"flg_[^"]*"/g, ""), cf: S.A.run("JSON.stringify(__cf)"), toast: S.A.run("JSON.stringify(__toast)") }; };
   const pa = pen(N), pb = pen(O);
-  ok("the Click-off Log's ⚠️ −100, 🧾's −100 and the 🔎 Spot check's ✗ (+100) at the defaults: the same writes, database, asks and toasts as the app before", J(pa) === J(pb) && /🚩 false check-off dock/.test(pa.db) && /Spot check: not done/.test(pa.db), [pa.w, pb.w]);
+  ok("the Click-off Log's ⚠️ −100, 🧾's −100 and the 🔎 Spot check's ✗ (+100) at the defaults: the same writes, database, asks and toasts as the app before (but L5's fixed id for the −100 and the mark's flagBid)", J(pa) === J(pb) && /🚩 false check-off dock/.test(pa.db) && /Spot check: not done/.test(pa.db), [pa.w, pb.w]);
   ok("…and the ⚙ is drawn only for Mom: the ledger's header, before ✕", GEAR.test(LG(N.A, "lgShow()")) && !/⚙/.test(LG(N.Dd, "lgShow()")));
   N.A.run("HA_LS.removeItem('ha_ledger_hello');1"); const hello = txt(LG(N.A, "lgShow()")); N.A.run("HA_LS.setItem('ha_ledger_hello','1');lgClose();1");
   ok("the first-minute card ends with the design's sentence: \"To change the star rules, tap ⚙.\"", /tap its name\. To change the star rules, tap ⚙\./.test(hello), hello.slice(0, 500));
@@ -161,7 +165,7 @@ console.log("\n── B · each switch's default, and each flip's one write ─�
   f = flip("lgRuleTake('kid_c')", SR + "/take/kid_c");
   ok("Take stars away, kid_c Off: one set of " + SR + "/take/kid_c = false", J(f.w) === J(["set " + SR + "/take/kid_c"]) && f.v === false, f);
   f = flip("lgRuleTake('kid_c')", SR + "/take/kid_c");
-  ok("…On again: that one path removed (missing = as before)", J(f.w) === J(["remove " + SR + "/take/kid_c"]) && f.v == null, f);
+  ok("…On again: that one path set to {from: today} (C3: \"On: it starts clean\" — a drop of a turn due before today takes nothing; starTakeOk reads it as On)", J(f.w) === J(["set " + SR + "/take/kid_c"]) && J(f.v) === J({ from: isoN(10) }) && A.run("starTakeOk('kid_c')") === true, f);
   f = flip("lgRulePause()", SR + "/pause");
   ok("⏸ Pause On: one set of " + SR + "/pause = {on:true}", J(f.w) === J(["set " + SR + "/pause"]) && J(f.v) === J({ on: true }), f);
   f = flip("lgRulePause()", SR + "/pause");
@@ -280,7 +284,7 @@ console.log("\n── G · Take stars away OFF for kid_a only: every penalty pat
 // ── H ──
 console.log("\n── H · the two look-only lines ──");
 { let P = txt(LG(A, "lgGo('kid_a',0,0);lgRulesOpen=true;lgDraw()"));
-  ok("\"Penalty: 100 ⭐ ›\" (settings/spotCheck/penalty is on at 100), and where it is changed", /Penalty: 100 ⭐ › Changed on the 🔎 Spot check card's ⚙ \(its ✗ Not done\)\. The −100 on the Click-off Log and 🧾 is always 100\./.test(P), P.slice(-400));
+  ok("\"Penalty: 100 ⭐ ›\" (settings/spotCheck/penalty is on at 100), and where it is changed", /Penalty: 100 ⭐ › Changed on the 🔎 Spot check card's ⚙ \(its ✗ Not done\)\. The Click-off Log's ⚠️, 🧾 and ↩ Send back's 🚩 Wasn't done use it too\./.test(P), P.slice(-400));
   ok("\"Mom checks before pay: off ›\" (nobody switched on)", /Mom checks before pay: off › Changed in Chores & Stars ▸ Points\./.test(P));
   A.run("choreVerifySet('kid_b',true)"); A.run("spSetPenOn()"); await w.flush();
   P = txt(LG(A, "lgDraw()"));
@@ -294,7 +298,7 @@ console.log("\n── H · the two look-only lines ──");
   ok("Mom checks before pay ›: Chores & Stars on its Points tab; nothing written", A.run("cpTab") === "points" && w.since(m).length === 0);
   A.run("choreVerifySet('kid_b',false)"); A.run("spSetPenOn()"); A.run("tab='moms-plan';1"); await w.flush();
   const W2 = await mkWorld(IDX, HJS, false); loadH(W2.A, HJS);
-  ok("a family that never set the penalty: \"Penalty: off ›\" (missing = off, as today; this slice does not change it)", /Penalty: off ›/.test(txt(LG(W2.A, "lgShow();lgRulesOpen=true;lgDraw()"))) && W2.w.get("settings/spotCheck/penalty") == null);
+  ok("a family that never set the penalty: \"Penalty: 100 ⭐ ›\" (L5, her answer 11/21: missing = ON at 100)", /Penalty: 100 ⭐ ›/.test(txt(LG(W2.A, "lgShow();lgRulesOpen=true;lgDraw()"))) && W2.w.get("settings/spotCheck/penalty") == null);
 }
 
 // ── I ──
@@ -320,8 +324,8 @@ console.log("\n── I · Dad's link and a kid's device ──");
 
 console.log("\n── J · dryrun writes nothing ──");
 { const Dr = w.boot("Dr", "devDr", { mom: true }); await w.flush(); Dr.run(CAP); Dr.run("HA_LS.setItem('ha_dryrun','1');1"); loadH(Dr, HJS);
-  const m = w.mark(); Dr.run("lgRuleTake('kid_c')"); Dr.run("lgRuleFall('kid_c')"); Dr.run("lgRulePause()");
-  ok("?dryrun=1: the flips show on that screen (kid_c Off, Off, paused) and nothing reaches the database", Dr.run("_dryRun()") === true && w.since(m).length === 0 && w.get(SR + "/take/kid_c") == null && /Kid C Stars fall when late Off Take stars away Off/.test(txt(LG(Dr, "lgShow();lgRulesOpen=true;lgDraw()"))) && /paused for everyone/.test(txt(Dr.run("__pop"))));
+  const tk0 = J(w.get(SR + "/take/kid_c")), m = w.mark(); Dr.run("lgRuleTake('kid_c')"); Dr.run("lgRuleFall('kid_c')"); Dr.run("lgRulePause()");   // C3: kid_c's take is {from} since B's On again
+  ok("?dryrun=1: the flips show on that screen (kid_c Off, Off, paused) and nothing reaches the database", Dr.run("_dryRun()") === true && w.since(m).length === 0 && J(w.get(SR + "/take/kid_c")) === tk0 && tk0 !== "false" && /Kid C Stars fall when late Off Take stars away Off/.test(txt(LG(Dr, "lgShow();lgRulesOpen=true;lgDraw()"))) && /paused for everyone/.test(txt(Dr.run("__pop"))));
   ok("…every other device still reads the house as it was", A.run("starTakeOk('kid_c')") === true && B.run("(starRules().pause||{}).on") !== true);
 }
 
