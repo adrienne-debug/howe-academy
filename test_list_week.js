@@ -208,6 +208,7 @@ async function gapDay(W,iso,opt){
     await playWeek(OLD,"2026-11-09");
     for(const iso of ["2026-11-15","2026-11-16","2026-11-17","2026-11-18","2026-11-19","2026-11-20","2026-11-21"]){ await OLD.roll(iso); await OLD.at(iso,9,0);
       OLD.B.run('day=_todayDay; toggleMorningStep("kid_a",0);'); await OLD.flush(4000); OLD.B.run('day=_todayDay; toggleMorningStep("kid_a",0);'); await OLD.flush(3000); OLD.B.run('day=_todayDay; toggleMorningStep("kid_a",0);'); await OLD.flush(3000); }
+    const gapBefore=JSON.stringify(NEW.db.get("gap20261116"));
     for(const W of [OLD,NEW]){ await W.roll("2026-11-22"); await W.roll("2026-11-23"); await W.at("2026-11-23",9,0); }
     const cards=W=>W.board().map(t=>[t.id,t.who,t.day,t.time,t.dur,t.title,t.subjectKey].join("|")).sort();
     const a=cards(OLD), b=cards(NEW);
@@ -216,7 +217,8 @@ async function gapDay(W,iso,opt){
     const arch=W=>{ const e=W.db.get("archive/week1")||{}; return JSON.stringify({t:e.tasks,c:e.checked,h:e.history,d:e.dates,p:e.slot_points}); };
     ok("a2: the archive of week 1 (tasks, checks, history, dates, pools) identical to the code before",arch(OLD)===arch(NEW)&&arch(NEW).length>1000);
     const p=lp(NEW.B);
-    ok("a2: the lists are back on the board's week ("+p.wk+"), un-ticked for the new Monday",p.wk==="week3"&&p.gapTok===null&&!p.kid_a.m0);
+    ok("a2: the lists are back on the board's week ("+p.wk+"), un-ticked for the new Monday — week3/sl starts empty",p.wk==="week3"&&p.gapTok===null&&!p.kid_a.m0&&Object.keys(NEW.db.get("week3/sl")||{}).length===0);
+    ok("a2: building the first week back left the gap week's node (gap20261116) byte-for-byte as it was",JSON.stringify(NEW.db.get("gap20261116"))===gapBefore&&gapBefore.length>200);
     NEW.B.run('day=_todayDay; toggleMorningStep("kid_a",0);'); await NEW.flush(4000);
     ok("a2: a tick on the first Monday back lands in week3/sl, as on any school day",!!(NEW.db.get("week3/sl/week3_monday_kid_a_mstep0")||{}).done);
     ok("a2: the gap week's node is still there, untouched by the build (gap20261116/sl)",Object.keys(NEW.db.get("gap20261116/sl")||{}).length>0);
