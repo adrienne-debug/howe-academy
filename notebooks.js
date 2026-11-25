@@ -3347,6 +3347,22 @@
     return Object.keys(freq).sort(function (a, b) { return (freq[b] - freq[a]) || (a < b ? -1 : a > b ? 1 : 0); }).slice(0, maxRows);
   }
   function lnPaceRows(tasks, student) { return lnSkillSubjects(tasks, student, 6).map(function (s) { return [s, 70, "on"]; }); }
+  // LN_KIDNAME_START — five built-in number questions print the name of the kid whose notebook it is, not a fixed "Lincoln"
+  // (Mom 2026-11-25: "Use the kid's name"). Worded with no he/his: the app never guesses pronouns from a name. Every number,
+  // choice and answer stays in LINCOLN_DATA, untouched. The name is the one the app passes (ctx.kidName, else its id-name),
+  // else this notebook's own; escaped as pkKidName escapes every printed name.
+  var LN_KIDNAME_TEXT = {
+    im02: "{name} starts reading at 10:15 AM and stops at 11:50 AM. How long did {name} read?",
+    im07: "{name}'s school day runs from 10:00 AM to 4:15 PM. How long is that?",
+    im09: "{name} does 12 math problems per day and has done 3 days of work. The goal is 60 total. How many more days to finish?",
+    im13: "{name} earns 5 points per spelling word and 3 points per math problem. {name} got 8 spelling words and 10 math problems right. What is the total score?",
+    im16: "{name} finished 2/5 of the reading on Monday and 1/5 on Tuesday. What fraction has {name} finished?"
+  };
+  function lnKidNameQ(q, ctx, cfg) {   // a built-in item only (Mom's own bank items pass through as they are)
+    if (!q || !Object.prototype.hasOwnProperty.call(LN_KIDNAME_TEXT, q.id) || LINCOLN_DATA.banks.iowa_math.indexOf(q) < 0) return q;
+    return Object.assign({}, q, { text: LN_KIDNAME_TEXT[q.id].split("{name}").join(pkKidName(ctx, cfg.student_short).nm) });
+  }
+  // LN_KIDNAME_END
   // Deterministic, log-free item pick: advance 5/week, one per day, cycling the bank.
   function lnPick(bank, weekNum, dayIdx) { var n = bank.length; var i = (((parseInt(weekNum, 10) || 1) - 1) * 5 + dayIdx) % n; if (i < 0) i += n; return bank[i]; }
 
@@ -5742,6 +5758,7 @@ ${extraStrip || ""}
       var daySubjects = lnDaySubjects(tasks, student, day);
       var word = wbPlan ? wbPlan.words[i] : Object.assign({}, lnPick(LINCOLN_DATA.banks.words, weekNum, i)); if (!wbPlan) word.aas_level = cfg.aas_level;
       var q1 = (cqPlan && cfg.prep_slot_1 === "cogat_verbal") ? cqPlan.items[i] : lnPick(bank1, weekNum, i), q2 = (qbPlan && cfg.prep_slot_2 === "iowa_math") ? qbPlan.items[i] : lnPick(bank2, weekNum, i), q3 = (cvPlan && cfg.prep_slot_3 === "conventions") ? cvPlan.items[i] : lnPick(bank3, weekNum, i);
+      q2 = lnKidNameQ(q2, ctx, cfg);   // LN_KIDNAME: the kid's own name in five built-in number questions
       dailyPages.push(lnDailyPage(day, dateStr, weekNum, cfg, daySubjects, skillSubjects, word, q1, q2, q3,
         xpStrip(pagesForDay(ctx, "lincoln", day), "#2d6a4f", "#f2faf5", "#1a3a2a")));
       dayAssignments.push({ day: day, date: dateStr, word: word, q1: q1, q2: q2, q3: q3 });
