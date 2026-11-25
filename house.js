@@ -2065,7 +2065,7 @@ function lgRulesGoPoints(){ if(!lgRulesMom()) return false; lgClose(); lgRulesOp
 // (a laundry Start row, Mom: LE_BACKLINE's laundryEditBackLine) + index.html FLAGONE's one record on the tick's own Click-off Log line,
 // carrying sb = what the un-tick changed ([path, before, after]), so Undo — here, the log's or 🧾's — puts the tick and its pay back
 // exactly (a path changed since is left alone; a row ticked again keeps its new tick, only the 🚩 and its stars go). Just a mistake's Undo
-// is on this device until reload (lgSbJ). Who: Mom, or Dad with his code (lgSbOk); his un-tick reaches today only. This week only.
+// is on this device until reload (lgSbJ). Who: Mom, or Dad with his code (lgSbOk). This week only (DADPAST 11/24: Dad too).
 // The ask is a list (LG_SBA) so L6's "Do it again" is one more entry.
 let lgSbAsk=""; const lgSbJ={};
 // own copies of the gate and the small helpers (as each ledger block keeps its own): Mom, or Dad on his link with his code in
@@ -2075,7 +2075,7 @@ function lgSbDay(wk,dn){ for(let k=0;k>=lgMin();k--){ const D=lgDay(k); if(D&&D.
 function lgSbBtn(fn,args,lab,tip){ const u=lab==="Undo"; return '<button onclick="'+fn+'('+args+')"'+(tip?' title="'+tip+'"':'')+' style="border:1.5px solid '+(u?'var(--border)':'#d1d5db')+';background:#fff;color:'+(u?'#374151':'#6b7280')+';border-radius:8px;padding:2px 9px;font-size:11.5px;font-weight:'+(u?700:800)+';cursor:pointer;white-space:nowrap">'+lab+'</button>'; }
 const LG_SBA=[{a:"w",lab:"🚩 Wasn't done"},{a:"m",lab:"Just a mistake"}];
 function lgSbMom(){ return typeof momHere==="function"&&momHere(); }
-function lgSbCan(dn){ const p=_rtPos(DAYS_ALL.indexOf(dn)); return p>=-1&&p<=lgNow()&&(lgSbMom()||dn===_todayDay); }
+function lgSbCan(dn){ const p=_rtPos(DAYS_ALL.indexOf(dn)); return p>=-1&&p<=lgNow(); }   // this week up to today, for Mom and Dad alike (DADPAST)
 // the row as it is now: {kid,wk,dn,ref,lab,c (its check-off's path),rec (the tick, or null)} · a 🌅 carry also it, id; a list row slot, i, st
 function lgSbR(kid,wk,dn,ref){ if(SL_KIDS.indexOf(kid)<0||wk!==activeWk()||DAYS_ALL.indexOf(dn)<0) return null; const q=String(ref).split(":"), R={kid:kid,wk:wk,dn:dn,ref:ref};
   if(q[0]==="a"){ const it=amCarry[kid]&&amCarry[kid][q[1]], x=it&&it.done; if(!it) return null; R.it=it; R.id=q[1]; R.lab=it.label||"Chore"; R.c="amCarry/"+kid+"/"+q[1]; R.rec=(x&&x.iso===amIso(dn)&&x.src!=="list")?x:null; return R; }
