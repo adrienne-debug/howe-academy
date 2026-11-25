@@ -9442,6 +9442,58 @@ function brkTodayAgendaHTML(who,d,extra){
   return brkTodayLineHTML()+rest;
 }
 // 🏖 BRKTODAY_END
+// 📅 BOARDWK_START — "is the week on the board this week?" (DESIGN_break_week_2026-11-24 §3 Option 4 Rule A; her "Yes, build it"
+//   2026-11-24). A week the plan does not cover (a full break week, a two-week break, every week after the plan ends) builds no
+//   week, so the board keeps LAST school week and every record filed by week + day name is last week's (a forfeited Tuesday pool
+//   was claimable again on the break's Tuesday). The question, read-only: is today — a Sunday counted as the coming Monday, as
+//   _schoolWeekDateFor does — inside the active week's own Sunday–Saturday? The week's dates come from the plan
+//   (gwWeekDateRange, which carries the year); the week's own meta.dates (DAY_DT, no year) only when the plan has none, read with
+//   gwCheckTsMs's December/January rule. FAIL OPEN: whenever the answer can't be worked out it is TRUE — the app as before. That
+//   is: the active week empty (a brand-new family, nothing loaded yet); no dates at all; the curriculum not loaded; today BEFORE
+//   the active week (a week built early is not stale); a plan week for today that will build (due, running, or waiting to be
+//   adopted — Sunday 00:00, a tablet waking on Monday); a meta.dates day read as more than 300 days ago (the year guess is
+//   unsure); any exception. A wrong "false" on a school day would take every child's Claim button away. Pure: no write. Asked
+//   many times a render (every school guard), so the answer is kept for the same day, week, plan, dates, calendar and overrides
+//   objects, and never longer than 3 seconds (a calendar edited in place).
+let _bwkMemo=null;
+function boardWeekIsThisWeek(){
+  try{
+    if(typeof weekData==="undefined"||_activeWeekEmpty()) return true;
+    const today=_todayStr(), now=Date.now(), m=_bwkMemo, cd=(typeof currData!=="undefined")?currData:null;
+    const key=today+"|"+WK+"|"+((cd&&cd.lastEdit)||"");
+    if(m&&m.key===key&&m.cd===cd&&m.dt===DAY_DT&&m.cal===calendarData&&m.so===scheduleOverrides&&now>=m.at&&now-m.at<3000) return m.v;
+    const sat=_bwkActiveSat();
+    const v=(!sat||_schoolWeekDateFor(today)<=sat)?true
+      :_bwkBuildComing(today);                  // past the active week: stale — unless a week for today is about to build
+    _bwkMemo={key:key,cd:cd,dt:DAY_DT,cal:calendarData,so:scheduleOverrides,at:now,v:v};
+    return v;
+  }catch(e){ return true; }
+}
+// The active week's Saturday (ISO), or null when it can't be told.
+function _bwkActiveSat(){
+  const f=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  const r=(currData&&currData.weekDays&&currData.lessons)?gwWeekDateRange(currWeekNum()):null;
+  if(r&&r.start){ const m=gwParseDate(r.start); m.setDate(m.getDate()+5); return f(m); }
+  const dd=(typeof DAY_DT==="object"&&DAY_DT)||{}, OFF={monday:0,tuesday:1,wednesday:2,thursday:3,friday:4,saturday:5,sunday:-1};
+  for(const dn of Object.keys(OFF)){
+    if(!dd[dn]) continue;
+    const t=gwCheckTsMs(dd[dn]); if(isNaN(t)) return null;
+    const d=new Date(t); d.setHours(12,0,0,0);
+    if(new Date().getTime()-d.getTime()>300*864e5) return null;
+    d.setDate(d.getDate()+5-OFF[dn]); return f(d);
+  }
+  return null;
+}
+// Today is past the active week: will a week build for today? (Then the board is about to move — leave everything as it is.)
+function _bwkBuildComing(today){
+  if(!currData||!currData.weekDays||!currData.lessons) return true;   // the plan isn't here: can't tell
+  const wn=weekNumForDate(today);
+  if(!wn) return false;                       // no plan week holds today: nothing builds (a break the plan skips, the plan's end)
+  if(wn<=currWeekNum()) return true;          // the plan disagrees with the board's own dates: can't tell
+  const dd=gwReadWeek(wn,true);               // what the builder reads first; nothing → "No curriculum data found" (an all-off week)
+  return !!(dd&&Object.keys(dd).length);
+}
+// 📅 BOARDWK_END
 // First weekday strictly after today that isn't a calendar off-day and sits in a
 // real plan week — i.e. the day school actually picks back up. Capped so a
 // misconfigured calendar can never loop forever.
@@ -31949,6 +32001,7 @@ function _setPointClaim(kid,d,rec){
   else { pointClaims[kid][WK][d]=rec; obSet("pointClaims/"+kid+"/"+WK+"/"+d,rec,_pw); }
 }
 function claimDayPoints(kid,d){
+  if(typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek()){ if(typeof gwShowToast==="function") gwShowToast("No school today \u2014 nothing to claim"); return; }   // 📅 BWCLAIM: the board is last school week — its stars aren't today's (a forfeited day was claimable again)
   if(!spinClaimGateDone(kid,d)){ if(typeof gwShowToast==="function") gwShowToast("Finish all your school cards, Afternoon and Chores first"); return; }   // gate: school + afternoon + chores
   const ex=getPointClaim(kid,d);
   if(ex&&(ex.status==="claimed"||ex.status==="cashed")) return;
@@ -46767,7 +46820,7 @@ function kcPointsHTML(k){
     const heldT=(typeof bankHeldToday==="function")?bankHeldToday(k,dn):0;
     if(heldT>0) h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9"><span style="flex:0 0 78px;font-weight:800;color:#5b21b6">\u{1F575} Checked?</span><span style="flex:1;color:#475569">waiting for Mom to check your chores</span><span style="font-weight:800;color:#5b21b6">+'+heldT+' \u2B50</span></div>';
     if(spun>0) h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9;flex-wrap:wrap"><span style="flex:0 0 78px;font-weight:800;color:#7c3aed">\u{1F3B0} Spins</span><span style="flex:1;color:#475569">'+spinNote+'</span><span style="font-weight:800;color:#7c3aed">+'+spun+' \u2B50</span>'
-      +(canClaim?'<button onclick="event.stopPropagation();claimDayPoints(\''+k+'\',\''+dn+'\')" style="flex-basis:100%;margin-top:4px;padding:'+(big?'11px':'9px')+';border-radius:12px;border:none;background:#7c3aed;color:#fff;font-size:'+(big?'15px':'13px')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F3B0} Claim my spins \u2192 Mom</button>':'')+'</div>';
+      +(canClaim&&!(typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek())/* 📅 BWCLAIM: no Claim on last school week's stars */?'<button onclick="event.stopPropagation();claimDayPoints(\''+k+'\',\''+dn+'\')" style="flex-basis:100%;margin-top:4px;padding:'+(big?'11px':'9px')+';border-radius:12px;border:none;background:#7c3aed;color:#fff;font-size:'+(big?'15px':'13px')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F3B0} Claim my spins \u2192 Mom</button>':'')+'</div>';
     h+='</div></div>';
     return h;
   }catch(e){ return ''; }

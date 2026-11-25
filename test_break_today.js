@@ -201,8 +201,8 @@ async function runWriter(W,expr){ const m=W.db.log.length; const v=W.R(expr); aw
   console.log("4 · the Mom loop — break Tuesday");
   ok("after: nothing remaining, no banner, nobody at Mom",KIDS.every(k=>nT[k].mlRem.length===0&&nT[k].mlBan==="")&&JSON.parse(nT.mlNow).kid===null);
   console.log("5 · claims, spins, celebrations — break Tuesday (the claim gate is UNCHANGED — the facts, pinned)");
-  ok("kid_a: last Tuesday's pool is 5 ⭐, forfeited; the claim gate is open and Kids' Corner offers 🎰 claim — before AND after (unchanged, reported)",
-    [oT,nT].every(T=>T.kid_a.dayPts===5&&T.kid_a.claim==="forfeited"&&T.kid_a.claimGate===true&&T.kid_a.claimBtn===true));
+  ok("kid_a: last Tuesday's pool is 5 ⭐, forfeited; the claim gate is open, and since BWCLAIM (test_board_week.js) Kids' Corner offers no 🎰 claim on it — before AND after",
+    [oT,nT].every(T=>T.kid_a.dayPts===5&&T.kid_a.claim==="forfeited"&&T.kid_a.claimGate===true&&T.kid_a.claimBtn===false));
   ok("…the other kids have nothing in today's pool and no claim button, before and after",[oT,nT].every(T=>["kid_b","kid_c","kid_d"].every(k=>T[k].dayPts===0&&!T[k].claimBtn)));
   ok("schoolDoneOn / spinClaimGateDone give the same answers before and after",KIDS.every(k=>oT[k].schoolDone===nT[k].schoolDone&&oT[k].claimGate===nT[k].claimGate));
   { const ex='(function(){ sv(WK+"_celeb_used",{}); return famCelebOwnWork("kid_d",_todayDay); })()';   // this device never showed it
