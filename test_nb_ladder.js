@@ -41,7 +41,7 @@ ok("exported once: HoweNotebooks.ladders", nbSrc.split("ladders: NB_LADDERS,").l
     outside.split("lrWeek(").length === 2 && gLucy.indexOf("lrWeek(ctx, days)") > 0);
 }
 ok("haNbContext passes ctx.ladders, guarded", src.split('ladders:((typeof nbLadderCtx==="function")?nbLadderCtx(kid):null) }; // KIDNAME_ROSTER').length === 2);
-ok("the card sits right after the Notebook level card", src.indexOf('nbLevelCardHtml(sel)+   // 📏 NBLEVEL: Notebook level (Mom)\n        ((typeof nbLadderCardHtml==="function")?nbLadderCardHtml(sel):"")+') > 0);
+ok("the card sits in the Customize card's 📏 Level dial (NB_CUSTOM)", src.indexOf('level:(L?L.levels:"")+(p.xp||"")+((typeof nbLadderCardHtml==="function")?nbLadderCardHtml(kid):""),') > 0);
 ok("one home: the card is drawn in one place", src.split("nbLadderCardHtml(").length === 3);   // its definition + the one call
 ok("the write path is registered in test_currcard.js", rd("test_currcard.js").indexOf('"\\"notebookSettings/\\"+kid+\\"/ladders/\\"+kind+\\"/\\"+field"') > 0);
 ok("only one db.ref in the index.html block, the targeted field", (ixBlk.match(/db\.ref\(/g) || []).length === 1 && ixBlk.indexOf('db.ref("notebookSettings/"+kid+"/ladders/"+kind+"/"+field)') > 0);

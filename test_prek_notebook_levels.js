@@ -183,8 +183,8 @@ ok(!/settings\/family/.test(wire.replace(/^\/\/.*$/gm, "")), "never writes setti
 ok(/notebookTheme:nbThemeOf\(kid\), nbLevel:nbLevelOf\(kid\), nbGrade:nbGradeOf\(kid\)/.test(html), "the notebook build reads the look, levels and grade the picker saved");
 const rn = html.slice(html.indexOf("function renderNotebook(el){"), html.indexOf("function renderActivities(el){"));
 ok(/const lookOpts=nbLookOpts\(sel\);/.test(rn) && /const xpList=\(lookOpts&&lookOpts\.extraPages\)\|\|\(xpCatalog&&xpCatalog\[sel\]\)\|\|\[\];/.test(rn) && /if\(momHere\(\) && xpList\.length\)/.test(rn), "extra-page switches + day chips come from the notebook the kid gets (any Pre-K kid), not the kid id");
-ok(/if\(momHere\(\) && lookOpts && lookOpts\.looks\.length\)/.test(rn) && /nbSetLook\('"\+sel\+"','"\+l\.key\+"'\)/.test(rn) && /nbSetLevel\(\\''\+sel\+'\\',\\''\+d\.key\+'\\'\)/.test(rn) && /formHtml\+\s*lookHtml\+\s*xpHtml\+/.test(rn),
-   "the 🎨 look row (every kid) + 📏 level switches (Pre-K notebook) — Mom only, above the extra pages");
+ok(/if\(momHere\(\) && lookOpts && lookOpts\.looks\.length\)/.test(rn) && /nbSetLook\('"\+sel\+"','"\+l\.key\+"'\)/.test(rn) && /nbSetLevel\(\\''\+sel\+'\\',\\''\+d\.key\+'\\'\)/.test(rn) && html.indexOf('level:(L?L.levels:"")+(p.xp||"")+') > 0 && html.indexOf('lab("Look:")+\'<div style="flex:1;min-width:0">\'+L.pick+') > 0,
+   "the 🎨 look row (every kid, the Customize card's top line) + 📏 level switches (Pre-K notebook, its Level dial, above the extra pages) — Mom only");
 
 console.log("page fit (find-it pages: the fitted card for every look but the original construction one)");
 o = NB.generate("kid9", base({ masteryItems: cbBig, notebookTheme: "shark", kidName: "Finn", nbLevel: { nbLowercase: true, nbFindIt: true } }));
