@@ -1646,7 +1646,7 @@
     var curSum = coverWk ? curWk : curCover;
     var css = T.css + ((lv.nbFindIt && T.css.indexOf(".find-row {") < 0) ? PK_FIND_CSS : "") + ((lv.nbFindIt && !(T.legacyFindLayout && lv.nbLowercase)) ? PK_FIT_CSS : "");
     var P = Object.assign({}, T.P, { lowerFirst: !!lv.nbLowercase });   // little letters: the ABC cards show the little one big
-    var lnum = lntWeek(ctx);   // NBLADNUM: this week's Number thinking questions from the number ladder, or null → nothing new prints
+    var lnum = lntWeek(ctx, days);   // NBLADNUM: this week's Number thinking questions from the number ladder (one per school day in days), or null → nothing new prints
     if (lnum) css += LNT_CSS_PK;   // NBLADNUM
 
     var parts = [juHtmlHead(weekNum, T.book, css, T.fonts)];
@@ -3104,14 +3104,39 @@
   // This week's questions: { items:[x], cursor, stop, end } — x is the engine's item { lv, label, i, num, of, id, item } — or null
   // when nothing should print. A question of the wrong shape, or a picture that can't be drawn where its words would give the
   // answer away → print none rather than a broken or hinting page.
-  function lntWeek(ctx) {
+  function lntWeek(ctx, days) {
     var r = ctx && ctx.ladders && ctx.ladders.number;
     if (!r || r.on !== true || !r.ready || !r.next || !Array.isArray(r.next.items) || !r.next.items.length) return null;
+    r = lntDays(r, days); if (!r) return null;   // NBLADNUM_DAYS: one question per school day of the week being built
     var items = r.next.items.filter(function (x) { return x && x.item && x.item.text && Array.isArray(x.item.c) && x.item.c.length >= 2 && x.item.c.length <= LNT_LETTERS.length; });
     if (items.length !== r.next.items.length) return null;
     if (items.some(function (x) { return lntUnsafe(x); })) return null;
     return { items: items, cursor: r.next.cursor ? Object.assign({}, r.next.cursor) : null, stop: r.next.stop || null, end: !!r.next.end };
   }
+  // NBLADNUM_DAYS_START — one question for each school day (her pick 2026-11-24, asked "on a 3-day week, all five or one per school
+  // day?": "One per school day" — a 3-day week prints three and the ladder moves on more slowly). The app still asks the engine for
+  // the most a week can hold (perWeek.number, 5); this cuts that list to the notebook's own school days — the SAME list its daily
+  // pages print from (Pre-K / K: the week's dated days, after the "skip no-school days" switch; 1st grade: the week's days) — so
+  // the count is never more than 5, never fewer than 1 when the page prints, and a week with no school days prints nothing and
+  // saves no place (a reprint included). The cut is exactly what the engine gives when asked for that many (the same items, stop
+  // and end; cursor.adv = how many printed), so the place moves on by exactly the number printed.
+  // A reprint of the week already saved (the saved cursor's week, level and first question) prints the count it printed the first
+  // time (cursor.adv), even if the week's school days changed since. Before its first build (Print / Look, PDF, tablet send — each
+  // saves the place) a week just follows its days as they are when it is built.
+  // A full week (5 days) and a reprint of a five → r unchanged, so the page is byte for byte what it was.
+  var LNT_MOST = 5;   // the most a week holds — the engine's perWeek.number, the count the app asks it for
+  function lntDays(r, days) {
+    var max = LNT_MOST, nx = r.next, c = r.cur, nc = nx.cursor, k = Array.isArray(days) ? days.length : max;
+    if (!k) return null;   // no school days at all (no daily pages) → no page, even on a reprint, and no place saved
+    if (c && typeof c === "object" && nc && ladInt(c.week) === nc.week && c.lv === nc.lv && ladInt(c.from) === nc.from && ladInt(c.adv) >= 0) k = ladInt(c.adv);   // a reprint
+    k = Math.max(0, Math.min(max, k));
+    if (!k) return null;
+    if (k >= max) return r;
+    var items = nx.items.slice(0, k), short = nx.items.length < k;
+    return Object.assign({}, r, { next: Object.assign({}, nx, { items: items, stop: (short && nx.stop) || null, end: !!(short && nx.end),
+      cursor: nc ? Object.assign({}, nc, { adv: items.length }) : null }) });
+  }
+  // NBLADNUM_DAYS_END
   function lntGrown(x) { return !!LAD_GROWN[x.lv]; }
   // The picture (NBLADPIC — typeof-guarded like the placement sheet's call sites, so that block can be cut out on its own), or null.
   function lntPic(x) { return (x.item && x.item.pic && typeof ladPicture === "function") ? ladPicture(x.item, lntGrown(x) ? LNT_PIC.grown : LNT_PIC.alone) : null; }
@@ -8126,7 +8151,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     if (math) focus = [focus[0], math.focus];   // LU_MATH: the focus card describes the deck
     var lread = lrWeek(ctx, days);   // NBLADREAD: this week's Read and answer pages from the reading ladder, or null → nothing new prints
     if (lread) lr3Flags(ctx, lread, { k: "lu", wn: wn, dates: dates });   // NBLADREAD3: write-first days (levels g3 and up)
-    var lnum = lntWeek(ctx);   // NBLADNUM: this week's Number thinking questions from the number ladder, or null → nothing new prints
+    var lnum = lntWeek(ctx, days);   // NBLADNUM: this week's Number thinking questions from the number ladder (one per school day in days), or null → nothing new prints
     var prevStats = ctx.prevStats || {};   // dashes until the shared history wiring
     var category = LUCY_DATA.category_order[((wn - 1) % LUCY_DATA.category_order.length + LUCY_DATA.category_order.length) % LUCY_DATA.category_order.length];
     var curMonth = days.length ? monthFromDate(dates[days[0]] || "") : "";
