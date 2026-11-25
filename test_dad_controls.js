@@ -173,16 +173,16 @@ console.log("\n── C · the two \"›\" lines are Mom's ──");
 }
 
 // ── D ──
-console.log("\n── D · the 🔎 Spot check and the Click-off Log: not drawn for Dad, unchanged ──");
+console.log("\n── D · the 🔎 Spot check and the Click-off Log on Dad's Day (DADSPOT 2026-11-24; the rest in test_dad_spot_log.js) ──");
 { const dd = S => { const o = {}; S.Dd.run("dadUnlocked=false;1"); o.locked = page(S.Dd, "renderDadsDay"); S.Dd.run("dadUnlocked=true;1"); o.open = page(S.Dd, "renderDadsDay"); S.Dd.run("dadUnlocked=false;1"); return o; };
   const a = dd(L), b = dd(O);
-  ok("Dad's Day, locked and unlocked: the same page as before; no 🔎 Spot check card, no ✓ / ✗, no Click-off Log or door to Chores & Stars", J(a) === J(b) && a.open !== a.locked && [a.locked, a.open].every(h => !/sp-card|spResolve|rlogFlag|Click-off Log|mpGoto\(\\?'chores\\?'\)|Chores &amp; Stars|Chores & Stars/.test(h)) && /🔓 Star controls unlocked/.test(a.open), [a.open.slice(0, 120)]);
-  const tryIt = async S => { const { w, Dd, Kk } = S; Dd.run("dadUnlocked=true;1"); tick(Kk, "kid_c", "Toys in the bin"); await w.flush();
+  ok("Dad's Day, locked and unlocked: the same page as before; the 🔎 Spot check card and the 🕵️ Click-off Log line are on it (DADSPOT), locked with no ✓ / ✗ / ⚠️; no door to Chores & Stars", J(a) === J(b) && a.open !== a.locked && [a.locked, a.open].every(h => /id="sp-card"/.test(h) && /🕵️ Click-off Log \(this week\)/.test(h) && !/mpGoto\(\\?'chores\\?'\)|Chores &amp; Stars|Chores & Stars/.test(h)) && !/spResolve|rlogFlag/.test(a.locked) && /🔓 Star controls unlocked/.test(a.open), [a.open.slice(0, 120)]);
+  const tryIt = async S => { const { w, Dd, Kk } = S; Dd.run("dadUnlocked=false;1"); tick(Kk, "kid_c", "Toys in the bin"); await w.flush();
     spotPick(Dd, "kid_c", "Toys in the bin", 3); const k = logKey(Dd, "kid_c", "Toys in the bin"), m = w.mark(), b0 = J(bankOf(w, "kid_c"));
-    const r = [Dd.run("spResolve('kid_c',0,'no')"), Dd.run("spResolve('kid_c',0,'ok')"), Dd.run("rlogFlag('kid_c','" + k.join("','") + "')"), Dd.run("mdCardSpotCheck()")];
+    const r = [Dd.run("spResolve('kid_c',0,'no')"), Dd.run("spResolve('kid_c',0,'ok')"), Dd.run("rlogFlag('kid_c','" + k.join("','") + "')"), /spResolve/.test(Dd.run("mdCardSpotCheck()"))];
     Dd.run("dadUnlocked=false;1"); return { r, w: writes(w, m), bank: J(bankOf(w, "kid_c")) === b0 }; };
   const ta = await tryIt(L), tb = await tryIt(O);
-  ok("an unlocked Dad's spResolve (✓ and ✗) and rlogFlag are refused exactly as before: nothing written, no stars move, no card drawn", J(ta) === J(tb) && ta.r[0] === false && ta.r[1] === false && ta.r[2] === undefined && ta.r[3] === "" && ta.w.length === 0 && ta.bank, [ta, tb]);
+  ok("a locked Dad's spResolve (✓ and ✗) and rlogFlag are refused: nothing written, no stars move, no ✓ / ✗ drawn (DADSPOT: with his code they work, test_dad_spot_log.js)", J(ta) === J(tb) && ta.r[0] === false && ta.r[1] === false && ta.r[2] === undefined && ta.r[3] === false && ta.w.length === 0 && ta.bank, [ta, tb]);
 }
 
 // ── E ──
