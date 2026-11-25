@@ -110,7 +110,7 @@ ok(writes.length === 0 && W2.nbNameCardHtml("d3", W2.nbLookOpts("d3")) === "", "
 const ns3 = {}, W3 = sandbox({ roster, ns: ns3, dry: true }); W3.els["nbname-d3"] = { value: "David" }; writes.length = 0; W3.nbSaveName("d3");
 ok(writes.length === 0 && ns3.d3.notebookName === "David", "?dryrun=1: nothing written to the database");
 const rn = html.slice(html.indexOf("function renderNotebook(el){"), html.indexOf("function renderActivities(el){"));
-ok(/lvRows:''\)\+\s*nbNameCardHtml\(sel,lookOpts\)\+/.test(rn), "the Notebook tab shows it in the 🎨 look card (Mom only, Pre-K notebooks)");
+ok(/name:nbNameCardHtml\(sel,lookOpts\),/.test(rn) && html.indexOf('look:L?(L.name+L.countPic+L.ticks):""') > 0, "the Notebook tab shows it in the Customize card's 🎨 Look dial (Mom only, Pre-K notebooks)");
 ok(/kidName:nbNm\(\(\(\(notebookSettings\|\|\{\}\)\[kid\]\)\|\|\{\}\)\.notebookName\)\|\|nbNm\(nbRec\.notebookName\)\|\|nbNm\(nbRec\.name\), notebookTheme:/.test(html) && /nbKidName:cap\(kid\), kidName:/.test(html),
    "the build reads notebookSettings/<kid>/notebookName first, then the record's notebookName, then its name; nbKidName unchanged");
 
