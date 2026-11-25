@@ -74,6 +74,8 @@ const CHANGES=[
    "function dsAutoStart(kid){\n  try{\n    if("+BW+") return;   // 📅 BWNOWEEK: no day start on a week the board doesn't hold (it would land in last school week's record)\n    if(dsFor(kid)) return;\n"],
   ["sweep","    if(typeof fbTasksLoaded!==\"undefined\"&&!fbTasksLoaded) return false;\n    const marker=(eveningSweeps||{})[_todayDay];\n",
    "    if(typeof fbTasksLoaded!==\"undefined\"&&!fbTasksLoaded) return false;\n    if("+BW+") return false;   // 📅 BWNOWEEK: the sweep rests on last school week — nothing moved, no marker written\n    const marker=(eveningSweeps||{})[_todayDay];\n"],
+  ["Schedule day tabs","  if(scheduleBreakToday()){ const _dt=document.getElementById(\"day-tabs\"); if(_dt) _dt.innerHTML=peekBtn+suppBtn; return; }\n","  if(scheduleBreakToday()){ const _dt=document.getElementById(\"day-tabs\"); if(_dt) _dt.innerHTML=peekBtn+suppBtn; return; }\n  if(typeof boardWeekIsThisWeek===\"function\"&&!boardWeekIsThisWeek()){ const _dt=document.getElementById(\"day-tabs\"); if(_dt) _dt.innerHTML=peekBtn+suppBtn; return; }   // 📅 BWNOWEEK: a week the board doesn't hold draws no day picker, as a break does\n"],
+  ["Schedule tab","  if(_brk){ el.innerHTML=(_brk.type===\"cleaning\"&&typeof hhCleanCardHTML===\"function\")?hhCleanCardHTML():renderScheduleBreakCard(_brk); return; }   // 🧽 CLEANINGDAY\n","  if(_brk){ el.innerHTML=(_brk.type===\"cleaning\"&&typeof hhCleanCardHTML===\"function\")?hhCleanCardHTML():renderScheduleBreakCard(_brk); return; }   // 🧽 CLEANINGDAY\n  if(typeof boardWeekIsThisWeek===\"function\"&&!boardWeekIsThisWeek()){ el.innerHTML=renderScheduleBreakCard({name:\"No school week planned\",type:\"noweek\"}); return; }   // 📅 BWNOWEEK: …and a week the board doesn't hold gets the same card, in her answer 1's words (no last-week cards, no 💰 Claim box)\n"],
 ];
 function strip(src){
   for(let i=CHANGES.length-1;i>=0;i--){ const [,o,n]=CHANGES[i]; if(count(src,n)!==1) throw new Error("change "+i+" ("+CHANGES[i][0]+") not found once"); src=src.split(n).join(o); }
@@ -90,7 +92,7 @@ ok("ONE question: every change asks boardWeekIsThisWeek() (or schoolOffToday(), 
   ok("the changes write nothing (no db, storage, timer, set/update/remove, sv)",!/\bdb\b|HA_LS|localStorage|\bsv\(|setTimeout|\.set\(|\.update\(|\.remove\(|obSet|obInc/.test(added),added.match(/\bdb\b|\.set\(|\.update\(/)); }
 ok("today only: the celebration and the day bonus ask about _todayDay; the day start and the sweep only ever touch today",/d===_todayDay&&typeof boardWeekIsThisWeek/.test(C("celebration")[2])&&/taskDay===_todayDay&&typeof boardWeekIsThisWeek/.test(C("day bonus")[2]));
 ok("the sweep's guard sits ahead of its marker check and its lock (it stops — it never moves anything else)",SRC.indexOf(C("sweep")[2])>SRC.indexOf("function mlEveningSweep(force){")&&SRC.indexOf(C("sweep")[2])<SRC.indexOf("haClaimSchedLock(\"cascade\"",SRC.indexOf("function mlEveningSweep(force){")));
-ok("the words: her answer's \"No school week planned 🎉\" alone, in the line and in Kids' Corner — nothing else invented",count(SRC,"'No school week planned \\u{1F389}'")===2&&count(SRC,"No school week planned")===2&&count(SRC,'{type:"noweek"}')===2&&SRC.indexOf("No school today \\u2014 No school week")<0);
+ok("the words: her answer's \"No school week planned 🎉\" alone, in the line and in Kids' Corner, and the Schedule tab's break card titled \"No school week planned\" — nothing else invented",count(SRC,"'No school week planned \\u{1F389}'")===2&&count(SRC,"No school week planned")===3&&count(SRC,'renderScheduleBreakCard({name:"No school week planned",type:"noweek"})')===1&&count(SRC,'{type:"noweek"}')===2&&SRC.indexOf("No school today \\u2014 No school week")<0);
 const BASE_PATH=path.join(os.tmpdir(),"break_week_1_base_"+process.pid+".html");
 fs.writeFileSync(BASE_PATH,BASE);
 
@@ -140,7 +142,8 @@ const playWeek=async(W,mon,lateFrom)=>{ for(let i=0;i<5;i++){ const iso=addDays(
 // the scene a probe reads: kid mode, three kids' morning lists done (so the board's 📅 pill counts), a store open after school
 const SCENE=`(function(){ haMomOff(); tab="kids"; day=_todayDay;
   ["kid_a","kid_b","kid_c"].forEach(function(k){ slState[activeWk()+"_"+_todayDay+"_"+k+"_morning"]={done:true}; });
-  storeCfg=Object.assign({},storeCfg||{},{open:true,mode:"afterSchool",hour:16,closedFor:{}}); _bwkMemo=null; })()`;
+  storeCfg=Object.assign({},storeCfg||{},{open:true,mode:"afterSchool",hour:16,closedFor:{}}); _bwkMemo=null;
+  try{ forfeitSweep(); }catch(e){} })()`;   // renderSchedule's first line runs forfeitSweep (untouched — her answer 3) before any break check, on any day: settle it here, so a probe's writes are the slice's alone
 // every surface BRKTODAY / KC_BREAK guard — the "school today" screens
 const PS=`(function(){ var out={}, sv0={kid:kid,day:day}; try{
   ${JSON.stringify(KIDS)}.forEach(function(k){ var o=out[k]={};
@@ -152,6 +155,8 @@ const PS=`(function(){ var out={}, sv0={kid:kid,day:day}; try{
   out.dad=(function(){ var el={innerHTML:""}; renderDadAll(el); return el.innerHTML; })();
   out.pills=(function(){ var el={innerHTML:""}; renderMomBoard(el); return el.innerHTML.match(/\u{1F4C5} [^<]*/gu)||[]; })();
   out.off=schoolOffToday(); out.line=brkTodayLineHTML(); out.dc=dcTodayGroups().length;
+  // the Schedule tab itself — a kid's view and All, and its day tabs
+  out.sched={}; ((typeof __schedViews!=="undefined"&&__schedViews)||["kid_a","all"]).forEach(function(w){ var _k=kid,_d=day,_t=tab; try{ kid=w; day=_todayDay; tab="schedule"; var el=document.createElement("div"); renderSchedule(el); renderDayTabs(); out.sched[w]={html:el.innerHTML,tabs:document.getElementById("day-tabs").innerHTML}; }catch(e){ out.sched[w]="ERR "+e; } finally{ kid=_k; day=_d; tab=_t; } });
   }finally{ kid=sv0.kid; day=sv0.day; } return JSON.stringify(out); })()`;
 // the four Rule A items (+ the ⭐ card): pool line, celebration, day bonus, day start, sweep — what each shows and writes
 const POOL=`(function(){ var o={}; ["kid_a","kid_b"].forEach(function(k){ var h=kcPointsHTML(k); o[k]={pool:h.indexOf("\\u{1F3B0} Spins")>=0,html:h}; }); return JSON.stringify(o); })()`;
@@ -216,7 +221,11 @@ function checkFour(lbl,F,wk,dn,withPool){
       ok(lbl+": after, Dad's Day — the same (Dad gets what Mom gets)",cnt(n.dad)===0&&n.dad.indexOf(NOWEEK)>0&&count(n.dad,"No school week planned")===1&&count(n.dad,"No school today")===0);
       ok(lbl+": after, the board's 📅 pills read 0/0, nothing left for the Mom loop, no Today's-card group",n.pills.length>0&&n.pills.every(p=>p==="\u{1F4C5} 0/0")&&KIDS.every(k=>n[k].board.total===0&&n[k].ml.length===0)&&n.dc===0,n.pills);
       ok(lbl+": after, schoolOffToday() is true and the line names no break: \"No school week planned\"",n.off===true&&n.line.indexOf(NOWEEK)>0&&o.off===false&&o.line==="");
-      ok(lbl+": all views balanced",[n.mom,n.all,n.dad].concat(KIDS.map(k=>n[k].kcSchool)).every(tagsBalanced));
+      ok(lbl+": the Schedule tab (a kid's view and All) — before"+(weekday?" last "+dn+"'s cards"+(/claimDayPoints\(/.test(o.sched.kid_a.html)?" and the 💰 Claim box":""):"")+"; after one break card titled \"No school week planned\", no card, no Claim, no day picker",
+        ["kid_a","all"].every(w=>typeof n.sched[w]==="object"&&n.sched[w].html.indexOf(">No school week planned</div>")>0&&cnt(n.sched[w].html)===0&&!/claimDayPoints\(/.test(n.sched[w].html)&&n.sched[w].tabs.indexOf("Sunday list")>0&&n.sched[w].tabs.length<o.sched[w].tabs.length)&&(!weekday||cnt(o.sched.kid_a.html)>0),
+        [typeof n.sched.kid_a==="object"?n.sched.kid_a.html.slice(0,400):n.sched.kid_a,typeof o.sched.kid_a==="object"?cnt(o.sched.kid_a.html):o.sched.kid_a]);
+      ok(lbl+": …it is the Schedule tab's own break card (the same function a calendar break draws)",n.sched.kid_a.html===NEW.R('renderScheduleBreakCard({name:"No school week planned",type:"noweek"})'));
+      ok(lbl+": all views balanced",[n.mom,n.all,n.dad,n.sched.kid_a.html,n.sched.all.html].concat(KIDS.map(k=>n[k].kcSchool)).every(tagsBalanced));
       const F=await fourItems(OLD,NEW,iso,lbl);
       checkFour(lbl,F,"week1",dn,weekday);
       for(const W of [OLD,NEW]) await W.at(iso,21,0);
@@ -271,7 +280,7 @@ function checkFour(lbl,F,wk,dn,withPool){
         for(const W of [OLD,NEW]){ W.R("haMomOff();"); await W.at(iso,21,0); }
       }
     }
-    ok(D.lbl+": Mon–Fri of the break ("+checked+" days) — Kids' Corner, Mom's Today, Dad's Day, the board, the store, the afternoon list, the Mom loop: byte-identical to the code before (BRKTODAY already covers them)",checked>0&&diffs.length===0,diffs[0]);
+    ok(D.lbl+": Mon–Fri of the break ("+checked+" days) — Kids' Corner, Mom's Today, Dad's Day, the board, the Schedule tab and its day tabs, the store, the afternoon list, the Mom loop: byte-identical to the code before (BRKTODAY already covers them)",checked>0&&diffs.length===0,diffs[0]);
     ok(D.lbl+": stale days seen: "+staleDays,staleDays>=(D.k==="d1"?5:D.days.length));
   }
   // the four items on a break weekday (a2, Tuesday): same as world g
@@ -302,17 +311,17 @@ function checkFour(lbl,F,wk,dn,withPool){
     const orig=JSON.parse(NEW.R("JSON.stringify(weekData.tasks)"));
     let seed=20261124; const rnd=()=>{ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; };
     const WD=["monday","tuesday","wednesday","thursday","friday","saturday"], ISO={monday:"2026-11-09",tuesday:"2026-11-10",wednesday:"2026-11-11",thursday:"2026-11-12",friday:"2026-11-13",saturday:"2026-11-14"};
-    let diffs=0, first=null, nCards=0, nW=0, nCeleb=0, nBonus=0, nDs=0, nSweep=0;
+    let diffs=0, first=null, nCards=0, nSched=0, nW=0, nCeleb=0, nBonus=0, nDs=0, nSweep=0;
     for(let it=0;it<300;it++){
       const tasks=JSON.parse(JSON.stringify(orig)), ck={};
       tasks.forEach(t=>{ if(rnd()<0.4) t.day=WD[Math.floor(rnd()*5)]; if(rnd()<0.6) ck[t.id]="9:"+String(10+Math.floor(rnd()*40))+" AM"; });
       const today=WD[Math.floor(rnd()*6)], mom=rnd()<0.5, eve=rnd()<0.2, pts={};
       ["kid_a","kid_b"].forEach(k=>{ pts[k]={}; WD.forEach(d=>{ if(rnd()<0.5) pts[k][d]=1+Math.floor(rnd()*12); }); });
       const set='weekData.tasks='+JSON.stringify(tasks)+'; checked='+JSON.stringify(ck)+'; claimed={}; sv(WK+"_slot_points",'+JSON.stringify(pts)+'); _todayDay="'+today+'"; day="'+today+'"; '+SCENE.replace('haMomOff(); tab="kids"; day=_todayDay;','')+';'+(mom?' haMomOn();':' haMomOff();')+' eveningSweeps={};';
-      for(const W of [OLD,NEW]){ W.clock.now=hm(ISO[today],eve?20:10+(it%6),eve?10:0); W.R(set); }
+      for(const W of [OLD,NEW]){ W.clock.now=hm(ISO[today],eve?20:10+(it%6),eve?10:0); W.R(set+' __schedViews=["'+(it%2?"all":"kid_a")+'"];'); }   // the Schedule tab: a kid's view and All on alternate weeks (150 each)
       const a=OLD.R(PS)+OLD.R(POOL), b=NEW.R(PS)+NEW.R(POOL);
       if(a!==b){ diffs++; if(!first) first={it,today,d:firstDiff(a,b)}; }
-      nCards+=cnt(JSON.parse(NEW.R(PS)).all);
+      { const v=JSON.parse(b.slice(0,b.lastIndexOf("}{")+1)); nCards+=cnt(v.all); const sv=v.sched.kid_a||v.sched.all; if(typeof sv!=="object"){ diffs++; if(!first) first={it,err:sv}; } else nSched+=cnt(sv.html); }
       const ws=[WCELEB,WBONUS,WDS].concat(eve&&it%3===0?[WSWEEP(false)]:[]);
       for(const w of ws){ const x=await runWriter(OLD,w), y=await runWriter(NEW,w);
         const norm=r=>JSON.stringify([r.v,r.writes]).replace(/"\d{1,2}:\d\d [AP]M"/g,"T");
@@ -320,8 +329,10 @@ function checkFour(lbl,F,wk,dn,withPool){
         nW+=y.writes.length; if(w===WCELEB&&y.v===1) nCeleb++; if(w===WBONUS&&y.v==="bonus") nBonus++; if(w===WDS&&y.writes.length) nDs++; if(w.indexOf("mlEveningSweep")>0&&y.v===true) nSweep++; }
       for(const W of [OLD,NEW]) W.R("weekData.tasks="+JSON.stringify(orig)+";");
     }
-    ok("300 weeks: Kids' Corner, Mom's Today, Dad's Day, the board, store, afternoon, Mom loop, the line, the ⭐ card (pool) — identical to the code before",diffs===0,first);
+    for(const W of [OLD,NEW]) W.R("__schedViews=null;");
+    ok("300 weeks: Kids' Corner, Mom's Today, Dad's Day, the board, the Schedule tab (a kid / All) and its day tabs, store, afternoon, Mom loop, the line, the ⭐ card (pool) — identical to the code before",diffs===0,first);
     ok("…and celebrateDayComplete, the day bonus, dsAutoStart and the 8 PM sweep returned the same and wrote the same",diffs===0);
+    ok("…the Schedule tab really drew the weeks ("+nSched+" cards across its two views)",nSched>1000,nSched);
     ok("…the weeks really had cards and the writers really wrote ("+nCards+" cards on All, "+nCeleb+" celebrations, "+nBonus+" day bonuses, "+nDs+" day starts, "+nSweep+" sweeps, "+nW+" writes)",nCards>1500&&nCeleb>100&&nBonus>50&&nDs>100&&nSweep>5,[nCards,nCeleb,nBonus,nDs,nSweep,nW]);
   }
 
