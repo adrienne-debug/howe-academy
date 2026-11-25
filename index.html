@@ -50530,8 +50530,8 @@ function nbLevelCardHtml(kid){
 //   · The level: the one Mom picked (lv), else the kid's notebook grade (nbLevelGrade — Mom's override or the Family grade, not
 //     today's fallback) through HoweNotebooks.ladders.defaultLevel; neither → "Pick a level".
 //   · ctx.ladders (haNbContext): { reading|number: { on, lv, lvFrom, opt, cur, ready, next } } for the kid's saved ladders, or
-//     null. next = ladders.next(…) for the target week when the ladder is on and loaded. Only the 1st-grade notebook reads it
-//     (reading, NBLADREAD); every other notebook and the number ladder print nothing yet.
+//     null. next = ladders.next(…) for the target week when the ladder is on and loaded. The 1st-grade notebook reads reading
+//     (NBLADREAD); the Pre-K / K and 1st-grade notebooks read number (NBLADNUM, after NBNAME); every other notebook prints nothing new.
 //   · The card's note says per notebook what prints (NBLADREAD's note); NBLADDER_PAGES_NOTE is the "not yet" wording.
 const NBLADDER_FILES={reading:"ladders/read_and_answer.json",number:"ladders/number_thinking.json"};
 const NBLADDER_KINDS=["reading","number"];
@@ -50571,7 +50571,7 @@ function nbLadderLevelOf(kid,kind){
 }
 function nbLadderState(kid,kind){ const s=nbLadderSaved(kid,kind), lv=nbLadderLevelOf(kid,kind); return {on:s.on===true, lv:lv.lv||null, lvFrom:lv.from||null, opt:s.opt===true, cur:(s.cur&&typeof s.cur==="object")?s.cur:null, days:(typeof s.days==="string"&&s.days)?s.days:null, wf:(s.wf==="one"||s.wf==="both")?s.wf:null}; }   // 📖 NBLADREAD: days = the reading pages' day ticks · ✍️ NBLADREAD3: wf = write-first days
 // For haNbContext: the kid's saved ladders + this week's items when on and loaded; null when nothing is saved. Only the 1st-grade
-// notebook reads it (reading — NBLADREAD).
+// notebook reads reading (NBLADREAD); the Pre-K / K and 1st-grade notebooks read number (NBLADNUM).
 function nbLadderCtx(kid){
   try{
     const L=nbLadderLib(), out={}; let any=false;
@@ -50729,26 +50729,29 @@ function nbLadReadDaysHtml(kid){
 }
 // The card's note: what this kid's notebook prints.
 function nbLadReadNoteHtml(kid){
-  if(!nbLadReadPrints(kid)) return NBLADDER_PAGES_NOTE;
+  if(!nbLadReadPrints(kid)) return (typeof nbLadNumNoteHtml==="function")?nbLadNumNoteHtml(kid):NBLADDER_PAGES_NOTE;   // 🔢 NBLADNUM: a Pre-K / K notebook prints number questions
   const st=nbLadderState(kid,"reading"), t=nbLadderTrack("reading"), L=nbLadderLib(), w=(st.lv&&t&&L)?L.where(t,st):null;
   const read=(w&&w.end)?"📖 Reading passages: the last level is finished, so no reading page prints."
     :st.on?"📖 Reading passages: prints in the notebook on "+nbLadReadDaysWord(kid)+" — one passage a day, with the answers on a Teaching Companion page."
     :"📖 Reading passages: when it’s on, it prints in the notebook on "+nbLadReadDaysWord(kid)+".";
-  return read+'<div style="margin-top:3px">🔢 '+NBLADREAD_NUM_NOTE+'</div>';
+  return read+'<div style="margin-top:3px">🔢 '+((typeof nbLadNumNote==="function")?nbLadNumNote(kid):NBLADREAD_NUM_NOTE)+'</div>';   // 🔢 NBLADNUM: the number line
 }
 // Before a Mom build: the reading file is here when this kid's notebook will print it. → "" or the plain note for Mom.
 async function nbLadReadReady(kid){
-  if(nbLadderSaved(kid,"reading").on!==true||!nbLadReadPrints(kid)) return "";
-  try{ await nbLadderLoad("reading"); return ""; }catch(e){ return NBLADREAD_LOAD_FAIL; }
+  const nm=(typeof nbLadNumReady==="function")?await nbLadNumReady(kid):"";   // 🔢 NBLADNUM: the number questions too (their own note)
+  if(nbLadderSaved(kid,"reading").on!==true||!nbLadReadPrints(kid)) return nm;
+  try{ await nbLadderLoad("reading"); return nm; }catch(e){ return NBLADREAD_LOAD_FAIL+(nm?" "+nm:""); }
 }
 async function nbLadReadReadyAll(){   // the combined parent guide: any kid whose notebook prints reading
+  const nm=(typeof nbLadNumReadyAll==="function")?await nbLadNumReadyAll():"";   // 🔢 NBLADNUM
   const any=Object.keys(notebookSettings||{}).some(k=>nbLadderSaved(k,"reading").on===true&&nbLadReadPrints(k));
-  if(!any) return "";
-  try{ await nbLadderLoad("reading"); return ""; }catch(e){ return NBLADREAD_LOAD_FAIL; }
+  if(!any) return nm;
+  try{ await nbLadderLoad("reading"); return nm; }catch(e){ return NBLADREAD_LOAD_FAIL+(nm?" "+nm:""); }
 }
 function nbLadReadNote(out,msg){ if(out&&msg) out.warnings=(out.warnings||[]).concat([msg]); }
 // After a Mom build: save where this week's passages landed (the reading ladder's "cur"), only when it changed.
 function nbLadReadPersist(kid,out){
+  if(typeof nbLadNumPersist==="function") nbLadNumPersist(kid,out);   // 🔢 NBLADNUM: the number ladder's place, same moment
   try{
     if(!out||!out.readingCursor||!momHere()||typeof db==="undefined"||!db||_dryRun()) return;
     const oc=nbLadderSaved(kid,"reading").cur||{}, nc=out.readingCursor;
@@ -50822,6 +50825,57 @@ function nbClearName(kid){ if(!momHere()) return;
   if(tab==="notebook"){ const c=document.getElementById("content"); if(c) renderNotebook(c); }
 }
 // NBNAME_END
+// NBLADNUM_START — 🔢 number questions in the notebook, slice 4 of the notebook ladders (notebooks study, her words 2026-11-23/24:
+// "Build it"; number questions "5 a week"; Pre-K and K done with a grown-up). notebooks.js NBLADNUM prints a "Number thinking" page
+// in the Pre-K / K notebooks (every look) and the 1st-grade notebook from the number ladder haNbContext hands it; this block is the
+// app's side of it, the same shape as NBLADREAD's for reading:
+//   · Which notebooks print it: asked of notebooks.js (HoweNotebooks.ladderPages(kid).number), never a list of kids here. The
+//     card's note says so on the number line; every other notebook keeps the "not yet" wording.
+//   · Every Mom build (Print / Look, PDF, tablet send, the combined parent guide) waits for the number file first when that kid's
+//     number ladder is on and the notebook prints it — nbLadReadReady / nbLadReadReadyAll ask here. A failed load builds exactly
+//     as before (no number page) plus a plain note for Mom.
+//   · The place: the builder reports out.numberLadderCursor only when the page prints; nbLadReadPersist hands it here and it is
+//     saved as the number ladder's "cur" through nbLadderWrite — only when it changed, Mom only, one field, never under ?dryrun=1.
+const NBLADNUM_LOAD_FAIL="The number questions couldn’t load (check the internet), so the Number thinking page and its answers aren’t in this build — everything else is as usual. Build it again once you’re online; the Ladders card on the Notebook tab shows when they’re back.";
+function nbLadNumPrints(kid){
+  try{ const N=window.HoweNotebooks; if(!N||typeof N.ladderPages!=="function") return false;
+    const r=N.ladderPages(kid,{notebookTheme:nbThemeOf(kid),nbLevel:nbLevelOf(kid)}); return !!(r&&r.number); }catch(e){ return false; }
+}
+// The number line of the card's note: what this kid's notebook prints.
+function nbLadNumNote(kid){
+  if(!nbLadNumPrints(kid)) return NBLADREAD_NUM_NOTE;
+  const st=nbLadderState(kid,"number"), t=nbLadderTrack("number"), L=nbLadderLib(), w=(st.lv&&t&&L)?L.where(t,st):null, n=(L&&L.perWeek&&L.perWeek.number)||5;
+  if(w&&w.end) return "Number thinking: the last level is finished, so no number page prints.";
+  if(w&&w.stop) return "Number thinking: the ladder is at the question bank, so no number page prints until you pick the next level.";
+  const grown=/^(prek|k)$/.test(String((w&&w.lv)||st.lv||""));
+  return (st.on?"Number thinking: prints in the notebook":"Number thinking: when it’s on, it prints in the notebook")+" as a page of its own — "+n+" questions a week"+
+    (grown?", done with a grown-up who reads each one aloud":", read by the child")+" — with the answers on a page for you in the parent copy.";
+}
+// The whole note for a notebook that prints number questions but not reading (a Pre-K / K notebook).
+function nbLadNumNoteHtml(kid){
+  if(!nbLadNumPrints(kid)) return NBLADDER_PAGES_NOTE;
+  return "📖 Reading passages: don’t print in this notebook."+'<div style="margin-top:3px">🔢 '+nbLadNumNote(kid)+'</div>';
+}
+// Before a Mom build: the number file is here when this kid's notebook will print it. → "" or the plain note for Mom.
+async function nbLadNumReady(kid){
+  if(nbLadderSaved(kid,"number").on!==true||!nbLadNumPrints(kid)) return "";
+  try{ await nbLadderLoad("number"); return ""; }catch(e){ return NBLADNUM_LOAD_FAIL; }
+}
+async function nbLadNumReadyAll(){   // the combined parent guide: any kid whose notebook prints number questions
+  const any=Object.keys(notebookSettings||{}).some(k=>nbLadderSaved(k,"number").on===true&&nbLadNumPrints(k));
+  if(!any) return "";
+  try{ await nbLadderLoad("number"); return ""; }catch(e){ return NBLADNUM_LOAD_FAIL; }
+}
+// After a Mom build: save where this week's questions landed (the number ladder's "cur"), only when it changed.
+function nbLadNumPersist(kid,out){
+  try{
+    if(!out||!out.numberLadderCursor||!momHere()||typeof db==="undefined"||!db||_dryRun()) return;
+    const oc=nbLadderSaved(kid,"number").cur||{}, nc=out.numberLadderCursor;
+    if(oc.week===nc.week&&oc.lv===nc.lv&&oc.from===nc.from&&oc.adv===nc.adv&&oc.opt===nc.opt) return;
+    nbLadderWrite(kid,"number","cur",nc);
+  }catch(e){}
+}
+// NBLADNUM_END
 // NB_COUNTPIC_START — what the Pre-K number card counts, per kid, for any look (looks study §4 row 4; her answer 2026-11-24:
 // "Make it a setting"). notebookSettings/<kid>/countPic = "animal" | "picture"; nothing saved = the look's own rule (construction
 // counts the counting picture, every other look the animal of the day), so nothing prints differently until Mom taps. The answer
