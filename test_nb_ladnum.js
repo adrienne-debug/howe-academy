@@ -14,6 +14,9 @@
 //  (j) page fit in Google Chrome headless (when it is on the machine): every week of Pre-K and K in all nine looks, every level in the
 //      1st-grade notebook, and the answer pages
 //  (k) would one question a school day fit on the daily pages? (measured; the answer goes in the report)
+//  (l) NBLADNUM_DAYS (her pick 2026-11-24, "One per school day"): one question per school day — a 5-day week byte for byte the tree
+//      without it; 4/3/2/1 days print that many and move the place that many; a reprint keeps its first count; no days → nothing;
+//      the Pre-K "Skip no-school days" switch; level ends, the harder stage, a bank, the end; the card's words; 1–4 questions fit (in (j))
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os"), cp = require("child_process");
 const rd = (f) => fs.readFileSync(path.join(__dirname, f), "utf8");
 const SRC = rd("notebooks.js"), IX = rd("index.html"), NUM = JSON.parse(rd("ladders/number_thinking.json")), READ = JSON.parse(rd("ladders/read_and_answer.json"));
@@ -290,6 +293,134 @@ console.log("(h) the place: same week, next week, level end, the harder stage, a
   void ids;
 }
 
+// ════════════════════════════════════ (l) NBLADNUM_DAYS — one question per school day ════════════════════════════════════
+// Her pick 2026-11-24: "One per school day" — a 3-day week prints three and the ladder moves on more slowly.
+console.log("(l) NBLADNUM_DAYS: one question for each school day of the week being built");
+const D0 = SRC.indexOf("  // NBLADNUM_DAYS_START"), D1 = SRC.indexOf("  // NBLADNUM_DAYS_END\n");
+ok("one NBLADNUM_DAYS block, inside the NBLADNUM block", D0 > B0 && D1 > D0 && D1 < B1 && SRC.indexOf("NBLADNUM_DAYS_START", D0 + 20) < 0);
+const dTagged = SRC.split("\n").filter((l) => /\/\/ NBLADNUM_DAYS:/.test(l));
+ok("one tagged line outside it — lntWeek's cut (inside the NBLADNUM block)", dTagged.length === 1 && /r = lntDays\(r, days\); if \(!r\) return null;/.test(dTagged[0]) && SRC.indexOf(dTagged[0]) > B0 && SRC.indexOf(dTagged[0]) < B1);
+ok("both builders hand lntWeek the days their daily pages print from", /var lnum = lntWeek\(ctx, days\);/.test(gPk) && /var lnum = lntWeek\(ctx, days\);/.test(gLu));
+ok("NBLADNUM_DAYS block: no kid or family name, no DOM / Firebase", !NAMES.test(code(SRC.slice(D0, D1))) && !/db\.ref|firebase|document\.|window\./i.test(code(SRC.slice(D0, D1))));
+// the baseline: this tree with only NBLADNUM_DAYS cut out (the block + its one tagged line)
+const BASE_D = (SRC.slice(0, D0) + SRC.slice(D1 + "  // NBLADNUM_DAYS_END\n".length)).split("\n").filter((l) => !/\/\/ NBLADNUM_DAYS:/.test(l)).join("\n");
+ok("the NBLADNUM_DAYS baseline has no trace of it", BASE_D.indexOf("lntDays") < 0 && BASE_D.indexOf("NBLADNUM_DAYS") < 0);
+const NBD = load(SRC.replace(HOOK, T_HOOK + " lntDays: lntDays,")), OLDD = load(BASE_D.replace(HOOK, T_HOOK));
+const genD = (kid, ctx) => OLDD.generate(kid, clone(ctx));
+const ALL = Object.keys(DATES);
+const DS = { 5: ALL, 4: ["monday", "tuesday", "wednesday", "thursday"], 3: ["monday", "wednesday", "friday"], 2: ["tuesday", "thursday"], 1: ["wednesday"] };
+const dailies = (html) => pagesOf(html).filter((l) => /^Daily Page/.test(l)).length;
+const idsOf = (o) => { const np = numPages(o.student); return np.length ? (np[0].match(/<div class="lnt-q"[ >]/g) || []).length : 0; };   // [ >]: a tablet build may add attributes (🔊)
+const books = [["1st grade", KLU, {}, "g1"]].concat(KPK.map((k) => ["built-in Pre-K " + k.length, k, {}, "prek"]),
+  LOOKS.flatMap((th) => [["Pre-K " + th, "kidt_" + th, PKX("prek", th), "prek"], ["K+find-it " + th, "kidk_" + th, Object.assign(PKX("k", th), { nbLevel: { nbFindIt: true, nbLowercase: true, nbTeens: true } }), "k"]]));
+// states that matter: a fresh level, mid-level, a week that climbs a level, two before a bank, the harder stage, the last two
+const STATES = (lv) => [{ lv }, { lv, cur: { week: 11, lv, from: 10, adv: 5, opt: false } }, { lv, cur: { week: 11, lv, from: 52, adv: 5, opt: false } }];
+{
+  // 5-day week: byte for byte the tree without NBLADNUM_DAYS (every notebook, every look, several places, tablet tags on and off)
+  let same = 0, n = 0; const diff = [];
+  for (const [name, kid, extra, lv] of books) for (const st of STATES(lv)) for (const tags of [false, true]) {
+    const ctx = mkCtx(kid, Object.assign({ ladders: nl(st, 12) }, extra, tags ? { nbPageTags: true } : {}), DS[5]); n++;
+    const a = gen(kid, ctx), b = genD(kid, ctx);
+    if (both(a) === both(b) && JSON.stringify(a.numberLadderCursor) === JSON.stringify(b.numberLadderCursor) && idsOf(a) === 5) same++; else diff.push(name + " " + JSON.stringify(st));
+  }
+  for (const st of [{ lv: "g3", cur: { week: 11, lv: "g3", from: 53, adv: 5, opt: false } }, { lv: "g8", cur: { week: 11, lv: "g8", from: 55, adv: 3, opt: false } }, { lv: "g5", opt: true, cur: { week: 11, lv: "g5", from: 55, adv: 5, opt: false } }]) {
+    const ctx = mkCtx(KLU, { ladders: nl(st, 12) }); n++; if (both(gen(KLU, ctx)) === both(genD(KLU, ctx)) && JSON.stringify(gen(KLU, ctx).numberLadderCursor) === JSON.stringify(genD(KLU, ctx).numberLadderCursor)) same++; else diff.push("1st " + JSON.stringify(st));
+  }
+  ok("a 5-day week prints exactly what it printed before NBLADNUM_DAYS — " + n + " builds (" + books.length + " notebooks × 3 places × tablet tags on/off, + a bank, the end, the harder stage)", same === n, diff.slice(0, 4));
+  // ladder off: nothing changes anywhere, whatever the days
+  let s0 = 0, n0 = 0; const d0 = [];
+  for (const [name, kid, extra, lv] of books) for (const k of [1, 3, 4, 5]) { const ctx = mkCtx(kid, Object.assign({ ladders: { number: Object.assign({}, nl({ lv }).number, { on: false }) } }, extra), DS[k]); n0++;
+    if (both(gen(kid, ctx)) === both(genD(kid, ctx)) && both(gen(kid, ctx)) === both(genOld(kid, ctx)) && !("numberLadderCursor" in gen(kid, ctx))) s0++; else d0.push(name + " " + k); }
+  ok("ladder off → every notebook the same as before on 1-, 3-, 4- and 5-day weeks (" + n0 + " builds)", s0 === n0, d0.slice(0, 4));
+}
+{
+  // 4-, 3-, 2-, 1-day weeks: that many, the engine's first ones in order, the place moves on by that many
+  let good = 0, n = 0; const bad = [];
+  for (const [name, kid, extra, lv] of books) for (const k of [4, 3, 2, 1]) for (const st of STATES(lv)) {
+    const ctx = mkCtx(kid, Object.assign({ ladders: nl(st, 12) }, extra), DS[k]), o = gen(kid, ctx), want = L.next(TN, Object.assign({ opt: false }, st), 12, k);
+    const np = numPages(o.student), qs = np.length ? qBlocks(np[0]) : [], ans = ansPages(o.parent), rows = ans.length ? (ans[0].match(/<div class="lnt-key">/g) || []).length : -1; n++;
+    const okk = dailies(o.student) === k && np.length === 1 && qs.length === k && want.items.length === k && qs.every((q, i) => ('<div class="lnt-q">' + q).indexOf(I.lntQ(want.items[i], i + 1)) === 0) &&
+      rows === k && JSON.stringify(o.numberLadderCursor) === JSON.stringify(want.cursor) && o.numberLadderCursor.adv === k;
+    if (okk) good++; else bad.push(name + " " + k + "d " + JSON.stringify(st) + " → " + qs.length + "/" + rows);
+  }
+  ok("4-, 3-, 2- and 1-day weeks: as many questions as daily pages, the engine's first ones in order, the answers page lists exactly those, the cursor advances by that many (" + n + " builds)", good === n, bad.slice(0, 4));
+  // the cut is exactly the engine asked for that many — items, stop, end, cursor — across every level and place
+  let eq = 0, m = 0; const neq = [];
+  for (const lv of TN.order) for (const opt of [false, true]) { const L0 = TN.levels[lv]; if (L0.bank) continue; const len = L0.items.filter((x) => opt || !x.opt).length;
+    for (const from of [0, 1, len - 6, len - 5, len - 4, len - 3, len - 2, len - 1].filter((f, i, a) => f >= 0 && a.indexOf(f) === i)) for (const k of [1, 2, 3, 4, 5]) {
+      const st = { on: true, lv, opt, cur: { week: 11, lv, from: Math.max(0, from - 5), adv: from - Math.max(0, from - 5), opt } }, five = L.next(TN, st, 12, 5);
+      if (!five.items.length) continue; m++;
+      const r = NBD._internal.lntDays(Object.assign({}, st, { ready: true, next: five }), DS[k]), want = L.next(TN, st, 12, k);
+      const got = r && r.next, sameIds = got && JSON.stringify(got.items.map((x) => x.id)) === JSON.stringify(want.items.map((x) => x.id));
+      if (got && sameIds && JSON.stringify(got.stop) === JSON.stringify(want.stop) && got.end === want.end && JSON.stringify(got.cursor) === JSON.stringify(want.cursor)) eq++; else neq.push(lv + " " + opt + " " + from + " " + k);
+    } }
+  ok("the cut = the engine asked for that many: the same questions, bank stop, ladder end and cursor (" + m + " places × 1–5 days, every level, the harder stage on and off)", m > 200 && eq === m, neq.slice(0, 4));
+  ok("the most a week holds (LNT_MOST) is the engine's perWeek.number, 5", /var LNT_MOST = 5;/.test(SRC) && L.perWeek.number === 5);
+  ok("never more than 5: a 7-day list still prints 5, and the five are untouched (the same object)", (() => { const r = nl({ lv: "g1" }).number; return NBD._internal.lntDays(r, ALL.concat(["saturday", "sunday"])) === r && NBD._internal.lntDays(r, undefined) === r; })());
+}
+{
+  // next week continues right after; a reprint prints what it printed the first time, whatever the days are now
+  const c3 = mkCtx(KLU, { ladders: nl({ lv: "g1" }, 12) }, DS[3]), w3 = gen(KLU, c3), cur3 = w3.numberLadderCursor;
+  const c13 = mkCtx(KLU, { weekNum: "week13", ladders: nl({ lv: "g1", cur: cur3 }, 13) }), w13 = gen(KLU, c13);
+  ok("a 3-day week (questions 1–3), then a full week → questions 4–8, cursor from 3 adv 5", cur3.from === 0 && cur3.adv === 3 && w13.numberLadderCursor.from === 3 && w13.numberLadderCursor.adv === 5 &&
+    /questions 4–8 of 60/.test(numPages(w13.student)[0]) && JSON.stringify(qBlocks(numPages(w13.student)[0]).length) === "5");
+  const c14 = mkCtx(KLU, { weekNum: "week14", ladders: nl({ lv: "g1", cur: w13.numberLadderCursor }, 14) }, DS[2]), w14 = gen(KLU, c14);
+  ok("…then a 2-day week → questions 9–10, cursor from 8 adv 2", w14.numberLadderCursor.from === 8 && w14.numberLadderCursor.adv === 2 && /questions 9–10 of 60/.test(numPages(w14.student)[0]));
+  for (const [kid, extra, lv] of [[KLU, {}, "g1"], [KPK[0], {}, "prek"], ["kidk", PKX("k", "space"), "k"]]) {
+    const first = gen(kid, mkCtx(kid, Object.assign({ ladders: nl({ lv }, 12) }, extra), DS[3])), cur = first.numberLadderCursor;
+    const rs = [5, 4, 1].map((k) => gen(kid, mkCtx(kid, Object.assign({ ladders: nl({ lv, cur }, 12) }, extra), DS[k])));
+    ok(lv + ": built with 3 days, then reprinted with 5, 4 and 1 days → the same 3 questions on the same page, the same answers, the same cursor",
+      cur.adv === 3 && rs.every((r) => numPages(r.student)[0] === numPages(first.student)[0] && ansPages(r.parent)[0] === ansPages(first.parent)[0] && JSON.stringify(r.numberLadderCursor) === JSON.stringify(cur)));
+    const full = gen(kid, mkCtx(kid, Object.assign({ ladders: nl({ lv }, 12) }, extra), DS[5])), fcur = full.numberLadderCursor, re2 = gen(kid, mkCtx(kid, Object.assign({ ladders: nl({ lv, cur: fcur }, 12) }, extra), DS[2]));
+    ok(lv + ": built with 5 days (or saved before this change), reprinted with 2 → still the same 5", fcur.adv === 5 && numPages(re2.student)[0] === numPages(full.student)[0] && JSON.stringify(re2.numberLadderCursor) === JSON.stringify(fcur));
+  }
+  // a different week is not a reprint: it follows its own days
+  const other = gen(KLU, mkCtx(KLU, { weekNum: "week13", ladders: nl({ lv: "g1", cur: cur3 }, 13) }, DS[4]));
+  ok("the next week is not a reprint: a 4-day week 13 after a 3-day week 12 prints 4 (questions 4–7)", other.numberLadderCursor.from === 3 && other.numberLadderCursor.adv === 4 && /questions 4–7 of 60/.test(numPages(other.student)[0]));
+}
+{
+  // a week with no school days: nothing prints, no place is saved
+  const z = mkCtx(KLU, { ladders: nl({ lv: "g1" }, 12) }, []), oz = gen(KLU, z);
+  ok("1st grade, a week with no school days → no Number Thinking page, no answers page, no cursor — the notebook as it is with the ladder off",
+    numPages(oz.student).length === 0 && ansPages(oz.parent).length === 0 && !("numberLadderCursor" in oz) && dailies(oz.student) === 0 && both(oz) === both(genOld(KLU, mkCtx(KLU, {}, []))));
+  const zr = gen(KLU, mkCtx(KLU, { ladders: nl({ lv: "g1", cur: { week: 12, lv: "g1", from: 0, adv: 3, opt: false } }, 12) }, []));
+  ok("…even a reprint of a week that printed 3 (no school days now → nothing, nothing saved)", numPages(zr.student).length === 0 && !("numberLadderCursor" in zr));
+  ok("lntDays with no days → null", NBD._internal.lntDays(nl({ lv: "g1" }).number, []) === null);
+  // Pre-K / K: a week with no dated days still prints its five daily pages (the builder's own fallback), so five questions
+  const zp = gen(KPK[0], mkCtx(KPK[0], { ladders: nl({ lv: "prek" }, 12) }, []));
+  ok("Pre-K / K, a week with no dates → the builder prints all five daily pages, so five questions (the count follows the daily pages)", dailies(zp.student) === 5 && idsOf(zp) === 5 && zp.numberLadderCursor.adv === 5);
+  // the Pre-K "Skip no-school days" switch: a day with no school cards has no daily page and no question
+  for (const [kid, extra] of [[KPK[0], { nbLevel: { nbSkipNoSchoolDays: true } }], ["kidt", Object.assign(PKX("prek", "farm"), { nbLevel: { nbSkipNoSchoolDays: true } })]]) {
+    const ctx = mkCtx(kid, Object.assign({ ladders: nl({ lv: "prek" }, 12) }, extra));
+    ctx.weekData.tasks = ctx.weekData.tasks.filter((t) => t.day !== "thursday" && t.day !== "wednesday");
+    const o = gen(kid, ctx), off = gen(kid, Object.assign(clone(ctx), { nbLevel: {} }));
+    ok("Pre-K, “Skip no-school days” on, no cards Wed + Thu → 3 daily pages, 3 questions; the switch off → 5 and 5 (" + (extra.notebookTheme || "built-in") + ")",
+      dailies(o.student) === 3 && idsOf(o) === 3 && o.numberLadderCursor.adv === 3 && dailies(off.student) === 5 && idsOf(off) === 5);
+  }
+}
+{
+  // level ends, the harder stage, the bank stop, the last level — with fewer than 5
+  const g = (st, k, kid) => gen(kid || KLU, mkCtx(kid || KLU, { weekNum: "week13", ladders: nl(st, 13) }, DS[k]));
+  const kEnd = { lv: "k", cur: { week: 12, lv: "k", from: 52, adv: 5, opt: false } };
+  const k2 = g(kEnd, 2, KPK[0]), k4 = g(kEnd, 4, KPK[0]);
+  ok("3 left in K: a 2-day week → K 58–59 only (no climb yet); a 4-day week → K 58–60 then 1st grade 1",
+    /Kindergarten · questions 58–59 of 60</.test(ansPages(k2.parent)[0]) && k2.numberLadderCursor.adv === 2 && /Kindergarten · questions 58–60 of 60 · then 1st grade · question 1 of 60/.test(ansPages(k4.parent)[0]) && k4.numberLadderCursor.adv === 4);
+  const bank = { lv: "g3", cur: { week: 12, lv: "g3", from: 53, adv: 5, opt: false } };
+  const b1 = g(bank, 1), b2 = g(bank, 2), b3 = g(bank, 3);
+  ok("2 left before the 4th-grade bank: 1 day → 1 question, “next week picks up”; 2 days → 2, no bank line yet (the engine's own answer for 2); 3 days → 2 and the bank line",
+    idsOf(b1) === 1 && /Next week picks up right after/.test(ansPages(b1.parent)[0]) && idsOf(b2) === 2 && !/question bank/.test(ansPages(b2.parent)[0]) && idsOf(b3) === 2 && b3.numberLadderCursor.adv === 2 && /reaches the 4th-grade question bank/.test(ansPages(b3.parent)[0]));
+  const after = gen(KLU, mkCtx(KLU, { weekNum: "week14", ladders: nl({ lv: "g3", cur: b2.numberLadderCursor }, 14) }, DS[3]));
+  ok("…the week after those two → no page (at the bank), as before", numPages(after.student).length === 0 && !("numberLadderCursor" in after));
+  const last = { lv: "g8", cur: { week: 12, lv: "g8", from: 55, adv: 3, opt: false } };
+  const l1 = g(last, 1), l3 = g(last, 3);
+  ok("the ladder's last 2: 1 day → 1 question, not yet “the last”; 3 days → 2 and “the last questions on the ladder”",
+    idsOf(l1) === 1 && !/the last questions/.test(ansPages(l1.parent)[0]) && idsOf(l3) === 2 && /the last questions on the ladder/.test(ansPages(l3.parent)[0]));
+  const l1b = gen(KLU, mkCtx(KLU, { weekNum: "week14", ladders: nl({ lv: "g8", cur: l1.numberLadderCursor }, 14) }, DS[4]));
+  ok("…then the next week prints the very last one and says so", idsOf(l1b) === 1 && /the last questions on the ladder/.test(ansPages(l1b.parent)[0]));
+  const opt3 = g({ lv: "g5", opt: true, cur: { week: 12, lv: "g5", from: 55, adv: 5, opt: false } }, 3), optOff3 = g({ lv: "g5", cur: { week: 12, lv: "g5", from: 55, adv: 5, opt: false } }, 3);
+  ok("the harder stage on, a 3-day week → its first 3; off → the bank (no page)", idsOf(opt3) === 3 && opt3.numberLadderCursor.adv === 3 && numPages(optOff3.student).length === 0);
+}
+
 // ════════════════════════════════════ (i) index.html ════════════════════════════════════
 console.log("(i) index.html: the note, the waits, a failed load, the cursor save");
 function sandbox(o) {
@@ -322,9 +453,11 @@ const PKID = KPK[0], OKID = KOLD[0];
     const c = sandbox({ settings: st, themes: { kidt: "farm" }, grade: { [PKID]: "PreK", kidt: "K", [OKID]: "5" } });
     c._nbLadData.reading = READ; c._nbLadData.number = NUM; [KLU, PKID, "kidt", OKID, "kidz"].forEach((k) => (c._nbLadOpen[k] = true));
     const h = (k) => c.nbLadderCardHtml(k);
-    ok("1st-grade notebook: the reading line as before, and 'Number thinking: prints in the notebook as a page of its own — 5 questions a week, read by the child'",
-      /📖 Reading passages: when it’s on, it prints in the notebook on the 2nd and 4th/.test(h(KLU)) && /🔢 Number thinking: prints in the notebook as a page of its own — 5 questions a week, read by the child — with the answers on a page for you in the parent copy\./.test(h(KLU)) && h(KLU).indexOf(c.NBLADREAD_NUM_NOTE) < 0);
-    ok("a built-in Pre-K notebook: reading 'don’t print in this notebook', number 'done with a grown-up who reads each one aloud'", /📖 Reading passages: don’t print in this notebook\./.test(h(PKID)) && /🔢 Number thinking: prints in the notebook as a page of its own — 5 questions a week, done with a grown-up who reads each one aloud/.test(h(PKID)));
+    ok("1st-grade notebook: the reading line as before, and 'Number thinking: prints in the notebook as a page of its own — one question for each school day, read by the child' (NBLADNUM_DAYS)",
+      /📖 Reading passages: when it’s on, it prints in the notebook on the 2nd and 4th/.test(h(KLU)) && /🔢 Number thinking: prints in the notebook as a page of its own — one question for each school day, read by the child — with the answers on a page for you in the parent copy\./.test(h(KLU)) && h(KLU).indexOf(c.NBLADREAD_NUM_NOTE) < 0);
+    ok("a built-in Pre-K notebook: reading 'don’t print in this notebook', number 'done with a grown-up who reads each one aloud'", /📖 Reading passages: don’t print in this notebook\./.test(h(PKID)) && /🔢 Number thinking: prints in the notebook as a page of its own — one question for each school day, done with a grown-up who reads each one aloud/.test(h(PKID)));
+    ok("NBLADNUM_DAYS: the card no longer says '5 questions a week' anywhere, and the one changed line is tagged", h(KLU).indexOf("questions a week") < 0 && h(PKID).indexOf("questions a week") < 0 && ixBlk.indexOf("questions a week") < 0 &&
+      IX.split("\n").filter((l) => /\/\/ NBLADNUM_DAYS:/.test(l)).length === 1 && /one question for each school day/.test(IX.split("\n").filter((l) => /\/\/ NBLADNUM_DAYS:/.test(l))[0]));
     ok("a kid on a Pre-K look at K: the same", /done with a grown-up who reads each one aloud/.test(h("kidt")) && h("kidt").indexOf(c.NBLADDER_PAGES_NOTE) < 0);
     // Hub merge with NBLADREAD3 (the 4th- and 6th-grade notebooks print reading now): an older notebook's note is its reading line + the number 'not yet' line; the starter keeps the whole 'not yet' note.
     ok("an older notebook: the number 'not yet' line under its reading line; the starter: the 'not yet' wording, as before", h(OKID).indexOf(c.NBLADREAD_NUM_NOTE) > 0 && h("kidz").indexOf(c.NBLADDER_PAGES_NOTE) > 0 && !/as a page of its own/.test(h(OKID) + h("kidz")));
@@ -455,6 +588,36 @@ const PKID = KPK[0], OKID = KOLD[0];
     summary.push(x.key + " " + tight.spare + (tightA ? "/" + tightA.spare : ""));
   }
   console.log("  tightest spare px (child page / answers page): " + summary.join(" · "));
+
+  // NBLADNUM_DAYS: 1–4 questions (a short week) — every week of every level, in every Pre-K look and the 1st-grade notebook
+  const djobs = [];
+  for (const th of LOOKS) for (const lv of ["prek", "k"]) {
+    const extra = lv === "k" ? Object.assign(PKX("k", th), { nbLevel: { nbFindIt: true, nbLowercase: true, nbTeens: true } }) : PKX("prek", th);
+    const st = [], pa = []; let head = "";
+    weeks(lv).forEach((w, k) => [1, 2, 3, 4].forEach((nd) => { const o = gen("kidt", mkCtx("kidt", Object.assign({ weekNum: "week12", ladders: nl({ lv, cur: k ? w.cur : null }, 12) }, extra), DS[nd]));
+      if (!head) head = o.student;
+      st.push(numPages(o.student)[0].replace('<div class="page">', '<div class="page" data-lab="' + th + "|" + lv + "|w" + (k + 1) + "|" + nd + '">'));
+      pa.push(ansPages(o.parent)[0].replace('<div class="page">', '<div class="page" data-lab="ans|' + th + "|" + lv + "|w" + (k + 1) + "|" + nd + '">')); }));
+    djobs.push(run(docOf(head, st.concat(pa)), "dpk_" + th + "_" + lv).then((r) => ({ key: th + " " + lv, r, n: st.length })));
+  }
+  for (const lv of ["prek", "k", "g1", "g2", "g3", "g5", "g7", "g8"]) {
+    const st = [], pa = []; let head = "", headP = "";
+    weeks(lv, true).forEach((w, k) => [1, 2, 3, 4].forEach((nd) => { const o = gen(KLU, mkCtx(KLU, { ladders: nl({ lv, opt: true, cur: k ? Object.assign({}, w.cur, { opt: true }) : null }, 12) }, DS[nd]));
+      if (!head) { head = o.student; headP = o.parent; }
+      st.push(numPages(o.student)[0].replace('<div class="page">', '<div class="page" data-lab="lu|' + lv + "|w" + (k + 1) + "|" + nd + '">'));
+      pa.push(ansPages(o.parent)[0].replace('<div class="page">', '<div class="page" data-lab="ans|lu|' + lv + "|w" + (k + 1) + "|" + nd + '">')); }));
+    djobs.push(run(docOf(head, st), "dlu_" + lv).then((r) => ({ key: "1st-grade notebook " + lv, r, n: st.length })));
+    djobs.push(run(docOf(headP, pa), "dlup_" + lv).then((r) => ({ key: "1st-grade Companion " + lv, r, n: pa.length })));
+  }
+  const dres = await Promise.all(djobs);
+  if (dres.some((x) => !x.r)) console.log("  short-week page measurement — SKIPPED (Google Chrome would not run headless here: " + dres.filter((x) => !x.r).map((x) => x.key).join(", ") + ")");
+  else {
+    let pagesD = 0; const badD = [], one = [];
+    for (const x of dres) { pagesD += x.r.length; if (x.r.length !== (/^1st-grade/.test(x.key) ? x.n : 2 * x.n)) badD.push(x.key + " count"); x.r.forEach((p) => { if (!fitLine([p])) badD.push(x.key + " " + p.lab); });
+      const kids1 = x.r.filter((p) => !/^ans\|/.test(p.lab) && /\|1$/.test(p.lab)); if (kids1.length && !/Companion/.test(x.key)) one.push(x.key + " " + Math.min.apply(null, kids1.map((p) => p.spare)) + "–" + Math.max.apply(null, kids1.map((p) => p.spare))); }
+    ok("NBLADNUM_DAYS: a 1-, 2-, 3- or 4-day week fits — every week of every level, all nine looks at Pre-K and K and the 1st-grade notebook, child pages and answer pages (" + pagesD + " pages)", badD.length === 0, badD.slice(0, 4));
+    console.log("  one question (a 1-day week): spare px below it on the child page — " + one.join(" · "));
+  }
 
   // ════════════════════════════════════ (k) one a day on the daily page? ════════════════════════════════════
   // Not built — measured, for the report: the smallest question box ({w:300,h:56,choice:56}, the size NBLADPIC calls the smallest
