@@ -3262,6 +3262,46 @@
     return !!(g && g.build === generateLucy);
   }
   // NBLADNUM_END
+  // NBLADTAB_SAY_START — 🔊 a number question read aloud on the tablet, only when tapped (notebook ladders, tablet slice; her
+  // words 2026-11-24: a 1st-grade number-line question is read aloud "Only when tapped"). On the tablet copy alone
+  // (ctx.nbPageTags — Print, Look and the PDF never set it) each question the child does alone on the 1st-grade notebook's
+  // Number Thinking page carries data-nb-say: the words the tablet speaks when its 🔊 is tapped (index.html NBLADTAB_SAY) —
+  // the question as printed, read out ("10, 11, 12, 13, box"; "5 plus box equals 7"; "6 goes to 7"), then the question's own
+  // short spoken line from the bank ("What number comes next?"). A picture question whose page shows only that spoken line
+  // ("About how many dots? …") says just that line. Never a choice, the answer or the rule. A question done with a grown-up
+  // (Pre-K / K, its "Read aloud" line) gets none: the grown-up reads it, as before. Paper is byte for byte what it was.
+  var NB_SAY_WORDS = { "+": "plus", "−": "minus", "-": "minus", "–": "minus", "=": "equals", "→": "goes to", "×": "times", "÷": "divided by", "<": "is less than", ">": "is more than", "?": "box" };
+  // one printed line → words: numbers in a row are a list ("10, 11, 12"); each [a → b] is its own sentence
+  function nbSayLine(s) {
+    return String(s || "").split(/\]\s*\[|\[|\]/).map(function (g) { return g.trim(); }).filter(Boolean).map(function (g) {
+      var out = [];
+      g.split(/\s+/).filter(Boolean).forEach(function (t) {
+        var val = t === "?" || /^[−-]?\d[\d,.]*%?$/.test(t), w = Object.prototype.hasOwnProperty.call(NB_SAY_WORDS, t) ? NB_SAY_WORDS[t] : t.replace(/^−(?=\d)/, "negative ");
+        if (out.length && val && out[out.length - 1].val) out[out.length - 1].s += ",";
+        out.push({ s: w, val: val });
+      });
+      return out.map(function (o) { return o.s; }).join(" ");
+    }).join(". ");
+  }
+  // the words for one question ("" = no 🔊), from what its block on the page shows: a "Read aloud" line (lnt-say) = a grown-up's
+  // question → none; only a spoken line (lnt-ask) → that line; else the printed line(s), then the bank's spoken line (once — a
+  // question that is already a sentence is said by its spoken line alone)
+  function nbSayText(q, block) {
+    if (!q || /class="lnt-say"/.test(block)) return "";
+    var low = function (t) { return String(t || "").replace(/\s+/g, " ").trim().toLowerCase().replace(/[.?!]+$/, ""); }, parts = [];
+    var lines = /class="lnt-ask"/.test(block) ? [] : String(q.text || "").split(" / ").map(nbSayLine).filter(Boolean);
+    if (q.say && lines.length === 1 && low(q.say).indexOf(low(lines[0])) === 0) lines = [];
+    lines.forEach(function (w) { parts.push(/[.?!]$/.test(w) ? w : w + "."); });
+    if (q.say) parts.push(String(q.say));
+    return parts.join(" ").replace(/\s+/g, " ").trim();
+  }
+  // the tablet copy's Number Thinking page: each question block (one per question, in order) gets its words
+  function nbSayTag(ctx, html, w) {
+    if (!ctx || !ctx.nbPageTags || !w || !Array.isArray(w.items) || typeof html !== "string") return html;
+    var bits = html.split('<div class="lnt-q">');
+    return bits[0] + bits.slice(1).map(function (b, k) { var x = w.items[k], t = nbSayText(x && x.item, b); return (t ? '<div class="lnt-q" data-nb-say="' + nbTagAttr(t) + '">' : '<div class="lnt-q">') + b; }).join("");
+  }
+  // NBLADTAB_SAY_END
 
   /* ============================================================================
    *  LINCOLN  (5th grade — snakes 🐍)
@@ -8156,7 +8196,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     luMyWordsPages(ctx, words, wn).forEach(function (p) { parts.push(nbTagXp(ctx, p, "myWords", "My Words")); });   // LU_WORDS: after End of Week, so the day/back pairs don't move
     // NBLADREAD3: a write-first day's page (pg.wf — only NBLADREAD3 sets it) goes through lr3Push: its choices on the back, a Notes pad first if needed
     if (lread) lread.pages.forEach(function (pg) { if (pg.wf) lr3Push(ctx, parts, { pages: [pg], look: lread.look }, pg.day); else parts.push(nbTag(ctx, lrPage(wn, pg.day, dates[pg.day] || "", pg.x), pg.day, "Read and answer")); });   // NBLADREAD: after End of Week + My Words, so every pair stays put
-    if (lnum) parts.push(nbTag(ctx, lntLuPage(wn, weekDates, lnum), "week", "Number thinking"));   // NBLADNUM: after Read and answer, before the paper dolls
+    if (lnum) parts.push(nbTag(ctx, nbSayTag(ctx, lntLuPage(wn, weekDates, lnum), lnum), "week", "Number thinking"));   // NBLADNUM: after Read and answer, before the paper dolls · 🔊 NBLADTAB_SAY: the tablet copy's spoken words
 
     // Paper dolls — doll figure (always) + this week's outfit, each on its OWN sheet with a blank
     // back so Lucy can cut them out without losing anything on the reverse. Goes last in the book.
