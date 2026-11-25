@@ -7760,14 +7760,14 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
   function lrTier(lv, p) { var t = LR_TIER[lv] || 5; return lrLoad(p) > LR_HEAVY[t] ? t + 1 : t; }
   var LR_CSS = "\n  /* NBLADREAD — Read and answer */\n" +
     "  .lr-body { padding:12px 46px 8px; }\n" +
-    "  .lr-how { flex-shrink:0; font-weight:800; color:var(--lu-dark); background:var(--lu-gpale); border:1.5px solid #e8d9a8; border-radius:9px; padding:5px 14px; }\n" +
+    "  .lr-how { flex-shrink:0; font-weight:800; color:var(--lu-dark); background:var(--lu-gpale); border:1.5px solid {{lu:goldLine}}; border-radius:9px; padding:5px 14px; }\n" +
     "  .lr-psg { flex-shrink:0; background:var(--lu-pale); border:1.5px solid var(--lu-light); border-radius:12px; }\n" +
     "  .lr-title { font-family:'Fredoka One',cursive; color:var(--lu-mid); line-height:1.2; margin-bottom:4px; }\n" +
     "  .lr-text p { color:var(--ink); margin-bottom:0.45em; }\n" +
     "  .lr-text p:last-child { margin-bottom:0; }\n" +
     "  .lr-qs { display:flex; flex-direction:column; padding-top:4px; }\n" +
     "  .lr-stem { display:flex; align-items:flex-start; gap:9px; font-weight:800; color:var(--ink); line-height:1.3; }\n" +
-    "  .lr-n { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; background:var(--lu-pink); color:white; font-family:'Fredoka One',cursive; }\n" +
+    "  .lr-n { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; background:var(--lu-pink); color:{{lu:whiteName}}; font-family:'Fredoka One',cursive; }\n" +
     "  .lr-cs { display:flex; flex-wrap:wrap; align-items:center; gap:5px 30px; margin-top:6px; }\n" +
     "  .lr-cs.lr-col { flex-direction:column; align-items:flex-start; }\n" +
     "  .lr-cs.lr-grid { display:grid; grid-template-columns:1fr 1fr; gap:4px 22px; align-items:start; }\n" +
@@ -7775,7 +7775,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     "  .lr-text.lr-two { display:grid; grid-template-columns:1fr 1fr; gap:0 30px; align-items:start; }\n" +
     "  .lr-two > div > p { margin-bottom:0.45em; }\n" +
     "  .lr-c { display:inline-flex; align-items:center; color:var(--ink); font-weight:600; line-height:1.3; }\n" +
-    "  .lr-l { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; border:2px solid var(--lu-mid); border-radius:50%; background:white; color:var(--lu-dark); font-weight:800; margin-right:9px; }\n" +
+    "  .lr-l { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; border:2px solid var(--lu-mid); border-radius:50%; background:{{lu:whiteName}}; color:var(--lu-dark); font-weight:800; margin-right:9px; }\n" +
     "  .lr-why { font-size:10.5px; color:var(--muted); line-height:1.45; }\n" +
     Object.keys(LR_SIZES).map(function (t) {
       var s = LR_SIZES[t], c = "  .lr-t" + t;

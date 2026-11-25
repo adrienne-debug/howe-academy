@@ -4,7 +4,8 @@
 //   (a) nothing saved (or "", null, a Pre-K look key, an unknown key) → student, companion and parent pages byte for byte the
 //       baseline: THIS tree with every LU_LOOKA block cut out and the folded colour literals put back (built below, no git) —
 //       across fixtures that turn on every optional part (My Words, the math block, phonograms, every extra page with a
-//       "pages today" strip, a unit insert, the Spelling page, paper dolls, picture uploads, a 4-day week)
+//       "pages today" strip, a unit insert, the Spelling page, paper dolls, picture uploads, the reading ladder's Read and
+//       answer pages + their Companion page at two levels, a 4-day week)
 //   (b) every colour set changes colours only: strip every colour value (and the one colour word, "this week is the … row")
 //       from two builds and the rest is identical — same pages, order, words, sizes, pictures
 //   (c) no colour literal is left in the notebook's own code outside the palette; every token has a value in every set
@@ -39,7 +40,7 @@ const OWN = K.luLookPalette("");
 let cut = src; for (let n = blocks.length - 1; n >= 0; n--) cut = cut.slice(0, blocks[n][0]) + cut.slice(blocks[n][1]);
 const tokens = cut.match(/\{\{lu:\w+\}\}/g) || [];
 const baseSrc = cut.replace(/\{\{lu:(\w+)\}\}/g, (m, n) => OWN[n]).replace(INLINE[0], INLINE[1]);
-ok(tokens.length === 272 && !/\{\{lu:/.test(baseSrc) && !/LU_LOOKA|luPaint|luLook/.test(baseSrc), "baseline: blocks cut, 271 colour literals + 1 colour word put back, nothing of the look left", tokens.length);
+ok(tokens.length === 275 && !/\{\{lu:/.test(baseSrc) && !/LU_LOOKA|luPaint|luLook/.test(baseSrc), "baseline: blocks cut, 274 colour literals + 1 colour word put back, nothing of the look left", tokens.length);
 const NB = load(src), OLD = load(baseSrc), I = NB._internal, OI = OLD._internal;
 const kidsOf = (N) => Object.keys(N.GENERATORS).filter(k => N.GENERATORS[k].build === N._internal.generateLucy);
 const KID = kidsOf(NB)[0];
@@ -61,21 +62,25 @@ const allDays = { monday: true, wednesday: true };
 const extraOn = { months: { on: true, days: allDays }, thisMonth: { on: true, days: { tuesday: true } }, allAboutMe: { on: true, days: { friday: true } }, myWords: { on: true } };
 const unit = { emoji: "🐢", title: "Sea Turtles", learning: [{ name: "Shell", emoji: "🐚" }, { name: "Flipper" }], learned: [{ name: "Egg" }], next: [{ name: "Beach" }], days: { tuesday: true } };
 const loe = [{ pg: "sh", sounds: "/sh/", lesson: 41 }, { pg: "th", sounds: "/th/", lesson: 42 }, { pg: "ee", sounds: "/ē/", lesson: 43 }];
+// the reading ladder the way index.html hands it over (nbLadderCtx): on, loaded, this week's items from the engine
+const READ = JSON.parse(fs.readFileSync(path.join(__dirname, "ladders", "read_and_answer.json"), "utf8")), TR = NB.ladders.track("reading", READ);
+const rl = (lv) => { const st = { on: true, lv: lv, opt: false, cur: null, days: null }; return { reading: Object.assign({}, st, { lvFrom: "saved", ready: true, next: NB.ladders.next(TR, st, 12, 2) }) }; };
 const base = (extra) => Object.assign({ weekNum: "week12", weekDates: "Nov 16–20, 2026", weekData: { dates, tasks }, extraPages: {} }, extra || {});
-const full = (extra) => base(Object.assign({ masteryItems: items, extraPages: extraOn, loe, units: [unit], teachNotes: "Short day Wednesday.",
+const full = (extra) => base(Object.assign({ masteryItems: items, extraPages: extraOn, loe, units: [unit], teachNotes: "Short day Wednesday.", ladders: rl("g1"),
   personal: { address: ["12 Elm Road", "Springfield"], phone: "555-0100" }, dolls: { doll: PNG, outfit: PNG }, dotdot: PNG, coloring: PNG, symmetry: PNG, pattern: PNG, maze: PNG,
   pace: [{ subject: "Reading Eggs", pct: 80, status: "ahead" }, { subject: "Mathseeds", pct: 60, status: "on" }] }, extra || {}));
 const FIX = {
   plain: base(),
   full: full(),
   fullSpelling: full({ spelling: { title: "Spelling", sections: [{ label: "Mon–Tue", lesson: 3, words: ["cat", "hat", "sat"] }], practice: ["mat"] } }),
+  readingG4: full({ ladders: rl("g4") }),
   fourDays: full({ weekData: { dates: { monday: dates.monday, tuesday: dates.tuesday, wednesday: dates.wednesday, thursday: dates.thursday }, tasks } })
 };
 const fo = I.generateLucy(FIX.full), fs2 = I.generateLucy(FIX.fullSpelling);
 const has = (h, re) => re.test(h);
-ok([/Months of the Year/, /This Month/, /All About Me/, /My Words/, /Extra pages today:|Pages to do today:/, /Sea Turtles/, /Paper doll/, /slabel ph/, /lm-card/, /lw-/, /iVBORw0KGgo/].every(re => has(fo.student, re)) && /Spelling/.test(fs2.student),
-  "the full fixture prints every optional part (extra pages + strip, My Words, unit insert, paper dolls, phonograms, math block, uploads; Spelling in its twin)");
-ok(!/NBLADREAD|lrWeek/.test(src), "the reading page (NBLADREAD) is not in this tree yet — its fixture comes with its merge");
+ok([/Months of the Year/, /This Month/, /All About Me/, /My Words/, /Extra pages today:|Pages to do today:/, /Sea Turtles/, /Paper doll/, /slabel ph/, /lm-card/, /lw-/, /iVBORw0KGgo/, /Read and answer/, /lr-how/].every(re => has(fo.student, re)) && /Spelling/.test(fs2.student),
+  "the full fixture prints every optional part (extra pages + strip, My Words, unit insert, paper dolls, phonograms, math block, uploads, Read and answer; Spelling in its twin)");
+ok((fo.student.match(/class="page-label">Read and Answer — /g) || []).length === 2 && /lr-/.test(fo.parent) && /lr-/.test(I.generateLucy(FIX.readingG4).student), "the reading ladder prints two Read and answer pages + its Companion page (levels g1 and g4)");
 
 console.log("(a) nothing saved → byte for byte today's notebook");
 const SAME = [undefined, null, "", "  ", "dino", "construction", "shark", "space", "farm", "forest", "col-nope", "plain", "unicorns"];
@@ -126,11 +131,10 @@ console.log("(c) no colour literal left in the notebook's code");
 const a0 = src.indexOf("  var LUCY_CSS = "), a1 = src.indexOf("\n  }\n", src.indexOf("  function generateLucy(ctx) {"));
 let region = src.slice(a0, a1);
 blocks.forEach(b => { if (b[0] > a0 && b[1] < a1) region = region.replace(src.slice(b[0], b[1]), ""); });
-const rd = region.indexOf("// NBLADREAD_START"); if (rd >= 0) region = region.slice(0, rd) + region.slice(region.indexOf("// NBLADREAD_END"));   // the reading page's own block, if merged: see the hand-over note
 const unitLine = src.split("\n").find(l => /^\s+\w+:\s+\{ GD:"\{\{lu:dark\}\}"/.test(l)) || "";
 const LIT = /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|(?::\s*|fill="|stroke=")(white|black|transparent|red|blue|green|yellow|purple|pink|orange|gr[ae]y|gold|navy|teal)\b(?!-)/g;
 const left = (region + unitLine).replace(/\{\{lu:\w+\}\}/g, "").match(LIT) || [];
-ok(!left.length && region.length > 100000, "none in the sheet, the page code, the math pictures, the strip call or the unit-page colours (" + Math.round(region.length / 1000) + " KB scanned)", left.slice(0, 5).join(" "));
+ok(!left.length && region.length > 100000 && region.indexOf("NBLADREAD_START") > 0, "none in the sheet, the page code, the math pictures, the reading page, the strip call or the unit-page colours (" + Math.round(region.length / 1000) + " KB scanned)", left.slice(0, 5).join(" "));
 ok(/\{\{lu:dark\}\}/.test(unitLine) && /"\{\{lu:bbPink\}\}", "\{\{lu:ppale\}\}", "\{\{lu:pink\}\}"/.test(region), "the unit-page colours and the \"pages today\" strip read the palette");
 const used = new Set(tokens.map(t => t.slice(5, -2))), names = Object.keys(OWN);
 ok(names.every(n => used.has(n)) && [...used].every(n => names.includes(n)), names.length + " palette entries, each used, and every token has one", names.filter(n => !used.has(n)).concat([...used].filter(n => !names.includes(n))).join());
@@ -185,6 +189,11 @@ const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 ok(/const looks=lookOpts\.looks\.map\(l=>pill\(l\.key===lookOpts\.current,esc\(l\.label\),"nbSetLook\('"\+sel\+"','"\+l\.key\+"'\)"/.test(html) && /db\.ref\("notebookSettings\/"\+kid\+"\/notebookTheme"\)\.set\(String\(key\|\|""\)\)/.test(html) && /function nbSetLook\(kid,key\)\{ if\(!momHere\(\)\) return;/.test(html) && /notebookTheme:nbThemeOf\(kid\)/.test(html),
   "the app's look card lists the offer, nbSetLook (Mom only) saves one field, and the build's ctx carries it — index.html unchanged");
 ok(!/col-(plain|ocean|forest|horses)/.test(html), "index.html names none of the sets");
+// NB_LOOKPICK (Mom's tick list + the Kids' Corner picker) builds only from looks that have a picture card (lookCard: the Pre-K
+// looks). The colour sets have none, so this notebook offers 0 picture looks: the tick list and the kid's picker never show
+// for it, and Mom's pills above stay the one control. Plainly not offered there — no second control.
+ok(typeof NB.lookCard !== "function" || K.LU_LOOKS.every(l => NB.lookCard(l.key) === null), "the colour sets have no Kids' Corner picture card (lookCard → null): not offered in the tick list or Kids' Corner");
+ok(!/function nbLookPickRow/.test(html) || /const offer=nbLookPickOffer\(sel,o\); if\(offer\.length<2\) return pillsHtml;/.test(html), "…so Mom's look card keeps its plain pills for this notebook (fewer than two picture looks → pills untouched)");
 
 // ── (f) page fit in Chrome ───────────────────────────────────────────────────────────────────────────────────────────
 // Each page's skeleton: every element's box height (0.1 px) and the page's own overflow, built IN the browser from notebooks.js

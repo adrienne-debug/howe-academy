@@ -46,7 +46,7 @@ ok("nothing outside the two ladder blocks touches the ladders in Firebase", (() 
 
 // ════════════════════════════════════ load: now + the baseline ════════════════════════════════════
 const HOOK = "_internal: {";
-const T_HOOK = HOOK + " lrDays: lrDays, lrWeek: lrWeek, lrPage: lrPage, lrCompanion: lrCompanion, lrTier: lrTier, LR_CSS: LR_CSS, luShell: luShell,";
+const T_HOOK = HOOK + " lrDays: lrDays, lrWeek: lrWeek, lrPage: lrPage, lrCompanion: lrCompanion, lrTier: lrTier, LR_CSS: LR_CSS, luShell: luShell, lrCssOwn: luPaint(LR_CSS, luLookPalette(\"\")),";   // LU_LOOKA: the sheet as it prints in the notebook's own colours
 let BASE = SRC.slice(0, B0) + SRC.slice(B1 + "  // NBLADREAD_END\n\n".length);
 const cut = BASE.split("\n").filter((l) => /NBLADREAD/.test(l));
 BASE = BASE.split("\n").filter((l) => !/NBLADREAD/.test(l)).join("\n");
@@ -230,7 +230,7 @@ console.log("(g) the tablet's Today list");
   const out = gen(mkCtx({ ladders: rl({ days: "monday thursday" }), nbPageTags: true })), rp = readingPages(out.student);
   ok("each reading page is tagged with its day and 'Read and answer'", rp.length === 2 && rp[0].indexOf('<div class="page" data-nb-day="monday" data-nb-name="Read and answer">') > 0 && rp[1].indexOf('<div class="page" data-nb-day="thursday" data-nb-name="Read and answer">') > 0);
   const oldT = genOld(mkCtx({ nbPageTags: true })).student;
-  const rest = out.student.replace(I.LR_CSS, "").replace(/<div class="page-label">Read and Answer — [\s\S]*?<div class="footer">[\s\S]*?<\/div>\n<\/div>\n<\/div>\n/g, "");
+  const rest = out.student.replace(I.lrCssOwn, "").replace(/<div class="page-label">Read and Answer — [\s\S]*?<div class="footer">[\s\S]*?<\/div>\n<\/div>\n<\/div>\n/g, "");
   ok("every other page keeps the tags it had (and the document is otherwise the same)", rest === oldT);
   ok("paper (no tags) has no data-nb attributes on the reading pages", readingPages(gen(mkCtx({ ladders: rl() })).student).every((p) => p.indexOf("data-nb-") < 0));
 }
@@ -409,7 +409,7 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
       .replace('<div class="page">', '<div class="page" data-lab="' + lv + "|" + it.id + '">'))));
     TR.order.forEach((lv) => { const two = TR.levels[lv].items.slice().sort((a, b) => JSON.stringify(b.q).length - JSON.stringify(a.q).length).slice(0, 2);
       pages.push(I.lrCompanion(12, "Nov 16–20, 2026", { pages: two.map((it, k) => ({ day: k ? "thursday" : "tuesday", x: { lv, label: TR.levels[lv].label, num: 1, of: 11, item: it } })) }).replace('<div class="page">', '<div class="page" data-lab="companion|' + lv + '">')); });
-    const doc = I.luShell(pages.join("\n"), "fit", I.LR_CSS);
+    const doc = I.luShell(pages.join("\n"), "fit", I.lrCssOwn);
     const res = run(doc, "all"), resW = run(doc.replace("\n</style>", "\n  .lr-body, .lr-body * { letter-spacing:0.03em; }\n</style>"), "wide");
     if (!res || !resW) console.log("  page measurement — SKIPPED (Google Chrome would not run headless here)");
     else {
