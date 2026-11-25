@@ -21,9 +21,11 @@ A study only. Nothing in the app changed. No data was written. Every claim carri
 4. number bonds / part–whole for Julian (the cards exist in the Math Fluency Path, but no kid is on that stage);
 5. place value past 100, number lines, and big numbers for the older kids.
 
+**Units** (your add-on, §1f). Today the notebook and the math unit (🧮 Math Fluency Path) meet only through shared drill cards. No kid is on the unit, and it prints no notebook pages. Nothing a child does on a notebook number page is recorded or flows back. The plan makes the unit the **one source**: set a kid's number stage once on the unit, and the drill and the notebook both follow it. One number-skills picture per kid then says what needs review (§6a).
+
 **Before Singapore Dimensions with Julian**, the strands that must be solid are counting, how-many, seeing small amounts, comparing, and part–whole to 5 and then 10. Naming numerals past 20 is nice, but it is not the gate. 📚 + 💡 A five-minute check a parent can run is in §3.
 
-**The plan (§6)** is 10 small slices. Each one is useful on its own, and each keeps the rule that **notebooks complement drills**: the drill practises quick naming and recall, and the notebook asks the child to *make, show, place or explain*. First comes a five-minute "Where is this child?" check for any kid at any level. Then Julian's numerals past 20 (your ask), a quick-look drill, and a "make it" page. **12 questions for you are in §7**, each with my suggested answer.
+**The plan (§6)** is 12 small slices, built around one source of number content: the math unit. Each one is useful on its own, and each keeps the rule that **notebooks complement drills**: the drill practises quick naming and recall, and the notebook asks the child to *make, show, place or explain*. First comes a five-minute "Where is this child?" check for any kid at any level. Then Julian's numerals past 20 (your ask), wiring the notebook to follow the unit, a quick-look drill, a "make it" page, and the review loop. **12 questions for you are in §7**, each with my suggested answer.
 
 ---
 
@@ -80,6 +82,31 @@ Each step runs a few weeks. Move on when the step's "check" is easy for him, not
 
 **Alongside A–C, and more important for Singapore:** seeing small amounts at a glance, counting back, counting on from any number, "one more / one less", making a set, and **number bonds to 5, then 10**. Those are what Dimensions K and 1 build on (§3), and the "advanced" counting skills are the ones that predicted later math best 📚 (Nguyen et al. 2016).
 
+### 1f. Your three points about units (added 2026-11-25)
+
+> "I know the notebooks maybe aren't set up for after that, but there are units and it's supposed to be connected to the math unit as well. They should be interchangeable, and the unit should also go with the notebook so we know if things in numbers need to be reviewed again."
+
+**(a) Is the notebook connected to the math unit today?** 🔍 **Only indirectly, through the drill cards.**
+- The math unit is the 🧮 **Math Fluency Path**. It holds the number decks: Numbers, Counting, Number Sense, Number partners, Math Facts.
+- The notebook never looks at the unit itself. `notebooks.js` doesn't read who is enrolled or what stage they're on.
+- What the notebook *does* read is the kid's Mastery deck with the same name. Julian's "Number of the Day" starts from his `Numbers` deck, and a number he's been missing comes back marked 🔁. Lucy's daily math reads her `Math Facts` deck.
+- The unit is set to print **no notebook pages** (`nbInsert:false`, "facts drill, no notebook pages").
+- In the live data, **no kid is on the Math Fluency Path at all**: no `enrolled` or `kidStage`. Julian's `Numbers` deck is his own deck. It has the unit's deck name, so hooking him up later adds no duplicates.
+
+**(b) "Interchangeable"** — ⚠️ *my reading (from the hub's note), please confirm*: the same number content should be reachable from the unit or from the notebook **without setting it up twice**.
+- **True today** 🔍: at the *card* level, yes. A Numbers card added through the unit or by hand in Mastery is the same card, and the notebook sees it either way.
+- **Not true today** 🔍: anything above the card. The notebook's number pages have their own settings: the Number of the Day's own place (`numberCursor`), the ladder's own level on the Notebook tab, the "Teen numbers" switch. None of them follows the unit's stage. So a kid's number level is set in two or three places.
+- **What it would take** 💡: the one-source design in §6a. Each Math Fluency Path stage names the notebook page that goes with it. The kid's stage on the unit decides both the drill cards and the number pages. The Notebook tab just shows it (slice 3).
+
+**(c) "So we know if things in numbers need to be reviewed again"** 🔍 **What exists today:**
+- **Drill side:** each card's Mastery status (learning → daily → … → monthly → kept). Misses in the last six drill or study sessions put a 🔁 on that number in the notebook and list it on Mom's "🔁 Giving trouble this week" card. Missed cards go to the practice games.
+- **Notebook side:** the ✅ Grade sheet (and the tablet's auto-check) records right/wrong, but **only for the older kids' test-prep questions** (`notebookSettings/<kid>/checks`). Three misses in a row on one type flags a sit-down.
+- **Missing:**
+  - nothing records how a child did on the **Pre-K number card, Lucy's math card or the Number Thinking page**;
+  - **no notebook result flows back** to the drill or the unit (the notebook writes nothing to Mastery);
+  - no **by-strand picture** of what a child knows in numbers.
+- **What it would take** 💡: slice 6, the review loop. One tap per number page from you, plus the check and the drill's misses, make one number-skills picture per kid, shown on the unit's kid row. "Needs review" brings that page back easier next week and pulls the drill cards forward.
+
 ---
 
 ## 2. What number sense is — the strands, in plain words
@@ -134,7 +161,7 @@ Ages are rough. Children vary a lot, and the standards (what schools *expect*) a
 | **Dimensions K** | Says the numbers to 10; counts up to 10 things one-to-one and answers "how many?"; sees 1–3 at a glance | Naming numerals past 10 (K teaches 1–10 itself) |
 | **Dimensions 1A** | Counts to 20 and back from 10; counts on from any number to 20; "how many" to 10 (and makes a set of up to 10); sees 1–5 at a glance and 6–10 on a ten-frame as "5 and some"; reads and writes 0–20; one more / one less; which is more within 10; **breaks 5 into parts in more than one way**, starting on 10; teens as "ten and some more" | Numerals 21–100 (1B teaches them) |
 
-**For Julian specifically** 💡: he already names numerals to 18–20 and sees 21–100 in his notebook. That's ahead of Dimensions K. The gaps that matter for Singapore are **counting back, counting on from any number, making a set, seeing small amounts at a glance, and number bonds to 5**. That's why slices 3–6 matter more than going to 1,000.
+**For Julian specifically** 💡: he already names numerals to 18–20 and sees 21–100 in his notebook. That's ahead of Dimensions K. The gaps that matter for Singapore are **counting back, counting on from any number, making a set, seeing small amounts at a glance, and number bonds to 5**. That's why slices 4–8 matter more than going to 1,000.
 
 ### The five-minute check a parent can run 💡 (built from the tasks used in the research)
 
@@ -169,7 +196,7 @@ What to do with the result: each "not yet" names its strand, and §6 says which 
 
 ## 4. What the app covers today — the facts 🔍
 
-Everything here was read from the code (`notebooks.js`, `index.html`, `ladders/number_thinking.json`, `LADDER_NUMBER_REVIEW.md`) or from the live data, read-only, on 2026-11-25. Nothing was written.
+Everything here was read from the code (`notebooks.js`, `index.html`, `ladders/number_thinking.json`, `LADDER_NUMBER_REVIEW.md`) or from the live data, read-only, on 2026-11-25. Nothing was written. Units and curriculum lessons are in §4d.
 
 ### 4a. Drills (Mastery decks)
 
@@ -211,7 +238,55 @@ I tagged all 300 questions for Pre-K to 3rd by strand with a script over `ladder
 
 What this shows 🔍 + 💡: the ladder is a **thinking warm-up**, strong on patterns and "spot the rule". It touches comparing, counting on and part–whole lightly. There's **no subitizing, no numeral naming, no place value before 1st grade, and nothing past 100**. That fits its job. It was never meant to *teach* number sense.
 
-### 4d. Coverage, strand × level
+### 4d. Units and curriculum lessons 🔍
+
+**What a unit is.**
+- A unit is one record at `unitStudies/<id>`. It holds:
+  - decks of cards;
+  - optional **stages**, with each kid's stage at `kidStage/<kid>`;
+  - who is **enrolled** (`enrolled/<kid>`);
+  - activities and a track of days;
+  - a **notebook switch** (`nbInsert`).
+- Some units ship in the code as **starter units** (`STARTER_UNITS`): Math Fluency Path, Letters Path, Shapes Path, All About Spelling, Word Roots, United States Path, NC Envirothon. A family adds one with a tap. Others are made with ✚ Build a unit.
+- Starting a kid on a stage puts that stage's cards into the kid's Mastery bank (`_ustApply`). Known card families go straight to review. "✓ ready to move up" shows at the stage's end, and Mom taps ➡ to start the next stage.
+- A per-kid "book link" can tie cards to book lessons. Only one book map exists: Abeka Arithmetic 2. **No Singapore Dimensions map.**
+
+**How a unit reaches the notebook.**
+- A unit whose notebook switch is on prints an **insert** in each enrolled kid's notebook (`haBuildUnitInsight`):
+  - "learning / learned / next" from the unit's main deck, read from the kid's Mastery status;
+  - the activity pages Mom queued;
+  - "This week we will…" (`UNITWEEK`);
+  - the unit's cover in its first week (`UNITCOVER`) and closing pages in its last week (`UNITKEEP`);
+  - a "📌 Pages to do today" reminder on the days Mom picks (`notebookSettings/<kid>/unitDays`).
+- The tablet's Today list shows a unit page on its day.
+- The three "path" units are set **not** to print an insert: Math Fluency Path, Letters Path and Shapes Path (`nbInsert:false`). The notebook's Letter, Number and Shape of the Day read their **decks** instead.
+
+**Live, 2026-11-25** (read-only): 18 units in the Howe data.
+
+| Kid | Units enrolled | A numbers / math unit? |
+|---|---|---|
+| Julian | NC Snakes, Letters Path (stage set), Geography Path, Rocks & Gems | **None.** Math Fluency Path and Shapes Path have no kid enrolled |
+| Lucy | NC Frogs, Cats, Geography Path | None |
+| Ellis | Language Arts, Transformers, Geography Path, FLL 4, RS4K Book 4, Word Roots | None (he has his own "Mathematical Reasoning" deck, 12 cards) |
+| Lincoln | NC Snakes, Discover SS6A, NC Envirothon, Language Arts, British Monarchy, RS4K Book 6, Geography Path, Word Roots | None |
+
+**Curriculum lessons** (the book subjects on the schedule):
+- Lucy has **Dimensions Math 1A** (Mon–Thu), **Math Reasoning B** and **Mathseeds**.
+- Julian has **no math subject**, only Morning and Closing Notebook.
+- The Dimensions lessons are **not linked** to any deck, unit or notebook page: no "Dimensions" anywhere in `notebooks.js`, and no book map.
+
+**Where numbers past 20 and place value live today:**
+
+| Content | Notebook | Drill deck | Unit | Curriculum lesson |
+|---|---|---|---|---|
+| Numerals 21–100 | ✔ Number of the Day, one a day, as tens and ones (Julian ≈ 42) | ✘ (Numbers deck stops at 20) | ✘ | ✘ for Julian; Lucy's Dimensions book teaches them in 1B |
+| Decades by tens (30 … 100) | ✔ "count by tens" label on the 21–100 card | In the code only: Counting stage 4, "count by 10s" cards. **No kid has them** | Math Fluency Path stage 4 (nobody on it) | ✘ |
+| Teens as 10 + n | Picture: two ten-frames; words only with "🔟 Teen numbers" on (off for Julian) | In the code only: "10 + 4" cards. No kid has them | stage 4 (nobody) | Dimensions KB / 1A (book) |
+| Tens and ones as a task | ✘ (shown, never asked) | ✘ | ✘ | Lucy's book (1B) |
+| 100, 1,000, 10,000, 100,000 | ✘ | Only "Powers of 10" fact cards in stage 8 (code). Lincoln's 4 Math Facts cards are fraction → decimal | ✘ | ✘ |
+| Place value of decimals | ✘ | ✘ | ✘ | (Ellis's and Lincoln's books, not checked) |
+
+### 4e. Coverage, strand × level
 
 **Well** = practised regularly in a form that fits. **Thin** = present but light, or switched off, or only shown, never asked. **Missing** = not found.
 
@@ -237,7 +312,7 @@ These are your standing rules, applied to number sense:
 3. **The app never supplies the answer.** The page gives the *numeral* and the child makes the amount, or it gives the *amount* and the child writes the numeral, never both. Answers print only on the Grown-Up Guide / Companion, as now.
 4. **Alone, except the littlest.** Pre-K/K pages are read aloud by a grown-up or by the tablet's 🔊. From 1st grade up, one short line a child can read.
 5. **A first-year homeschool mom can run it.** Each page has a one-line "what to look for" in the Grown-Up Guide, with no teaching words.
-6. **One home for each control.** One "🔢 Number sense" card per kid on the Notebook tab (on/off, level), and the drill stages stay on the Math Fluency Path. Dad sees and uses the same card.
+6. **One home for each control.** A kid's number *level* (stage) lives in one place: the kid's row on the 🧮 Math Fluency Path unit. The drill and the notebook both read it. The Notebook tab only switches the number pages on or off and shows the stage read-only. Dad sees and uses the same controls (§6a).
 7. **Nothing of one family leaks.** All items are made by rule from numbers, dots, shapes and the kid's own counting picture. No names, no themes from another family.
 
 ---
@@ -246,45 +321,79 @@ These are your standing rules, applied to number sense:
 
 Sizes are rough: **S** = about one session's build, one page or one deck; **M** = two or three sessions; **L** = bigger. Each slice is its own PR, described first, built only on your yes.
 
+### 6a. The design: one source of number content, three ways in
+
+Your rule 2026-11-25: the units, the notebook and the drills should go together, so you can tell when something in numbers needs review. Here is the shape I suggest. It also keeps "every control has one home".
+
+```
+                 🧮 Math Fluency Path  (the ONE source: Units tab)
+                 stages · decks · each kid's stage
+                 + for each stage, the notebook page kind that goes with it
+                        │                         │
+          drill cards ◄─┘                         └─► notebook number pages
+   (Mastery: quick naming, recall)            (make · show · place · explain)
+                        │                         │
+                        └──────► 📋 one number-skills picture per kid ◄──────┘
+                                (by strand: easy · working on it · not yet)
+                                          │
+                       "needs review" → back into next week's drill AND notebook
+```
+
+- **The source is the unit.** The Math Fluency Path already owns the number decks (🔍 Numbers, Counting, Number Sense, Number partners, Math Facts). Each stage would also name the notebook page that goes with it: stage "Numbers 21–100" goes with "Build it" (tens and ones); stage "Number partners" goes with the bond page; and so on.
+- **Set it up once.** You start a kid on a stage on the unit's kid row (where stages are started today 🔍). The drill gets that stage's cards (as today). The notebook's number pages follow **the same stage**, so there's nothing to set up twice on the Notebook tab. The Notebook tab only shows "Numbers: follows Math Fluency Path stage 4" with a link to the unit.
+- **One home for each control** (§5 rule 6, revised): a kid's number *level* lives on the unit's kid row; the notebook's own card only switches the number pages on or off for that kid.
+- **One picture of what the child knows.** Three things feed it: the five-minute check (slice 1), the drill (the cards' Mastery status and recent misses, already kept 🔍), and the notebook pages (your tick, or the tablet's auto-check where a page has choices). It shows on the unit's kid row and on Mom's existing "🔁 Giving trouble this week" card, not on a new screen.
+- **What flags "needs review"** 💡:
+  - a "not yet" on the check;
+  - two "not yet" ticks on the same kind of notebook page in the last three;
+  - a strand's drill cards showing recent misses (the notebook's existing 🔁 rule: missed in the last six drill or study sessions 🔍).
+- **What "needs review" does** 💡: the strand's notebook page comes back next week one step easier, and its drill cards are pulled forward (the drill's own review engine). Nothing changes the schedule. It only chooses what prints and what the drill shows.
+
+### 6b. The slices
+
 **Two things you can do today with no build at all** (in the app, by you):
 - Add Julian's **Counting eleven–twenty** cards and **Numbers 21–30** cards in Mastery (his decks already work that way).
 - Switch **🔟 Teen numbers** on for Julian on the Notebook tab, so 11–20 say "= 10 and 4" on his daily card.
 
 | # | Slice | Levels | Drill or notebook — and how the forms differ | Printed / tablet | How you see progress | Size |
 |---|---|---|---|---|---|---|
-| **1** | **"Where is this child?" — the five-minute number check** | Two versions: *Little* (Pre-K–1st) and *Big* (2nd–6th) | Neither. It's a **grown-up page**: 8 short asks you say out loud, with pennies or the page's own dots, and a tick for each: *easy · working on it · not yet*. Each row names its strand and says what to do next | Print it; or on your phone/tablet tap the ticks. Nothing for the child to read | Results saved on the kid's 🔢 Number sense card ("checked 11/25: counting easy · quick look working on it …"), with a nudge to check again in 6–8 weeks | S (print) + S (saving) |
-| **2** | **Julian's numerals past 20 — decades first** (your ask) | Pre-K / K, any kid | **Drill**: new Math Fluency Path cards: the decades (10, 20 … 100), then 21–100 one decade per family, with the crossings (29, 30, 31) together. Same see-it-say-it flash as now. **Notebook**: no change. The Number of the Day already shows 21–100 as tens and ones, so the two complement each other | Drill on the tablet (Mom marks) | Mastery's ladder and heat map, as for every deck | S |
-| **3** | **Quick Look** (seeing small exact amounts at a glance — not the dot-cloud "guess which has more" games the research doubts 📚) | Pre-K → 1st (1–5, then 6–10 as "5 and some", then ten-frames to 20) | **Drill only**: a dot pattern (dice, five-frame, ten-frame, scattered) shows for about 2 seconds, then it's gone and the child says how many (Mom marks, or the child taps one of three numerals). **Notebook complement**: "Show it": the page gives a numeral and an *empty* frame, and the child draws the dots (making, not seeing) | Drill: tablet. Page: pencil or pen | Mastery ladder; Guide row "does he draw 7 as 5 and 2?" | M |
-| **4** | **"Make it" page** (making a set, one-to-one) | Pre-K, K | **Notebook**: a weekly page, one ask per school day: "Draw 6 dots in the ten-frame", "Color 4 of the balloons", "Draw one more than this". The page gives the number, the child makes the amount. **Drill** stays "count what you see", so it's the reverse task | Pencil or tablet pen; the 🔊 reads the ask | Guide answer page: what a right one looks like and what to watch ("did he stop at 6?") | M |
-| **5** | **Number Train** (counting words in order) | Pre-K → 2nd | **Drill/game**: the ABC Train's engine with numbers. Level 1: next number 1–20. Level 2: start anywhere to 100. Level 3: **counting back**. Level 4: by tens, and from 7 (7, 17, 27 …). The child taps or drags cars, and the app never places one for him (same rule as the ABC Train). **Notebook complement**: "Fill the path": a number path with a start and a few gaps, written by the child | Game: tablet. Page: both | Game log + level-ups, as the ABC Train does now | M |
-| **6** | **Number bonds** (part–whole) | Pre-K end (5) → K (10) → 1st (teens = 10 + some) | **Drill**: the Math Fluency Path's *existing* stage 5 "Number partners" cards. You start a kid on the stage; no build needed for that part. **Notebook**: a bond picture with the **whole** given and two empty parts, plus a five-frame the child colours in two colours *any way they like* and writes the parts. Many right answers, so the page can't give one away | Both | Guide: "Did she find more than one way?" | M |
-| **7** | **Tens and ones** | K end → 2nd | **Notebook**: "Build it" (given 47, draw 4 sticks and 7 dots), "What number is this?" (sticks and dots shown, the child writes it), "4 tens or 40 ones — the same?", 10 more / 10 less on a hundred-chart row. **Drill**: Number Sense flip cards "4 tens and 7 ones → 47", "47: how many tens?" plus the existing "10 + 4" teen cards | Both | Guide includes the "show me what the 4 means" check 📚 (Ross; Kamii) | M |
-| **8** | **Number lines and the race board** | K → 6th | **Notebook**: "Where does it go?": mark 7 on 0–10 (K), 47 on 0–100 (1st–2nd), 750 on 0–1,000 (3rd), ¾ or 0.6 on 0–1 (3rd–5th), −3 on −10 to 10 (6th). The Guide shows the right spot with "close enough" marks. Plus a printed **1-to-100 race board game** to play with a sibling or you, saying each number as you move 📚 (Siegler & Ramani) | Both; the board game is print-first | Guide; you note "close / far" | M |
-| **9** | **Big numbers** (1,000 → 100,000 and more) | 2nd → 4th (Lincoln/Ellis catch-up if needed) | **Notebook**: "10 of these make one of those" chain (1 → 10 → 100 → 1,000 → 10,000 → 100,000), reading numbers in comma groups, real-life sizes ("about how many people fill a big stadium: 500, 50,000 or 5,000,000?"). **Drill**: read a big numeral aloud (4,306 → "four thousand three hundred six"), only for kids whose check says place value is solid | Both | Guide + Mastery | M |
-| **10** | **Catch-up paths for an older child** | Any kid whose check shows a gap | Uses slices 3–9 at the child's own age, with plain grown-up-looking pages (no baby pictures). Two to four weeks per gap, e.g. a 4th grader on decimals' place value plus fractions on a line, or a 6th grader on negatives and estimation | Both | The check again at the end | S each (reuses pages) |
+| **1** | **"Where is this child?" — the five-minute number check** | Two versions: *Little* (Pre-K–1st) and *Big* (2nd–6th) | Neither. It's a **grown-up page**: 8 short asks you say out loud, with pennies or the page's own dots, and a tick for each: *easy · working on it · not yet*. Each row names its strand and the Math Fluency Path stage to start | Print it; or on your phone/tablet tap the ticks. Nothing for the child to read | Results saved on the kid's row of the Math Fluency Path ("checked 11/25: counting easy · quick look working on it …"), with a nudge to check again in 6–8 weeks | S (print) + S (saving) |
+| **2** | **Julian's numerals past 20 — decades first** (your ask) | Pre-K / K, any kid | **Drill**: a new Math Fluency Path stage "Numbers 21–100": the decades (10, 20 … 100), then one decade per family, with the crossings (29, 30, 31) together. Same see-it-say-it flash as now. **Notebook**: no change yet. The Number of the Day already shows 21–100 as tens and ones | Drill on the tablet (Mom marks) | Mastery's ladder and heat map; the unit's kid row | S |
+| **3** | **One source: the notebook follows the unit** | Every level | **Wiring only**: each Math Fluency Path stage names its notebook page kind and level. A kid's stage on the unit decides which number pages print. The Notebook tab shows it read-only with a link. Nothing new prints until slices 5+ add pages | — | The Notebook tab line "Numbers: follows stage N" | M |
+| **4** | **Quick Look** (seeing small exact amounts at a glance — not the dot-cloud "guess which has more" games the research doubts 📚) | Pre-K → 1st (1–5, then 6–10 as "5 and some", then ten-frames to 20) | **Drill only** (a new path stage's deck): a dot pattern (dice, five-frame, ten-frame, scattered) shows for about 2 seconds, then it's gone and the child says how many (Mom marks, or the child taps one of three numerals). **Notebook complement**: "Show it": the page gives a numeral and an *empty* frame, and the child draws the dots (making, not seeing) | Drill: tablet. Page: pencil or pen | Mastery ladder; Guide row "does he draw 7 as 5 and 2?" | M |
+| **5** | **"Make it" page** (making a set, one-to-one) | Pre-K, K | **Notebook**: a weekly page, one ask per school day: "Draw 6 dots in the ten-frame", "Color 4 of the balloons", "Draw one more than this". The page gives the number, the child makes the amount. **Drill** stays "count what you see", so it's the reverse task | Pencil or tablet pen; the 🔊 reads the ask | Guide answer page: what a right one looks like and what to watch ("did he stop at 6?") | M |
+| **6** | **The review loop** (your "so we know if things in numbers need to be reviewed again") | Every level | **Both**: one tap a day for you on each number page (*got it · not yet*), on the ✅ Grade sheet the older kids already use 🔍 or on the tablet. Those ticks, the check and the drill's recent misses make the one number-skills picture (§6a). "Needs review" brings the page back one step easier and pulls the drill cards forward | Both | The unit's kid row, plus the existing "🔁 Giving trouble this week" card | M |
+| **7** | **Number Train** (counting words in order) | Pre-K → 2nd | **Drill/game**: the ABC Train's engine with numbers. Level 1: next number 1–20. Level 2: start anywhere to 100. Level 3: **counting back**. Level 4: by tens, and from 7 (7, 17, 27 …). The child taps or drags cars, and the app never places one for him (same rule as the ABC Train). **Notebook complement**: "Fill the path": a number path with a start and a few gaps, written by the child | Game: tablet. Page: both | Game log + level-ups, as the ABC Train does now | M |
+| **8** | **Number bonds** (part–whole) | Pre-K end (5) → K (10) → 1st (teens = 10 + some) | **Drill**: the Math Fluency Path's *existing* stage 5 "Number partners" cards. You start a kid on the stage; no build needed for that part. **Notebook**: a bond picture with the **whole** given and two empty parts, plus a five-frame the child colours in two colours *any way they like* and writes the parts. Many right answers, so the page can't give one away | Both | Guide: "Did she find more than one way?" | M |
+| **9** | **Tens and ones** | K end → 2nd | **Notebook**: "Build it" (given 47, draw 4 sticks and 7 dots), "What number is this?" (sticks and dots shown, the child writes it), "4 tens or 40 ones — the same?", 10 more / 10 less on a hundred-chart row. **Drill**: Number Sense flip cards "4 tens and 7 ones → 47", "47: how many tens?" plus the existing "10 + 4" teen cards | Both | Guide includes the "show me what the 4 means" check 📚 (Ross; Kamii) | M |
+| **10** | **Number lines and the race board** | K → 6th | **Notebook**: "Where does it go?": mark 7 on 0–10 (K), 47 on 0–100 (1st–2nd), 750 on 0–1,000 (3rd), ¾ or 0.6 on 0–1 (3rd–5th), −3 on −10 to 10 (6th). The Guide shows the right spot with "close enough" marks. Plus a printed **1-to-100 race board game** to play with a sibling or you, saying each number as you move 📚 (Siegler & Ramani) | Both; the board game is print-first | Guide; you note "close / far" | M |
+| **11** | **Big numbers** (1,000 → 100,000 and more) | 2nd → 4th (Lincoln/Ellis catch-up if needed) | **Notebook**: "10 of these make one of those" chain (1 → 10 → 100 → 1,000 → 10,000 → 100,000), reading numbers in comma groups, real-life sizes ("about how many people fill a big stadium: 500, 50,000 or 5,000,000?"). **Drill**: read a big numeral aloud (4,306 → "four thousand three hundred six"), only for kids whose check says place value is solid | Both | Guide + Mastery | M |
+| **12** | **Catch-up paths for an older child** | Any kid whose check shows a gap | Uses slices 4–11 at the child's own age, with plain grown-up-looking pages (no baby pictures), started from the same unit stage. Two to four weeks per gap, e.g. a 4th grader on decimals' place value plus fractions on a line, or a 6th grader on negatives and estimation | Both | The check again at the end | S each (reuses pages) |
 
-**Why this order** 💡: Slice 1 tells you where every kid is, and that decides who needs 3–10. Slice 2 is your direct ask and is small. Slices 3 and 4 fill the two biggest Pre-K gaps, which are what Singapore leans on. 6 needs only a page, because the drill cards are built. 7–9 follow the natural order of place value. 10 reuses everything.
+**Why this order** 💡: Slice 1 tells you where every kid is, which decides who needs the rest. Slice 2 is your direct ask and is small. Slice 3 sets up the one source **before** any new page exists, so no page is ever set up twice. Slices 4 and 5 fill the two biggest Pre-K gaps, which are what Singapore leans on. Slice 6 closes the loop as soon as there's a page to tick. 8 needs only a page, because the drill cards are built. 9–11 follow the natural order of place value. 12 reuses everything.
 
 ---
 
 ## 7. Questions for you (12)
 
-The first four unblock slices 1 and 2.
+The first five unblock slices 1–3.
 
 | # | Question | My suggested answer | Why |
 |---|---|---|---|
-| 1 | Build the five-minute check (slice 1) first, before anything else? | **Yes** | It tells us which kid needs which slice, so nothing gets built that no one needs |
-| 2 | Should the check save its results in the app, or just print? | **Print first, save second** (slice 1 in two small PRs) | A printed page is useful tomorrow; saving can follow |
-| 3 | Julian's numerals past 20: decades first (10, 20 … 100), then one decade at a time? | **Yes** | Decades are the landmarks; one decade per family keeps the crossings (29 → 30) together |
-| 4 | Stop the *drilled* numerals at 100 for Julian this year, keeping 1,000 and up as fun "how big" pages later? | **Yes, stop at 100** (round hundreds in K) | Naming far past what he can picture teaches that numbers are only words |
-| 5 | The notebook's Number of the Day is at about 42 while his drill is at 20. Keep the notebook running ahead? | **Yes, keep it ahead** | It's exposure with a tens-and-ones picture. The drill then confirms the naming |
-| 6 | Switch "🔟 Teen numbers" on for Julian now? | **Yes** (you can do it today, no build) | "Ten and 4 more" is the first step of place value, and his teens are in drill now |
-| 7 | Start Julian on the Math Fluency Path's "More & less" and "Number partners" cards (stages 3 and 5) before Singapore? | **Yes, partners to 5 first** | Number bonds are the heart of Dimensions K/1, and the cards already exist |
-| 8 | Quick Look (slice 3): Mom marks "said it right", or the child taps one of three numerals? | **The child taps**, Mom can switch to marking | Works when he's alone; tapping a numeral also practises naming |
-| 9 | Should the new notebook pages be one weekly "Number play" page (one ask per school day), not added to the daily page? | **Yes, a page of its own** | The daily page has no room left (the Number Thinking build measured a per-day box clipping the Pre-K daily page, so it was not built) |
-| 10 | Turn the number ladder's "Number Thinking" page on for Julian and Lucy too? | **Lucy yes (1st grade); Julian after slice 4** | It's built and good for thinking, but it's mostly patterns at Pre-K. Make-it and bonds matter more for him now |
-| 11 | Offer the check and the pages to the two beta families' kids too? | **Yes, the same card for every family** | Nothing in it names a child; their Pre-K, K and 7th grader all fit a level |
-| 12 | Should the race board game (slice 8) be a printable family-time activity? | **Yes** | It works best played together and saying the numbers aloud 📚 |
+| 1 | **"Interchangeable"**: did you mean that number content is set up once and both the unit and the notebook use it, so you never set it up twice? (This is *my reading*, from the hub's note. Please confirm or correct it.) | **Yes, that's the meaning** (§1f) | It decides the whole shape of §6a |
+| 2 | Make the **🧮 Math Fluency Path** the one source of number content, rather than a new separate "Numbers" unit? | **Yes, the Math Fluency Path** | It already owns every number deck and has per-kid stages; a second unit would split the picture |
+| 3 | Build the five-minute check (slice 1) first: print first, saving second? | **Yes** | It tells us which kid needs which slice. A printed page is useful tomorrow |
+| 4 | Julian's numerals past 20: a new path stage, decades first (10, 20 … 100), then one decade at a time, and *drilled* only up to 100 this year? | **Yes** (1,000 and up as fun "how big" pages later) | Decades are the landmarks. Naming far past what he can picture teaches that numbers are only words |
+| 5 | Julian isn't on the Math Fluency Path in the data (the Oct 26 hook-up isn't there 🔍). Hook him up at stage 2, then add "More & less" and "Number partners" before Singapore? | **Yes, partners to 5 first** | Bonds are the heart of Dimensions K/1, and the cards are built. Hooking up writes no cards (per that plan) |
+| 6 | Once the notebook follows the unit, should the Number of the Day keep running **ahead** of the drill (today it's about 42 while his drill is at 20)? | **Yes, keep it ahead as a preview** | It's exposure with a tens-and-ones picture. The drill then confirms the naming |
+| 7 | The review loop needs **one tap from you per number page** (*got it · not yet*), on the ✅ Grade sheet or the tablet. Is that OK? | **Yes, one tap a page** (choice items mark themselves on the tablet) | Without it, the notebook can't tell the unit anything. Today notebook results go nowhere |
+| 8 | What should count as "needs review"? | **The rule in §6a**: a "not yet" on the check, two "not yet" in the last three of a page kind, or recent drill misses | Simple enough to trust, and it uses signals the app already keeps |
+| 9 | Where should "needs review" show? | **The unit's kid row and the existing "🔁 Giving trouble this week" card**, not a new screen | One home; you already look at that card |
+| 10 | Quick Look: Mom marks "said it right", or the child taps one of three numerals? | **The child taps**, Mom can switch to marking | Works when he's alone; tapping a numeral also practises naming |
+| 11 | Should the new notebook pages be one weekly "Number play" page (one ask per school day), not added to the daily page? | **Yes, a page of its own** | The daily page has no room left (the Number Thinking build measured a per-day box clipping the Pre-K daily page, so it was not built) |
+| 12 | Turn the number ladder's "Number Thinking" page on for Lucy and Julian? | **Lucy yes (1st grade); Julian after the "make it" page** | It's built and good for thinking, but it's mostly patterns at Pre-K |
+
+**Defaults I'd use unless you say otherwise** 💡: the check, the path stages and the pages are offered to the beta families too (nothing names a child). The 1-to-100 race board prints as a family-time game.
 
 ---
 
@@ -347,4 +456,4 @@ The full research notes, organised by strand, are in the hub's shared notes fold
 
 ---
 
-*Study made 2026-11-25. Read-only GETs: `mastery/julian`, `mastery/lucy`, `notebookSettings/{julian,lucy,ellis,lincoln}` (ladders, cursors), `mastery/julian_settings`, `unitStudies/math_fluency_path` (shallow). No writes, no app code changed.*
+*Study made 2026-11-25. Read-only GETs: `mastery/julian`, `mastery/lucy`, `notebookSettings/{julian,lucy,ellis,lincoln}` (ladders, cursors), `mastery/julian_settings`, `mastery/{ellis,lincoln}` (deck counts), `unitStudies/<each unit>/{enrolled,kidStage,nbInsert}`, `curriculum/subjects/{julian,lucy}`. No writes, no app code changed. §1f, §4d, §6a and the slice and question changes were added later the same day, after Mom's note on units.*
