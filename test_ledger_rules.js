@@ -31,7 +31,8 @@ const IDX = process.env.LR_INDEX || path.join(__dirname, "index.html"), HJS = fs
 // ── the app before: this tree, L4 taken out ──
 const once = (src, what, from, to, label) => { const n = typeof from === "string" ? src.split(from).length - 1 : (src.match(from) || []).length;
   if (n !== 1) throw new Error("test_ledger_rules: the app before cannot be built — " + label + " found " + n + "× in " + what + " (must be exactly once)"); return src.replace(from, () => to); };
-const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const C6 = require(path.join(__dirname, "test_fixtures", "carve_c6.js"));   // C6 (test_chore_zero_daily.js) is built on this: its app before goes too
+const BASE_IDX = (() => { let s = C6.idx(fs.readFileSync(path.join(__dirname, "index.html"), "utf8"));
   const R = (a, b, l) => { s = once(s, "index.html", a, b, l); };
   R(/^\/\/ STARRULES_START[^\n]*\n[\s\S]*?^\/\/ STARRULES_END\n/m, "", "the STARRULES block");
   R('  const s=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");\n  return s>=RT_FALL_FROM&&s>=starFallFrom(arguments[2])?n:0;   // STARRULES: [2] = kid\n',
@@ -52,7 +53,7 @@ const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.ht
   R("  const no=starTakeAt(kid,iso); if(no) return {n:0,why:no};   // the 📒 ⚙ switches, as they are at the drop\n", "", "C3's drop (CHOREDROP): its read of the switches");   // C3 reads L4's switches; without L4 a drop takes as if they were on
   if (/STARRULES|starTake|starFallFrom|starRules|arguments\[2\]\)/.test(s)) throw new Error("test_ledger_rules: the app before still mentions STARRULES");
   const t = path.join(os.tmpdir(), "ledger_rules_before_" + process.pid + ".html"); fs.writeFileSync(t, s); return t; })();
-const BASE_HJS = (() => { let s = fs.readFileSync(path.join(__dirname, "house.js"), "utf8");
+const BASE_HJS = (() => { let s = C6.hjs(fs.readFileSync(path.join(__dirname, "house.js"), "utf8"));
   const R = (a, b, l) => { s = once(s, "house.js", a, b, l); };
   R(/^\/\/ LEDGERRULES_START[^\n]*\n[\s\S]*?^\/\/ LEDGERRULES_END\n/m, "", "the LEDGERRULES block");
   R("const pay=rtFallPay(st,n,kid);   // ⚙ LEDGERRULES: that kid's switch", "const pay=rtFallPay(st,n);", "the ⏳ row's kid");

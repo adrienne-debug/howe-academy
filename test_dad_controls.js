@@ -24,7 +24,8 @@ const J = x => JSON.stringify(x), clone = x => JSON.parse(J(x));
 const IDX = process.env.DC_INDEX || path.join(__dirname, "index.html"), HJS = fs.readFileSync(process.env.DC_HJS || path.join(__dirname, "house.js"), "utf8");
 
 // ── the app before: this tree's house.js, DADCTL taken out ──
-const BASE_HJS = (() => { let s = fs.readFileSync(path.join(__dirname, "house.js"), "utf8");
+const C6 = require(path.join(__dirname, "test_fixtures", "carve_c6.js"));   // C6 (test_chore_zero_daily.js) is built on this: its app before goes too
+const BASE_HJS = (() => { let s = C6.hjs(fs.readFileSync(path.join(__dirname, "house.js"), "utf8"));
   const R = (a, b, l) => { const n = s.split(a).length - 1; if (n !== 1) throw new Error("test_dad_controls: the app before cannot be built — " + l + " found " + n + "×"); s = s.replace(a, () => b); };
   R('function lgRulesMom(){ return typeof momHere==="function"&&momHere(); }\nfunction lgRulesOk(){ return lgRulesMom()||(typeof _kioskD==="function"&&_kioskD()&&typeof dadAwardOk==="function"&&dadAwardOk()); }\nfunction lgRBy(v){ if(!lgRulesMom()) v.by="dad"; return v; }\n',
     'function lgRulesOk(){ return typeof momHere==="function"&&momHere(); }\n', "the gate");
@@ -150,7 +151,9 @@ const L = await mkWorld(HJS), O = await mkWorld(BASE_HJS);
       const m = S.w.mark(); const r = S.A.run(js); await S.w.flush(); o.f.push([r, writes(S.w, m), S.w.get(SR + p)]); }
     o.after = LG(S.A, "lgDraw()"); S.A.run("lgClose();lgRulesOpen=false;1"); return o; };
   const ml = await mom(L), mo = await mom(O);
-  ok("Mom: the same ledger, the same panel (its \"›\" lines still tap through), the same six flips with the same writes and values as the app before", J(ml) === J(mo) && /onclick="lgRulesGoSpot\(\)"[^>]*><b>Penalty: 100 ⭐ ›/.test(ml.p) && ml.f.every(x => x[0] === true && x[1].length === 1), [ml.f, mo.f]);
+  const C6SET = /<div style="display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap;[^"]*"><span style="flex:1 1 200px"><b>A 0 ⭐ daily not done 2 days in a row<\/b>[\s\S]*?>No stop<\/button><\/div>/g;   // C6's ⚙ line (test_chore_zero_daily.js): the one line the app before has not
+  const c6n = [ml.p, ml.after].map(h => (String(h).match(C6SET) || []).length); ml.p = String(ml.p).replace(C6SET, ""); ml.after = String(ml.after).replace(C6SET, "");
+  ok("Mom: the same ledger, the same panel (its \"›\" lines still tap through), the same six flips with the same writes and values as the app before", J(c6n) === J([1, 1]) && J(ml) === J(mo) && /onclick="lgRulesGoSpot\(\)"[^>]*><b>Penalty: 100 ⭐ ›/.test(ml.p) && ml.f.every(x => x[0] === true && x[1].length === 1), [ml.f, mo.f]);
   { const m = L.w.mark(); L.A.run("lgShow();lgRulesGoPoints()"); const sp = L.A.run("cpTab");
     ok("…her \"Mom checks before pay ›\" still goes to Chores & Stars ▸ Points, writing nothing", sp === "points" && L.w.since(m).length === 0); L.A.run("tab='moms-plan';mpSubView=null;1"); }
   // a device that leaves Mom mode (neither Mom nor an unlocked Dad) with the panel open
