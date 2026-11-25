@@ -1646,6 +1646,8 @@
     var curSum = coverWk ? curWk : curCover;
     var css = T.css + ((lv.nbFindIt && T.css.indexOf(".find-row {") < 0) ? PK_FIND_CSS : "") + ((lv.nbFindIt && !(T.legacyFindLayout && lv.nbLowercase)) ? PK_FIT_CSS : "");
     var P = Object.assign({}, T.P, { lowerFirst: !!lv.nbLowercase });   // little letters: the ABC cards show the little one big
+    var lnum = lntWeek(ctx);   // NBLADNUM: this week's Number thinking questions from the number ladder, or null → nothing new prints
+    if (lnum) css += LNT_CSS_PK;   // NBLADNUM
 
     var parts = [juHtmlHead(weekNum, T.book, css, T.fonts)];
     parts.push(nbTag(ctx, juPageCover(weekNum, weekDates, curSum, T, picks, lv), "week", "Cover"));   // NBT_TODAY: each page's day + name (tablet only)
@@ -1659,6 +1661,7 @@
     var uT = UNIT_INSERT_THEMES[T.unitTheme];
     (ctx.units || []).forEach(function (ins) { nbTagUnit(ctx, ins, unitInsertPages(ins, weekNum, uT)).forEach(function (p) { parts.push(p); }); });
     spellNbPages(ctx, uT).forEach(function (p) { parts.push(nbTag(ctx, p, "week", "Spelling")); });   // 📝 SPELLPAGE
+    if (lnum) parts.push(nbTag(ctx, lntPkPage(weekNum, weekDates, lnum, P), "week", "Number thinking"));   // NBLADNUM: last in the book, so no page moves
     parts.push("</body>\n</html>");
     var student = parts.join("\n");
 
@@ -1666,6 +1669,7 @@
     var guide = (T.parent && pkSameLevel(lv, T.parentLevel || JU_LEVEL)) ? T.parent : pkPageParent;
     var parent = juHtmlHead(weekNum, T.guideTitle, css, T.fonts) + "\n" +
       guide(weekNum, weekDates, curSum, ctx.teachNotes || "", pkCountPicGuide(T, countPic), picks, lv) + "\n</body>\n</html>";   // NB_COUNTPIC
+    if (lnum) parent = parent.slice(0, parent.lastIndexOf("\n</body>")) + "\n" + lntPkAnswers(weekNum, weekDates, lnum, T) + "\n</body>\n</html>";   // NBLADNUM: the answers, last in the guide
 
     var out = { student: student, parent: parent };
     // the app persists this to notebookSettings/<kid>/letterCursor after a print, so the
@@ -1676,6 +1680,7 @@
     // JU_NUMBERS_AHEAD: same idea for numbers — notebookSettings/<kid>/numberCursor (see juNumberStart)
     if (wkInt > 0 && picks._numbers && numStart != null) out.numberCursor = { week: wkInt, from: numStart, adv: picks._numbers.adv };
     if (T.key) out.prekTheme = T.key;   // the app saves the cursors above for a themed kid too (index.html PREKTHEME_WIRE)
+    if (lnum && lnum.cursor) out.numberLadderCursor = lnum.cursor;   // NBLADNUM: the app saves it (the number ladder's cur) after a print
     return out;
   }
   function generateJulian(ctx) { return generatePreK(ctx, JU_THEME, JU_LEVEL, "julian"); }
@@ -2359,8 +2364,8 @@
   // it on for a child). The content is two static files beside the app — ladders/number_thinking.json (one question = one item)
   // and ladders/read_and_answer.json (one passage with all its questions = one item); index.html NBLADDER loads them lazily and
   // keeps each kid's place at notebookSettings/<kid>/ladders/<number|reading> = { on, lv, opt, cur }.
-  // Nothing here touches the DOM or Firebase. Only the 1st-grade notebook reads ctx.ladders (reading, NBLADREAD — slice 2);
-  // every other notebook prints what it printed before. Later slices put the other items on the pages.
+  // Nothing here touches the DOM or Firebase. Only the 1st-grade notebook reads ctx.ladders.reading (NBLADREAD — slice 2), and the
+  // Pre-K / K and 1st-grade notebooks ctx.ladders.number (slice 4, the block right after this one); every other notebook prints what it printed before. Later slices put the other items on the pages.
   //  • A ladder climbs: the items of the kid's level in order (`o`), then the next level in the ladder's own order. It never wraps
   //    and never starts over; past the last level → `end`.
   //  • The number ladder's 4th- and 6th-grade rungs are not in the file — they are the question banks Mom keeps on the Notebook
@@ -3073,6 +3078,190 @@
   NB_LADDERS.picture = ladPicture;
   // NBLADPIC_END
   // NBLADDER_END
+  // NBLADNUM_START — 🔢 "Number thinking" in the Pre-K / K notebooks and the 1st-grade notebook: slice 4 of the notebook ladders
+  // (notebooks study, her words 2026-11-23/24: "Build it"; number questions "5 a week"; the harder stage off unless she switches
+  // it on; Pre-K and K "done with a grown-up who reads the Read aloud line"; a notebook is "a fun warm-up done mostly alone"
+  // that works printed AND on a tablet, and never shows or hints the answer). The ladder engine (HoweNotebooks.ladders) picks the
+  // week's questions; index.html hands them in as ctx.ladders.number = { on, ready, next, … }. This block puts them on paper:
+  //  • ONE page of its own, "Number thinking", after the week's other pages (Pre-K / K: last in the book; 1st grade: after the
+  //    Read and answer pages, before the paper dolls, so every day/back pair keeps its sheet). On the tablet it is an any-time
+  //    page of the week (nbTag "week"). A question a school day was measured and doesn't fit the daily pages (see the report).
+  //  • each question drawn with ladders.picture where it has a picture (the same size and frame for every choice, letters at the
+  //    corner, nothing marking the right one); plain words otherwise. Pre-K / K questions (LAD_GROWN) are done with a grown-up:
+  //    the page says "with a grown-up" and prints each "Read aloud: …" line, as the placement sheet does. From 1st grade the child
+  //    reads it alone: a number line or puzzle prints as it is (parts and pairs keep it, with the picture beside), and a picture
+  //    whose words would give it away ("about how many dots? (picture: 45 dots…)") prints its short spoken question instead.
+  //  • the answers — the right letter, the right choice's words, the rule, and the plain words for each picture — go on a
+  //    grown-up page only: a Companion page of their own in the 1st-grade notebook (like the reading answers), a page at the end
+  //    of the Grown-Up Guide in a Pre-K / K notebook.
+  //  • the place the week took goes back to the app as out.numberLadderCursor (the engine's { week, lv, from, adv, opt }); the app
+  //    saves it (the number ladder's cur) after a print, PDF or tablet send, so next week picks up after these questions and the
+  //    same week built again is the same. (out.numberCursor is the Pre-K number card's own place — a different thing.)
+  // Off, not loaded yet, or nothing left on the ladder → nothing here runs and every page is byte for byte what it was.
+  var LNT_LETTERS = "ABCDEFGH";
+  // Picture sizes (px) on this page — measured in test_nb_ladnum.js: five Pre-K / K questions fit with room to spare in every look.
+  var LNT_PIC = { grown: { w: 360, h: 96, choice: 88, cellMax: 28 }, alone: { w: 330, h: 84, choice: 60, cellMax: 25 } };
+  // This week's questions: { items:[x], cursor, stop, end } — x is the engine's item { lv, label, i, num, of, id, item } — or null
+  // when nothing should print. A question of the wrong shape, or a picture that can't be drawn where its words would give the
+  // answer away → print none rather than a broken or hinting page.
+  function lntWeek(ctx) {
+    var r = ctx && ctx.ladders && ctx.ladders.number;
+    if (!r || r.on !== true || !r.ready || !r.next || !Array.isArray(r.next.items) || !r.next.items.length) return null;
+    var items = r.next.items.filter(function (x) { return x && x.item && x.item.text && Array.isArray(x.item.c) && x.item.c.length >= 2 && x.item.c.length <= LNT_LETTERS.length; });
+    if (items.length !== r.next.items.length) return null;
+    if (items.some(function (x) { return lntUnsafe(x); })) return null;
+    return { items: items, cursor: r.next.cursor ? Object.assign({}, r.next.cursor) : null, stop: r.next.stop || null, end: !!r.next.end };
+  }
+  function lntGrown(x) { return !!LAD_GROWN[x.lv]; }
+  // The picture (NBLADPIC — typeof-guarded like the placement sheet's call sites, so that block can be cut out on its own), or null.
+  function lntPic(x) { return (x.item && x.item.pic && typeof ladPicture === "function") ? ladPicture(x.item, lntGrown(x) ? LNT_PIC.grown : LNT_PIC.alone) : null; }
+  // Do the question's plain words belong on the grown-up page? Pre-K / K: always (they describe the picture). From 1st grade: yes,
+  // except number puzzles and pairs, whose numbers ARE the question (NBLADPIC's LADPIC_OWN_TEXT).
+  function lntMoved(x) {
+    var p = x.item && x.item.pic, own = (typeof LADPIC_OWN_TEXT === "object" && LADPIC_OWN_TEXT) || { parts: 1, pairs: 1 };
+    return !!(p && typeof p === "object") && (lntGrown(x) || !Object.prototype.hasOwnProperty.call(own, p.kind));
+  }
+  // A child-alone question whose plain words would give the answer away ("… 45 dots …") can't print without its picture.
+  function lntUnsafe(x) { return !lntGrown(x) && lntMoved(x) && !lntPic(x); }
+  // A number line / puzzle line: the first "?" is the empty box to fill (the rest of the line as written).
+  function lntLine(s) {
+    s = ladEsc(s);
+    var k = s.indexOf("?");
+    return '<div class="lnt-line">' + (k < 0 ? s : s.slice(0, k) + '<span class="lnt-box">?</span>' + s.slice(k + 1)) + '</div>';
+  }
+  // One question, child's page. n = 1…5. Same markup for every choice; nothing marks the right one.
+  function lntQ(x, n) {
+    var q = x.item, grown = lntGrown(x), P = lntPic(x), head = "", body;
+    if (grown) head = q.say ? '<span class="lnt-say">Read aloud: “' + ladEsc(q.say) + '”</span>' : '';
+    else if (P && lntMoved(x)) head = '<span class="lnt-ask">' + ladEsc(q.say || "") + '</span>';
+    var lines = (P && lntMoved(x)) ? "" : String(q.text || "").split(" / ").map(lntLine).join("");
+    var top = head ? '<div class="lnt-top"><span class="lnt-n">' + n + '</span>' + head + '</div>'   // no spoken line → the number line sits beside the number
+      : '<div class="lnt-top lnt-top-l"><span class="lnt-n">' + n + '</span><div class="lnt-lines">' + lines + '</div></div>';
+    if (!head) lines = "";
+    if (P) body = (lines ? '<div class="lnt-lines lnt-under">' + lines + '</div>' : '') +
+      '<div class="lnt-row"><div class="lnt-pic">' + P.pic + '</div><div class="lnt-pcs">' +
+      P.choices.map(function (s, i) { return '<span class="lnt-pc"><span class="lnt-l">' + LNT_LETTERS.charAt(i) + '</span>' + s + '</span>'; }).join("") + '</div></div>';
+    else body = (lines ? '<div class="lnt-lines lnt-under">' + lines + '</div>' : '') + '<div class="lnt-cs">' +
+      q.c.map(function (c, i) { return '<span class="lnt-c"><span class="lnt-l">' + LNT_LETTERS.charAt(i) + '</span>' + ladEsc(ladChoiceWord(c, grown)) + '</span>'; }).join("") + '</div>';
+    return '<div class="lnt-q">' + top + body + '</div>';
+  }
+  // Where the week sits on the ladder: "1st grade · questions 6–10 of 60" (a week that climbs a level names both).
+  function lntSpan(w) {
+    var runs = [];
+    w.items.forEach(function (x) { var r = runs[runs.length - 1]; if (r && r.lv === x.lv) r.b = x.num; else runs.push({ lv: x.lv, label: x.label, a: x.num, b: x.num, of: x.of }); });
+    return runs.map(function (r) { return ladEsc(r.label) + " · question" + (r.a === r.b ? " " + r.a : "s " + r.a + "–" + r.b) + " of " + r.of; }).join(" · then ");
+  }
+  function lntAnyGrown(w) { return w.items.some(lntGrown); }
+  var LNT_HOW_GROWN = "A grown-up reads each question aloud. Circle the answer — the picture or its letter.";
+  var LNT_HOW_ALONE = "Read each one. Find what comes next or what is missing. Circle the letter of the answer.";
+  function lntQs(w) {
+    return '  <div class="lnt-how">🔢 ' + (lntAnyGrown(w) ? LNT_HOW_GROWN : LNT_HOW_ALONE) + '</div>\n' +
+      '  <div class="lnt-qs">' + w.items.map(function (x, i) { return lntQ(x, i + 1); }).join("\n") + '</div>\n';
+  }
+  // The grown-up's rows: the right letter + its words, the rule, and the picture's plain words when they left the child's page.
+  function lntKeyRows(w, row) {
+    return w.items.map(function (x, i) {
+      var q = x.item, grown = lntGrown(x), moved = !!lntPic(x) && lntMoved(x);
+      return row(i + 1, ladEsc(q.ans) + ' — ' + ladEsc(ladAnsText(q.c, q.ans, grown)), ladEsc(q.rule || ""), moved ? ladEsc(q.text || "") : "", ladEsc(x.label) + " · " + x.num + " of " + x.of);
+    }).join("\n");
+  }
+  function lntTail(w) {
+    var s = "Next week picks up right after these questions.";
+    if (w.stop) s = "After these, the ladder reaches the " + ladEsc(ladWord(w.stop.lv).replace(" grade", "-grade")) + " question bank (on the Notebook tab) and stops; pick the next level on the Ladders card when the bank is done.";
+    else if (w.end) s = "These are the last questions on the ladder.";
+    return "From the number ladder on the Notebook tab (the Ladders card): the level is set there. " + s;
+  }
+  // The page's look: one stylesheet, each notebook's own colours (Pre-K looks: --ju-*; the 1st-grade notebook: --lu-*).
+  function lntCss(c) {
+    return "\n  /* NBLADNUM — Number thinking */\n" +
+      "  .lnt-body { gap:10px; padding-top:10px; }\n" +
+      "  .lnt-how { flex-shrink:0; font-size:14px; font-weight:800; color:" + c.dark + "; background:" + c.pale + "; border:1.5px solid " + c.light + "; border-radius:9px; padding:6px 14px; line-height:1.35; }\n" +
+      "  .lnt-qs { display:flex; flex-direction:column; gap:9px; }\n" +
+      "  .lnt-q { flex-shrink:0; background:#fff; border:1.5px solid " + c.light + "; border-radius:12px; padding:7px 14px 10px; }\n" +
+      "  .lnt-top { display:flex; align-items:center; gap:10px; min-height:26px; }\n" +
+      "  .lnt-n { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; background:" + c.num + "; color:#fff; font-size:14px; font-weight:800; }\n" +
+      "  .lnt-say { font-size:13px; font-style:italic; font-weight:700; color:#92400e; line-height:1.3; }\n" +
+      "  .lnt-ask { font-size:16px; font-weight:800; color:var(--ink); line-height:1.3; }\n" +
+      "  .lnt-top-l { align-items:flex-start; }\n" +
+      "  .lnt-top-l .lnt-n { margin-top:3px; }\n" +
+      "  .lnt-under { margin:4px 0 0 36px; }\n" +
+      "  .lnt-line { font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace; font-size:21px; font-weight:700; color:var(--ink); white-space:pre-wrap; line-height:1.45; }\n" +
+      "  .lnt-box { display:inline-block; min-width:1.5em; text-align:center; border:2px dashed #4b5563; border-radius:6px; line-height:1.15; color:#6b7280; }\n" +
+      "  .lnt-row { display:flex; align-items:center; gap:18px; margin:7px 0 0 36px; }\n" +
+      "  .lnt-pic { flex:1 1 auto; min-width:0; display:flex; align-items:center; }\n" +
+      "  .lnt-pcs { flex:none; display:flex; gap:14px; }\n" +
+      "  .lnt-pc { position:relative; display:block; border:2px solid #9ca3af; border-radius:12px; padding:3px; line-height:0; background:#fff; }\n" +
+      "  .lnt-l { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border:2px solid " + c.mid + "; border-radius:50%; background:#fff; color:" + c.dark + "; font-size:12px; font-weight:800; line-height:1; }\n" +
+      "  .lnt-pc .lnt-l { position:absolute; top:-9px; left:-9px; }\n" +
+      "  .lnt-cs { display:flex; flex-wrap:wrap; gap:6px 30px; margin:7px 0 0 36px; }\n" +
+      "  .lnt-c { display:inline-flex; align-items:center; gap:8px; font-size:19px; font-weight:700; color:var(--ink); line-height:1.3; }\n" +
+      "  .lnt-svg, .lnt-q .nbl-svg { display:block; }\n" +
+      "  .lnt-grown { display:inline-block; font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; background:#fef3c7; color:#92400e; border:1.5px solid #fcd34d; border-radius:20px; padding:2px 10px; }\n" +
+      "  .lnt-key { display:flex; gap:10px; align-items:flex-start; font-size:12px; line-height:1.45; padding:4px 0; border-bottom:1px solid #f0f0f0; }\n" +
+      "  .lnt-key:last-child { border-bottom:none; }\n" +
+      "  .lnt-key-n { flex-shrink:0; min-width:18px; font-weight:800; color:" + c.dark + "; }\n" +
+      "  .lnt-key-a { font-weight:800; color:" + c.dark + "; }\n" +
+      "  .lnt-key-r { color:var(--muted); }\n" +
+      "  .lnt-key-p { font-size:11px; color:var(--muted); }\n" +
+      "  .lnt-key-w { font-size:10px; color:var(--muted); white-space:nowrap; margin-left:auto; padding-left:8px; }\n";
+  }
+  var LNT_CSS_PK = lntCss({ dark: "var(--ju-deep)", mid: "var(--ju-mid)", pale: "var(--ju-pale)", light: "var(--ju-light)", num: "var(--ju-deep)" });
+  var LNT_CSS_LU = lntCss({ dark: "var(--lu-dark)", mid: "var(--lu-mid)", pale: "var(--lu-pale)", light: "var(--lu-light)", num: "var(--lu-pink)" });
+  function lntKeyRow(n, ans, rule, pic, where) {
+    return '<div class="lnt-key"><span class="lnt-key-n">' + n + '.</span><div><span class="lnt-key-a">' + ans + '</span> <span class="lnt-key-r">— ' + rule + '</span>' +
+      (pic ? '<div class="lnt-key-p">the picture: ' + pic + '</div>' : '') + '</div><span class="lnt-key-w">' + where + '</span></div>';
+  }
+  // ── the Pre-K / K notebook (generatePreK — every look) ──  P = the look's page words (eyebrow, footer, emoji).
+  function lntPkPage(weekNum, weekDates, w, P) {
+    var grown = lntAnyGrown(w);
+    return '<div class="page-label">Number Thinking — Week ' + weekNum + '</div>\n<div class="page">\n' +
+      juHeader(P.eyebrow, "Number Thinking", grown ? "with a grown-up · look · think · circle" : "look · think · circle", "Week " + weekNum, weekDates, grown ? "🤝 With a grown-up" : "🔢 I can think!") +
+      '\n<div class="body lnt-body">\n' + lntQs(w) + '</div>\n' + juFooter(P.footer, weekDates, P.emoji) + '\n</div>';
+  }
+  // The grown-up's page, last in the Grown-Up Guide.
+  function lntPkAnswers(weekNum, weekDates, w, T) {
+    var grown = lntAnyGrown(w);
+    return '<div class="page-label">Grown-Up Guide — Number Thinking answers</div>\n<div class="page">\n' +
+      juHeader(T.eyebrow, "Number Thinking — answers", "for the grown-up · not for the child", "Week " + weekNum, weekDates, "💛 For Grown-Ups") +
+      '\n<div class="body lnt-body">\n' +
+      '  <div class="p-banner"><strong>' + (grown ? 'Sit together.' : 'Done alone.') + '</strong> ' +
+      (grown ? 'Read each question aloud (its “Read aloud” line is on the page) and let your child point to or circle an answer — the picture or its letter. '
+        : 'Your child reads each question and circles one letter — help with a word only if asked. ') +
+      'If an answer is off, look at the picture again together and let your child find it, rather than giving it.</div>\n' +
+      '  <div class="p-sec">\n    <div class="p-sec-h">The answers · ' + lntSpan(w) + '</div>\n    <div class="p-sec-b">\n' + lntKeyRows(w, lntKeyRow) + '\n    </div>\n  </div>\n' +
+      '  <div style="flex-shrink:0;font-size:10.5px;color:var(--muted);line-height:1.45;">' + lntTail(w) + '</div>\n' +
+      '</div>\n' + juFooter(T.P.footer, weekDates, T.emoji) + '\n</div>';
+  }
+  // ── the 1st-grade notebook (generateLucy) ──
+  function lntLuPage(wn, weekDates, w) {
+    var grown = lntAnyGrown(w);
+    return '<div class="page-label">Number Thinking — Week ' + wn + '</div>\n<div class="page">\n' +
+      luStdHeader("Number Thinking · " + ladEsc(w.items[0].label), "Number thinking", grown ? "with a grown-up · look · think · circle" : "look · think · circle", "Week " + wn, weekDates, grown ? "🤝 With a grown-up" : "🔢 I can think!") +
+      '\n<div class="body lnt-body">\n' + lntQs(w) + '</div>\n' + luFooter("Number Thinking", "Week " + wn + " · " + lntSpan(w)) + '\n</div>';
+  }
+  function lntLuCompanion(wn, weekDates, w) {
+    return '<div class="page-label">Teaching Companion — Number Thinking · answers</div>\n<div class="page">\n' +
+      '<div class="header companion-header">\n  <div>\n    <div class="header-eyebrow">Teaching Companion · Number Thinking</div>\n' +
+      '    <div class="header-name">Number Thinking <span class="parent-badge">answers · not for the child</span></div>\n' +
+      '    <div class="header-sub">the right letter · the rule behind it</div>\n  </div>\n' +
+      '  <div class="header-right">\n    <div class="header-week">Week ' + wn + '</div>\n    <div class="header-date">' + weekDates + '</div>\n  </div>\n</div>\n<div class="accent-bar"></div>\n' +
+      '<div class="body lnt-body">\n' +
+      '  <div class="teach-banner" style="flex-shrink:0;"><strong style="font-size:9px;letter-spacing:0.06em;text-transform:uppercase;">How to use this page —</strong> ' +
+      (lntAnyGrown(w) ? 'Read each question aloud (its “Read aloud” line is on the page) and let your child circle an answer. '
+        : 'Your child reads each question alone and circles one letter — help with a word only if asked. ') +
+      'Check it together afterward. If an answer is off, say the rule out loud together and let your child find the answer again, rather than giving it.</div>\n' +
+      '  <div class="key-section" style="flex-shrink:0;">\n    <div class="key-head">Number thinking · ' + lntSpan(w) + '</div>\n    <div class="key-body">' + lntKeyRows(w, lntKeyRow) + '</div>\n  </div>\n' +
+      '  <div style="flex-shrink:0;font-size:10px;color:var(--muted);line-height:1.45;">' + lntTail(w) + '</div>\n' +
+      '</div>\n' + luFooter("Teaching Companion · Not for the child", "Week " + wn + " · " + weekDates) + '\n</div>';
+  }
+  // For the app's Ladders card (HoweNotebooks.ladderPages): does this kid's notebook print number questions? A Pre-K look (its own
+  // or one set for the kid) builds a Pre-K / K notebook; a built-in notebook prints them when it is the 1st-grade one.
+  function lntPrints(kid, opt) {
+    if (pkSpec(kid, opt || {})) return true;
+    var g = GENERATORS[kid];
+    return !!(g && g.build === generateLucy);
+  }
+  // NBLADNUM_END
 
   /* ============================================================================
    *  LINCOLN  (5th grade — snakes 🐍)
@@ -7749,7 +7938,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     opt = opt || {};
     var g = pkSpec(kid, opt) ? null : GENERATORS[kid];
     if (lr3Prints(g)) return { reading: true, number: false };   // NBLADREAD3: the 4th- and 6th-grade notebooks print it too
-    return { reading: !!(g && g.build === generateLucy), number: false };
+    return { reading: !!(g && g.build === generateLucy), number: lntPrints(kid, opt) };   // NBLADNUM: number questions print in the Pre-K / K and 1st-grade notebooks
   }
   // NBLADREAD_END
 
@@ -7937,6 +8126,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     if (math) focus = [focus[0], math.focus];   // LU_MATH: the focus card describes the deck
     var lread = lrWeek(ctx, days);   // NBLADREAD: this week's Read and answer pages from the reading ladder, or null → nothing new prints
     if (lread) lr3Flags(ctx, lread, { k: "lu", wn: wn, dates: dates });   // NBLADREAD3: write-first days (levels g3 and up)
+    var lnum = lntWeek(ctx);   // NBLADNUM: this week's Number thinking questions from the number ladder, or null → nothing new prints
     var prevStats = ctx.prevStats || {};   // dashes until the shared history wiring
     var category = LUCY_DATA.category_order[((wn - 1) % LUCY_DATA.category_order.length + LUCY_DATA.category_order.length) % LUCY_DATA.category_order.length];
     var curMonth = days.length ? monthFromDate(dates[days[0]] || "") : "";
@@ -7966,6 +8156,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     luMyWordsPages(ctx, words, wn).forEach(function (p) { parts.push(nbTagXp(ctx, p, "myWords", "My Words")); });   // LU_WORDS: after End of Week, so the day/back pairs don't move
     // NBLADREAD3: a write-first day's page (pg.wf — only NBLADREAD3 sets it) goes through lr3Push: its choices on the back, a Notes pad first if needed
     if (lread) lread.pages.forEach(function (pg) { if (pg.wf) lr3Push(ctx, parts, { pages: [pg], look: lread.look }, pg.day); else parts.push(nbTag(ctx, lrPage(wn, pg.day, dates[pg.day] || "", pg.x), pg.day, "Read and answer")); });   // NBLADREAD: after End of Week + My Words, so every pair stays put
+    if (lnum) parts.push(nbTag(ctx, lntLuPage(wn, weekDates, lnum), "week", "Number thinking"));   // NBLADNUM: after Read and answer, before the paper dolls
 
     // Paper dolls — doll figure (always) + this week's outfit, each on its OWN sheet with a blank
     // back so Lucy can cut them out without losing anything on the reverse. Goes last in the book.
@@ -7979,13 +8170,16 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     var luCss = (phono ? LU_PHONO_CSS : "") + (words ? LU_WORDS_CSS : "") + (math ? LU_MATH_CSS : "");   // LU_WORDS · LU_MATH
     if (lread) luCss += LR_CSS;   // NBLADREAD
     if (lr3AnyWf(lread)) luCss += lr3Css("lu");   // NBLADREAD3: the writing lines + the back page
+    if (lnum) luCss += LNT_CSS_LU;   // NBLADNUM
     var student = luShell(parts.join("\n"), "Lucy's Notebook — Week " + wn, luCss);
     var companion = luPageTeachingCompanion(wn, weekDates, days, tasks, blends, subtraction, ctx.teachNotes || "", words, math);   // LU_MATH
     if (lread) companion += "\n" + lrCompanion(wn, weekDates, lread);   // NBLADREAD: the answers + why lines, on a Companion page of their own
+    if (lnum) companion += "\n" + lntLuCompanion(wn, weekDates, lnum);   // NBLADNUM: the answers + rules, on a Companion page of their own
     var parent = luShell(companion, "Lucy's Parent Companion — Week " + wn, luCss);
     var out = { student: student, parent: parent };
     if (words) out.wordCursor = words.cursor;   // LU_WORDS: the app saves it (notebookSettings/<kid>/wordCursor) so next week continues
     if (lread && lread.cursor) out.readingCursor = lread.cursor;   // NBLADREAD: the app saves it (…/ladders/reading/cur) after a print
+    if (lnum && lnum.cursor) out.numberLadderCursor = lnum.cursor;   // NBLADNUM: the app saves it (the number ladder's cur) after a print
     return out;
   }
 

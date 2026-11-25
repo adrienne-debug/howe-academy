@@ -64,7 +64,8 @@ const T_OLD = HOOK + " generateEllis: generateEllis, generateLincoln: generateLi
 const NB = load(SRC.replace(HOOK, T_HOOK)), OLD = load(BASE.replace(HOOK, T_OLD)), I = NB._internal, L = NB.ladders;
 const byBuild = (b) => Object.keys(NB.GENERATORS).filter((k) => NB.GENERATORS[k].build === b)[0];
 const K4 = byBuild(I.generateEllis), K6 = byBuild(I.generateLincoln), K1 = byBuild(I.generateLucy);
-ok("the 4th- and 6th-grade notebooks now print the reading ladder; the 1st-grade one still does; no number pages", !!K4 && !!K6 && [K4, K6, K1].every((k) => NB.ladderPages(k).reading === true && NB.ladderPages(k).number === false));
+// Hub merge with NBLADNUM (slice 4): the 1st-grade notebook prints number questions now; the 4th- and 6th-grade ones still don't.
+ok("the 4th- and 6th-grade notebooks now print the reading ladder; the 1st-grade one still does; number pages only in the 1st-grade one", !!K4 && !!K6 && [K4, K6, K1].every((k) => NB.ladderPages(k).reading === true) && [K4, K6].every((k) => NB.ladderPages(k).number === false) && NB.ladderPages(K1).number === true);
 ok("…every other notebook, a starter notebook and a Pre-K look print none", Object.keys(NB.GENERATORS).filter((k) => [K4, K6, K1].indexOf(k) < 0).every((k) => !NB.ladderPages(k).reading) &&
   NB.ladderPages("kidz").reading === false && NB.ladderPages("kidt", { notebookTheme: Object.keys(NB.themes)[0] }).reading === false);
 ok("…the baseline (slice 2 alone) printed reading only in the 1st-grade notebook", !OLD.ladderPages(K4).reading && !OLD.ladderPages(K6).reading && OLD.ladderPages(K1).reading);
