@@ -2276,7 +2276,7 @@ function lgHExcuseUndo(kid,iso,id){ if(!lgHOk()) return false; const x=lgHDropOf
   D["miss_h_"+id]=kp.log; delete D["wave_h_"+id]; u[x.P+"miss_h_"+id]=kp.log; u[x.P+"wave_h_"+id]=null;
   if(kp.line&&bid){ bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{}; bank[kid].adjustments[bid]=kp.line; u["bank/"+kid+"/adjustments/"+bid]=kp.line; }
   delete x.m.x; u["houseDay/"+iso+"/miss/"+id+"/x"]=null; lgHUp(u); lgHRe(); return true; }
-// ↩ Send back's Undo (LEDGERSB lgSbMiss, from lgSbUndo / lgFlagUndo) on a plan row: the tick is back, so a drop the day's build filed for
+// ↩ Send back's Undo (slice L5: both its Undos, the 📒's and the 🚩's) on a plan row: the tick is back, so a drop the day's build filed for
 // that turn since the send-back (its line's at >= the send-back's, or later than the tick put back) goes too — the "— not done" line, the
 // drop's note and its hdrop_ bank line — into the Undo's own one update (u). Left alone: a drop filed before, one given back or excused,
 // another chore's, a grown-up's. Nothing is written here (the Undo writes u only when db && !_dryRun()).
