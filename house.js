@@ -2114,13 +2114,17 @@ function lgSbDone(u){ const ks=" "+Object.keys(u||{}).join(" ");
 function lgSendBack(kid,wk,dn,ref,a){
   if(!lgSbOk()||!LG_SBA.some(function(x){ return x.a===a; })) return false; lgSbAsk=""; const R=lgSbR(kid,wk,dn,ref), L=R&&R.rec&&lgSbLine(R);
   if(!R||!R.rec||!lgSbCan(dn)||(a==="w"&&(!L||L.r.flagged))){ lgSbRe(); return false; }
-  const W=lgSbW(kid), b=lgSbSnap(W), x=R.st, iso=amIso(dn), e=x&&x.line&&x.laundry===true&&laundryLine&&laundryLine.log&&laundryLine.log[iso]&&laundryLine.log[iso][x.line];
+  const q0=typeof _obSeq!=="undefined"?_obSeq:0, W=lgSbW(kid), b=lgSbSnap(W), x=R.st, iso=amIso(dn), e=x&&x.line&&x.laundry===true&&laundryLine&&laundryLine.log&&laundryLine.log[iso]&&laundryLine.log[iso][x.line];
   if(R.it) amMomTick(kid,R.id,dn); else { if(a==="w"&&e&&e.load&&lgSbMom()&&_leBackLineOk(e.load)) laundryEditBackLine(e.load); if((lgSbR(kid,wk,dn,ref)||{}).rec) mdKidTick(R.slot,kid,dn,R.i); }
   if((lgSbR(kid,wk,dn,ref)||{}).rec){ lgSbRe(); return false; }   // the un-tick did not happen
-  const j=lgSbDiff(b,lgSbSnap(W)), by=lgSbMom()?"mom":"dad", pd=day;
-  if(a==="m") lgSbJ[kid+"|"+wk+"|"+dn+"|"+ref]={j:j,c:R.c,at:Date.now()};
-  else { day=dn; try{ flagSet(kid,L.r,"routineLog/"+kid+"/"+L.ref,"flg_"+L.wk+"_"+L.d+"_"+L.key,"🚩 Wasn't done: "+R.lab+" · by "+(by==="dad"?"Dad":"Mom"),by,{sb:{wk:wk,dn:dn,r:ref,c:R.c,j:j,at:Date.now()}},flagN(kid,"step",L.ref)); } finally{ day=pd; } }   // SPOTONE: none if a spot check ✗ took it
+  const j=lgSbDiff(b,lgSbSnap(W)), by=lgSbMom()?"mom":"dad", pd=day, ob=[q0,typeof _obSeq!=="undefined"?_obSeq:0], at=Date.now();
+  if(a==="m") lgSbJ[kid+"|"+wk+"|"+dn+"|"+ref]={j:j,c:R.c,at:at,ob:ob};
+  else { day=dn; try{ flagSet(kid,L.r,"routineLog/"+kid+"/"+L.ref,"flg_"+L.wk+"_"+L.d+"_"+L.key,"🚩 Wasn't done: "+R.lab+" · by "+(by==="dad"?"Dad":"Mom"),by,{sb:{wk:wk,dn:dn,r:ref,c:R.c,j:j,at:at}},flagN(kid,"step",L.ref)); } finally{ day=pd; }
+    lgSbOb(ob,["routineLog/"+kid+"/"+L.ref+"/sb/at",at]); }   // SPOTONE: none if a spot check ✗ took it
   lgSbRe(); return true; }
+// 📮 the un-tick's own outbox notes (this tap's, ob = [before, after]): a Wasn't done's replay only while its 🚩 is on the server (k);
+// Just a mistake's Undo drops them (an exact Undo makes the server look as before the tap, which a replay would read as "not landed").
+function lgSbOb(ob,k){ try{ const o=_obLoad(); let c=0; for(let q=ob[0]+1;q<=ob[1];q++){ const e=o[OB_SESS+"_"+q]; if(e){ if(k) e.k=k; else delete o[OB_SESS+"_"+q]; c=1; } } if(c) sv(OB_KEY,o); }catch(e){} }
 // Undo of a 🚩 (the ledger, the log, 🧾): the mark and its minus line off; a Wasn't done also puts the tick back (lgSbBack).
 function lgFlagUndo(kind,kid,ref,ask){
   if(!lgSbOk()||SL_KIDS.indexOf(kid)<0) return false; const r=flagRec(kind,kid,ref); if(!r||!r.flagged||!r.flagBy||!(r.flagBid||r.penalty===0)) return false;
@@ -2132,7 +2136,7 @@ function lgFlagUndo(kind,kid,ref,ask){
   if(kind==="task") try{ const hs=ld(WK+"_history")||{}, h=hs[ref]; if(h){ ["flagged","penalty","flagTs","flagBy","flagBid"].forEach(function(f){ delete h[f]; }); sv(WK+"_history",hs); } }catch(e){}
   if(db&&!_dryRun()) db.ref().update(u); lgSbDone(u); return true; }
 function lgSbUndo(kid,wk,dn,ref){ const k=kid+"|"+wk+"|"+dn+"|"+ref, J=lgSbJ[k]; if(!lgSbOk()||!J) return false; delete lgSbJ[k];
-  const u=lgSbBack(kid,J.j,J.c); if(u) lgSbMiss(lgSbR(kid,wk,dn,ref),J.at,u); if(u&&db&&!_dryRun()) db.ref().update(u); lgSbDone(u); return !!u; }
+  const u=lgSbBack(kid,J.j,J.c); if(u){ lgSbMiss(lgSbR(kid,wk,dn,ref),J.at,u); if(J.ob) lgSbOb(J.ob); } if(u&&db&&!_dryRun()) db.ref().update(u); lgSbDone(u); return !!u; }
 // every Wasn't done mark on this kid's log: "<wk>|<day>|<ref>" → {r, ref of its line}
 function lgSbMarks(kid){ const o={}, G=routineLog[kid]||{}; Object.keys(G).forEach(function(w){ Object.keys(G[w]||{}).forEach(function(d){ const L=G[w][d]||{};
   Object.keys(L).forEach(function(k){ const r=L[k], s=r&&r.flagged&&r.sb; if(s) o[s.wk+"|"+s.dn+"|"+s.r]={r:r,ref:w+"/"+d+"/"+k}; }); }); }); return o; }

@@ -21,10 +21,10 @@ function world(o) {
     console, WK: "week24", activeWk: () => "week24", _todayDay: "thursday", ROSTER: ["julian", "lucy", "lincoln", "ellis"], PACE_KCOL: {},
     weekData: { tasks: o.tasks || [] }, checked: o.checked || {}, histState: o.hist || {}, routineLog: o.rlog || {},
     effectiveDay: t => t.day, momHere: () => o.who === "mom", _kioskD: () => o.who === "dad", dadAwardOk: () => !!o.code,   // DADGATE: his code in
-    bankDirect: (k, p, n) => { banks.push([k, p, n]); return "bd1"; }, bank: {}, day: "thursday", spPenalty: () => ({ on: true, pts: 100 }), starTakeOk: () => true,   // L5 FLAGONE: the one penalty (on at 100) …
-    obSet: (path, v) => { banks.push([path.split("/")[1], v.amount, v.note]); }, confirm: m => { confirms.push(m); return o.say !== false; },
+    bankDirect: (k, p, n) => { banks.push([k, p, n]); return "bd1"; }, bank: {}, day: "thursday", spPenalty: () => ({ on: true, pts: 100 }), starTakeOk: () => true,   // L5 FLAGONE: the one penalty (on at 100); no spot check here (SPOTONE reads spDay only if there is one)
+    confirm: m => { confirms.push(m); return o.say !== false; },
     cap: s => s.charAt(0).toUpperCase() + s.slice(1), esc: s => String(s), nowTs: () => "3:00 PM " + MD, dbg: () => {}, renderAll: () => {},
-    ld: () => ({}), sv: () => {}, _dryRun: () => false, db: { ref: p => ({ update: v => writes.push([p, v]) }) },
+    ld: () => ({}), sv: () => {}, _dryRun: () => false, db: { ref: p => ({ update: v => writes.push([p, v]), set: v => { if (/^bank\//.test(p)) banks.push([p.split("/")[1], v.amount, v.note]); } }) },   // L5: the 🚩's fixed-id line is set directly (not the 📮 outbox): recorded where bankDirect's were
     Object, Array, String, Number, Math, Date, JSON, RegExp,
   };
   vm.createContext(ctx); vm.runInContext(CURRWORDS + "\n" + BLOCK, ctx);

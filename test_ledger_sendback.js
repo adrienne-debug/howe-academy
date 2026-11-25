@@ -411,6 +411,44 @@ console.log("\n── U · the 🔎 spot check's ✗ and the 🚩 on one tick (a
   S.spotSteps = steps;
   ok("the kid's bank at each step: " + steps.map(x => x[0] + " " + (x[1] >= 0 ? "+" : "") + x[1]).join(" → "), J(steps.map(x => x[1])) === J([10, -100, -100, 10, -100, -100, -100, -100]), steps);
 }
+// ── O ── (the hub's question 2026-11-24: can the 📮 outbox bring a 🚩 line back after its Undo?)
+console.log("\n── O · the 📮 outbox: a device that closes before the server answers ──");
+{ const toysI = () => idxOf(A, "chores", "kid_c", "Toys in the bin"), ticked = () => A.run("rtDoneOn('chores','kid_c','thursday'," + toysI() + ")");
+  if (!ticked()) { tick(B, "chores", "kid_c", "Toys in the bin"); await w.flush(); }
+  const ka = "'kid_c','" + wk + "','thursday','s:chores:" + toysI() + "'", kc = logKey(A, "kid_c", "Toys in the bin"), fid = "flg_" + kc.join("_");
+  const closing = d => d.run("(function(){ const r0=db.ref.bind(db); db.ref=function(p){ const r=r0(p); ['set','update','remove'].forEach(function(f){ const o=r[f]; r[f]=function(v){ o.call(r,v); return new Promise(function(){}); }; }); return r; }; })();1");   // every write reaches the server, none is confirmed: each 📮 note stays
+  const offline = d => d.run("(function(){ const r0=db.ref.bind(db); db.ref=function(p){ const r=r0(p); ['set','update','remove'].forEach(function(f){ r[f]=function(){ return new Promise(function(){}); }; }); return r; }; })();1");   // nothing reaches the server
+  const back = async (dev, box) => { const D = w.boot(dev + "b", dev, { mom: true }); await w.flush(); D.run(CAP); D.run("HA_LS.setItem('ha_outbox'," + J(J(box)) + ");1"); const t = new Date(A.run("Date.now()") + 60000); await w.at(t.getFullYear(), t.getMonth() + 1, t.getDate(), t.getHours(), t.getMinutes()); const m = w.mark(); D.run("_obRetry=null;try{ obReplay(); }catch(e){}1"); await w.flush(60000); return WS(w, m); };
+  const kc_ = () => { const R = w.db.tree.root, sl = (R[wk] || {}).sl || {}; return canon({ bank: (R.bank || {}).kid_c, log: (R.routineLog || {}).kid_c, sl: Object.keys(sl).filter(k => k.indexOf("_kid_c_") > 0).reduce((o, k) => (o[k] = sl[k], o), {}) }); };   // kid_c's bank, log and check-offs (other devices' own draws as the clock moves are not these taps')
+  const boxOf = d => JSON.parse(d.run("HA_LS.getItem('ha_outbox')||'{}'"));
+  // 1 · closes at once after Wasn't done; Mom's Undo on her own device; the first device comes back
+  const A2 = w.boot("A2", "devA2", { mom: true }); await w.flush(); A2.run(CAP); loadH(A2, HJS); closing(A2);
+  const t0 = kc_(), b0 = bal(A, "kid_c"); A2.run("lgSendBack(" + ka + ",'w')"); await w.flush();
+  const box = boxOf(A2), notes = Object.values(box);
+  ok("Wasn't done on a device that closes before the server answers: all of it reached the server; its 📮 notes are only the un-tick's (no flg_ line: written directly, as C3's drop line), each kept only while its 🚩 is there (k = the mark's sb/at)", !!adj(w, "kid_c")[fid] && lineOf(w, "kid_c", kc).flagged === true && notes.length > 0 && !notes.some(e => e.p.indexOf(fid) >= 0) && notes.every(e => e.k && e.k[0] === "routineLog/kid_c/" + kc.join("/") + "/sb/at" && e.k[1] === lineOf(w, "kid_c", kc).sb.at), notes.map(e => e.op + " " + e.p + " k=" + J(e.k)));
+  A.run("lgFlagUndo('step','kid_c'," + J(kc.join("/")) + ",0)"); await w.flush();
+  ok("…Mom's Undo on her own device: the database as before Wasn't done", kc_() === t0 && bal(A, "kid_c") === b0, ddiff(JSON.parse(kc_()), JSON.parse(t0)));
+  const r1 = await back("devA2", box);
+  ok("…it comes back and its 📮 outbox replays: nothing is written — the −100 does not come back, and the un-tick is not done again (its 🚩 is gone)", r1.length === 0 && kc_() === t0 && ticked() === true && bal(A, "kid_c") === b0, r1);
+  // 2 · without the Undo, the same replay finds everything landed: nothing to do
+  const A4 = w.boot("A4", "devA4", { mom: true }); await w.flush(); A4.run(CAP); loadH(A4, HJS); closing(A4); A4.run("lgSendBack(" + ka + ",'w')"); await w.flush();
+  const t1 = kc_(), r2 = await back("devA4", boxOf(A4));
+  ok("…with no Undo, the replay finds it all landed: nothing written, the 🚩 and its −100 stay once", r2.length === 0 && kc_() === t1, r2);
+  A.run("lgFlagUndo('step','kid_c'," + J(logKey(A, "kid_c", "Toys in the bin").join("/")) + ",0)"); await w.flush();
+  // 3 · truly offline: nothing reached the server
+  const A5 = w.boot("A5", "devA5", { mom: true }); await w.flush(); A5.run(CAP); loadH(A5, HJS); offline(A5); const t2 = kc_();
+  A5.run("lgSendBack(" + ka + ",'w')"); await w.flush();
+  ok("a device truly offline: nothing reaches the server", kc_() === t2);
+  const r3 = await back("devA5", boxOf(A5));
+  ok("…it comes back: its notes are dropped, not replayed (their 🚩 never reached the server): the chore stays ticked and paid — all or nothing, never a half (no −100 without its 🚩, no un-tick without it)", r3.length === 0 && kc_() === t2 && ticked() === true, r3);
+  // 4 · Just a mistake and its Undo on the same device: that tap's notes go with the Undo
+  const A6 = w.boot("A6", "devA6", { mom: true }); await w.flush(); A6.run(CAP); loadH(A6, HJS); closing(A6); const t3 = kc_();
+  A6.run("lgSendBack(" + ka + ",'m')"); await w.flush(); const n6 = Object.keys(boxOf(A6)).length; A6.run("lgSbUndo(" + ka + ")"); await w.flush();
+  const r4 = await back("devA6", boxOf(A6));
+  ok("Just a mistake, then its Undo on that device (which then closes): its " + n6 + " notes go with the Undo, so a later replay writes nothing and the chore stays ticked", n6 > 0 && Object.keys(boxOf(A6)).length === 0 && r4.length === 0 && kc_() === t3 && ticked() === true, [n6, r4]);
+  S.ob = { notes: notes.map(e => e.op + " " + e.p) };
+  A.run("(function(){ day=_todayDay; })();1");
+}
 // ── Y ── (last: the clock moves on)
 console.log("\n── Y · C3's drop and Send back ──");
 { A.run("lgRWrite('pause',null);lgRWrite('take/kid_a',null)"); await w.flush();   // section S turned ⏸ and Take stars away off and on today ({from: today}): turns due before it would take nothing (a flip never reaches back)
