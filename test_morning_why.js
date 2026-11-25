@@ -210,6 +210,11 @@ for (let n = 7; n <= 19; n++) {
     const hp = txt(A.run("(function(){ hpSel='kid_a'; return hpPersonHTML(); })()")); ok("…👤 By person: \"🧹 Vacuum the den from Tue 12/8 · 10 → 8 ⭐\" (Dust the lamp: \"from Tue 12/8\" as before)", /Vacuum the den from Tue 12\/8 · 10 → 8 ⭐/.test(hp) && /Dust the lamp from Tue 12\/8 🪟/.test(hp), (/🌅 Sent to the morning list.{0,300}/.exec(hp) || [""])[0]);
     const b0 = bal(B, "kid_a"); B.run("(function(){ day=_todayDay; amToggle('kid_a'," + J(I["kid_a|Wipe the window"]) + "); })()"); await w.flush();
     ok("…kid_a ticks Wipe the window on her Morning list: it pays 12 (the bank +12, the carry's done.pts 12)", bal(B, "kid_a") === b0 + 12 && carry(w, "kid_a", "Wipe the window").done.pts === 12, [bal(B, "kid_a") - b0, carry(w, "kid_a", "Wipe the window").done]);
+    const wi = ix("kid_a", "Wipe the window"), orig = A.run("slState[activeWk()+'_tuesday_kid_a_cstep" + wi + "']") || {};
+    ok("P · never paid twice: the ORIGINAL Tuesday row now reads done with the same 12 and bid (SENDAM's one fact), so Mom's ○ there is an un-tick, and its 🌅 chip is gone", orig.done === true && orig.pts === 12 && orig.bid === carry(w, "kid_a", "Wipe the window").done.bid && !/amAsk\('chores','kid_a','tuesday'," + wi + "\)/.test(pop(A, "kid_a", "chores", "tuesday")), orig);
+    A.run("amMomTick('kid_a'," + J(I["kid_a|Wipe the window"]) + ",_todayDay)"); await w.flush(); const bU = bal(B, "kid_a");
+    A.run("amMomTick('kid_a'," + J(I["kid_a|Wipe the window"]) + ",_todayDay)"); await w.flush();
+    ok("P · un-ticking an ignored carry (the pop-up's ✓/↩, what L5's \"Just a mistake\" calls) takes back exactly the 12 it paid; ticking it again the same day pays 12 again", bU === b0 && bal(B, "kid_a") === b0 + 12 && carry(w, "kid_a", "Wipe the window").done.pts === 12, [bU - b0, bal(B, "kid_a") - b0]);
     const ls = (V, k) => V.A.run("_lsDay('chores'," + J(k) + ",activeWk(),'tuesday','2026-12-08',slState,0)");
     S.ls = [ls(Q, "kid_a"), ls(QB, "kid_a"), ls(Q, "kid_b"), ls(QB, "kid_b"), ls(Q, "kid_c"), ls(QB, "kid_c")];
     const m2 = w.mark(); ex.porch = ANS(A, "amAsk('chores','kid_b','tuesday'," + ix("kid_b", "Sweep the porch") + ")", "ignored"); await w.flush(); ex.porchW = WS(w, m2); S.ls.push(ls(Q, "kid_b"));
@@ -222,6 +227,8 @@ for (let n = 7; n <= 19; n++) {
     const pt = txt(pop(A, "kid_c", "chores", "tuesday")); const b0 = bal(B, "kid_c");
     A.run("mdKidTick('chores','kid_c','tuesday'," + ix("kid_c", "Scrub the tub") + ")"); await w.flush();
     ok("…Mom's pop-up on Tuesday's tab shows the tub's ORIGINAL row \"22 → 13 ⭐\"; her ✓ there pays 13 (toggleRtStep) and closes the carry", /Scrub the tub 22 → 13 ⭐/.test(pt) && bal(B, "kid_c") === b0 + 13 && carry(w, "kid_c", "Scrub the tub").done.src === "list", [pt.slice(0, 200), bal(B, "kid_c") - b0]);
+    const bt = bal(B, "kid_c"); B.run("(function(){ day=_todayDay; amToggle('kid_c'," + J(I["kid_c|Scrub the tub"]) + "); })()"); await w.flush();
+    ok("P · never paid twice: after Mom's ✓ on the original row, the kid's tap on the tub's 🌅 row pays nothing (\"un-check it there\")", bal(B, "kid_c") === bt && carry(w, "kid_c", "Scrub the tub").done.src === "list", bal(B, "kid_c") - bt);
     const b1 = bal(B, "kid_a"); B.run("(function(){ day=_todayDay; amToggle('kid_a'," + J(I["kid_a|Make the bed"]) + "); })()"); await w.flush();
     ok("…kid_a's daily Make the bed (sent as ignored) ticked Thursday on her Morning list: pays 6", bal(B, "kid_a") === b1 + 6, bal(B, "kid_a") - b1);
   }
@@ -240,6 +247,9 @@ for (let n = 7; n <= 19; n++) {
     ok("…kid_c ticks the sink: full 3 ⭐ (the answer counts from now on)", bal(B, "kid_c") === b0 + 3, bal(B, "kid_c") - b0);
   }
   if (n === 14) {
+    const c3 = (k, labels) => { const L = (root(w).routineLog || {})[k] || {}, out = []; Object.keys(L).forEach(wk => Object.keys(L[wk] || {}).forEach(dn => Object.keys(L[wk][dn] || {}).forEach(q => { const x = L[wk][dn][q]; if (x && x.act === "miss" && labels.some(l => x.label === l + " — not done")) out.push(wk + "/" + dn + "/" + q); }))); return out.concat(Object.keys(adj(w, k)).filter(id => /^cdrop_/.test(id) && labels.some(l => (adj(w, k)[id].note || "").indexOf(l) >= 0))); };
+    const c3x = c3("kid_a", ["Vacuum the den", "Dust the lamp", "Wipe the window"]).concat(c3("kid_c", ["Scrub the tub", "Wash the car", "Shake the mat"]), c3("kid_b", ["Sweep the porch"]), c3("kid_d", ["Dust the blinds"]));
+    ok("P · no C3 drop for a turn that was sent to the morning (Tue 12/08's rows, Thursday's mat sent while it waited): no \"— not done\" line and no cdrop_ bank line, though every wait is long over", c3x.length === 0, c3x);
     ok("K · dry-run: a Mom device with ?dryrun=1 drew kid_a's list first (6 AM): nothing reached the database; its own screen has the line", ex.dry.w.length === 0 && ex.dry.local === 1, ex.dry);
     const L = amzLines(w, "kid_a"), bk = amzBank(w, "kid_a");
     ok("D · Mon 12/14, the day after zero: ONE line routineLog/kid_a/<wk>/monday/amz_<carry id> = {label:\"Vacuum the den — not done\", act:\"amz\", amz:{n:2, bid, id, day}}", L.length === 1 && L[0]._dn === "monday" && L[0].act === "amz" && L[0].label === "Vacuum the den — not done" && J(Object.keys(L[0].amz)) === J(["n", "id", "day", "bid"]) && L[0].amz.n === 2 && L[0].amz.id === I["kid_a|Vacuum the den"] && L[0].amz.day === "2026-12-14", L);
