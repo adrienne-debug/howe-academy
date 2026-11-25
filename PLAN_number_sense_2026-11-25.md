@@ -23,7 +23,7 @@ A study only. Nothing in the app changed. No data was written. Every claim carri
 
 **Units** (your add-on, §1f). Today the notebook and the math unit (🧮 Math Fluency Path) meet only through shared drill cards. No kid is on the unit, and it prints no notebook pages. Nothing a child does on a notebook number page is recorded or flows back. The plan makes the unit the **one source**: set a kid's number stage once on the unit, and every surface follows it in its own form: drill, notebook, games, sprints. You confirmed this is what "interchangeable" means ("used by mastery, unit, notebook, games etc"). One number-skills picture per kid then says what needs review (§6a). And there needn't be one home for all math (your answer to question 2): each area (number, shapes, patterns, measuring, data) gets its own unit, several running at once, shown side by side.
 
-**Every grade, and following the drills** (your later add-ons, §1g). No grade's notebook math follows what the child is studying in math today. Each notebook runs on its own track, and a 7th grader's prints no math. The Pre-K notebook keeps printing letters Julian passed off in drills (it's at F; his drills are at S), and after a gap it jumps ahead by the calendar. The plan gives each layer one job: the book/unit teaches, drills automate, the notebook applies and reviews in a different form with light "is it sticking?" checks, and Math Reasoning stays the spiral. Simple follow-the-drills rules (§6d) make the notebook skip what's passed off and slow down when drills stall.
+**Every grade, and following the drills** (your later add-ons, §1g). No grade's notebook math follows what the child is studying in math today. Each notebook runs on its own track, and a 7th grader's prints no math. The Pre-K notebook keeps printing letters Julian passed off in drills (it's at F; his drills are at S), and after a gap it jumps ahead by the calendar. The plan gives each layer one job: the book/unit teaches, drills automate, the notebook carries **this week's learning** in its own form (your answer to Q3) plus about two review items that show what's shaky, and Math Reasoning stays the spiral. Simple follow-the-drills rules (§6d) make the notebook skip what's passed off and slow down when drills stall.
 
 **Before Singapore Dimensions with Julian**, the strands that must be solid are counting, how-many, seeing small amounts, comparing, and part–whole to 5 and then 10. Naming numerals past 20 is nice, but it is not the gate. 📚 + 💡 A five-minute check a parent can run is in §3.
 
@@ -121,7 +121,7 @@ Each step runs a few weeks. Move on when the step's "check" is easy for him, not
 
 No notebook reads the Dimensions or Singapore lesson of the week. One page already does this for another subject: **Lucy's phonogram card follows the phonograms her LOE book has taught** (`LU_PHONO`). That's the pattern to copy for math (§4f–4g; design in §6c).
 
-**"Extra features that help ensure their units and drills are working"** — ⚠️ *my reading (from the hub's note), please confirm*: light **"is it sticking?" checks** in the notebook. Once or twice a week, the notebook asks about something the unit or drill says was learned a few weeks ago, in a different form (a picture, a word problem, placing it on a line). Your one tap (*got it · not yet*) tells the unit and drill whether it held (§6c).
+**"Extra features that help ensure their units and drills are working"** — ✅ *question 3, answered 2026-11-25*: the notebook also carries **this week's learning**, with about two review items. Those review items do the "is it sticking?" job (§6c). My earlier reading was light **"is it sticking?" checks** in the notebook. Once or twice a week, the notebook asks about something the unit or drill says was learned a few weeks ago, in a different form (a picture, a word problem, placing it on a line). Your one tap (*got it · not yet*) tells the unit and drill whether it held (§6c).
 
 > "…if a number is passed off or a letter is passed off and it hadn't been in the notebook yet, then it could just be bypassed. Or if we haven't gotten that far in drills and we haven't done it in a while, then maybe that's a sign that we need to slow down."
 
@@ -299,6 +299,7 @@ What this shows 🔍 + 💡: the ladder is a **thinking warm-up**, strong on pat
 - Lucy has **Dimensions Math 1A** (Mon–Thu), **Math Reasoning B** and **Mathseeds**.
 - Julian has **no math subject**, only Morning and Closing Notebook.
 - The Dimensions lessons are **not linked** to any deck, unit or notebook page: no "Dimensions" anywhere in `notebooks.js`, and no book map.
+- But the schedule **does store each day's lesson title** (`curriculum/lessons/<kid>`). Lucy's rows read "Ch6-4: Addition Facts to 20" (11/24), "Ch6-5: Practice" (11/25) and "Ch7-1: Subtract from 10 - Part 1" (11/30), so the week's topic can be known without anyone typing it in again.
 
 **Where numbers past 20 and place value live today:**
 
@@ -429,8 +430,8 @@ These are your standing rules, applied to number sense:
 5. **A first-year homeschool mom can run it.** Each page has a one-line "what to look for" in the Grown-Up Guide, with no teaching words.
 6. **One home for each control.** A kid's *level* in each math area (stage) lives in one place: the kid's row on that area's unit (🧮 Math Fluency Path for number, 🔷 Shapes Path for shapes, and so on). The drill and the notebook both read it. The Notebook tab only switches the number pages on or off and shows the stage read-only. Dad sees and uses the same controls (§6a).
 7. **Nothing of one family leaks.** All items are made by rule from numbers, dots, shapes and the kid's own counting picture. No names, no themes from another family.
-8. **Singapore Dimensions stays textbook-only.** The notebook never prints the chapter's own practice and never stands in for a lesson. It may *know* which chapters are finished, so it can review **earlier** chapters in a different form.
-9. **Math Reasoning stays the spiral layer.** Nothing here adds a second spiral or copies Math Reasoning items. The notebook's number box for the older kids stays test-format practice, and the light checks (§6c) are one or two taps a week, not a spiral.
+8. **Singapore Dimensions stays textbook-only.** The notebook never prints the book's problems, pictures or pages, and never stands in for a lesson. It *knows* the week's topic from the lesson placement, and prints **its own** practice on that topic (and a preview of next week's) in its own form, plus about two review items (§6c, your answer to Q3).
+9. **Math Reasoning stays the spiral layer.** Nothing here adds a second spiral or copies Math Reasoning items. The notebook's number box for the older kids stays test-format practice, and the notebook's about-two review items a week (§6c) are not a spiral.
 10. **Drills are not the schedule.** The notebook *reads* drill status. It never adds, moves or times a drill card on anyone's day.
 
 ---
@@ -465,10 +466,10 @@ So there's **no single home forced on everything**. Each math area gets its own 
 
 **How the notebook picks from several running areas** (a rule a mom can check at a glance) 💡:
 1. **One math ask per school day**, on the weekly "Math play" page. That's at most 5 a week, so a page or a week never overloads.
-2. **Number takes about half the days** (2–3 a week). The other running areas **take turns** on the rest, one area per day.
-3. **"Needs review" jumps the line.** An area with something flagged gets the next free day, one step easier.
+2. **About three days follow this week's learning** (your answer to Q3): the area the math book or unit is on this week. If several areas are learning something new, Number takes most of them and the others take turns.
+3. **About two days are review** of earlier learning, from any running area. "Needs review" goes first.
 4. **An area with no kid stage prints nothing.** Turning an area on is just starting the kid on its unit.
-5. **Light checks** (§6c) follow the same turns: one or two a week across all areas, not per area.
+5. A notebook that already has its own daily math card (Lucy's 3 facts) keeps it; the card's facts are chosen to fit the week's topic.
 
 **What you see, side by side:** the kid's tab on the Units page (🧒, which already lists a kid's units with their rung counts 🔍) gets one line per running area. For example: *"🧮 Number · stage 2 · counting solid · quick look working on it · 🔷 Shapes · stage 2 · fine · 🔁 Patterns · ABB needs review"*. The same lines feed the existing "🔁 Giving trouble this week" card, grouped by area.
 
@@ -554,13 +555,13 @@ It shows on the unit's kid row and on Mom's existing "🔁 Giving trouble this w
 | **3** | **One source for every surface** (scope widened 2026-11-25 by your answers to Q1 and Q2) | Every level | **Wiring only, built for any area's unit** (Number first): each card gets its strand and its forms. A kid's stage on the unit decides the drill cards, which number pages print, which number rounds the games offer, and what the card sprints run. The Notebook tab and the Games grid show the stage read-only with a link. The Pre-K notebook's separate number place gives way to the stage | — | "Numbers: follows stage N" on the Notebook tab and the Games grid | M–L |
 | **4** | **Follow the drills** (§6d) — letters, numbers, shapes, sight words | Pre-K, K, 1st | **Notebook only**: skip what's passed off, slow down when drills stall, resume at the drill front after a gap, keep the Number of the Day within one decade of the drill front. A plain note says why | Both | A line on the notebook planner and the Grown-Up Guide | M |
 | **5** | **Quick Look** (seeing small exact amounts at a glance — not the dot-cloud "guess which has more" games the research doubts 📚) | Pre-K → 1st (1–5, then 6–10 as "5 and some", then ten-frames to 20) | **Drill** (a new path stage's deck): a dot pattern shows for about 2 seconds, then it's gone and the child says or taps how many. **Notebook complement**: "Show it": a numeral and an *empty* frame, and the child draws the dots. **Games** (scope added 2026-11-25): the same cards in Match (pattern ↔ numeral) and Sort it ("5 and some" / "less than 5"), not a second flash game | Drill: tablet. Page: pencil or pen | Mastery ladder; Guide row "does he draw 7 as 5 and 2?" | M |
-| **6** | **"Make it" page** (making a set, one-to-one) | Pre-K, K | **Notebook**: a weekly page, one ask per school day: "Draw 6 dots in the ten-frame", "Color 4 of the balloons", "Draw one more than this". **Drill** stays "count what you see", so it's the reverse task | Pencil or tablet pen; the 🔊 reads the ask | Guide answer page: what a right one looks like ("did he stop at 6?") | M |
-| **7** | **The review loop and light "is it sticking?" checks** (§6a, §6c; scope widened 2026-11-25: one line per running area, side by side, on the kid's Units tab) | Every level | **Both**: one tap a day for you on each number page (*got it · not yet*), on the ✅ Grade sheet or the tablet. Plus one or two light checks a week on something learned 3–6 weeks ago. These, the check, and the misses from the drill, games and sprints (scope added 2026-11-25) make the one number-skills picture. "Needs review" brings the page back easier and pulls the drill cards forward | Both | The unit's kid row, plus the existing "🔁 Giving trouble this week" card | M |
+| **6** | **"Make it" page** (making a set, one-to-one) — the first "Math play" page (scope changed 2026-11-25: about three asks follow this week's stage, about two are review) | Pre-K, K | **Notebook**: a weekly page, one ask per school day: "Draw 6 dots in the ten-frame", "Color 4 of the balloons", "Draw one more than this". **Drill** stays "count what you see", so it's the reverse task | Pencil or tablet pen; the 🔊 reads the ask | Guide answer page: what a right one looks like ("did he stop at 6?") | M |
+| **7** | **The review loop: the notebook's about-two review items** (§6a, §6c; scope widened 2026-11-25: one line per running area, side by side, on the kid's Units tab; the light checks are now the ~2 review items, from your answer to Q3) | Every level | **Both**: one tap a day for you on each number page (*got it · not yet*), on the ✅ Grade sheet or the tablet. About two review items a week on things learned 3–6 weeks ago. These, the check, and the misses from the drill, games and sprints (scope added 2026-11-25) make the one number-skills picture. "Needs review" brings the page back easier and pulls the drill cards forward | Both | The unit's kid row, plus the existing "🔁 Giving trouble this week" card | M |
 | **8** | **Number Train** (counting words in order) | Pre-K → 2nd | **Game**: the ABC Train's engine with numbers, its cars **taken from the kid's own stage cards** (scope changed 2026-11-25: no list of its own). Next number 1–20 → start anywhere to 100 → **counting back** → by tens, and from 7 (7, 17, 27 …). The app never places a car for him. **Notebook complement**: "Fill the path": a number path with a start and gaps, written by the child | Game: tablet. Page: both | Game log + level-ups, as the ABC Train does now | M |
 | **9** | **Number bonds** (part–whole) | Pre-K end (5) → K (10) → 1st (teens = 10 + some) | **Drill**: the Math Fluency Path's *existing* stage 5 "Number partners" cards. **Notebook**: a bond picture with the **whole** given and two empty parts, plus a five-frame the child colours *any way they like* and writes the parts. Many right answers | Both | Guide: "Did she find more than one way?" | M |
 | **10** | **Tens and ones** | K end → 2nd | **Notebook**: "Build it" (given 47, draw 4 sticks and 7 dots), "What number is this?", "4 tens or 40 ones — the same?", 10 more / 10 less on a hundred-chart row. **Drill**: flip cards "4 tens and 7 ones → 47", "47: how many tens?" plus the existing "10 + 4" teen cards | Both | Guide includes the "show me what the 4 means" check 📚 (Ross; Kamii) | M |
 | **11** | **Number lines and the race board** | K → 6th | **Notebook**: "Where does it go?": 7 on 0–10, 47 on 0–100, 750 on 0–1,000, ¾ or 0.6 on 0–1, −3 on −10 to 10. Plus a printed **1-to-100 race board game** 📚 (Siegler & Ramani) | Both; the board game is print-first | Guide; you note "close / far" | M |
-| **12** | **The older grades build on their math book** (§6c) | 1st, 4th, 6th, 7th | **Notebook**: a chapter list for each kid's math book, the way Lucy's phonogram card reads her LOE lessons. The notebook knows what's been *finished*, and its light checks and number-line / big-number pages review **earlier** chapters. A 7th grader's starter notebook gets the number box and the ladder's 7th-grade level. **Not** the current lesson (Dimensions stays textbook-only) | Both | The unit's kid row | M per book |
+| **12** | **The notebook follows each kid's math book: this week's lesson + about two review** (§6c; scope changed 2026-11-25 by your answer to Q3) | 1st, 4th, 6th, 7th | **Notebook**: a chapter list for each kid's math book (title → topic), read from the lesson placement, the way Lucy's phonogram card reads her LOE lessons. About three asks a week on **this week's topic** (and a preview of next week's) in the notebook's own form, never the book's problems. About two review items from earlier chapters. Lucy's math card picks facts that fit the topic. A 7th grader's starter notebook gets the same once their book has a chapter list | Both | The unit's kid row | M per book (Lucy's 1A first) |
 | **13** | **Big numbers** (1,000 → 100,000 and more) | 2nd → 4th (Lincoln/Ellis catch-up if needed) | **Notebook**: "10 of these make one of those" chain, reading numbers in comma groups, real-life sizes. **Drill**: read a big numeral aloud, only once the check says place value is solid | Both | Guide + Mastery | M |
 | **14** | **Catch-up paths for an older child** | Any kid whose check shows a gap | Uses slices 5–13 at the child's own age, with plain grown-up-looking pages (no baby pictures), started from the same unit stage | Both | The check again at the end | S each |
 | **15** | **Second area: Shapes** (nearly free) | Pre-K → 2nd | The 🔷 Shapes Path unit and decks already exist, and the Pre-K notebook already prints a Shape of the Day. This slice puts Shapes through the same wiring (slices 3, 4, 7) and adds its notebook form: "build it" and "find it" (draw a triangle with a long side; circle the shapes with 4 corners). The drill stays "name it" | Both | Its line on the kid's Units tab | S–M |
@@ -581,30 +582,46 @@ It shows on the unit's kid row and on Mom's existing "🔁 Giving trouble this w
 
 ### 6c. The notebook builds on the math unit — every grade 💡
 
-Four layers, each with one job, so nothing repeats in the same form:
+**Your answer to question 3, 2026-11-25:** *"But also the notebook can do the learning. Like, so it could do 2 review, but whatever is going to be learned or is being learned this week is what could be correlated to the learning as well."*
+
+So the notebook does **two jobs**, not one:
+- **(a) this week's learning**: pages that follow what the unit or math book is teaching this week, or is about to teach, in the notebook's own form;
+- **(b) about two review items** of things learned earlier.
+
+⚠️ *My reading of "2 review" (from the hub's note, not confirmed)*: about two look-back items **a week**. That matches the cap the notebook already uses for 🔁 "practice again" items (`reviewCap`, 2 a week, per kid) 🔍. Question 12 asks you to confirm.
+
+**Four layers, each with one job:**
 
 | Layer | Its one job | Where it lives |
 |---|---|---|
-| **The math book / unit** | What is being **learned now**, and what has been learned | The curriculum lesson (Dimensions, Singapore) and the 🧮 Math Fluency Path stage |
-| **Drills** | Make facts and names **automatic** (fast recall) | Mastery decks from the path's stages; Math Sprints for Lincoln |
-| **Notebook** | **Apply and review in a different form**: make, show, place on a line, explain. Plus light checks that show what's shaky | The kid's weekly notebook |
+| **The math book / unit** | **Teaches**: what is being learned now, and what has been learned | The curriculum lesson (Dimensions, Singapore) and each area's unit stage |
+| **Drills** | Make facts and names **automatic** (fast recall) | Mastery decks from the units' stages; Math Sprints for Lincoln |
+| **Notebook** | **(a) This week's learning, in its own form** (make, show, place on a line, explain), tied to the week's lesson or stage. **(b) About two review items** of earlier learning, which are also how it spots what's shaky | The kid's weekly notebook |
 | **Math Reasoning** | The **spiral**: mixed practice that keeps old topics alive | Its own book or app, untouched |
 
-**Light "is it sticking?" checks** (⚠️ my reading of your "extra features that help ensure their units and drills are working"; please confirm):
-- One or two a week.
-- Each one asks about something the drill marked learned, or a chapter finished, **3–6 weeks ago**, in a form the drill doesn't use. Examples: a drilled fact as a picture; a finished chapter's idea placed on a number line.
-- You tap *got it · not yet*. A "not yet" feeds the review loop (slice 7), which re-shows that strand in the notebook and pulls its drill cards forward.
-- These are not a spiral (Math Reasoning is) and not a test.
+**How "this week's learning" works without copying the textbook** (Dimensions stays textbook-only):
+- **The notebook knows the topic of the week from the lesson placement** 🔍. The schedule already stores each day's lesson title (`curriculum/lessons/<kid>`). For example, Lucy's rows this week are "Ch6-4: Addition Facts to 20" (11/24) and "Ch6-5: Practice" (11/25), with "Ch7-1: Subtract from 10" next on 11/30. A short **chapter list** per book turns a title into a topic (Ch6 → "add by making 10"). It works the way Lucy's phonogram card already reads her LOE lessons 🔍 (`LU_PHONO`).
+- **It prints its own practice on that topic.** Ch6 "making 10": "8 + 5: colour 2 of the 5 to fill the ten-frame, then write what you have", or a number bond of 13 as 10 and 3. Ch7 next week: a preview such as "cross out 3 from a full ten-frame".
+- **It never prints the book's problems, pictures or pages**, never stands in for the lesson, and never shows an answer the child must produce. Answers stay on the Grown-Up Guide / Companion.
+- **Today, for contrast** 🔍: Lucy's daily math card prints 1+1 … 4+4 from her Math Facts deck, while her book is on facts to 20 and making 10.
+- **A kid with no math book** (Julian) follows the unit's **stage** instead (e.g. "Numbers 21–100": "build 34", "where does 34 go on the line?").
 
-**What each grade's notebook math would be** (the two "Today" columns are 🔍 from §4f; the rest are 💡):
+**The about-two review items:**
+- They're drawn from things the drill marked learned, or chapters finished, **3–6 weeks ago**. Anything flagged "needs review" comes first.
+- They come in a form the drill doesn't use.
+- You tap *got it · not yet* (slice 7). A "not yet" re-shows that topic and pulls its drill cards forward.
+- These are what I earlier called the light "is it sticking?" checks. Your answer folds them in as the notebook's review.
+- They're not a spiral (Math Reasoning is) and not a test.
 
-| Grade | Today | Builds on | Applies / reviews in a different form | Light checks | Stays as it is |
+**What each grade's notebook math would be** (the "Today" column is 🔍 from §4f; the rest is 💡):
+
+| Grade | Today | (a) This week's learning follows | (a) In the notebook's form | (b) About two review items from | Stays as it is |
 |---|---|---|---|---|---|
-| Pre-K / K | Number of the Day on its own track | The kid's Math Fluency Path stage (numbers, counting, bonds) | Make it, Show it, bonds, tens and ones, Fill the path | Yes | Number of the Day (now inside one decade of the drill front) |
-| 1st | Math card from the Math Facts deck | Path stage 6 (+ −) **and** the Dimensions 1A chapters finished | Today's math card; number lines; teens as 10 + n | Yes | Math Reasoning B; Dimensions in the textbook |
-| 4th | Test-prep number box (own track) | Dimensions 4A chapters finished; his × facts and Measurements decks | One day a week of "apply it" (a drilled fact in a picture or a story); number lines for fractions and decimals | Yes | The number box (test format); his Mathematical Reasoning book |
-| 6th | Test-prep number box (own track); Math Sprints outside | His Singapore Math chapters finished; Math Sprints | Number lines (fractions, decimals, negatives); estimation; big numbers | Yes | Math Sprints; the number box |
-| 7th | No math (starter notebook) | Their math book's chapters | The number box (test format) and the ladder's 7th-grade level, both already built; number lines | Yes | Their own book |
+| Pre-K / K | Number of the Day on its own track | The unit stage (numbers, counting, bonds; later shapes, patterns, measuring) | Make it, Show it, bonds, Build it, Fill the path | Earlier stages; passed-off items get one look-back (§6d) | Number of the Day (inside one decade of the drill front) |
+| 1st | Math card from the Math Facts deck | **This week's Dimensions 1A lesson** (Ch6 making 10 → Ch7 subtract from 10) | Ten-frames, bonds, number lines on that topic; the math card's facts chosen to fit the topic | Earlier chapters and her Math Facts trouble cards | Math Reasoning B; Dimensions in the textbook |
+| 4th | Test-prep number box (own track) | This week's Dimensions 4A lesson | One "apply it" ask a day on the topic (a picture, a story, a number line for fractions and decimals) | Earlier chapters; × facts; Measurements | The number box (test format); his Mathematical Reasoning book |
+| 6th | Test-prep number box; Math Sprints outside | This week's Singapore Math lesson | Number lines (fractions, decimals, negatives), estimation, big numbers, on the topic | Earlier chapters | Math Sprints; the number box |
+| 7th | No math (starter notebook) | Their math book's lesson of the week (needs its chapter list) | The same kinds of asks | Earlier chapters | Their own book; the number box and 7th-grade ladder if turned on |
 
 ### 6d. Following the drills — the rules (applies to letters, shapes and sight words too, not only numbers) 💡
 
@@ -637,13 +654,13 @@ Your words: *"if a number is passed off or a letter is passed off and it hadn't 
 
 ## 7. Questions for you (12)
 
-Most important first; questions 1–9 unblock slices 1–4. Questions 1 and 2 are answered. Two more (marked ⚠️) check that I read your words right.
+Most important first; questions 1–9 unblock slices 1–4. Questions 1, 2 and 3 are answered. One more (Q5, marked ⚠️) checks that I read your words right.
 
 | # | Question | My suggested answer | Why |
 |---|---|---|---|
 | 1 | ✅ **Answered 2026-11-25.** "Interchangeable" means: *"it means used by mastery, unit, notebook, games etc"* | — (built into §6a and slices 3, 5, 7, 8) | Every surface uses the one source, each in its own form |
 | 2 | ✅ **Answered 2026-11-25.** One home for everything? *"no there can be more than one if need be unless it makes sense but i can see differnet areas needing to be ran at the same time, such as like patterns and weight and geometry etc but its okay if different areas can run interchangeable"* | — (built into §6a: one unit per area, several running at once; ⚠️ my reading of her last clause is marked there) | Number stays the first area built; Shapes, Patterns and Measuring follow as later slices |
-| 3 | ⚠️ **"Extra features that help ensure their units and drills are working"**: did you mean one or two light "is it sticking?" checks a week, on things learned 3–6 weeks ago, in a different form, with your one tap? (*My reading.*) | **Yes, one or two a week** (§6c) | It shows whether learning held, without adding a spiral (Math Reasoning is the spiral) or a test |
+| 3 | ✅ **Answered 2026-11-25.** *"But also the notebook can do the learning. Like, so it could do 2 review, but whatever is going to be learned or is being learned this week is what could be correlated to the learning as well."* | — (built into §6c: this week's learning plus about two review; slices 6, 7, 12 changed) | The notebook carries this week's topic in its own form, not only review |
 | 4 | **Bypass**: skip a letter or number the drills have passed off (monthly or graduated) if the notebook hasn't shown it yet, but give it **one** light look-back in a different form? | **Yes, skip, with one look-back** | Matches your words; one spaced look-back helps memory without repeating the drill |
 | 5 | ⚠️ **Slow down**: when a deck's drill hasn't moved in **3 weeks** (or there's been no drill session in 10 school days), the notebook stops new items, re-shows the ones being learned, and tells you why. Right reading, and right "a while"? | **Yes, 3 weeks / 10 school days** | Long enough not to stall over a sick week, short enough to catch a real stall |
 | 6 | After weeks with no notebook, pick up **where the drills are now**, not where the calendar says? | **Yes** | Today it jumps 5 items per missed week, which is why it's at F while drills are at S |
@@ -652,7 +669,7 @@ Most important first; questions 1–9 unblock slices 1–4. Questions 1 and 2 ar
 | 9 | Julian's numerals past 20: a new path stage, decades first, then one decade at a time, *drilled* only to 100 this year? | **Yes** (1,000 and up as fun "how big" pages later) | Decades are the landmarks. Naming far past what he can picture teaches that numbers are only words |
 | 10 | Julian isn't on the Math Fluency Path in the data (the Oct 26 hook-up isn't there 🔍). Hook him up at stage 2, then add "More & less" and "Number partners" before Singapore? | **Yes, partners to 5 first** | Bonds are the heart of Dimensions K/1, and the cards are built |
 | 11 | The review loop needs **one tap from you per number page** (*got it · not yet*). "Needs review" shows on the unit's kid row and the "🔁 Giving trouble this week" card. OK? | **Yes** | Without it the notebook can't tell the unit anything. Today notebook results go nowhere |
-| 12 | For the older kids, give the notebook a **chapter list of each math book** (as Lucy's phonogram card reads her LOE lessons), so it reviews *finished* chapters and never the current lesson? Start with Lucy's Dimensions 1A? | **Yes, Lucy's 1A first** | Lets the notebook build on the book while Dimensions stays textbook-only |
+| 12 | **(changed 2026-11-25)** Give the notebook a **chapter list of each kid's math book**, so it follows **this week's lesson** (and previews next week's) with its own practice on that topic, never the book's problems, plus **about two review items** from earlier chapters? Start with Lucy's Dimensions 1A? And does **"2 review"** mean **two a week**, or two a day/page? | **Yes, Lucy's 1A first; "2 review" = two a week** (the same cap the notebook already uses for 🔁 practice-again items) | Follows your answer to Q3 while Dimensions stays textbook-only. Two a day would make review most of a one-ask-a-day page |
 
 **Defaults I'd use unless you say otherwise** 💡:
 - Quick Look: the child taps a numeral; Mom can switch to marking.
@@ -727,4 +744,4 @@ The full research notes, organised by strand, are in the hub's shared notes fold
 
 ---
 
-*Study made 2026-11-25. Read-only GETs: `mastery/julian`, `mastery/lucy`, `notebookSettings/{julian,lucy,ellis,lincoln}` (ladders, cursors), `mastery/julian_settings`, `mastery/{ellis,lincoln}` (deck counts), `unitStudies/<each unit>/{enrolled,kidStage,nbInsert}`, `curriculum/subjects/{julian,lucy}`. No writes, no app code changed. §1f–§1g, §4d, §4f–§4i, §6a, §6c–§6d, rules 8–10 and the slice and question changes were added later the same day, after Mom's three notes (units; every grade; following the drills) and her answers to questions 1 and 2.*
+*Study made 2026-11-25. Read-only GETs: `mastery/julian`, `mastery/lucy`, `notebookSettings/{julian,lucy,ellis,lincoln}` (ladders, cursors), `mastery/julian_settings`, `mastery/{ellis,lincoln}` (deck counts), `unitStudies/<each unit>/{enrolled,kidStage,nbInsert}`, `curriculum/subjects/{julian,lucy}`. No writes, no app code changed. §1f–§1g, §4d, §4f–§4i, §6a, §6c–§6d, rules 8–10 and the slice and question changes were added later the same day, after Mom's three notes (units; every grade; following the drills) and her answers to questions 1, 2 and 3.*
