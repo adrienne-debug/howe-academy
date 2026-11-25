@@ -6,7 +6,7 @@
 //  · index.html NBLADDER: the file loads lazily (never while everything is off and the card is closed), a failed load just says
 //    so; writes are Mom only, one targeted field each, inert under ?dryrun=1; the card for a kid with no grade / off / on / at a
 //    bank rung; ctx.ladders.
-//  · placement: the right two levels for every suggested level; nothing a child must produce (answer, why, rule) on a child's
+//  · placement: the right levels for every suggested level (three since NBLADPLACE3 — its own checks in test_nb_ladplace3.js); nothing a child must produce (answer, why, rule) on a child's
 //    sheet; the parent sheet has them.
 //  · EVERY built-in notebook prints byte for byte what this tree prints with the NBLADDER blocks cut out (no git, no pinned commit).
 //  · page fit: every placement sheet measured in Google Chrome headless when it is on this machine (else SKIPPED, said plainly).
@@ -32,10 +32,12 @@ ok("no 🔀 in index.html", src.indexOf("\u{1F500}") < 0);
 ok("no he/his/him in the card's words", !/\b(he|his|him|she|her)\b/i.test((code(ixBlk).match(/'[^']*'|"[^"]*"/g) || []).join(" ").replace(/<[^>]*>/g, " ")));
 ok("exported once: HoweNotebooks.ladders", nbSrc.split("ladders: NB_LADDERS,").length === 2);
 { // slice 2 (NBLADREAD): only the 1st-grade notebook reads ctx.ladders — the reading ladder, in its own block, called from generateLucy alone
-  const r0 = nbSrc.indexOf("  // NBLADREAD_START"), r1 = nbSrc.indexOf("  // NBLADREAD_END\n"), outside = code(nbSrc.slice(0, r0) + nbSrc.slice(r1));
+  const r0 = nbSrc.indexOf("  // NBLADREAD_START"), r1 = nbSrc.indexOf("  // NBLADREAD_END\n"), t0 = nbSrc.indexOf("  // NBLADREAD3_START"), t1 = nbSrc.indexOf("  // NBLADREAD3_END\n"), m0 = nbSrc.indexOf("  // NBLADNUM_START"), m1 = nbSrc.indexOf("  // NBLADNUM_END\n");
+  const outside = code(nbSrc.slice(0, m0) + nbSrc.slice(m1, r0) + nbSrc.slice(r1, t0) + nbSrc.slice(t1));   // slice 3 (NBLADREAD3) and slice 4 (NBLADNUM) read it too, each in its own block — test_nb_ladread3.js, test_nb_ladnum.js
   const g0 = nbSrc.indexOf("  function generateLucy(ctx) {"), gLucy = nbSrc.slice(g0, nbSrc.indexOf("\n  }\n", g0));
   ok("only the 1st-grade notebook reads ctx.ladders, and only its reading ladder (NBLADREAD)", r0 > 0 && r1 > r0 && !/ctx\.ladders|ctx\[["']ladders["']\]/.test(outside) &&
-    (code(nbSrc.slice(r0, r1)).match(/ctx\.ladders[.\w]*/g) || []).every((m) => m === "ctx.ladders" || m === "ctx.ladders.reading") &&
+    (code(nbSrc.slice(r0, r1) + nbSrc.slice(t0, t1)).match(/ctx\.ladders[.\w]*/g) || []).every((m) => m === "ctx.ladders" || /^ctx\.ladders\.reading(\.(wf|on))?$/.test(m)) && t0 > r1 && t1 > t0 && m0 > 0 && m1 > m0 && m1 < r0 &&
+    (code(nbSrc.slice(m0, m1)).match(/ctx\.ladders[.\w]*/g) || []).every((m) => m === "ctx.ladders" || m === "ctx.ladders.number") &&
     outside.split("lrWeek(").length === 2 && gLucy.indexOf("lrWeek(ctx, days)") > 0);
 }
 ok("haNbContext passes ctx.ladders, guarded", src.split('ladders:((typeof nbLadderCtx==="function")?nbLadderCtx(kid):null) }; // KIDNAME_ROSTER').length === 2);
@@ -272,9 +274,15 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
 
   // ════════════════════════════════════════ placement ════════════════════════════════════════
   console.log("── placement ──");
+  // lo + hi: the pair placementPair has always returned (its shape is kept); LEVELS: what the check prints since NBLADPLACE3
+  // (the level below, the picked level, the level above — two at the first and last level and for a picked bank rung).
   const PAIR = {
     reading: { g1: ["g1", "g2"], g2: ["g1", "g2"], g3: ["g2", "g3"], g4: ["g3", "g4"], g5: ["g4", "g5"], g6: ["g5", "g6"], g78: ["g6", "g78"] },
     number: { prek: ["prek", "k"], k: ["prek", "k"], g1: ["k", "g1"], g2: ["g1", "g2"], g3: ["g2", "g3"], g4: ["g3", "g5"], g5: ["g3", "g5"], g6: ["g5", "g7"], g7: ["g5", "g7"], g8: ["g7", "g8"] },
+  };
+  const LEVELS = {
+    reading: { g1: "g1,g2", g2: "g1,g2,g3", g3: "g2,g3,g4", g4: "g3,g4,g5", g5: "g4,g5,g6", g6: "g5,g6,g78", g78: "g6,g78" },
+    number: { prek: "prek,k", k: "prek,k,g1", g1: "k,g1,g2", g2: "g1,g2,g3", g3: "g2,g3,g5", g4: "g3,g5", g5: "g3,g5,g7", g6: "g5,g7", g7: "g5,g7,g8", g8: "g7,g8" },
   };
   const docs = [];
   // 🎨 NBLADPIC (slice: the pictures): a question drawn as a picture (every Pre-K / K one, and 1st/2nd's "about how many") prints
@@ -285,10 +293,11 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
     const data = kind === "reading" ? READ : NUM, t = kind === "reading" ? tR : tN;
     for (const lv of Object.keys(PAIR[kind])) {
       const pr = L.placementPair(t, lv), want = PAIR[kind][lv];
-      ok(kind + " " + lv + " → " + want.join(" + ") + (pr.skipped.length ? " (skips " + pr.skipped.join(",") + ")" : ""), pr.lo === want[0] && pr.hi === want[1], pr);
+      const lvs = LEVELS[kind][lv].split(",");
+      ok(kind + " " + lv + " → prints " + lvs.join(" + ") + " (lo/hi still " + want.join(" + ") + ")" + (pr.skipped.length ? " (skips " + pr.skipped.join(",") + ")" : ""), pr.lo === want[0] && pr.hi === want[1] && pr.levels.join(",") === lvs.join(",") && pr.up === (lvs.length === 3 ? lvs[2] : null), pr);
       const pg = L.placementPages(kind, data, { lv, kidName: "Sam" });
       const childH = pg.child.join("\n"), parentH = pg.parent.join("\n");
-      const items = want.map((k) => kind === "reading" ? [t.levels[k].items[0]] : t.levels[k].items.filter((x) => !x.opt).slice(0, 3)).flat();
+      const items = lvs.map((k) => kind === "reading" ? [t.levels[k].items[0]] : t.levels[k].items.filter((x) => !x.opt).slice(0, 3)).flat();
       const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       const secret = kind === "reading" ? items.flatMap((p) => p.q.map((q) => q.why)) : items.map((q) => q.rule);
       const asked = childH.replace(/<div class="lp-psg">[\s\S]*?<\/div><\/div><\/div>/g, "");   // a why line may quote the passage itself — look everywhere BUT the passage
@@ -301,16 +310,18 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
       const ansWant = kind === "reading" ? items.flatMap((p) => p.q.map((q) => q.ans)) : items.map((q) => q.ans);
       ok("  parent sheet: its own page, marked not for the child, every answer + why/rule in order", pg.parent.length === 1 && /^<div class="page lp-parent">/.test(pg.parent[0]) && /not for the child/.test(parentH) &&
         keys.join("") === ansWant.join("") && secret.every((s) => parentH.indexOf(esc(s)) >= 0));
-      ok("  parent sheet: how to choose", /Comfortable and mostly right on (Passage|Part) 2 → /.test(parentH) && /A struggle on (Passage|Part) 2 → /.test(parentH));
-      const grown = kind === "number" && want.some((k) => k === "prek" || k === "k");
+      ok("  parent sheet: how to choose", lvs.length === 3 ? (/Comfortable and mostly right on (Passage|Part) 3 → /.test(parentH) && /Comfortable on (Passage|Part) 2, but (Passage|Part) 3 is a struggle → /.test(parentH) && /A struggle on (Passage|Part) 2 → /.test(parentH))
+        : (/Comfortable and mostly right on (Passage|Part) 2 → /.test(parentH) && /A struggle on (Passage|Part) 2 → /.test(parentH)));
+      const grown = kind === "number" && lvs.some((k) => k === "prek" || k === "k");
       ok("  'with a grown-up' " + (grown ? "on the sheet, the say lines printed for the grown-up" : "not on this sheet"), grown ? (/with a grown-up/.test(childH) && items.filter((q) => q.lv === "prek" || q.lv === "k").every((q) => childH.indexOf("Read aloud: “" + esc(q.say) + "”") >= 0)) : !/with a grown-up|Read aloud/.test(childH));
-      if (pr.skipped.length) ok("  parent sheet says the bank rung is skipped", /is the question bank on the Notebook tab, not part of this ladder/.test(parentH) && (pr.skipped.indexOf("g4") < 0 || /4th-grade question bank/.test(parentH) || /4th grade is the question bank/.test(parentH)));
+      if (pr.skipped.length) ok("  parent sheet says the bank rung is skipped", /(is the question bank|are question banks) on the Notebook tab, not part of this ladder/.test(parentH) && (pr.skipped.indexOf("g4") < 0 || /4th-grade question bank/.test(parentH) || /4th grade is the question bank/.test(parentH)));
       const doc = L.placementDoc(kind, data, { lv, kidName: "Sam" });
       ok("  one printable document: child sheet(s) then the parent page", doc.indexOf("<!DOCTYPE html>") === 0 && doc.indexOf('class="page lp-child"') > 0 && doc.indexOf('class="page lp-child"') < doc.indexOf('class="page lp-parent"') && (doc.match(/<div class="page /g) || []).length === pg.child.length + 1 && /height: 11in; overflow: hidden/.test(doc));
       docs.push({ lab: kind + " " + lv, html: doc });
     }
   }
-  ok("reading 6th–8th: one passage per page (a full page each)", L.placementPages("reading", READ, { lv: "g78" }).child.length === 2 && L.placementPages("reading", READ, { lv: "g2" }).child.length === 1);
+  ok("reading 3rd grade up: one passage per page (a full page each); 1st + 2nd share a page", L.placementPages("reading", READ, { lv: "g78" }).child.length === 2 && L.placementPages("reading", READ, { lv: "g6" }).child.length === 3 &&
+    L.placementPages("reading", READ, { lv: "g1" }).child.length === 1 && L.placementPages("reading", READ, { lv: "g2" }).child.length === 2);
   ok("placement for an unknown level → nothing", L.placementPages("reading", READ, { lv: "prek" }) === null && L.placementDoc("number", NUM, { lv: "zz" }) === "");
   {
     const c = sandbox({ grades: { a: { key: "5", from: "family" } }, settings: { a: { ladders: { number: { lv: "g7", cur: { week: 2, lv: "g7", from: 4, adv: 5 } } } } } });
@@ -342,11 +353,11 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
   ok("every generator in GENERATORS + every look + a starter notebook (" + GENS.length + ")", GENS.length >= Object.keys(NB.GENERATORS).length + 2);
   for (const [kid, extra] of GENS) {
     const was = all(NB0.generate(kid, mk(kid, extra)));
-    const lc = NB.ladderPages(kid, extra || {}).reading ? { number: LCTX.number } : LCTX;   // slice 2: a notebook that prints reading → test_nb_ladread.js
+    const lp = NB.ladderPages(kid, extra || {}), lc = {}; Object.keys(LCTX).forEach((k) => { if (!lp[k]) lc[k] = LCTX[k]; });   // a notebook that prints a ladder → its own test (test_nb_ladread.js, test_nb_ladnum.js)
     ok(kid + ": student + guide = before, ladders or not", all(NB.generate(kid, mk(kid, extra))) === was && all(NB.generate(kid, mk(kid, Object.assign({ ladders: lc }, extra)))) === was);
   }
   {
-    const byKid = {}; Object.keys(NB.GENERATORS).forEach((k) => (byKid[k] = mk(k, { ladders: NB.ladderPages(k).reading ? { number: LCTX.number } : LCTX })));
+    const byKid = {}; Object.keys(NB.GENERATORS).forEach((k) => { const lp = NB.ladderPages(k), lc = {}; Object.keys(LCTX).forEach((kd) => { if (!lp[kd]) lc[kd] = LCTX[kd]; }); byKid[k] = mk(k, { ladders: lc }); });
     const byKid0 = {}; Object.keys(NB.GENERATORS).forEach((k) => (byKid0[k] = mk(k)));
     ok("the combined parent packet = before", NB.combinedParent(byKid) === NB0.combinedParent(byKid0));
   }
