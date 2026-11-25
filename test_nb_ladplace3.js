@@ -81,17 +81,18 @@ ok("reading 2nd grade: the three lines (Passage)", JSON.stringify(rules(PG["read
 ok("number 5th grade (banks on both sides): the bank wording kept", JSON.stringify(rules(PG["number g5"]).slice(0, 5)) === JSON.stringify([
   "4th grade and 6th grade are question banks on the Notebook tab, not part of this ladder — so this check uses the nearest levels: 3rd grade, 5th grade and 7th grade.",
   "Comfortable and mostly right on Part 3 → 7th grade.",
-  "Comfortable on Part 2, but Part 3 is a struggle → 5th grade (the 6th-grade question bank on the Notebook tab comes right after it).",
+  "Comfortable on Part 2, but Part 3 is a struggle → the 6th-grade question bank (it lives on the Notebook tab, so it isn’t in this check).",   // NBLADPLACE_BANK
   "A struggle on Part 2 → the 4th-grade question bank (it lives on the Notebook tab, so it isn’t in this check).",
   "A struggle on Part 1 too → 3rd grade."]), rules(PG["number g5"]));
-ok("number 3rd grade (the 4th-grade bank between Part 2 and Part 3)", rules(PG["number g3"]).indexOf("Comfortable on Part 2, but Part 3 is a struggle → 3rd grade (the 4th-grade question bank on the Notebook tab comes right after it).") >= 0 &&
+ok("number 3rd grade (the 4th-grade bank between Part 2 and Part 3)", rules(PG["number g3"]).indexOf("Comfortable on Part 2, but Part 3 is a struggle → the 4th-grade question bank (it lives on the Notebook tab, so it isn’t in this check).") >= 0 &&
   rules(PG["number g3"]).indexOf("A struggle on Part 2 → 2nd grade.") >= 0);
 ok("number 7th grade (the 6th-grade bank between Part 1 and Part 2)", rules(PG["number g7"]).indexOf("A struggle on Part 2 → the 6th-grade question bank (it lives on the Notebook tab, so it isn’t in this check).") >= 0 &&
   rules(PG["number g7"]).indexOf("A struggle on Part 1 too → 5th grade.") >= 0 && rules(PG["number g7"]).indexOf("Comfortable and mostly right on Part 3 → 8th grade.") >= 0);
+const UPBANK = { "number g3": "the 4th-grade question bank", "number g5": "the 6th-grade question bank" };   // NBLADPLACE_BANK: a bank between Part 2 and Part 3 is named
 for (const { kind, lv } of ALL) {
   const t = TRACK[kind], pr = L.placementPair(t, lv), r = rules(PG[kind + " " + lv]), w = kind === "reading" ? "Passage" : "Part";
   if (pr.levels.length === 3) ok(kind + " " + lv + ": Part 3 → the level above, Part 2 → the picked level, a struggle → lower",
-    r.indexOf("Comfortable and mostly right on " + w + " 3 → " + lab(t, pr.up) + ".") >= 0 && r.some((s) => s.indexOf("Comfortable on " + w + " 2, but " + w + " 3 is a struggle → " + lab(t, lv)) === 0) &&
+    r.indexOf("Comfortable and mostly right on " + w + " 3 → " + lab(t, pr.up) + ".") >= 0 && r.some((s) => s.indexOf("Comfortable on " + w + " 2, but " + w + " 3 is a struggle → " + (UPBANK[kind + " " + lv] || lab(t, lv))) === 0) &&
     r.some((s) => s.indexOf("A struggle on " + w + " 2 → ") === 0) && r.some((s) => s.indexOf(" → " + lab(t, pr.lo) + ".") > 0));
   else ok(kind + " " + lv + ": two parts — the two-part lines, and a line saying why only two",
     r.some((s) => s === "Comfortable and mostly right on " + w + " 2 → " + lab(t, pr.hi) + ".") &&

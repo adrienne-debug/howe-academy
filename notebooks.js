@@ -2666,14 +2666,26 @@
     return { suggested: pr.suggested, lo: pr.lo, hi: pr.hi, skipped: skipped, up: up, levels: [pr.lo, pr.hi, up].filter(Boolean) };
   }
   function ladPlace3BankName(k) { return "the " + ladWord(k).replace(" grade", "-grade") + " question bank"; }
+  // NBLADPLACE_BANK_START — 📏 a bank rung between the picked level and the level above (number ladder: picked 3rd → the 4th-grade
+  // bank between Part 2 and Part 3; picked 5th → the 6th-grade bank). Comfortable on Part 2 but a struggle on Part 3 now sends the
+  // child to that bank, said outright, in the same words the "struggle on Part 2" line already uses for a bank below (her pick
+  // 2026-11-24, asked "keep → 3rd grade, or say the bank?" → "Say the 4th bank"). Replaces the old "→ 3rd grade (the 4th-grade
+  // question bank on the Notebook tab comes right after it)" line; every other line is unchanged. Grown-up page only — the
+  // child's sheets don't change. The builder doesn't know whether this child has a question bank (the app only lets a bank
+  // rung be picked for a kid who has one); like the "below" line, it names the bank anyway.
+  function ladPlaceBankMid(w, upB) {
+    return "Comfortable on " + w + " 2, but " + w + " 3 is a struggle → " + ladPlace3BankName(upB[0]) + " (it lives on the Notebook tab, so it isn’t in this check).";
+  }
+  // NBLADPLACE_BANK_END
   // How to choose, three parts: Part 3 comfortable → the level above; Part 2 comfortable but Part 3 a struggle → the picked
   // level; a struggle on Part 2 → the level below (or the bank rung between, then the level below on a struggle with Part 1).
   function ladPlace3Rules(track, pr, w) {
     var L = function (k) { return track.levels[k].label; };
     var upB = ladPlace3Banks(track, pr.hi, pr.up), loB = ladPlace3Banks(track, pr.lo, pr.hi), lines = [];
     lines.push("Comfortable and mostly right on " + w + " 3 → " + L(pr.up) + ".");
-    lines.push("Comfortable on " + w + " 2, but " + w + " 3 is a struggle → " + L(pr.hi) +
-      (upB.length ? " (" + ladPlace3BankName(upB[0]) + " on the Notebook tab comes right after it)" : "") + ".");
+    var bankMid = (upB.length && typeof ladPlaceBankMid === "function") ? ladPlaceBankMid(w, upB) : null;   // 📏 NBLADPLACE_BANK: a bank between Part 2 and Part 3 → name the bank
+    lines.push(bankMid || ("Comfortable on " + w + " 2, but " + w + " 3 is a struggle → " + L(pr.hi) +
+      (upB.length ? " (" + ladPlace3BankName(upB[0]) + " on the Notebook tab comes right after it)" : "") + "."));
     if (loB.length) {
       lines.push("A struggle on " + w + " 2 → " + ladPlace3BankName(loB[loB.length - 1]) + " (it lives on the Notebook tab, so it isn’t in this check).");
       lines.push("A struggle on " + w + " 1 too → " + L(pr.lo) + ".");
