@@ -2119,7 +2119,7 @@ function lgSendBack(kid,wk,dn,ref,a){
   if((lgSbR(kid,wk,dn,ref)||{}).rec){ lgSbRe(); return false; }   // the un-tick did not happen
   const j=lgSbDiff(b,lgSbSnap(W)), by=lgSbMom()?"mom":"dad", pd=day;
   if(a==="m") lgSbJ[kid+"|"+wk+"|"+dn+"|"+ref]={j:j,c:R.c,at:Date.now()};
-  else { day=dn; try{ flagSet(kid,L.r,"routineLog/"+kid+"/"+L.ref,"flg_"+L.wk+"_"+L.d+"_"+L.key,"🚩 Wasn't done: "+R.lab+" · by "+(by==="dad"?"Dad":"Mom"),by,{sb:{wk:wk,dn:dn,r:ref,c:R.c,j:j,at:Date.now()}}); } finally{ day=pd; } }
+  else { day=dn; try{ flagSet(kid,L.r,"routineLog/"+kid+"/"+L.ref,"flg_"+L.wk+"_"+L.d+"_"+L.key,"🚩 Wasn't done: "+R.lab+" · by "+(by==="dad"?"Dad":"Mom"),by,{sb:{wk:wk,dn:dn,r:ref,c:R.c,j:j,at:Date.now()}},flagN(kid,"step",L.ref)); } finally{ day=pd; } }   // SPOTONE: none if a spot check ✗ took it
   lgSbRe(); return true; }
 // Undo of a 🚩 (the ledger, the log, 🧾): the mark and its minus line off; a Wasn't done also puts the tick back (lgSbBack).
 function lgFlagUndo(kind,kid,ref,ask){

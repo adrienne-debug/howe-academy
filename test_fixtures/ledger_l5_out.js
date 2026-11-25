@@ -11,17 +11,17 @@ const IDX_PIECES = [
   [/^\/\/ FLAGONE_START[^\n]*\n[\s\S]*?^\/\/ FLAGONE_END\n/m, "", "the FLAGONE block"],
   [`function flagMarkTxt(r){ return r&&r.flagBy?"🚩 "+(r.sb?"Wasn't done · ":"")+"by "+flagWhoName(r.flagBy)+" · "+(r.penalty===0?"no stars taken":"−"+(-r.penalty||100)):""; }   // FLAGONE: the amount taken`,
    `function flagMarkTxt(r){ return r&&r.flagBy?"🚩 by "+flagWhoName(r.flagBy)+" · "+(r.penalty===0?"no stars taken":"−100"):""; }`, "flagMarkTxt"],
-  [`(starTakeOk(kid)?"The penalty is off":starTakeWhy(kid))+", so no stars come off.`, `starTakeWhy(kid)+", so no stars come off.`, "flagOffAsk"],
-  [`  const who=(typeof momHere==="function"&&momHere())?"mom":"dad", n=flagN(kid), off=!n;   // FLAGWHO · FLAGONE: no penalty (off, Take stars away off, ⏸) → the 🚩 mark, no stars`,
+  [`(arguments[2]?"The 🔎 spot check's ✗ already took "+arguments[2]+" ⭐":starTakeOk(kid)?"The penalty is off":starTakeWhy(kid))+", so no stars come off.`, `starTakeWhy(kid)+", so no stars come off.`, "flagOffAsk"],
+  [`  const who=(typeof momHere==="function"&&momHere())?"mom":"dad", sp=flagSpotTook(kid,kind,ref), n=flagN(kid,kind,ref), off=!n;   // FLAGWHO · FLAGONE: no penalty (off, Take stars away off, ⏸, SPOTONE) → the 🚩 mark, no stars`,
    `  const who=(typeof momHere==="function"&&momHere())?"mom":"dad", off=typeof starTakeOk==="function"&&!starTakeOk(kid);   // FLAGWHO: Take stars away off → the 🚩 mark, no stars (as the Click-off Log's ⚠️)`, "🧾's who"],
-  [String.raw`    if(!confirm(off?flagOffAsk(kid,rec.label||label||""):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||label||"")+"\"")) return;
-    flagSet(kid,rec,"routineLog/"+kid+"/"+p[0]+"/"+p[1]+"/"+p[2],"flg_"+p.join("_"),"🚩 false check-off dock — "+(rec.label||label||"")+" · by "+flagWhoName(who),who);   // FLAGWHO · FLAGONE`,
+  [String.raw`    if(!confirm(off?flagOffAsk(kid,rec.label||label||"",sp):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||label||"")+"\"")) return;
+    flagSet(kid,rec,"routineLog/"+kid+"/"+p[0]+"/"+p[1]+"/"+p[2],"flg_"+p.join("_"),"🚩 false check-off dock — "+(rec.label||label||"")+" · by "+flagWhoName(who),who,null,n);   // FLAGWHO · FLAGONE`,
    String.raw`    if(!confirm(off?flagOffAsk(kid,rec.label||label||""):"Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||label||"")+"\"")) return;
     if(!off) bankDirect(kid,-100,"🚩 false check-off dock — "+(rec.label||label||"")+" · by "+flagWhoName(who));   // FLAGWHO
     const patch={flagged:true,penalty:off?0:-100,flagTs:nowTs(),flagBy:who}; Object.assign(rec,patch);
     if(db&&!_dryRun()) db.ref("routineLog/"+kid+"/"+p[0]+"/"+p[1]+"/"+p[2]).update(patch);`, "🧾's step"],
-  [String.raw`    if(!confirm((off?flagOffAsk(kid,label||""):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(label||"")+"\"")+"\n\n(The card stays checked — use “"+cw("fixFalse")+"” in the subject sheet to undo the record.)")) return;
-    const patch=flagSet(kid,h,WK+"/history/"+ref,"flg_"+WK+"_"+ref,"🚩 false check-off dock — "+(label||"")+" · by "+flagWhoName(who),who);   // FLAGWHO · FLAGONE
+  [String.raw`    if(!confirm((off?flagOffAsk(kid,label||"",sp):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(label||"")+"\"")+"\n\n(The card stays checked — use “"+cw("fixFalse")+"” in the subject sheet to undo the record.)")) return;
+    const patch=flagSet(kid,h,WK+"/history/"+ref,"flg_"+WK+"_"+ref,"🚩 false check-off dock — "+(label||"")+" · by "+flagWhoName(who),who,null,n);   // FLAGWHO · FLAGONE
     try{ const hs=ld(WK+"_history")||{}; if(hs[ref]){ Object.assign(hs[ref],patch); sv(WK+"_history",hs); } }catch(e){}`,
    String.raw`    if(!confirm((off?flagOffAsk(kid,label||""):"Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(label||"")+"\"")+"\n\n(The card stays checked — use “"+cw("fixFalse")+"” in the subject sheet to undo the record.)")) return;
     if(!off) bankDirect(kid,-100,"🚩 false check-off dock — "+(label||"")+" · by "+flagWhoName(who));   // FLAGWHO
@@ -41,15 +41,17 @@ const IDX_PIECES = [
   [`title="Didn\\'t actually do it — '+(spPenalty().on?'dock '+spPenalty().pts+' points':'mark it')+'" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ '+flagLbl()+'</button>';
       else if(e.flagged) h+=flagUndoBtn("step",kid,_rlwk+"/"+e._day+"/"+e._key);   // FLAGONE: undo`,
    `title="Didn\\'t actually do it — dock 100 points" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ −100</button>';`, "the log's ⚠️"],
-  [String.raw`  const n=flagN(kid), off=!n, who=typeof flagWho==="function"?flagWho():"mom";   // FLAGWHO · FLAGONE: no penalty (off, Take stars away off, ⏸) → the 🚩 mark, no stars
-  if(!confirm(off?flagOffAsk(kid,rec.label||""):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||"")+"\"")) return;
-  flagSet(kid,rec,"routineLog/"+kid+"/"+wk+"/"+d+"/"+key,"flg_"+wk+"_"+d+"_"+key,"🚩 false check-off dock"+(typeof flagWhoName==="function"?" · by "+flagWhoName(who):""),who);   // FLAGONE`,
+  [String.raw`  const sp=flagSpotTook(kid,"step",wk+"/"+d+"/"+key), n=flagN(kid,"step",wk+"/"+d+"/"+key), off=!n, who=typeof flagWho==="function"?flagWho():"mom";   // FLAGWHO · FLAGONE: no penalty (off, Take stars away off, ⏸, SPOTONE) → the 🚩 mark, no stars
+  if(!confirm(off?flagOffAsk(kid,rec.label||"",sp):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||"")+"\"")) return;
+  flagSet(kid,rec,"routineLog/"+kid+"/"+wk+"/"+d+"/"+key,"flg_"+wk+"_"+d+"_"+key,"🚩 false check-off dock"+(typeof flagWhoName==="function"?" · by "+flagWhoName(who):""),who,null,n);   // FLAGONE`,
    String.raw`  const off=typeof starTakeOk==="function"&&!starTakeOk(kid), who=typeof flagWho==="function"?flagWho():"mom";   // FLAGWHO: Take stars away off → the 🚩 mark, no stars
   if(!confirm(off?flagOffAsk(kid,rec.label||""):"Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||"")+"\"")) return;
   if(!off) bankDirect(kid,-100,"🚩 false check-off dock"+(typeof flagWhoName==="function"?" · by "+flagWhoName(who):""));
   const patch={flagged:true,penalty:off?0:-100,flagTs:nowTs(),flagBy:who};
   Object.assign(rec,patch);
   if(db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("routineLog/"+kid+"/"+wk+"/"+d+"/"+key).update(patch);`, "rlogFlag"],
+  [/^ {2}const _fm=r==="no"&&pen\.on&&typeof flagSpotMark[^\n]*SPOTONE[^\n]*\n/m, "", "spResolve's SPOTONE line"],
+  [`+(_fm?"\\n\\nIt is already marked 🚩 by "+_fm+", so no more stars come off.":"")`, "", "spResolve's SPOTONE words"],
   [`Missing = ON at 100 (her\n//   answer 2026-11-21 to the ledger design's question 2, "ON at 100"; was OFF: DeWalt shares this code).`, `Missing = OFF (DeWalt\n//   shares this code; Adrienne turns it on for Howe).`, "the spot check's comment"],
   [`// −pts on ✗ Not done — on at 100 unless she turned it off (FLAGONE: the one penalty, also the 🚩's and ↩ Send back's).\nfunction spPenalty(){ const p=(spotSet&&spotSet.penalty)||{}; const n=parseInt(p.pts,10); return {on:p.on!==false,`,
    `// −pts on ✗ Not done — off unless she turned it on.\nfunction spPenalty(){ const p=(spotSet&&spotSet.penalty)||{}; const n=parseInt(p.pts,10); return {on:p.on===true,`, "spPenalty's default"]

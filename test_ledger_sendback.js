@@ -50,7 +50,8 @@ const FAM = () => ({
   a_zone: K({ label: "Zoned sweep", emoji: "🧹", who: "kid_a", slot: "chores", cad: "wk:2", zone: "z1", pts: 10, order: 5 }),
   a_plants: K({ label: "Water the plants", emoji: "🪴", who: "kid_a", slot: "afternoon", cad: "daily", pts: 5, order: 0 }),
   b_porch: K({ label: "Sweep the porch", emoji: "🧺", who: "kid_b", slot: "chores", cad: "daily", pts: 6, order: 0 }),
-  c_toys: K({ label: "Toys in the bin", emoji: "🧩", who: "kid_c", slot: "chores", cad: "daily", pts: 3, order: 0 })
+  c_toys: K({ label: "Toys in the bin", emoji: "🧩", who: "kid_c", slot: "chores", cad: "daily", pts: 3, order: 0 }),
+  d_dog: K({ label: "Feed the dog", emoji: "🐶", who: "kid_d", slot: "chores", cad: "wk:3", pts: 10, area: "animals", order: 0 })   // section U: a 10 ⭐ chore on its own day
 });
 const LINE = { caps: { "0": 0, "1": 0, "2": 0, "3": 1, "4": 0, "5": 0, "6": 0 }, asOf: "2026-11-23", homeFrom: "2026-11-23" };   // one load a week, on Thursday
 const CFG = () => Object.assign(clone(W.FX.db.config), { choreVerify: { kid_b: true }, zoneBonus: { enabled: true, mode: "double" }, zonePlan: { wednesday: "z1" } });
@@ -374,18 +375,41 @@ console.log("\n── V · Dad's Day Click-off Log; the 🔎 spot check's ✗ an
   ok("…his undo there (it asks) puts the tick, its pay and the 100 back", bal(A, "kid_c") === b0 && A.run("rtDoneOn('chores','kid_c','thursday'," + idxOf(A, "chores", "kid_c", "Toys in the bin") + ")") === true && /^Take the 🚩 off/.test(Dd.run("__cf[0]")));
   Dd.run("dadUnlocked=false;1"); ok("…locked again: his undo is refused, nothing written", (m => (A.run("lgSendBack(" + ka + ",'w')"), true) && w.flush().then(() => true) && Dd.run("flagUndo('step','kid_c'," + J(logKey(A, "kid_c", "Toys in the bin").join("/")) + ")") === undefined)(w.mark()) && (await w.flush(), lineOf(w, "kid_c", kc).flagged === true));
   A.run("lgFlagUndo('step','kid_c'," + J(kc.join("/")) + ",0)"); await w.flush();
-  // the 🔎 spot check's ✗ and Wasn't done on one tick
-  const iso = A.run("_spIso()"), ti = idxOf(A, "chores", "kid_c", "Toys in the bin"), pick = j => A.run("(function(){ const d=spotData.kid_c=spotData.kid_c||{}, r=d['" + iso + "']=d['" + iso + "']||{n:2}; r.picks=r.picks||[]; r.picks[" + j + "]={k:'s:chores:" + ti + "',kind:'step',slot:'chores',i:" + ti + ",d:'thursday',label:'Toys in the bin',type:'chore',pts:3}; spotOnValue(spotData); return 1; })()");
-  const spLines = () => Object.values(adj(w, "kid_c")).filter(x => /Spot check: not done/.test(x.note || "")).length, flgLines = () => Object.keys(adj(w, "kid_c")).filter(k => /^flg_/.test(k) && adj(w, "kid_c")[k].amount === -100).length;
-  pick(0); let s0 = spLines(), f0 = flgLines(); A.run("spResolve('kid_c',0,'no')"); await w.flush();
-  const t1 = pop(A, "kid_c", 0);
-  ok("the spot check's ✗ first: the chore is un-ticked and its −100 taken (its own line, as before); the ledger row is no longer ticked, so no ↩ Send back, and Wasn't done is refused: one penalty", spLines() === s0 + 1 && !SBB.test(rowRaw(t1, "Toys in the bin")) && A.run("lgSendBack(" + ka + ",'w')") === false && (await w.flush(), flgLines() === f0), [rowT(t1, "Toys in the bin")]);
-  tick(B, "chores", "kid_c", "Toys in the bin"); await w.flush(); const kc2 = logKey(A, "kid_c", "Toys in the bin");
-  A.run("lgSendBack(" + ka + ",'w')"); await w.flush(); pick(1); s0 = spLines(); const b1 = bal(A, "kid_c");
-  A.run("spResolve('kid_c',1,'no')"); await w.flush();
-  S.spotAfter = { took: spLines() - s0, bank: bal(A, "kid_c") - b1, drawn: /spResolve\('kid_c',1/.test(A.run("(function(){ try{ return mdCardSpotCheck(); }catch(e){ return ''; } })()")) };
-  ok("Wasn't done first, then the spot check's ✗ on that same pick: TODAY BOTH TAKE THE PENALTY (a second −100 by the spot check's own line; its ✓/✗ stays drawn for an un-ticked pick). A gap, reported to the hub; the spot check's ✗ is Mom's \"Leave them until I say\", so L5 does not change it", S.spotAfter.took === 1 && S.spotAfter.bank === -100, S.spotAfter);
-  A.run("lgFlagUndo('step','kid_c'," + J(kc2.join("/")) + ",0)"); await w.flush();
+}
+// ── U ── (SPOTONE, the hub's ask 2026-11-24: the 🔎 spot check's ✗ and the 🚩 never both take the penalty for one tick)
+console.log("\n── U · the 🔎 spot check's ✗ and the 🚩 on one tick (a 10 ⭐ chore, the penalty at 100) ──");
+{ const iso = A.run("_spIso()"), di = idxOf(A, "chores", "kid_d", "Feed the dog"), dg = "'kid_d','" + wk + "','thursday','s:chores:" + di + "'", B0 = bal(A, "kid_d");
+  const pick = async j => { A.run("db.ref('spotChecks/kid_d/" + iso + "/picks/" + j + "').set({k:'s:chores:" + di + "',kind:'step',slot:'chores',i:" + di + ",d:'thursday',label:'Feed the dog',type:'chore',pts:10})"); await w.flush(); };
+  const spL = () => Object.values(adj(w, "kid_d")).filter(x => /Spot check: not done/.test(x.note || "")).map(x => x.amount), flL = () => Object.keys(adj(w, "kid_d")).filter(k => /^flg_/.test(k)).map(k => adj(w, "kid_d")[k].amount);
+  const steps = [];
+  tick(B, "chores", "kid_d", "Feed the dog"); await w.flush(); steps.push(["kid_d ticks Feed the dog", bal(A, "kid_d") - B0]);
+  const kd = logKey(A, "kid_d", "Feed the dog");
+  // A · Wasn't done first, then the spot check's ✗ (Dad, with his code)
+  A.run("lgSendBack(" + dg + ",'w')"); await w.flush(); steps.push(["Mom: ↩ Send back ▸ Wasn't done", bal(A, "kid_d") - B0]);
+  await pick(0); Dd.run("dadUnlocked=true;__cf.length=0;1"); const r1 = Dd.run("spResolve('kid_d',0,'no')"); await w.flush(); steps.push(["Dad (his code): 🔎 ✗ Not done", bal(A, "kid_d") - B0]);
+  const res0 = w.get("spotChecks/kid_d/" + iso + "/results/0");
+  ok("Wasn't done, then the spot check's ✗ on that tick (Dad with his code): its ✗ is recorded as usual (✗ Not done, by Dad) and takes NO penalty of its own: −100 once", r1 === true && res0 && res0.r === "no" && res0.by === "dad" && !res0.pen && J(spL()) === "[]" && J(flL()) === "[-100]" && bal(A, "kid_d") === B0 - 100, [r1, res0, spL(), flL(), bal(A, "kid_d") - B0]);
+  ok("…its ask says so: \"It is already marked 🚩 by Mom, so no more stars come off.\" (and no \"The rule: −100\")", /It is already marked 🚩 by Mom, so no more stars come off\.$/.test(Dd.run("__cf[0]")) && !/The rule/.test(Dd.run("__cf[0]")), Dd.run("__cf[0]"));
+  A.run("lgFlagUndo('step','kid_d'," + J(kd.join("/")) + ",0)"); await w.flush(); steps.push(["Mom: Undo the 🚩 (the ledger)", bal(A, "kid_d") - B0]);
+  ok("…Undo of the 🚩: the tick, its 10 and the 100 back (+10); the spot check's record still says ✗ Not done, with nothing taken", bal(A, "kid_d") === B0 + 10 && A.run("rtDoneOn('chores','kid_d','thursday'," + di + ")") === true && w.get("spotChecks/kid_d/" + iso + "/results/0").r === "no", bal(A, "kid_d") - B0);
+  // B · the spot check's ✗ first, then Wasn't done / ⚠️ / 🧾 on that tick
+  await pick(1); A.run("__cf.length=0;1"); A.run("spResolve('kid_d',1,'no')"); await w.flush(); steps.push(["Mom: 🔎 ✗ Not done (nothing marked)", bal(A, "kid_d") - B0]);
+  ok("the spot check's ✗ first: as before — the dog back to not done, its 10 back off, its own −100 (\"🔎 Spot check: not done — Feed the dog\")", J(spL()) === "[-100]" && A.run("rtDoneOn('chores','kid_d','thursday'," + di + ")") === false && bal(A, "kid_d") === B0 - 100 && /The rule: −100 ⭐ more/.test(A.run("__cf[0]")), [spL(), bal(A, "kid_d") - B0]);
+  const t1 = pop(A, "kid_d", 0);
+  ok("…↩ Send back is gone from the row (no longer ticked) and Wasn't done is refused, nothing written", !SBB.test(rowRaw(t1, "Feed the dog")) && (m => A.run("lgSendBack(" + dg + ",'w')") === false && writes(w, m).length === 0)(w.mark()), rowT(t1, "Feed the dog"));
+  const L1 = A.run("chSettingsClickoffLogHTML()"), m2 = w.mark(); A.run("__cf.length=0;1");
+  A.run("rlogFlag('kid_d'," + J(kd[0]) + "," + J(kd[1]) + "," + J(kd[2]) + ")"); await w.flush(); steps.push(["Mom: the Click-off Log's ⚠️ on that tick", bal(A, "kid_d") - B0]);
+  ok("…the Click-off Log's ⚠️ is still on its line (the tick's record), but it only marks it: penalty 0, no line; it asks \"…The 🔎 spot check's ✗ already took 100 ⭐, so no stars come off.\"", /rlogFlag\('kid_d'/.test(logRow(L1, "Feed the dog")) && J(WS(w, m2)) === J(["update routineLog/kid_d/" + kd.join("/") + " [flagged,penalty,flagTs,flagBy]"]) && lineOf(w, "kid_d", kd).penalty === 0 && bal(A, "kid_d") === B0 - 100 && /The 🔎 spot check's ✗ already took 100 ⭐, so no stars come off\./.test(A.run("__cf[0]")), [WS(w, m2), A.run("__cf[0]")]);
+  ok("…then 🧾's −100 on that line is gone (\"🚩 by Mom · no stars taken\"), and called anyway does nothing", /🚩 by Mom · no stars taken/.test(ckRow(ck(A), "Feed the dog")) && !/ckLogDock/.test(ckRow(ck(A), "Feed the dog")) && (m => (A.run("ckLogDock('step','kid_d'," + J(kd.join("/")) + ",'Feed the dog')"), writes(w, m).length === 0))(w.mark()));
+  A.run("lgFlagUndo('step','kid_d'," + J(kd.join("/")) + ",0)"); await w.flush(); steps.push(["Mom: undo that 🚩 (no stars to give back)", bal(A, "kid_d") - B0]);
+  A.run("__cf.length=0;1"); const m3 = w.mark(); A.run("ckLogDock('step','kid_d'," + J(kd.join("/")) + ",'Feed the dog')"); await w.flush(); steps.push(["Mom: 🧾's −100 on that tick instead", bal(A, "kid_d") - B0]);
+  ok("…🧾's −100 instead: the same, marks with penalty 0 and asks the same; the bank stays −100", J(WS(w, m3)) === J(["update routineLog/kid_d/" + kd.join("/") + " [flagged,penalty,flagTs,flagBy]"]) && bal(A, "kid_d") === B0 - 100 && /already took 100 ⭐/.test(A.run("__cf[0]")), [WS(w, m3), A.run("__cf[0]")]);
+  ok("…the spot check's ✗ has no undo of its own (unchanged): its −100 stays; the 🚩's undo takes off only the mark", (A.run("lgFlagUndo('step','kid_d'," + J(kd.join("/")) + ",0)"), await w.flush(), bal(A, "kid_d") === B0 - 100 && !lineOf(w, "kid_d", kd).flagged));
+  tick(B, "chores", "kid_d", "Feed the dog"); await w.flush(); const kd2 = logKey(A, "kid_d", "Feed the dog"), b2 = bal(A, "kid_d"); A.run("rlogFlag('kid_d'," + J(kd2[0]) + "," + J(kd2[1]) + "," + J(kd2[2]) + ")"); await w.flush();
+  ok("a NEW tick after the spot check's ✗ (the kid ticks it again) is a new claim: the ⚠️ on it takes the 100", kd2[2] !== kd[2] && bal(A, "kid_d") === b2 - 100 && lineOf(w, "kid_d", kd2).penalty === -100, [kd, kd2, bal(A, "kid_d") - b2]);
+  A.run("lgFlagUndo('step','kid_d'," + J(kd2.join("/")) + ",0)"); await w.flush();
+  S.spotSteps = steps;
+  ok("the kid's bank at each step: " + steps.map(x => x[0] + " " + (x[1] >= 0 ? "+" : "") + x[1]).join(" → "), J(steps.map(x => x[1])) === J([10, -100, -100, 10, -100, -100, -100, -100]), steps);
 }
 // ── Y ── (last: the clock moves on)
 console.log("\n── Y · C3's drop and Send back ──");
@@ -422,7 +446,6 @@ console.log("\n── Y · C3's drop and Send back ──");
   ok("…Undo on Saturday: the tick and its 20, the 100 and the drop's 2 all back", bal(A, "kid_a") === b0 && !zMiss() && !adj(w, "kid_a")[zc] && A.run("rtDoneOn('chores','kid_a','wednesday'," + I.zone + ")") === true, bal(A, "kid_a") - b0);
 }
 if (process.env.LGS_DUMP) fs.writeFileSync(process.env.LGS_DUMP, J(S.dump));
-console.log("\n(Wasn't done, then the spot check's ✗ on the same tick: " + J(S.spotAfter) + ")");
 console.log("\n(two devices at the same moment: the un-tick itself, the pop-up's own, ran on both: kid_c's bank moved " + S.race + " — see the report)");
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

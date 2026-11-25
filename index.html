@@ -18362,9 +18362,10 @@ function spResolve(kid,j,r){
   const iso=_spIso(), rec=spDay(kid,iso); if(!rec||!rec.picks||!rec.picks[j]) return false;
   if(rec.results&&rec.results[j]) return false;
   const p=rec.picks[j], pen=spPenalty(), _nt=pen.on&&typeof starTakeOk==="function"&&!starTakeOk(kid); if(_nt) pen.on=false;   // STARRULES
+  const _fm=r==="no"&&pen.on&&typeof flagSpotMark==="function"?flagSpotMark(kid,p):""; if(_fm) pen.on=false;   // SPOTONE: already marked 🚩 → no more stars
   if(r==="no"){
     if(typeof confirm==="function"&&!confirm("Not done?\n\n“"+(p.label||"")+"” goes back to not done for "+((typeof KID_NAME!=="undefined"&&KID_NAME[kid])||cap(kid))+(p.pts>0?", and its "+p.pts+" ⭐ come back off":"")+"."
-      +(pen.on?"\n\nThe rule: −"+pen.pts+" ⭐ more for not doing it.":"")+(_nt?"\n\n"+starTakeWhy(kid)+", so nothing more comes off.":""))) return false;
+      +(pen.on?"\n\nThe rule: −"+pen.pts+" ⭐ more for not doing it.":"")+(_nt?"\n\n"+starTakeWhy(kid)+", so nothing more comes off.":"")+(_fm?"\n\nIt is already marked 🚩 by "+_fm+", so no more stars come off.":""))) return false;
     if(p.kind==="step"){
       let i=p.i; const steps=(p.slot==="morning"&&typeof morningStepsFor==="function")?morningStepsFor(kid):(rtStepsFor(p.slot,kid,false,p.d)||[]);
       if(!steps[i]||(steps[i].label||"")!==p.label){ const f=steps.findIndex(function(s){ return s&&(s.label||"")===p.label; }); if(f>=0) i=f; }   // the list was edited since the draw
@@ -19572,18 +19573,27 @@ let ckLogOpen=false;
 function flagWho(){ return (typeof momHere==="function"&&momHere())?"mom":"dad"; }
 function flagWhoName(w){ return w==="dad"?"Dad":"Mom"; }
 function flagMarkTxt(r){ return r&&r.flagBy?"🚩 "+(r.sb?"Wasn't done · ":"")+"by "+flagWhoName(r.flagBy)+" · "+(r.penalty===0?"no stars taken":"−"+(-r.penalty||100)):""; }   // FLAGONE: the amount taken
-function flagOffAsk(kid,label){ return "Mark a false check-off for "+cap(kid)+"?\n\n\""+label+"\"\n\n"+(starTakeOk(kid)?"The penalty is off":starTakeWhy(kid))+", so no stars come off. The line just gets its 🚩 mark."; }
+function flagOffAsk(kid,label){ return "Mark a false check-off for "+cap(kid)+"?\n\n\""+label+"\"\n\n"+(arguments[2]?"The 🔎 spot check's ✗ already took "+arguments[2]+" ⭐":starTakeOk(kid)?"The penalty is off":starTakeWhy(kid))+", so no stars come off. The line just gets its 🚩 mark."; }
 // FLAGWHO_END
 // FLAGONE_START — one 🚩 record for the Click-off Log's ⚠️, 🧾's −100 and the 📒 Ledger's ↩ Send back ▸ Wasn't done (DESIGN_chore_ledger
 // _2026-11-21 §5 "one record", slice L5). The amount is the ONE penalty (spPenalty, the 🔎 Spot check ⚙, on at 100 unless set): 0 when
 // it is off, Take stars away is off for the kid, or ⏸ — the line is still marked, penalty 0. The minus line has a FIXED id per marked line
 // (flg_<wk>_<day>_<key>; a school card flg_<WK>_<id>), kept on the mark as flagBid: two taps or two devices write one line, and "undo"
 // (house.js lgFlagUndo, fetched on the tap) takes it and the mark off. Writes only when db && !_dryRun().
-function flagN(kid){ const P=spPenalty(); return P.on&&starTakeOk(kid)?P.pts:0; }
+function flagN(kid,kind,ref){ const P=spPenalty(); return P.on&&starTakeOk(kid)&&!(kind&&flagSpotTook(kid,kind,ref))?P.pts:0; }
+// SPOTONE (hub 2026-11-24, "one record, never twice"): the 🔎 spot check's ✗ and the 🚩 never both take the penalty for one tick.
+// flagSpotTook: the ✗ that already took it for that tick (a step: its list, words and day, judged after this tick) → its amount, or 0.
+// flagSpotMark: the tick the spot pick names already carries the 🚩 → who marked it ("Mom" / "Dad"), or "" (its ✗ then takes none).
+function flagSpotTook(kid,kind,ref){ const r=flagRec(kind,kid,ref), q=String(ref).split("/"), x=(typeof spDay==="function"&&spDay(kid,kind==="task"?_spIso():amIso(q[1])))||{}, R=x.results||{}; let n=0;
+  const P=x.picks||{}; Object.keys(P).forEach(function(j){ const p=P[j]||{}, s=R[j]; if(s&&s.r==="no"&&s.pen&&(kind==="task"?p.kind==="task"&&p.id===ref:p.kind==="step"&&r&&p.slot===r.slot&&p.label===r.label&&p.d===q[1]&&q[0]===activeWk()&&(r.at||0)<=(s.at||0))) n=s.pen; });
+  return n; }
+function flagSpotMark(kid,p){ let b=null; if(p.kind==="task") b=(histState||{})[p.id];
+  else { const L=((routineLog[kid]||{})[activeWk()]||{})[p.d]||{}; Object.keys(L).forEach(function(k){ const x=L[k]; if(x&&x.act==="on"&&x.slot===p.slot&&x.label===p.label&&(!b||(x.at||0)>(b.at||0))) b=x; }); }
+  return b&&b.flagged?flagWhoName(b.flagBy):""; }
 function flagLbl(){ const P=spPenalty(); return P.on?"−"+P.pts:"🚩 Mark"; }
 function flagLine(kid,id,n,note){ const A=(bank[kid]=bank[kid]||{}).adjustments=bank[kid].adjustments||{}; if(A[id]) return;
   A[id]={amount:-n,note:note,ts:nowTs(),iso:new Date().toISOString(),src:"earn",wk:activeWk(),day:day}; if(db&&!_dryRun()) obSet("bank/"+kid+"/adjustments/"+id,A[id],null); }
-function flagSet(kid,rec,path,id,note,who,x){ const n=flagN(kid), p={flagged:true,penalty:n?-n:0,flagTs:nowTs(),flagBy:who};
+function flagSet(kid,rec,path,id,note,who,x,n){ if(n==null) n=flagN(kid); const p={flagged:true,penalty:n?-n:0,flagTs:nowTs(),flagBy:who};
   if(n){ p.flagBid=id; flagLine(kid,id,n,note); } Object.assign(p,x||{}); Object.assign(rec,p); if(db&&!_dryRun()) db.ref(path).update(p); return p; }
 function flagRec(kind,kid,ref){ if(kind==="task") return (histState||{})[ref]||null; const p=String(ref).split("/"); return (((routineLog[kid]||{})[p[0]]||{})[p[1]]||{})[p[2]]||null; }
 function flagUndoBtn(kind,kid,ref){ const r=flagRec(kind,kid,ref); return r&&r.flagBy&&(r.flagBid||r.penalty===0)&&ckLogCanDock()?'<button onclick="event.stopPropagation();flagUndo(\''+kind+'\',\''+kid+'\',\''+ref+'\')" title="Take the 🚩 off'+(r.sb?' and put the tick back':'')+'" style="flex-shrink:0;padding:2px 7px;border-radius:7px;border:1px solid #d1d5db;background:#fff;color:#374151;font-size:10.5px;font-weight:700;cursor:pointer">undo</button>':''; }
@@ -19619,15 +19629,15 @@ function ckLogToday(){
 }
 function ckLogDock(kind,kid,ref,label){
   if(!ckLogCanDock()) return;
-  const who=(typeof momHere==="function"&&momHere())?"mom":"dad", n=flagN(kid), off=!n;   // FLAGWHO · FLAGONE: no penalty (off, Take stars away off, ⏸) → the 🚩 mark, no stars
+  const who=(typeof momHere==="function"&&momHere())?"mom":"dad", sp=flagSpotTook(kid,kind,ref), n=flagN(kid,kind,ref), off=!n;   // FLAGWHO · FLAGONE: no penalty (off, Take stars away off, ⏸, SPOTONE) → the 🚩 mark, no stars
   if(kind==="step"){
     const p=ref.split("/"); const rec=(((routineLog[kid]||{})[p[0]]||{})[p[1]]||{})[p[2]]; if(!rec||rec.flagged) return;
-    if(!confirm(off?flagOffAsk(kid,rec.label||label||""):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||label||"")+"\"")) return;
-    flagSet(kid,rec,"routineLog/"+kid+"/"+p[0]+"/"+p[1]+"/"+p[2],"flg_"+p.join("_"),"🚩 false check-off dock — "+(rec.label||label||"")+" · by "+flagWhoName(who),who);   // FLAGWHO · FLAGONE
+    if(!confirm(off?flagOffAsk(kid,rec.label||label||"",sp):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||label||"")+"\"")) return;
+    flagSet(kid,rec,"routineLog/"+kid+"/"+p[0]+"/"+p[1]+"/"+p[2],"flg_"+p.join("_"),"🚩 false check-off dock — "+(rec.label||label||"")+" · by "+flagWhoName(who),who,null,n);   // FLAGWHO · FLAGONE
   } else {
     const h=histState[ref]; if(!h||h.flagged) return;
-    if(!confirm((off?flagOffAsk(kid,label||""):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(label||"")+"\"")+"\n\n(The card stays checked — use “"+cw("fixFalse")+"” in the subject sheet to undo the record.)")) return;
-    const patch=flagSet(kid,h,WK+"/history/"+ref,"flg_"+WK+"_"+ref,"🚩 false check-off dock — "+(label||"")+" · by "+flagWhoName(who),who);   // FLAGWHO · FLAGONE
+    if(!confirm((off?flagOffAsk(kid,label||"",sp):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(label||"")+"\"")+"\n\n(The card stays checked — use “"+cw("fixFalse")+"” in the subject sheet to undo the record.)")) return;
+    const patch=flagSet(kid,h,WK+"/history/"+ref,"flg_"+WK+"_"+ref,"🚩 false check-off dock — "+(label||"")+" · by "+flagWhoName(who),who,null,n);   // FLAGWHO · FLAGONE
     try{ const hs=ld(WK+"_history")||{}; if(hs[ref]){ Object.assign(hs[ref],patch); sv(WK+"_history",hs); } }catch(e){}
   }
   dbg("🚩 "+(off?"mark, no stars,":"dock −"+n)+" "+kid+" ("+kind+") by "+who+": "+(label||""));
@@ -89092,9 +89102,9 @@ function rlogFlag(kid,wk,d,key){
   if(!(typeof ckLogCanDock==="function"?ckLogCanDock():momHere())) return;   // DADSPOTLOG: Mom, or Dad's link with his code
   const rec=routineLog[kid]&&routineLog[kid][wk]&&routineLog[kid][wk][d]&&routineLog[kid][wk][d][key];
   if(!rec||rec.flagged) return;
-  const n=flagN(kid), off=!n, who=typeof flagWho==="function"?flagWho():"mom";   // FLAGWHO · FLAGONE: no penalty (off, Take stars away off, ⏸) → the 🚩 mark, no stars
-  if(!confirm(off?flagOffAsk(kid,rec.label||""):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||"")+"\"")) return;
-  flagSet(kid,rec,"routineLog/"+kid+"/"+wk+"/"+d+"/"+key,"flg_"+wk+"_"+d+"_"+key,"🚩 false check-off dock"+(typeof flagWhoName==="function"?" · by "+flagWhoName(who):""),who);   // FLAGONE
+  const sp=flagSpotTook(kid,"step",wk+"/"+d+"/"+key), n=flagN(kid,"step",wk+"/"+d+"/"+key), off=!n, who=typeof flagWho==="function"?flagWho():"mom";   // FLAGWHO · FLAGONE: no penalty (off, Take stars away off, ⏸, SPOTONE) → the 🚩 mark, no stars
+  if(!confirm(off?flagOffAsk(kid,rec.label||"",sp):"Dock "+n+" points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||"")+"\"")) return;
+  flagSet(kid,rec,"routineLog/"+kid+"/"+wk+"/"+d+"/"+key,"flg_"+wk+"_"+d+"_"+key,"🚩 false check-off dock"+(typeof flagWhoName==="function"?" · by "+flagWhoName(who):""),who,null,n);   // FLAGONE
   renderAll();
 }
 // ── Accountability: "Morning not done by <hour> -> lose tech" house rule ──
