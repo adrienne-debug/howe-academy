@@ -51,7 +51,8 @@ const FAM = () => ({
   a_plants: K({ label: "Water the plants", emoji: "🪴", who: "kid_a", slot: "afternoon", cad: "daily", pts: 5, order: 0 }),
   b_porch: K({ label: "Sweep the porch", emoji: "🧺", who: "kid_b", slot: "chores", cad: "daily", pts: 6, order: 0 }),
   c_toys: K({ label: "Toys in the bin", emoji: "🧩", who: "kid_c", slot: "chores", cad: "daily", pts: 3, order: 0 }),
-  d_dog: K({ label: "Feed the dog", emoji: "🐶", who: "kid_d", slot: "chores", cad: "wk:3", pts: 10, area: "animals", order: 0 })   // section U: a 10 ⭐ chore on its own day
+  d_dog: K({ label: "Feed the dog", emoji: "🐶", who: "kid_d", slot: "chores", cad: "wk:3", pts: 10, area: "animals", order: 0 }),   // section U: a 10 ⭐ chore on its own day
+  d_brush: K({ label: "Brush the dog", emoji: "🪮", who: "kid_d", slot: "chores", cad: "daily", pts: 0, area: "animals", order: 1 })   // section C: C6's 0 ⭐ daily
 });
 const LINE = { caps: { "0": 0, "1": 0, "2": 0, "3": 1, "4": 0, "5": 0, "6": 0 }, asOf: "2026-11-23", homeFrom: "2026-11-23" };   // one load a week, on Thursday
 const CFG = () => Object.assign(clone(W.FX.db.config), { choreVerify: { kid_b: true }, zoneBonus: { enabled: true, mode: "double" }, zonePlan: { wednesday: "z1" } });
@@ -482,6 +483,34 @@ console.log("\n── Y · C3's drop and Send back ──");
   ok("…Saturday, its wait over and not redone: the drop takes 2 ⭐ (20% of its 10, not of the 20 the double paid), once: −20 −100 −2 = −122 in all", !!dz && dz.n === 2 && (adj(w, "kid_a")[zc] || {}).amount === -2 && bal(A, "kid_a") === b0 - 122, [dz, bal(A, "kid_a") - b0]);
   A.run("lgFlagUndo('step','kid_a'," + J(kz.join("/")) + ",0)"); await w.flush();
   ok("…Undo on Saturday: the tick and its 20, the 100 and the drop's 2 all back", bal(A, "kid_a") === b0 && !zMiss() && !adj(w, "kid_a")[zc] && A.run("rtDoneOn('chores','kid_a','wednesday'," + I.zone + ")") === true, bal(A, "kid_a") - b0);
+}
+// ── C ── (C6, merged 2026-11-24: a 0 ⭐ daily's "−1 ⭐ this morning"; the clock moves to Wed 12/9)
+console.log("\n── C · C6's −1 on a 0 ⭐ daily, then ticked and sent back ──");
+{ A.run("lgRWrite('pause',null);lgRWrite('take/kid_d',null)"); await w.flush();
+  for (const n of [10, 11]) { await go(w, n, 20); kidLists(B); await w.flush(); }   // Mon 12/7, Tue 12/8: on her list, not done
+  await go(w, 12, 8); kidLists(B); await w.flush(); kidLists(A); await w.flush();
+  const wk2 = A.run("activeWk()"), bi = idxOf(A, "chores", "kid_d", "Brush the dog"), ref = "s:chores:" + bi, a2 = "'kid_d','" + wk2 + "','wednesday','" + ref + "'";
+  const zk = Object.keys(adj(w, "kid_d")).filter(k => /^czero_/.test(k)), zl = () => Object.keys(adj(w, "kid_d")).filter(k => /^czero_/.test(k)).map(k => adj(w, "kid_d")[k].amount), B1 = bal(A, "kid_d"), st = [];
+  const r0 = rowT(pop(A, "kid_d", 0), "Brush the dog");
+  ok("Wed 12/9, the 0 ⭐ daily missed Mon and Tue: C6 took 1 ⭐ this morning (one czero_ line); its row \"−1 ⭐ this morning: not done 2 days in a row\" with ⭐ Give stars back, and no ↩ Send back (not ticked)", zk.length === 1 && J(zl()) === "[-1]" && /−1 ⭐ this morning: not done 2 days in a row/.test(r0) && !/Send back/.test(r0), [zk, r0]);
+  st.push(["Wed morning: C6's −1", -1]);
+  tick(B, "chores", "kid_d", "Brush the dog"); await w.flush(); const tz = zl(), r1 = rowT(pop(A, "kid_d", 0), "Brush the dog");
+  st.push(["kid_d ticks it (0 ⭐)", bal(A, "kid_d") - B1 - 1]);
+  ok("…the kid ticks it: it pays 0, the −1 stays; the row ✅ with ↩ Send back beside ⭐ Give stars back (two buttons)", bal(A, "kid_d") === B1 && J(tz) === "[-1]" && /↩ Send back/.test(r1) && (rowRaw(pop(A, "kid_d", 0), "Brush the dog").match(/<button /g) || []).length === 2, r1);
+  const kz = logKey(A, "kid_d", "Brush the dog");
+  for (const a of ["m", "w"]) {
+    const t0 = ctree(w); A.run("lgSendBack(" + a2 + ",'" + a + "')"); await w.flush(); kidLists(B); await w.flush();
+    const rr = rowRaw(pop(A, "kid_d", 0), "Brush the dog");
+    st.push([(a === "m" ? "Just a mistake" : "Wasn't done"), bal(A, "kid_d") - B1 - 1]);
+    ok((a === "m" ? "Just a mistake" : "Wasn't done") + ": the un-tick pays nothing back (it paid 0)" + (a === "w" ? ", the penalty −100" : "") + "; C6's −1 line untouched and not taken again by a redraw (one czero_ line); the row shows both, with two buttons: Undo and ⭐ Give stars back (➖ Excuse is back after the Undo)",
+      bal(A, "kid_d") === B1 - (a === "w" ? 100 : 0) && J(zl()) === "[-1]" && /−1 ⭐ this morning/.test(txt(rr)) && /↩ sent back/.test(txt(rr)) && (rr.match(/<button /g) || []).length === 2 && /Undo ⭐ Give stars back$/.test(txt(rr)) && !/Excuse/.test(txt(rr)), [bal(A, "kid_d") - B1, zl(), txt(rr)]);
+    S.zeroBtns = (S.zeroBtns || []).concat([[a, (rr.match(/<button /g) || []).length, txt(rr)]]);
+    if (a === "m") A.run("lgSbUndo(" + a2 + ")"); else A.run("lgFlagUndo('step','kid_d'," + J(kz.join("/")) + ",0)"); await w.flush();
+    st.push(["its Undo", bal(A, "kid_d") - B1 - 1]);
+    ok("…its Undo: the tick back, the database as before — C6's −1 line untouched", ctree(w) === t0 && J(zl()) === "[-1]" && bal(A, "kid_d") === B1, ddiff(JSON.parse(ctree(w)), JSON.parse(t0)));
+  }
+  S.zeroSteps = st;
+  ok("the kid's bank against Tuesday night: " + st.map(x => x[0] + " " + x[1]).join(" → "), J(st.map(x => x[1])) === J([-1, -1, -1, -1, -101, -1]), st);
 }
 if (process.env.LGS_DUMP) fs.writeFileSync(process.env.LGS_DUMP, J(S.dump));
 console.log("\n(two devices at the same moment: the un-tick itself, the pop-up's own, ran on both: kid_c's bank moved " + S.race + " — see the report)");

@@ -2162,6 +2162,7 @@ function lgSbRow(r,kid,D,ref){
   const M=lgSbMarks(kid)[D.wk+"|"+D.dn+"|"+ref];
   if(M) r.sbH=lgSbMark(kid,M.r,M.ref,"↩ sent back · "+flagMarkTxt(M.r).slice(3));
   else if(lgSbJ[k]) r.sbH='<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="font-size:11.5px;font-weight:800;color:#6b7280">↩ sent back · just a mistake</span>'+(ok?lgSbBtn("lgSbUndo",js,"Undo",""):'')+'</span>';
+  const o=r; if(o.sbH&&o.xH&&o.gbH) o.xH="";   // never more than two buttons (design §3): Undo and ⭐ Give stars back (C3 / C6) stay; ➖ Excuse is back after the Undo
   return r; }
 // A row sent back from a day it was not due (a late tick) has no list row that day any more: it gets its own line, with Undo.
 function lgSbMore(rows,kid,D,slot){ if(D.prev) return; const M=lgSbMarks(kid), pre=D.wk+"|"+D.dn+"|s:"+slot+":";
