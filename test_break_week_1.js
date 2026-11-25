@@ -77,6 +77,7 @@ const CHANGES=[
   ["Schedule day tabs","  if(scheduleBreakToday()){ const _dt=document.getElementById(\"day-tabs\"); if(_dt) _dt.innerHTML=peekBtn+suppBtn; return; }\n","  if(scheduleBreakToday()){ const _dt=document.getElementById(\"day-tabs\"); if(_dt) _dt.innerHTML=peekBtn+suppBtn; return; }\n  if(typeof boardWeekIsThisWeek===\"function\"&&!boardWeekIsThisWeek()){ const _dt=document.getElementById(\"day-tabs\"); if(_dt) _dt.innerHTML=peekBtn+suppBtn; return; }   // 📅 BWNOWEEK: a week the board doesn't hold draws no day picker, as a break does\n"],
   ["Schedule tab","  if(_brk){ el.innerHTML=(_brk.type===\"cleaning\"&&typeof hhCleanCardHTML===\"function\")?hhCleanCardHTML():renderScheduleBreakCard(_brk); return; }   // 🧽 CLEANINGDAY\n","  if(_brk){ el.innerHTML=(_brk.type===\"cleaning\"&&typeof hhCleanCardHTML===\"function\")?hhCleanCardHTML():renderScheduleBreakCard(_brk); return; }   // 🧽 CLEANINGDAY\n  if(typeof boardWeekIsThisWeek===\"function\"&&!boardWeekIsThisWeek()){ el.innerHTML=renderScheduleBreakCard({name:\"No school week planned\",type:\"noweek\"}); return; }   // 📅 BWNOWEEK: …and a week the board doesn't hold gets the same card, in her answer 1's words (no last-week cards, no 💰 Claim box)\n"],
   ["board stars pop-up","    const sp=getKidDayPoints(kid,day);\n","    const sp=(day===_todayDay&&typeof boardWeekIsThisWeek===\"function\"&&!boardWeekIsThisWeek())?0:getKidDayPoints(kid,day);   // 📅 BWNOWEEK: no star pool listed as today's from last school week (wages: slice 2)\n"],
+  ["push leftovers","function mlSweepEarly(){\n  if(!momHere()) return;\n","function mlSweepEarly(){\n  if(!momHere()) return;\n  if(typeof boardWeekIsThisWeek===\"function\"&&!boardWeekIsThisWeek()){ if(typeof gwShowToast===\"function\") gwShowToast(\"No school week on the board \\u2014 nothing to push\"); return; }   // 📅 BWNOWEEK: the true reason, not \"another device is updating\"\n"],
 ];
 function strip(src){
   for(let i=CHANGES.length-1;i>=0;i--){ const [,o,n]=CHANGES[i]; if(count(src,n)!==1) throw new Error("change "+i+" ("+CHANGES[i][0]+") not found once"); src=src.split(n).join(o); }
@@ -167,8 +168,10 @@ const WBONUS='(function(){ sv(WK+"_day_bonus_used",{}); var ts=weekData.tasks.fi
   +' ts.forEach(function(x){ checked[x.id]=checked[x.id]||"9:00 AM"; }); var h1=hasSpun, h2=spinOnceHas; hasSpun=function(){ return true; }; spinOnceHas=function(){ return false; };'
   +' try{ showPaceToast(ts[0].id); } finally{ hasSpun=h1; spinOnceHas=h2; } return hasDayBonus("kid_a",_todayDay)?"bonus":"no bonus"; })()';
 const WDS='(function(){ dayStarts[_todayDay]={}; dsAutoStart("kid_a"); return JSON.stringify(dayStarts[_todayDay]); })()';
+// Mom's ⏩ Push leftovers: two taps (arm, then push) — what she is told, whether it stays armed, what it writes
+const WEARLY='(function(){ _mlSweepArmed=false; eveningSweeps={}; mlSweepEarly(); var a=_mlSweepArmed; mlSweepEarly(); var r=JSON.stringify([a,_mlSweepArmed]); _mlSweepArmed=false; return r; })()';   // the toasts are read after the lock's callback (runWriter)
 const WSWEEP=f=>'(function(){ eveningSweeps={}; return mlEveningSweep('+f+'); })()';
-async function runWriter(W,expr){ const m=W.db.log.length; const v=W.R(expr); await W.flush(5000); return {v:v,writes:W.db.log.slice(m).map(l=>l.op+" "+l.path+(l.keys?" "+l.keys.join(","):""))}; }
+async function runWriter(W,expr){ const m=W.db.log.length; W.R("__toasts=[]"); const v=W.R(expr); await W.flush(5000); return {v:v,toasts:JSON.parse(W.R("JSON.stringify(__toasts)")),writes:W.db.log.slice(m).map(l=>l.op+" "+l.path+(l.keys?" "+l.keys.join(","):""))}; }
 const BAD=/(^|\s|,)(week[^/ ]*\/|pointClaims\/|bank\/)/;
 const tagsBalanced=h=>["div","span","button"].every(t=>count(h,"<"+t+">")+count(h,"<"+t+" ")===count(h,"</"+t+">"));
 const cnt=h=>(String(h).match(/class="task-cb/g)||[]).length;
@@ -187,8 +190,9 @@ async function fourItems(OLD,NEW,iso,lbl){
   for(const W of [OLD,NEW]) await W.at(iso,20,5);
   r.sweep=[await runWriter(OLD,'haMomOn(); '+WSWEEP(false)),await runWriter(NEW,'haMomOn(); '+WSWEEP(false))];
   r.push=[await runWriter(OLD,WSWEEP(true)),await runWriter(NEW,WSWEEP(true))];
+  r.early=[await runWriter(OLD,WEARLY),await runWriter(NEW,WEARLY)];
   for(const W of [OLD,NEW]) W.R("haMomOff();");
-  staleWrites=staleWrites.concat(...["celeb","bonus","ds","sweep","push"].map(k=>r[k][1].writes));
+  staleWrites=staleWrites.concat(...["celeb","bonus","ds","sweep","push","early"].map(k=>r[k][1].writes));
   return {op,np,r};
 }
 function checkFour(lbl,F,wk,dn,withPool){
@@ -203,6 +207,8 @@ function checkFour(lbl,F,wk,dn,withPool){
   ok(lbl+": dsAutoStart — before it wrote "+wk+"/dayStart/"+dn+"/kid_a; after no day start, no write",r.ds[0].writes.some(w=>w==="set "+wk+"/dayStart/"+dn+"/kid_a")&&r.ds[1].v==="{}"&&r.ds[1].writes.length===0,r.ds);
   ok(lbl+": the 8 PM sweep — before it ran on "+wk+" and wrote its marker; after it does nothing (no move, no marker)",r.sweep[0].v===true&&r.sweep[0].writes.some(w=>w==="set "+wk+"/eveningSweep/"+dn)&&r.sweep[1].v===false&&r.sweep[1].writes.length===0,r.sweep);
   ok(lbl+": Mom's ⏩ push — after it does nothing either (before: "+(r.push[0].v?"ran":"didn't run")+")",r.push[1].v===false&&r.push[1].writes.length===0,r.push);
+  { const NOPUSH="No school week on the board \u2014 nothing to push";
+    ok(lbl+": Mom's ⏩ button — after, each tap says \""+NOPUSH+"\", it never arms, nothing written (before: two taps pushed"+(r.early[0].writes.length?", "+r.early[0].writes.length+" writes":"")+")",r.early[1].v==="[false,false]"&&JSON.stringify(r.early[1].toasts)===JSON.stringify([NOPUSH,NOPUSH])&&r.early[1].writes.length===0&&r.early[0].toasts.some(x=>/leftovers moved/.test(x)),[r.early[0],r.early[1]]); }
 }
 
 (async function(){
@@ -260,7 +266,7 @@ function checkFour(lbl,F,wk,dn,withPool){
         ok(lbl+": before, schoolOffToday() was false; after true, and every Today view, Kids' Corner and Dad say \"No school week planned\" with no cards",o.off===false&&n.off===true&&KIDS.every(k=>n[k].kc.length===0&&n[k].kcSchool.indexOf(NOWEEK)>0&&cnt(n[k].ag)===0)&&n.all.indexOf(NOWEEK)>0&&n.dad.indexOf(NOWEEK)>0&&cnt(n.dad)===0);
         if(dn==="saturday"){ const F=await fourItems(OLD,NEW,iso,lbl); checkFour(lbl,F,D.wk,dn,false); for(const W of [OLD,NEW]) await W.at(iso,21,0); }
         else { const F=await fourItems(OLD,NEW,iso,lbl);
-          ok(lbl+": no pool line; celebration, day bonus, day start, sweep and ⏩ write nothing",!F.np.kid_a.pool&&["celeb","bonus","ds","sweep","push"].every(k=>F.r[k][1].writes.length===0)&&F.r.celeb[1].v===0&&F.r.sweep[1].v===false,F.r);
+          ok(lbl+": no pool line; celebration, day bonus, day start, sweep and ⏩ write nothing",!F.np.kid_a.pool&&["celeb","bonus","ds","sweep","push","early"].every(k=>F.r[k][1].writes.length===0)&&F.r.celeb[1].v===0&&F.r.sweep[1].v===false,F.r);
           for(const W of [OLD,NEW]) await W.at(iso,21,0); }
         continue;
       }
@@ -314,7 +320,7 @@ function checkFour(lbl,F,wk,dn,withPool){
     const orig=JSON.parse(NEW.R("JSON.stringify(weekData.tasks)"));
     let seed=20261124; const rnd=()=>{ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; };
     const WD=["monday","tuesday","wednesday","thursday","friday","saturday"], ISO={monday:"2026-11-09",tuesday:"2026-11-10",wednesday:"2026-11-11",thursday:"2026-11-12",friday:"2026-11-13",saturday:"2026-11-14"};
-    let diffs=0, first=null, nCards=0, nSched=0, nW=0, nCeleb=0, nBonus=0, nDs=0, nSweep=0;
+    let diffs=0, first=null, nCards=0, nSched=0, nEarly=0, nW=0, nCeleb=0, nBonus=0, nDs=0, nSweep=0;
     for(let it=0;it<300;it++){
       const tasks=JSON.parse(JSON.stringify(orig)), ck={};
       tasks.forEach(t=>{ if(rnd()<0.4) t.day=WD[Math.floor(rnd()*5)]; if(rnd()<0.6) ck[t.id]="9:"+String(10+Math.floor(rnd()*40))+" AM"; });
@@ -325,16 +331,17 @@ function checkFour(lbl,F,wk,dn,withPool){
       const a=OLD.R(PS)+OLD.R(POOL), b=NEW.R(PS)+NEW.R(POOL);
       if(a!==b){ diffs++; if(!first) first={it,today,d:firstDiff(a,b)}; }
       { const v=JSON.parse(b.slice(0,b.lastIndexOf("}{")+1)); nCards+=cnt(v.all); const sv=v.sched.kid_a||v.sched.all; if(typeof sv!=="object"){ diffs++; if(!first) first={it,err:sv}; } else nSched+=cnt(sv.html); }
-      const ws=[WCELEB,WBONUS,WDS].concat(eve&&it%3===0?[WSWEEP(false)]:[]);
+      const ws=[WCELEB,WBONUS,WDS].concat(eve&&it%3===0?[WSWEEP(false)]:[]).concat(it%5===1?[WEARLY]:[]);
       for(const w of ws){ const x=await runWriter(OLD,w), y=await runWriter(NEW,w);
-        const norm=r=>JSON.stringify([r.v,r.writes]).replace(/"\d{1,2}:\d\d [AP]M"/g,"T");
+        const norm=r=>JSON.stringify([r.v,r.writes,r.toasts]).replace(/"\d{1,2}:\d\d [AP]M"/g,"T");
         if(norm(x)!==norm(y)){ diffs++; if(!first) first={it,today,w:w.slice(0,40),x,y}; }
-        nW+=y.writes.length; if(w===WCELEB&&y.v===1) nCeleb++; if(w===WBONUS&&y.v==="bonus") nBonus++; if(w===WDS&&y.writes.length) nDs++; if(w.indexOf("mlEveningSweep")>0&&y.v===true) nSweep++; }
+        nW+=y.writes.length; if(w===WCELEB&&y.v===1) nCeleb++; if(w===WBONUS&&y.v==="bonus") nBonus++; if(w===WDS&&y.writes.length) nDs++; if(w.indexOf("mlEveningSweep")>0&&y.v===true) nSweep++; if(w===WEARLY&&y.toasts.some(x=>/leftovers moved/.test(x))) nEarly++; }
       for(const W of [OLD,NEW]) W.R("weekData.tasks="+JSON.stringify(orig)+";");
     }
     for(const W of [OLD,NEW]) W.R("__schedViews=null;");
     ok("300 weeks: Kids' Corner, Mom's Today, Dad's Day, the board, the Schedule tab (a kid / All) and its day tabs, store, afternoon, Mom loop, the line, the ⭐ card (pool) — identical to the code before",diffs===0,first);
     ok("…and celebrateDayComplete, the day bonus, dsAutoStart and the 8 PM sweep returned the same and wrote the same",diffs===0);
+    ok("…Mom's ⏩ button really pushed on normal days ("+nEarly+" times, identical to before)",nEarly>10,nEarly);
     ok("…the Schedule tab really drew the weeks ("+nSched+" cards across its two views)",nSched>1000,nSched);
     ok("…the weeks really had cards and the writers really wrote ("+nCards+" cards on All, "+nCeleb+" celebrations, "+nBonus+" day bonuses, "+nDs+" day starts, "+nSweep+" sweeps, "+nW+" writes)",nCards>1500&&nCeleb>100&&nBonus>50&&nDs>100&&nSweep>5,[nCards,nCeleb,nBonus,nDs,nSweep,nW]);
   }
