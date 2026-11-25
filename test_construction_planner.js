@@ -44,7 +44,7 @@ function hashes(NB) {
 if (process.argv.includes("--hashes")) { console.log(JSON.stringify(hashes(loadNb(NB_FILE)), null, 1)); process.exit(0); }
 
 const BEFORE = {
- "lincoln/empty": "40a3ec8aaba2b516", "lincoln/mastery": "40a3ec8aaba2b516", "lincoln/cursors": "c6289aacffe59d2d", "lincoln/fourDay": "eea65c2a46406add", "lincoln/picks": "40a3ec8aaba2b516", "lincoln/theme": "2851b1b36aab33a8",
+ "lincoln/empty": "1f57f4a97fbb0886", "lincoln/mastery": "1f57f4a97fbb0886", "lincoln/cursors": "e33c98589e09683b", "lincoln/fourDay": "52c51b7d3c56edc6", "lincoln/picks": "1f57f4a97fbb0886", "lincoln/theme": "2851b1b36aab33a8",
  "ellis/empty": "c3a87b363fbdcf7e", "ellis/mastery": "c3a87b363fbdcf7e", "ellis/cursors": "46e85ff74ade36f5", "ellis/fourDay": "25d955c9ae845aa2", "ellis/picks": "c3a87b363fbdcf7e", "ellis/theme": "2851b1b36aab33a8",
  "lucy/empty": "6396d3822f2d341e", "lucy/mastery": "6396d3822f2d341e", "lucy/cursors": "0917d7367019f92f", "lucy/fourDay": "85f73d959c6de9c2", "lucy/picks": "6396d3822f2d341e", "lucy/theme": "2851b1b36aab33a8",
  "julian/empty": "8a86b1e0d153f181", "julian/mastery": "c36581d4afc79708", "julian/cursors": "dedbf10fcee93f3c", "julian/fourDay": "785327ce90891c75", "julian/picks": "84106bb6874bd39d", "julian/theme": "2851b1b36aab33a8",

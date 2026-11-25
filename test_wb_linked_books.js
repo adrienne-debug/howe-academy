@@ -32,6 +32,7 @@ const SITES = [
 let BASE = src; const sitesOnce = [];
 sitesOnce.push(BASE.split(BLK + "\n").length === 2); BASE = BASE.replace(BLK + "\n", "");
 SITES.forEach(([a, b]) => { sitesOnce.push(BASE.split(a).length === 2); BASE = BASE.split(a).join(b); });
+if (src.indexOf("// WBLBOARD_START") >= 0) BASE = BASE.replace(cut(src, "// WBLBOARD_START", "// WBLBOARD_END") + "\n", "");   // the strip's ✍️ chip builds on this block (test_wbl_board.js)
 
 const FNS = ["esc", "wbBook", "wbInkPath", "wbPageFor", "wbMomEyes", "wbTaskLink", "wbOpenFor", "wbAssignFor", "wbAssignLast", "wbAssignClean", "wbAssignRender", "wbGoAssign",
   "wbOpen", "wbClose", "wbBarRender", "wbTool", "wbGo", "wbLoadPage", "wbFit", "wbWatchFit", "wbPaint", "wbMarkDirty", "wbAutoSaveSoon", "wbSave"];
