@@ -8,6 +8,9 @@
 //    answer words, and every choice is the same size in the same frame.
 //  · every notebook prints byte for byte what this tree prints with the NBLADPIC block cut out (no git, no pinned commit);
 //    a placement sheet with no picture is the same too (only the stylesheet gains the picture rules).
+//  · NBLADPIC_NUM (her pick 2026-11-24 "Add the numeral"): every Pre-K / K dots / blocks choice also shows its own amount's
+//    numeral in the same square; same square, numeral place and mark size across a question's choices; child sheets and Number
+//    Thinking pages byte-identical under answers A, B and C; every other kind, 1st grade and up, and ladder-off notebooks as before.
 //  · page fit: every placement sheet measured in Google Chrome headless when it is on this machine (else SKIPPED, said plainly),
 //    and the six colours told apart in grayscale there (pixel features of each fill, rendered and greyed in the browser).
 const fs = require("fs"), path = require("path"), os = require("os"), cp = require("child_process");
@@ -252,6 +255,104 @@ for (const kind of ["reading", "number"]) for (const lv of PAIRS[kind]) {
   docs.push({ lab: kind + " " + lv, html: doc });
 }
 
+// ════════════════════════════════════════ NBLADPIC_NUM — the numeral under each counted choice ════════════════════════════════════════
+// Her pick 2026-11-24 ("Add the numeral"): every Pre-K / K choice that is an amount drawn as dots or blocks also shows that amount's
+// numeral, inside the same square. OLD = this tree with the NBLADPIC_NUM block put back to the drawing it replaced (no git).
+console.log("── NBLADPIC_NUM: the numeral under each dots / blocks choice ──");
+const nm0 = nbSrc.indexOf("      // NBLADPIC_NUM_START"), nm1 = nbSrc.indexOf("      // NBLADPIC_NUM_END\n");
+ok("one NBLADPIC_NUM block, inside NBLADPIC, in the dots / blocks choice", nm0 > b0 && nm1 > nm0 && nm1 < b1 && nbSrc.indexOf("NBLADPIC_NUM_START", nm0 + 30) < 0 &&
+  nbSrc.lastIndexOf('as === "dots" || as === "blocks"', nm0) > nbSrc.lastIndexOf("function lpChoice", nm0) && !NAMES.test(nbSrc.slice(nm0, nm1)));
+const oldSrc = nbSrc.slice(0, nm0) + "      cell = Math.min(px * 0.86 / d.c, px * 0.86 / d.r, px * 0.3);\n      out = lpGridIn(n, as, 0, 0, px, px, cell);\n" + nbSrc.slice(nm1 + "      // NBLADPIC_NUM_END\n".length);
+const NBO = load(oldSrc), LO = NBO.ladders;
+const COUNT = PIC.filter((it) => /^(dots|blocks)$/.test(it.pic.choicesAs));
+{
+  const by = {}; COUNT.forEach((it) => { const k = it.lv + " " + it.pic.kind + " (" + it.pic.choicesAs + ")"; by[k] = (by[k] || 0) + 1; });
+  console.log("  (" + COUNT.length + " questions with counted choices: " + Object.keys(by).map((k) => k + " ×" + by[k]).join(", ") + ")");
+  ok("the counted-choice questions are all Pre-K / K, grow (dots or blocks) or trains (dots) — 45 of them", COUNT.length === 45 &&
+    COUNT.every((it) => (it.lv === "prek" || it.lv === "k") && (it.pic.kind === "grow" || (it.pic.kind === "trains" && it.pic.choicesAs === "dots"))));
+}
+const SIZES = [{ w: 380, h: 80, choice: 80 }, { w: 360, h: 96, choice: 88, cellMax: 28 }, { w: 300, h: 56, choice: 56 }, { w: 700, h: 160, choice: 140 }];   // placement, Number Thinking, the smallest box, a tablet
+const numTag = (s) => s.match(/<text class="nbl-num"[^>]*>[^<]*<\/text>/g) || [];
+const att = (tag, a) => { const m = new RegExp(" " + a + '="([^"]*)"').exec(tag); return m ? m[1] : null; };
+const markSize = (s) => { const m = /<circle class="nbl-m"[^>]* r="([\d.]+)"|<rect class="nbl-m"[^>]* width="([\d.]+)"/.exec(s); return m ? (m[1] ? 2 * m[1] : +m[2]) : null; };   // a dot's or a block's width across
+const markBottom = (s) => Math.max(0, ...marks(s).map((m) => m.y + m.r));
+const numBad = [], sameBad = [], placeBad = [];
+let minFont = Infinity, minCell80 = Infinity;
+for (const it of COUNT) for (const o of SIZES) {
+  const r = L.picture(it, o), px = o.choice;
+  r.choices.forEach((s, i) => {
+    const t = numTag(s);
+    if (t.length !== 1 || t[0].replace(/<[^>]*>/g, "") !== String(+it.c[i]) || (s.match(/class="nbl-m"/g) || []).length !== +it.c[i]) numBad.push(it.id + " " + px + " " + i);
+    const fs_ = +att(t[0] || "", "font-size"), top = +att(t[0] || "", "y") - 0.75 * fs_;
+    if (markBottom(s) > top - 0.03 * px || +att(t[0] || "", "y") > px * 0.95 || att(t[0] || "", "fill") !== "#1f2937") placeBad.push(it.id + " " + px + " " + i);
+    if (fs_ < minFont * px / 80 || minFont === Infinity) minFont = Math.min(minFont, fs_ * 80 / px);
+    if (px === 80 && markSize(s)) minCell80 = Math.min(minCell80, markSize(s));
+  });
+  // the same square, the same numeral place and size, the same mark size, whatever the amount
+  const hdr = new Set(r.choices.map((s) => /^<svg [^>]*>/.exec(s)[0])), nt = new Set(r.choices.map((s) => numTag(s)[0].replace(/>[^<]*</, "><"))), ms = new Set(r.choices.map(markSize).filter((x) => x != null));
+  if (hdr.size !== 1 || nt.size !== 1 || ms.size !== 1 || r.cw !== Math.ceil(px)) sameBad.push(it.id + " " + px);
+}
+ok("every counted choice of every such question, at every size: one numeral, the choice's own amount, and that many marks", numBad.length === 0, numBad.slice(0, 5));
+ok("…the numeral sits under the marks (no overlap), inside the square, dark ink (black-and-white safe)", placeBad.length === 0, placeBad.slice(0, 5));
+ok("…a question's choices share one square, one numeral place and size, one mark size (" + COUNT.length * SIZES.length + " question × size)", sameBad.length === 0, sameBad.slice(0, 5));
+ok("…the numeral is big enough for a 4–5 year old (≥ 21px at the placement sheet's 80px choice; it is " + Math.round(minFont * 10) / 10 + "px)", minFont >= 21);
+{
+  let oldMin = Infinity, worst = 1;
+  COUNT.forEach((it) => { const a = L.picture(it).choices, z = LO.picture(it).choices; z.forEach((s, i) => { const o = markSize(s), n = markSize(a[i]); if (o) { oldMin = Math.min(oldMin, o); worst = Math.min(worst, n / o); } }); });
+  ok("…the marks stay readable: the smallest dot / block at 80px is " + Math.round(minCell80 * 10) / 10 + "px across (before " + Math.round(oldMin * 10) / 10 + "px); no mark shrinks below " + Math.round(worst * 100) + "% of its old size (only 1–3 across shrink)",
+    minCell80 >= oldMin - 0.01 && worst >= 0.8);
+}
+ok("…the question's picture is the same as before; only the choices changed", COUNT.every((it) => SIZES.every((o) => { const a = L.picture(it, o), z = LO.picture(it, o); return a.pic === z.pic && a.w === z.w && a.h === z.h && a.cw === z.cw && a.choices.every((s, i) => s !== z.choices[i]); })));
+ok("every other choice kind (tokens, left / right / same, numbers) and every picture is exactly as before, and has no numeral added", PIC.filter((it) => COUNT.indexOf(it) < 0).every((it) => SIZES.every((o) => JSON.stringify(L.picture(it, o)) === JSON.stringify(LO.picture(it, o)))) &&
+  PIC.every((it) => numTag(L.picture(it).pic).length === 0) && PIC.filter((it) => COUNT.indexOf(it) < 0).every((it) => L.picture(it).choices.every((s) => numTag(s).length === 0)));
+// the child's sheets, under EVERY answer letter, and against OLD (only the choice pictures differ)
+const stripSvg = (s) => s.replace(/<svg [\s\S]*?<\/svg>/g, "<svg/>");
+const withLead = (data, by) => { const d = clone(data); Object.keys(by).forEach((lv) => { const items = d.levels[lv].items; by[lv].forEach((q, k) => { const o = Object.assign(clone(q), { o: -by[lv].length + k }); delete o.id; items[q.id] = o; }); }); return d; };
+const chunks = (a, n) => { const out = []; for (let i = 0; i < a.length; i += n) out.push(a.slice(i, i + n)); return out; };
+// placement sheets (the Pre-K check: three Pre-K + three K questions) led by counted-choice questions, so every one of the 45 is on a sheet
+const PKC = chunks(COUNT.filter((it) => it.lv === "prek"), 3), KC = chunks(COUNT.filter((it) => it.lv === "k"), 3), PACKS = [];
+for (let i = 0; i < Math.max(PKC.length, KC.length); i++) PACKS.push({ prek: PKC[i % PKC.length], k: KC[i % KC.length] });
+const sheetOf = (LL, by) => LL.placementPages("number", withLead(NUM, by), { lv: "prek" }).child.join("\n");
+const letBad = [], oldBad = [], onSheet = new Set();
+for (const pk of PACKS) {
+  const base_ = sheetOf(L, pk), want = pk.prek.concat(pk.k);
+  want.forEach((q) => { if (base_.indexOf(L.picture(q).choices[0]) > 0) onSheet.add(q.id); });
+  if (numTag(base_).length !== want.reduce((n, q) => n + q.c.length, 0) || stripSvg(base_) !== stripSvg(sheetOf(LO, pk))) oldBad.push(want[0].id);
+  for (let k = 0; k < 3; k++) { const re = (qs) => qs.map((q) => Object.assign(clone(q), { ans: "ABC"[k], rule: "rule " + k })); if (sheetOf(L, { prek: re(pk.prek), k: re(pk.k) }) !== base_) letBad.push(want[0].id + " " + "ABC"[k]); }
+}
+PACKS.forEach((pk, i) => docs.push({ lab: "counted pack " + (i + 1), html: L.placementDoc("number", withLead(NUM, pk), { lv: "prek", kidName: "Sam" }) }));   // measured below
+ok("placement: every counted question on a sheet (" + onSheet.size + " on " + PACKS.length + " sheets, three Pre-K + three K each) — the child's sheet is byte-identical under answer A, B and C", letBad.length === 0 && onSheet.size === COUNT.length, letBad.slice(0, 5));
+ok("…and is the old sheet with only the choice pictures changed (one numeral per choice)", oldBad.length === 0, oldBad);
+// Number Thinking pages packed with five counted questions each, in every Pre-K look
+const PKLOOKS = themes.map((th) => ["kidt_" + th, { notebookTheme: th, nbGrade: "Pre-K", kidName: "Sam" }]);
+const NTNEXT = L.next(tN, { lv: "prek" }, 12);
+const ntCtx = (qs) => ({ number: { on: true, lv: qs[0].lv, lvFrom: "saved", opt: false, cur: null, ready: true, next: Object.assign(clone(NTNEXT), {
+  items: qs.map((q, k) => Object.assign(clone(NTNEXT.items[0]), { lv: q.lv, label: q.lv === "k" ? "Kindergarten" : "Pre-K", i: k, num: k + 1, id: q.id, item: clone(q) })) }) } });
+const NTPACKS = []; for (const lv of ["prek", "k"]) chunks(COUNT.filter((it) => it.lv === lv), 5).forEach((qs) => NTPACKS.push(qs));
+const ntLet = [], ntOld = [], ntPages = [];
+for (const [kid, extra] of PKLOOKS) for (const qs of NTPACKS) {
+  const st = (q2) => NB.generate(kid, mk(kid, Object.assign({ ladders: ntCtx(q2) }, extra))).student, s0 = st(qs), sOld = NBO.generate(kid, mk(kid, Object.assign({ ladders: ntCtx(qs) }, extra))).student;
+  if (numTag(s0).length !== qs.reduce((n, q) => n + q.c.length, 0) || stripSvg(s0) !== stripSvg(sOld)) ntOld.push(kid + " " + qs[0].id);
+  for (let k = 0; k < 3; k++) if (st(qs.map((q) => Object.assign(clone(q), { ans: "ABC"[k], rule: "rule " + k }))) !== s0) ntLet.push(kid + " " + qs[0].id + " " + "ABC"[k]);
+  ntPages.push({ kid, lab: kid + " · " + qs[0].lv + " " + qs[0].id, html: s0, old: sOld });
+}
+ok("Number Thinking: " + NTPACKS.length + " pages of five counted questions × " + PKLOOKS.length + " Pre-K looks — byte-identical under answer A, B and C", ntLet.length === 0, ntLet.slice(0, 5));
+ok("…and the old page with only the choice pictures changed (one numeral per choice)", ntOld.length === 0, ntOld.slice(0, 5));
+{
+  const off = [];
+  for (const [kid, extra] of GENS_NUM()) { const a = all(NB.generate(kid, mk(kid, extra))), z = all(NBO.generate(kid, mk(kid, extra))); if (a !== z) off.push(kid); }
+  ok("every notebook with the number ladder off: byte-identical to before", off.length === 0, off);
+  const g1 = [];
+  for (const lv of ["g1", "g2", "g3"]) { const lc = { number: Object.assign(clone(LCTX.number), { lv, next: L.next(tN, { lv }, 12) }) };
+    for (const kid of Object.keys(NB.GENERATORS)) { const x = mk(kid, { ladders: lc }); if (all(NB.generate(kid, x)) !== all(NBO.generate(kid, x))) g1.push(kid + " " + lv); } }
+  ok("1st grade and up on the number ladder: every notebook byte-identical to before", g1.length === 0, g1);
+  const pl = [];
+  for (const kind of ["reading", "number"]) for (const lv of PAIRS[kind]) { const data = kind === "reading" ? READ : NUM, a = L.placementDoc(kind, data, { lv, kidName: "Sam" }), z = LO.placementDoc(kind, data, { lv, kidName: "Sam" });
+    if (numTag(a).length ? stripSvg(a) !== stripSvg(z) : a !== z) pl.push(kind + " " + lv); }
+  ok("placement documents: no counted choice → byte-identical; with one → only the choice pictures differ", pl.length === 0, pl);
+}
+function GENS_NUM() { return Object.keys(NB.GENERATORS).map((k) => [k]).concat(PKLOOKS); }
+
 // ════════════════════════════════════════ page fit + grayscale (Chrome) ════════════════════════════════════════
 console.log("── page fit (8.5×11in, overflow hidden) and the six colours in grayscale ──");
 const CHROME = process.env.CHROME_BIN || process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -284,6 +385,34 @@ else {
     const tight = res.filter((p) => /number (prek|k|g1|g2) · 1/.test(p.lab)).sort((a, b) => a.spare - b.spare).map((p) => p.lab + " " + p.spare + "px below, " + p.spareR + "px right");
     ok("Google Chrome headless: " + res.length + " placement pages, every one 11in tall, nothing clipped below or to the right (picture sheets: " + tight.join("; ") + ")",
       !bad.length && res.length === docs.reduce((n, d) => n + (d.html.match(/<div class="page /g) || []).length, 0), bad);
+    const packs = res.filter((p) => /^counted pack \d+ · 1$/.test(p.lab)).sort((a, b) => a.spare - b.spare);
+    ok("…the " + packs.length + " sheets led by counted questions (numerals in every choice) fit too — tightest " + (packs[0] ? packs[0].lab + " " + packs[0].spare + "px below" : "none"), packs.length === PACKS.length && packs.every((p) => p.spare >= 0 && p.spareR >= 0 && p.h === 1056));
+  }
+  // NBLADPIC_NUM: every Number Thinking page packed with counted questions, in every Pre-K look, each notebook with its own CSS
+  const NTM = function () {
+    return [].map.call(document.querySelectorAll(".page[data-lab]"), function (pg) {
+      var b = pg.querySelector(".body"), r = pg.getBoundingClientRect(), low = 0, out = { lab: pg.getAttribute("data-lab"), h: Math.round(r.height), wide: pg.scrollWidth - pg.clientWidth, clip: pg.scrollHeight - pg.clientHeight };
+      [].forEach.call(b.children, function (c) { var y = c.getBoundingClientRect().bottom; if (y > low) low = y; });
+      out.spare = Math.round(b.getBoundingClientRect().bottom - parseFloat(getComputedStyle(b).paddingBottom) - low); out.clip = Math.max(out.clip, b.scrollHeight - b.clientHeight);
+      return out;
+    });
+  };
+  const ntRes = [];
+  for (const [kid] of PKLOOKS) {
+    const mine = ntPages.filter((p) => p.kid === kid), h0 = mine[0].html;
+    const ntPage = (html, lab) => { const a = html.indexOf("<div class=\"page-label\">Number Thinking — Week"), z = html.indexOf("<div class=\"page-label\">", a + 10);
+      return html.slice(a, z < 0 ? html.lastIndexOf("</body>") : z).replace("<div class=\"page\">", "<div class=\"page\" data-lab=\"" + lab + "\">"); };
+    const pages = mine.map((p) => ntPage(p.html, p.lab)).concat(mine.map((p) => ntPage(p.old, "old|" + p.lab)));   // the same page drawn the old way, for the before / after
+    const r = runChrome(h0.slice(0, h0.indexOf("<body>") + 6).replace(/<link[^>]*fonts\.googleapis[^>]*>/g, "") + pages.join("\n") + "<script>window.addEventListener('load',function(){document.body.setAttribute('data-r',JSON.stringify((" + NTM.toString() + ")()));});</script></body></html>", "nt_" + kid);
+    if (!r) { console.log("  Number Thinking page measurement — SKIPPED for " + kid + " (Google Chrome would not run headless here)"); continue; }
+    r.forEach((p) => ntRes.push(p));
+  }
+  if (ntRes.length) {
+    const now = ntRes.filter((p) => !/^old\|/.test(p.lab)), was = {}; ntRes.filter((p) => /^old\|/.test(p.lab)).forEach((p) => (was[p.lab.slice(4)] = p.spare));
+    const nb = now.filter((p) => p.spare < 0 || p.clip > 0 || p.wide > 0 || p.h !== 1056), nt = now.slice().sort((a, b) => a.spare - b.spare)[0], moved = now.filter((p) => was[p.lab] !== p.spare);
+    ok("Number Thinking pages packed with counted questions: " + now.length + " pages (" + PKLOOKS.length + " looks), every one 11in tall, nothing clipped — tightest " + nt.lab + " " + nt.spare + "px spare (before the numerals: " + was[nt.lab] + "px)",
+      !nb.length && now.length === ntPages.length, nb.slice(0, 3));
+    ok("…every one of them has exactly the spare it had before the numerals (the choice squares did not grow)", moved.length === 0, moved.slice(0, 3).map((p) => p.lab + " " + was[p.lab] + "→" + p.spare));
   }
   // grayscale: each colour's square drawn in the browser, greyed (luma), and described by pixel features — how dark, how much
   // it varies, and which way its edges run (across, down, slanted). Every pair of colours must differ clearly.

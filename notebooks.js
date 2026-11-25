@@ -3018,8 +3018,18 @@
     } else if (as === "dots" || as === "blocks") {
       var n = lpInt(s, 0, 20);
       if (n == null) return null;
-      var d = lpGridDims(Math.max(mx || n, 1)), cell = Math.min(px * 0.86 / d.c, px * 0.86 / d.r, px * 0.3);
-      out = lpGridIn(n, as, 0, 0, px, px, cell);
+      var d = lpGridDims(Math.max(mx || n, 1)), cell;
+      // NBLADPIC_NUM_START — 🔢 the numeral under each counted choice (her pick 2026-11-24, asked "pictures only, or a numeral
+      // under each picture?": "Add the numeral"). Every Pre-K / K amount choice (grow: dots or blocks; trains: dots) keeps its
+      // marks and gains the numeral for ITS OWN amount, inside the same square — the marks move up into the top part, the
+      // numeral sits under them (as "this side" sits under the left/right pictures). The square, the frame and the mark cell
+      // (from the largest choice, mx) are the same for every choice of the question, so the numeral never marks the right one.
+      // Only the small counts (≤ 3 across) lose a little mark size: cell 22.9 → 19.2 px at an 80 px choice; 4 and more keep
+      // the old cell. The numeral comes before the marks in the svg (the marks group stays last, as tests read it).
+      cell = Math.min(px * 0.86 / d.c, px * 0.6 / d.r, px * 0.24);
+      out = '<text class="nbl-num" x="' + lpF(px / 2) + '" y="' + lpF(px * 0.92) + '" text-anchor="middle" font-family="' + LP_FONT + '" font-size="' + lpF(px * 0.27) +
+        '" font-weight="700" fill="#1f2937">' + n + '</text>' + lpGridIn(n, as, 0, px * 0.03, px, px * 0.62, cell);
+      // NBLADPIC_NUM_END
     } else if (as === "numbers") {
       if (!/^[−-]?\d{1,4}$/.test(s)) return null;
       out = '<text x="' + lpF(px / 2) + '" y="' + lpF(px * 0.5) + '" dy="0.35em" text-anchor="middle" font-family="' + LP_FONT + '" font-size="' + lpF(px * (s.length >= 3 ? 0.4 : 0.54)) + '" font-weight="700" fill="#1f2937">' + s.replace("-", "−") + '</text>';
