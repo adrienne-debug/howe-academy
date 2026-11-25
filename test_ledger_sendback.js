@@ -343,6 +343,12 @@ console.log("\n── P · a plan row (the plan ON) ──");
   ok("a plan row (houseDay/<iso>/done/<id>): Wasn't done un-ticks it by chore (hdToggle), −10 −100, the mark on its log line", isH && r === true && !!M && bal(P.A, "kid_a") === b0 - 110 && !P.A.run("hdDone(hdIsoOf(_todayDay),'c_a_dishes')"), [isH, r, bal(P.A, "kid_a") - b0]);
   P.A.run("lgFlagUndo('step','kid_a'," + J(M.ref) + ",0)"); await P.w.flush();
   ok("…Undo: done by chore again, its last-done stamps and the pay back — the database as before", ctree(P.w) === t0 && bal(P.A, "kid_a") === b0, ddiff(JSON.parse(ctree(P.w)), JSON.parse(t0)));
+  // (hub fault 4) a path in the journal changed since (here the chore's turn count, by a later tap): Undo leaves it as it is now
+  P.A.run("lgSendBack('kid_a','" + pw + "','" + dn + "','s:chores:" + i + "','w')"); await P.w.flush();
+  const M2 = JSON.parse(P.A.run("JSON.stringify(lgSbMarks('kid_a'))"))[pw + "|" + dn + "|s:chores:" + i], inJ = (M2.r.sb.j || []).some(x => x[0] === "household/jobs/c_a_dishes/doneN");
+  P.A.run("householdData.jobs.c_a_dishes.doneN=7;db.ref('household/jobs/c_a_dishes/doneN').set(7);1"); await P.w.flush();
+  P.A.run("lgFlagUndo('step','kid_a'," + J(M2.ref) + ",0)"); await P.w.flush();
+  ok("…a path the un-tick changed is changed again by a later tap (the chore's doneN → 7): Undo puts the tick, its pay and the rest back but leaves doneN at 7 (\"a path changed since is left alone\")", inJ && P.w.get("household/jobs/c_a_dishes/doneN") === 7 && P.A.run("hdDone(hdIsoOf(_todayDay),'c_a_dishes')") === true && bal(P.A, "kid_a") === b0, [inJ, P.w.get("household/jobs/c_a_dishes/doneN"), bal(P.A, "kid_a") - b0]);
 }
 console.log("\n── Z · last: an Undo after the row was ticked again; an old mark ──");
 { const aC = "'kid_a','" + wk + "','thursday','s:chores:" + I.cat + "'"; A.run("lgSendBack(" + aC + ",'m')"); await w.flush(); tick(B, "chores", "kid_a", "Feed the cat"); await w.flush();
@@ -431,6 +437,12 @@ console.log("\n── O · the 📮 outbox: a device that closes before the serv
   ok("…Mom's Undo on her own device: the database as before Wasn't done", kc_() === t0 && bal(A, "kid_c") === b0, ddiff(JSON.parse(kc_()), JSON.parse(t0)));
   const r1 = await back("devA2", box);
   ok("…it comes back and its 📮 outbox replays: nothing is written — the −100 does not come back, and the un-tick is not done again (its 🚩 is gone)", r1.length === 0 && kc_() === t0 && ticked() === true && bal(A, "kid_c") === b0, r1);
+  // 1b · (hub fault 1) the same notes, but the server cannot be read for the 🚩's path: they are KEPT for later, not dropped
+  { const D = w.boot("A2cb", "devA2c", { mom: true }); await w.flush(); D.run(CAP); D.run("HA_LS.setItem('ha_outbox'," + J(J(box)) + ");1");
+    D.run("(function(){ const r0=db.ref.bind(db); db.ref=function(p){ const r=r0(p); if(String(p).slice(-6)==='/sb/at') r.once=function(ev,f,e){ if(e) e(new Error('unreadable')); }; return r; }; })();1");
+    const t = new Date(A.run("Date.now()") + 60000); await w.at(t.getFullYear(), t.getMonth() + 1, t.getDate(), t.getHours(), t.getMinutes()); const m = w.mark();
+    D.run("_obRetry=null;try{ obReplay(); }catch(e){}1"); await w.flush(60000); const kept = Object.keys(boxOf(D)).length;
+    ok("…(1b) if the server can't be read for the 🚩's path, the notes are kept for later (\"couldn't tell\"), not dropped, and nothing is written", kept === notes.length && WS(w, m).length === 0 && kc_() === t0, [kept, notes.length, WS(w, m)]); }
   // 2 · without the Undo, the same replay finds everything landed: nothing to do
   const A4 = w.boot("A4", "devA4", { mom: true }); await w.flush(); A4.run(CAP); loadH(A4, HJS); closing(A4); A4.run("lgSendBack(" + ka + ",'w')"); await w.flush();
   const t1 = kc_(), r2 = await back("devA4", boxOf(A4));
@@ -511,6 +523,40 @@ console.log("\n── C · C6's −1 on a 0 ⭐ daily, then ticked and sent back
   }
   S.zeroSteps = st;
   ok("the kid's bank against Tuesday night: " + st.map(x => x[0] + " " + x[1]).join(" → "), J(st.map(x => x[1])) === J([-1, -1, -1, -1, -101, -1]), st);
+}
+// ── Q ── (the hub's faults 2, 3, 5–9, 2026-11-24: each guard proved by a tap that it stops; Wed 12/9)
+console.log("\n── Q · the guards, one by one ──");
+{ const wk3 = A.run("activeWk()"), pw3 = A.run("_prevWkKey()"), ti = idxOf(A, "chores", "kid_c", "Toys in the bin"), tOn = dn => A.run("rtDoneOn('chores','kid_c','" + dn + "'," + ti + ")");
+  if (!tOn("wednesday")) { tick(B, "chores", "kid_c", "Toys in the bin"); await w.flush(); }
+  const aT = "'kid_c','" + wk3 + "','wednesday','s:chores:" + ti + "'", nW = m => writes(w, m).length;
+  // 2 · another week's key with today's day and row
+  let m = w.mark();
+  ok("(2) Send back named with LAST week's key on this Wednesday's ticked row: refused, nothing written, the row still ticked (its rows are not this week's)", A.run("lgSendBack('kid_c','" + pw3 + "','wednesday','s:chores:" + ti + "','m')") === false && (await w.flush(), nW(m) === 0) && tOn("wednesday") === true);
+  // 3 · a day not here yet: Mom ticks Thursday's row ahead from her pop-up
+  A.run("mdKidTick('chores','kid_c','thursday'," + idxOf(A, "chores", "kid_c", "Toys in the bin", "thursday") + ")"); await w.flush(); m = w.mark();
+  ok("(3) a row ticked ahead for Thursday (tomorrow): Send back on it is refused, nothing written (the ledger never shows a day not here yet)", tOn("thursday") === true && A.run("lgSendBack('kid_c','" + wk3 + "','thursday','s:chores:" + ti + "','m')") === false && (await w.flush(), nW(m) === 0) && tOn("thursday") === true);
+  A.run("mdKidTick('chores','kid_c','thursday'," + idxOf(A, "chores", "kid_c", "Toys in the bin", "thursday") + ")"); await w.flush();
+  // 5 · lgFlagUndo called on a kid's device and on Dad's link without his code
+  loadH(Kk, HJS); loadH(Dd, HJS); A.run("lgSendBack(" + aT + ",'w')"); await w.flush(); const kq = JSON.parse(A.run("JSON.stringify(lgSbMarks('kid_c'))"))[wk3 + "|wednesday|s:chores:" + ti];
+  Dd.run("dadUnlocked=false;1"); m = w.mark();
+  ok("(5) the 🚩's undo called directly on a kid's device and on Dad's link without his code: refused, nothing written, the mark stays", !!kq && Kk.run("lgFlagUndo('step','kid_c'," + J(kq.ref) + ",0)") === false && Dd.run("lgFlagUndo('step','kid_c'," + J(kq.ref) + ",0)") === false && (await w.flush(), nW(m) === 0) && w.get("routineLog/kid_c/" + kq.ref + "/flagged") === true);
+  A.run("lgFlagUndo('step','kid_c'," + J(kq.ref) + ",0)"); await w.flush();
+  // 6 · Just a mistake by Dad with his code, then he locks: its Undo (on his device) waits for his code
+  Dd.run("dadUnlocked=true;1"); Dd.run("lgSendBack(" + aT + ",'m')"); await w.flush(); Dd.run("dadUnlocked=false;1"); m = w.mark();
+  ok("(6) Dad's Just a mistake, then he locks: its Undo on his device is refused, nothing written; a kid's device never holds one (Kk: 0)", tOn("wednesday") === false && Dd.run("lgSbUndo(" + aT + ")") === false && (await w.flush(), nW(m) === 0) && Kk.run("Object.keys(lgSbJ).length") === 0);
+  Dd.run("dadUnlocked=true;1"); ok("…with his code in again, it works: the tick back", Dd.run("lgSbUndo(" + aT + ")") === true && (await w.flush(), tOn("wednesday") === true)); Dd.run("dadUnlocked=false;1");
+  // 7 · the un-tick does not happen (here: the pop-up's un-tick made to refuse)
+  A.run("globalThis.__mk=mdKidTick;mdKidTick=function(){ return false; };1"); m = w.mark();
+  ok("(7) if the un-tick does not happen, Wasn't done stops there: false, no 🚩, no −100, nothing written", A.run("lgSendBack(" + aT + ",'w')") === false && (await w.flush(), nW(m) === 0) && tOn("wednesday") === true);
+  A.run("mdKidTick=__mk;1");
+  // 8 · a ticked row whose Click-off Log line is not on this device
+  const kl = logKey(A, "kid_c", "Toys in the bin"); A.run("globalThis.__ln=routineLog.kid_c[" + J(kl[0]) + "][" + J(kl[1]) + "][" + J(kl[2]) + "];delete routineLog.kid_c[" + J(kl[0]) + "][" + J(kl[1]) + "][" + J(kl[2]) + "];1"); m = w.mark();
+  ok("(8) a ticked row with no Click-off Log line here: Wasn't done is refused before anything (no un-tick, nothing written)", A.run("(function(){ try{ return lgSendBack(" + aT + ",'w'); }catch(e){ return 'threw: '+e.message; } })()") === false && (await w.flush(), nW(m) === 0) && tOn("wednesday") === true);
+  A.run("routineLog.kid_c[" + J(kl[0]) + "][" + J(kl[1]) + "][" + J(kl[2]) + "]=__ln;1"); if (!tOn("wednesday")) { tick(B, "chores", "kid_c", "Toys in the bin"); await w.flush(); }
+  // 9 · dry-run switched on after the page loaded (the boot-time patch of db.ref is not there): L5's own writes still stay home
+  const Dz = w.boot("Dz", "devDz", { mom: true }); await w.flush(); Dz.run(CAP); loadH(Dz, HJS); Dz.run("haMomOn();HA_LS.setItem('ha_dryrun','1');1"); m = w.mark();
+  Dz.run("lgSendBack(" + aT + ",'w')"); await w.flush(); const dz = WS(w, m);
+  ok("(9) dry-run turned on after boot, without the boot-time patch: the 🚩's −100 line and the mark are not written (flagLine / flagSet honour _dryRun); the un-tick's own older writes are the pop-up's (" + dz.length + ")", !dz.some(x => /flg_|\[flagged/.test(x)), dz);
 }
 if (process.env.LGS_DUMP) fs.writeFileSync(process.env.LGS_DUMP, J(S.dump));
 // ── DP ── (DADPAST, her "yes" 2026-11-24: Dad on his own link with his code in reaches the same days as Mom; Wed 12/9)
