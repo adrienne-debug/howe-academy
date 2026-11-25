@@ -14,6 +14,8 @@
 //  (j) page fit in Google Chrome headless (when it is on the machine): every week of Pre-K and K in all nine looks, every level in the
 //      1st-grade notebook, and the answer pages
 //  (k) would one question a school day fit on the daily pages? (measured; the answer goes in the report)
+//  (m) NBLADNUM_DAY1 (her pick 2026-11-25): on the tablet the page belongs to the week's first school day; tags off = byte for byte
+//      the tree without it; what the Today list does with a Monday page on Tuesday (read only)
 //  (l) NBLADNUM_DAYS (her pick 2026-11-24, "One per school day"): one question per school day — a 5-day week byte for byte the tree
 //      without it; 4/3/2/1 days print that many and move the place that many; a reprint keeps its first count; no days → nothing;
 //      the Pre-K "Skip no-school days" switch; level ends, the harder stage, a bank, the end; the card's words; 1–4 questions fit (in (j))
@@ -259,7 +261,7 @@ console.log("(f) every page that existed keeps its place");
 console.log("(g) the tablet's Today list");
 for (const [kid, extra, lv] of [[KPK[0], {}, "prek"], [KLU, {}, "g1"], ["kidt", PKX("k", "sports"), "k"]]) {
   const out = gen(kid, mkCtx(kid, Object.assign({ ladders: nl({ lv }), nbPageTags: true }, extra))), np = numPages(out.student);
-  ok(lv + ": the page is tagged as an any-time page of the week, 'Number thinking'", np.length === 1 && np[0].indexOf('<div class="page" data-nb-day="week" data-nb-name="Number thinking">') > 0);
+  ok(lv + ": the page is tagged for the week's first school day (Monday here — NBLADNUM_DAY1), 'Number thinking'", np.length === 1 && np[0].indexOf('<div class="page" data-nb-day="monday" data-nb-name="Number thinking">') > 0);
   const oldT = genOld(kid, mkCtx(kid, Object.assign({ nbPageTags: true }, extra))).student;
   const css = kid === KLU ? I.LNT_CSS_LU : I.LNT_CSS_PK;
   const rest = out.student.replace(css, "").replace(np[0].replace(/^<div class="page-label">/, '<div class="page-label">') + "\n", "");
@@ -417,6 +419,65 @@ const STATES = (lv) => [{ lv }, { lv, cur: { week: 11, lv, from: 10, adv: 5, opt
   ok("…then the next week prints the very last one and says so", idsOf(l1b) === 1 && /the last questions on the ladder/.test(ansPages(l1b.parent)[0]));
   const opt3 = g({ lv: "g5", opt: true, cur: { week: 12, lv: "g5", from: 55, adv: 5, opt: false } }, 3), optOff3 = g({ lv: "g5", cur: { week: 12, lv: "g5", from: 55, adv: 5, opt: false } }, 3);
   ok("the harder stage on, a 3-day week → its first 3; off → the bank (no page)", idsOf(opt3) === 3 && opt3.numberLadderCursor.adv === 3 && numPages(optOff3.student).length === 0);
+}
+
+// ════════════════════════════════════ (m) NBLADNUM_DAY1 — the tablet lists the page on the first school day ════════════════════════════════════
+// Her pick 2026-11-25: on the tablet the Number Thinking page shows on the first school day of the week (it was "any time this week").
+console.log("(m) NBLADNUM_DAY1: on the tablet, Number Thinking belongs to the week's first school day");
+{
+  const E0 = SRC.indexOf("  // NBLADNUM_DAY1_START"), E1 = SRC.indexOf("  // NBLADNUM_DAY1_END\n");
+  ok("one NBLADNUM_DAY1 block, inside the NBLADNUM block", E0 > B0 && E1 > E0 && E1 < B1 && SRC.indexOf("NBLADNUM_DAY1_START", E0 + 20) < 0 && !NAMES.test(code(SRC.slice(E0, E1))));
+  const site = (g) => g.split("\n").filter((l) => /NBLADNUM_DAY1/.test(l));
+  // the 1st-grade site may be wrapped in nbSayTag (the 🔊 tablet slice) once that is merged
+  ok("both builders tag the page with lntDay1(days) — the days their daily pages print for — and nothing else uses it",
+    site(gPk).length === 1 && /nbTag\(ctx, lntPkPage\(weekNum, weekDates, lnum, P\), lntDay1\(days\), "Number thinking"\)/.test(site(gPk)[0]) &&
+    site(gLu).length === 1 && /nbTag\(ctx, (nbSayTag\(ctx, )?lntLuPage\(wn, weekDates, lnum\)(, lnum\))?, lntDay1\(days\), "Number thinking"\)/.test(site(gLu)[0]) && (SRC.match(/lntDay1\(/g) || []).length === 3);
+  // the baseline: this tree without NBLADNUM_DAY1 (the block cut, the two tags back to "week") = change A
+  let A = SRC.slice(0, E0) + SRC.slice(E1 + "  // NBLADNUM_DAY1_END\n".length);
+  ok("the two tag sites put back to \"week\" for the baseline", A.split("lntDay1(days)").length === 3);
+  A = A.split("lntDay1(days)").join('"week"');
+  const NBA = load(A), genA = (kid, ctx) => NBA.generate(kid, clone(ctx));
+  const books2 = books.concat([["K (a look at K, plain)", "kidk", PKX("k", "plain"), "k"]]);
+  const WEEKS = { "5-day": DS[5], "4-day": DS[4], "3-day": DS[3], "2-day (Tue, Thu)": DS[2], "1-day (Wed)": DS[1] };
+  let same = 0, n = 0; const diff = [];
+  for (const [name, kid, extra, lv] of books2) for (const [wn, ds] of Object.entries(WEEKS)) for (const st of [{ lv }, null]) {
+    const x = st ? { ladders: nl(st, 12) } : {}, ctx = mkCtx(kid, Object.assign({}, extra, x), ds), a = gen(kid, ctx), b = genA(kid, ctx); n++;
+    if (both(a) === both(b) && JSON.stringify(a.numberLadderCursor) === JSON.stringify(b.numberLadderCursor)) same++; else diff.push(name + " " + wn);
+  }
+  ok("tablet tags off (Print, Look, PDF): every notebook byte for byte = change A — " + n + " builds (" + books2.length + " notebooks × 5 week shapes × ladder on/off)", same === n, diff.slice(0, 4));
+  // tablet tags on: the only difference is the Number Thinking page's day
+  const firstDay = (o) => { const m = /<div class="page" data-nb-day="([^"]*)" data-nb-name="Number thinking">/.exec(o.student); return m ? m[1] : null; };
+  const MID = { thursday: "November 19", friday: "November 20", monday: "November 23", tuesday: "November 24" };   // a week that starts on a Thursday (Thu–Tue)
+  let good = 0, m = 0; const bad = [];
+  for (const [name, kid, extra, lv] of books2) for (const [wn, ds, want] of [["5-day", DS[5], "monday"], ["4-day", DS[4], "monday"], ["3-day", DS[3], "monday"], ["Tue + Thu", DS[2], "tuesday"], ["Wed only", DS[1], "wednesday"], ["Wed–Fri", ["wednesday", "thursday", "friday"], "wednesday"], ["Thu–Tue", null, "thursday"]]) {
+    const ctx = mkCtx(kid, Object.assign({ ladders: nl({ lv }, 12), nbPageTags: true }, extra), ds || Object.keys(MID));
+    if (!ds) { ctx.weekData.dates = Object.assign({}, MID); ctx.weekData.tasks = ctx.weekData.tasks.map((t) => t); }
+    const a = gen(kid, ctx), b = genA(kid, ctx); m++;
+    const backToWeek = a.student.replace('data-nb-day="' + want + '" data-nb-name="Number thinking"', 'data-nb-day="week" data-nb-name="Number thinking"');
+    if (firstDay(a) === want && firstDay(b) === "week" && backToWeek === b.student && a.parent === b.parent) good++; else bad.push(name + " " + wn + " → " + firstDay(a));
+  }
+  ok("tablet copy: the page's day = the first school day — Mon for a 5-, 4- and 3-day (Mon/Wed/Fri) week, Tue for Tue + Thu, Wed for Wed only and Wed–Fri, Thu for a week that starts on a Thursday — and nothing else in either copy changes (" + m + " builds, both builders, every look)", good === m, bad.slice(0, 4));
+  // the Pre-K "Skip no-school days" switch: no school cards on Monday → the week's first school day is Tuesday
+  for (const [kid, extra] of [[KPK[0], { nbLevel: { nbSkipNoSchoolDays: true } }], ["kidt", Object.assign(PKX("prek", "forest"), { nbLevel: { nbSkipNoSchoolDays: true } })]]) {
+    const ctx = mkCtx(kid, Object.assign({ ladders: nl({ lv: "prek" }, 12), nbPageTags: true }, extra)); ctx.weekData.tasks = ctx.weekData.tasks.filter((t) => t.day !== "monday");
+    const o = gen(kid, ctx), dp = (o.student.match(/data-nb-day="([a-z]+)" data-nb-name="Daily page"/g) || []).map((s) => s.split('"')[1]);
+    ok("Pre-K, “Skip no-school days” on, no cards Monday → no Monday daily page, and the Number Thinking page is Tuesday's (" + (extra.notebookTheme || "built-in") + ")", dp[0] === "tuesday" && dp.indexOf("monday") < 0 && firstDay(o) === "tuesday" && idsOf(o) === 4);
+  }
+  // the answers page: in the parent copy, which the tablet send never tags
+  for (const [kid, extra, lv] of [[KPK[0], {}, "prek"], [KLU, {}, "g1"]]) {
+    const o = gen(kid, mkCtx(kid, Object.assign({ ladders: nl({ lv }, 12), nbPageTags: true }, extra)));
+    ok(lv + ": the answers page (parent copy) carries no tablet tag — it never did", ansPages(o.parent).length === 1 && ansPages(o.parent)[0].indexOf("data-nb-") < 0);
+  }
+  // what the tablet does with it (index.html NBT_TODAY, read only — not changed): a page tagged for Monday is in Monday's list only
+  const T0 = IX.indexOf("function nbtTodayList("), T1 = IX.indexOf("\n", T0 + 1), listSrc = IX.slice(T0, IX.indexOf("\n}\n", T0) + 2);
+  const nbtTodayList = (new Function(listSrc + "; return nbtTodayList;"))();
+  const meta = [{ days: ["monday"] }, { days: ["tuesday"] }, { days: ["monday"] }, { days: ["week"] }];   // Monday's daily page, Tuesday's, Number Thinking (Monday), an any-time page
+  const mon = nbtTodayList(meta, "monday"), tue = nbtTodayList(meta, "tuesday");
+  ok("the tablet's Today list (unchanged): Monday lists the Number Thinking page; on Tuesday it is not listed — neither under Tuesday nor under “Any time this week” (there is no “earlier this week” list); it stays in the book and the Mon button still shows it",
+    T1 > T0 && mon.mine.join() === "1,3" && tue.mine.join() === "2" && tue.week.join() === "4" && tue.mine.concat(tue.week).indexOf(3) < 0);
+  // the stored copy keeps the day it was sent with: the send saves the built HTML as is, and the tablet reads the tag from it
+  ok("the tablet send stores the copy as built (tags inside) and the Today list reads each page's data-nb-day from that stored copy — a later change of days needs a new send",
+    /upd\["notebookDocs\/"\+kid\+"\/"\+wk\]=\{student:student,parent:parent,ts:ts,pages:pages\}/.test(IX) && /ctx\.nbPageTags=true;/.test(IX) && /getAttribute\("data-nb-day"\)/.test(IX.slice(IX.indexOf("function nbtTodayMeta("), IX.indexOf("function nbtTodayList("))));
 }
 
 // ════════════════════════════════════ (i) index.html ════════════════════════════════════

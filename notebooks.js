@@ -1661,7 +1661,7 @@
     var uT = UNIT_INSERT_THEMES[T.unitTheme];
     (ctx.units || []).forEach(function (ins) { nbTagUnit(ctx, ins, unitInsertPages(ins, weekNum, uT)).forEach(function (p) { parts.push(p); }); });
     spellNbPages(ctx, uT).forEach(function (p) { parts.push(nbTag(ctx, p, "week", "Spelling")); });   // 📝 SPELLPAGE
-    if (lnum) parts.push(nbTag(ctx, lntPkPage(weekNum, weekDates, lnum, P), "week", "Number thinking"));   // NBLADNUM: last in the book, so no page moves
+    if (lnum) parts.push(nbTag(ctx, lntPkPage(weekNum, weekDates, lnum, P), lntDay1(days), "Number thinking"));   // NBLADNUM: last in the book, so no page moves · the tablet lists it on the first school day (NBLADNUM_DAY1)
     parts.push("</body>\n</html>");
     var student = parts.join("\n");
 
@@ -3137,6 +3137,14 @@
       cursor: nc ? Object.assign({}, nc, { adv: items.length }) : null }) });
   }
   // NBLADNUM_DAYS_END
+  // NBLADNUM_DAY1_START — on the tablet the Number Thinking page belongs to the week's FIRST school day (her pick 2026-11-25,
+  // was "any time this week"): the day the tablet's Today list (index.html NBT_TODAY) puts it under. The first school day = the
+  // first of the same days the daily pages print for (the days the count uses, above) — calendar order, so a week that starts on a Wednesday
+  // gives "wednesday". Only the tablet tag (data-nb-day, ctx.nbPageTags) changes: Print / Look / PDF carry no tags, so paper is
+  // byte for byte what it was, and the page stays where it prints. The answers page is in the parent copy, which is never tagged.
+  // No days (the page can't print then) → "week", as before.
+  function lntDay1(days) { return (Array.isArray(days) && days[0]) || "week"; }
+  // NBLADNUM_DAY1_END
   function lntGrown(x) { return !!LAD_GROWN[x.lv]; }
   // The picture (NBLADPIC — typeof-guarded like the placement sheet's call sites, so that block can be cut out on its own), or null.
   function lntPic(x) { return (x.item && x.item.pic && typeof ladPicture === "function") ? ladPicture(x.item, lntGrown(x) ? LNT_PIC.grown : LNT_PIC.alone) : null; }
@@ -8181,7 +8189,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     luMyWordsPages(ctx, words, wn).forEach(function (p) { parts.push(nbTagXp(ctx, p, "myWords", "My Words")); });   // LU_WORDS: after End of Week, so the day/back pairs don't move
     // NBLADREAD3: a write-first day's page (pg.wf — only NBLADREAD3 sets it) goes through lr3Push: its choices on the back, a Notes pad first if needed
     if (lread) lread.pages.forEach(function (pg) { if (pg.wf) lr3Push(ctx, parts, { pages: [pg], look: lread.look }, pg.day); else parts.push(nbTag(ctx, lrPage(wn, pg.day, dates[pg.day] || "", pg.x), pg.day, "Read and answer")); });   // NBLADREAD: after End of Week + My Words, so every pair stays put
-    if (lnum) parts.push(nbTag(ctx, lntLuPage(wn, weekDates, lnum), "week", "Number thinking"));   // NBLADNUM: after Read and answer, before the paper dolls
+    if (lnum) parts.push(nbTag(ctx, lntLuPage(wn, weekDates, lnum), lntDay1(days), "Number thinking"));   // NBLADNUM: after Read and answer, before the paper dolls · the tablet lists it on the first school day (NBLADNUM_DAY1)
 
     // Paper dolls — doll figure (always) + this week's outfit, each on its OWN sheet with a blank
     // back so Lucy can cut them out without losing anything on the reverse. Goes last in the book.
