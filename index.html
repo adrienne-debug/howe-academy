@@ -3327,7 +3327,28 @@ let SITTER_NAME=window.HA_FAMILY?(window.HA_FAMILY.sitterName||""):"Maggie";
 // turns the rest on in Settings ▸ Pages as the family is ready. Kiosk links (?kiosk=…) ignore this.
 const PAGE_KEYS=["notebook","mastery","units","play","moms-plan","kids","purchases","workbooks","eic","helpers"];   // purchases / workbooks / eic = Mom HQ rows, not top tabs
 const PAGE_LABEL={notebook:"Notebook",mastery:"Mastery",units:"Units",play:"School Room","moms-plan":"Mom's Day",kids:"Kids' Corner",purchases:"Purchases & ESA",workbooks:"Workbooks",eic:"Editor in Chief",helpers:"Helpers"};
-const PAGE_DEFAULT=(function(){ const howe=!(window.HA_FAMILY&&window.HA_FAMILY.familyId&&window.HA_FAMILY.familyId!=="howe"); const d={}; PAGE_KEYS.forEach(k=>{ d[k]=k!=="helpers"&&(howe||k==="moms-plan"||k==="kids"); }); return d; })();   // 🙋 helpers starts off everywhere
+// AREAS_START — 🧩 switches for the areas INSIDE Mom's Day (her ask 2026-11-24: "build this in a way where we could just turn off those
+// other areas"; her "Every family" 2026-11-24 for the Settings chip — slice 2 of DESIGN_household_edition_2026-11-24.md §5.2). Same
+// home as the top-tab switches: settings/pages/<area> = true|false, set from Adrienne's families dashboard, one listener, one saved
+// copy (ha_pages). Every area starts ON for every family, so nothing changes until a switch is turned off — and an area nobody has
+// set is not written into the saved copy either, so a family with no switch set stores exactly what it stored before; a household
+// (HHKIND) starts with School, Chores & Stars and Dad's Day off, and Kids' Corner off. A switch that is off takes away: the area's
+// tab on Mom's Day's menu row, its HQ rows, its way in from other pages (the page falls back to Home Base), and — for School and
+// Chores & Stars — their cards on Home Base. It does NOT stop what the area does elsewhere (a kid's chores, stars, the week build),
+// and kiosk links (?kiosk=…) ignore it, as they ignore the top-tab switches. Every call site is marked 🧩 AREAS.
+// Settings' one home is 🏡 Home Base ▸ ⚙️ Settings for every family (it only had a chip under 🎓 School, which a home with School
+// off would lose); the School chip and HQ still jump to it.
+const AREA_KEYS=["household","chores","kitchen","school","budget","health","dad","seasons"];
+const AREA_LABEL={household:"Household",chores:"Chores & Stars",kitchen:"Kitchen",school:"School",budget:"Budget",health:"Health",dad:"Dad's Day",seasons:"Seasons & Events"};
+const AREA_OFF_HOUSEHOLD=["school","chores","dad"];
+const AREA_VIEWS={house:["household"],chores:["household","chores"],meals:["kitchen"],grocery:["kitchen"],prep:["kitchen"],curr:["school"],hist:["school"],wins:["school"],scor:["school"],mhq:["school"],gen:["school"],
+  budget:["budget"],gifts:["budget"],esa:["budget"],weigh:["health"],dad:["dad"],dadcal:["dad"],dadall:["dad"],dadmast:["dad"],dadgifts:["dad"],seasons:["seasons"]};   // Mom's Day page → the area(s) that must be on
+function areaHome(){ return (typeof HA_HOUSEHOLD!=="undefined")&&HA_HOUSEHOLD; }
+function areaDefaults(d){ if(areaHome()) d.kids=false; return d; }   // the top-tab starting values: a household starts with Kids' Corner off too
+function areaOn(k){ if(AREA_KEYS.indexOf(k)<0) return true; const v=PAGES[k]; return (v===true||v===false)?v:!(areaHome()&&AREA_OFF_HOUSEHOLD.indexOf(k)>=0); }   // set from the dashboard, else its starting value
+function areaViewOn(v){ const a=AREA_VIEWS[v]; return !a||a.every(areaOn); }
+// AREAS_END
+const PAGE_DEFAULT=(function(){ const howe=!(window.HA_FAMILY&&window.HA_FAMILY.familyId&&window.HA_FAMILY.familyId!=="howe"); const d={}; PAGE_KEYS.forEach(k=>{ d[k]=k!=="helpers"&&(howe||k==="moms-plan"||k==="kids"); }); return (typeof areaDefaults==="function")?areaDefaults(d):d; })();   // 🙋 helpers starts off everywhere
 let PAGES=(function(){ try{ const v=JSON.parse(HA_LS.getItem("ha_pages")||"null"); if(v&&typeof v==="object") return Object.assign({},PAGE_DEFAULT,v); }catch(e){} return Object.assign({},PAGE_DEFAULT); })();
 function pageOn(k){ return PAGE_KEYS.includes(k)?PAGES[k]!==false:true; }
 function pagesApply(v,soon){
@@ -3335,6 +3356,7 @@ function pagesApply(v,soon){
   try{ HA_LS.setItem("ha_pages",JSON.stringify(PAGES)); }catch(e){}
   const kiosk=(typeof _kiosk==="function"&&_kiosk())||(typeof _kioskR==="function"&&_kioskR())||(typeof _kioskD==="function"&&_kioskD())||(typeof _kioskK==="function"&&_kioskK());
   if(typeof adminSubTab!=="undefined"&&((!pageOn("purchases")&&adminSubTab==="purchases")||(!pageOn("mastery")&&adminSubTab==="mastery"))) adminSubTab="hq";
+  try{ if(!kiosk&&typeof mpSubView!=="undefined"&&!areaViewOn(mpSubView)) mpSubView="plan"; }catch(e){}   // 🧩 AREAS: the open Mom's Day page was just switched off → Home Base
   if(!kiosk&&!pageOn(tab)) showTab("schedule"); else if(soon) renderAllSoon(); else renderAll();   // RENDERSOON: the listener combines; pagesToggle (a tap) paints now
 }
 function pagesToggle(k){
@@ -7857,6 +7879,7 @@ function hqLinksCard(){
   return h;
 }
 function _hqGroup(emoji,title,rows){
+  if(!rows.join('')) return '';   // 🧩 AREAS: a group with no row left draws no heading
   return '<div class="rules-card"><div style="display:flex;align-items:center;gap:8px;padding:12px 14px;font-family:\'Fraunces\',serif;font-size:15px;font-weight:700">'+
     '<span style="font-size:18px">'+emoji+'</span>'+title+'</div>'+rows.join('')+'</div>';
 }
@@ -7925,6 +7948,7 @@ function giftNowRepaint(){ if(!giftHomeBase()) return; const el=document.getElem
 // one pill under the Schedule page's Today · Week · Month chips, the route, and the loader. No calendar or scheduler code changes —
 // a scheduled idea is an ordinary calendar/events record, which this app only ever displays.
 function mpSeasonsPill(on,pad){
+  if(typeof areaOn==="function"&&!areaOn("seasons")) return '';   // 🧩 AREAS
   return '<div style="padding:'+(pad||'8px 12px 0')+';max-width:520px;margin:0 auto"><button id="mp-seasons-pill" onclick="mpGoto(\'seasons\')" style="width:100%;padding:8px 10px;border-radius:20px;border:2px solid #2B7A78;background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'#2B7A78')+';font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F389} Seasons &amp; Events</button></div>';
 }
 function mpSeasonsBar(){   // the Schedule page's own chips (none lit — this is its fourth page) + the lit pill
@@ -9427,7 +9451,7 @@ function renderMomHQ(el,ah){
   try{ if(typeof haKeyHealHTML==="function") h+=haKeyHealHTML(); }catch(e){}   // 🔤 HAKEY: names with a period or slash saved under the wrong key (only when there are some)
   h+=_hqGroup("🏫","School",[
     _hqB?"":_hqRow("grid","📚","Curriculum","The whole thing — grid, subject cards, pacing & build, rules, add subjects"),   // MPGROUPS: School ▸ Curriculum
-    _hqRow("generate","🪄","Generate Week","Notebooks, week JSON — the week builds itself; change it in 📅 This week"),   // GWGONE
+    ((typeof areaOn!=="function")||areaOn("school"))?_hqRow("generate","🪄","Generate Week","Notebooks, week JSON — the week builds itself; change it in 📅 This week"):"",   // GWGONE · 🧩 AREAS
     (!_hqB&&pageOn("mastery"))?_hqRowFn("setAdminSub('mastery')","🧠","Drills & Mastery","Rules, decks, sessions, cards — all in Mastery HQ"):"",   // School ▸ Mastery ▸ Settings
     (!_hqB&&pageOn("units"))?_hqRow("units","🗺","Unit Studies","Units, decks, activities (🔒 Mom chip inside)"):"",   // School ▸ Units
     (!_hqB&&pageOn("notebook"))?_hqRow("notebook","📓","Notebooks","Extra pages, prong margin, printing (🔒 Mom chip inside)"):"",   // School ▸ Notebooks
@@ -9436,7 +9460,7 @@ function renderMomHQ(el,ah){
   ]);
   h+=_hqGroup("🧹","Home & Chores",[
     _hqB?"":_hqRow("chorePlan","🧹","Chores & Stars","Each kid's lists, Up for Grabs, Star Store, points, rooms & times, Click-off Log"),   // MPGROUPS: Household ▸ Chores & Stars
-    _hqRow("dadsday","👨","Dad's Day","His own checklist plus bills, laundry, dinner and the kids"),
+    ((typeof areaOn!=="function")||areaOn("dad"))?_hqRow("dadsday","👨","Dad's Day","His own checklist plus bills, laundry, dinner and the kids"):"",   // 🧩 AREAS
     _hqB?"":_hqRow("grabs","🙌","Up for Grabs","Stock the grab list kids can claim"),
     _hqB?"":_hqRow("chores","🕵️","Click-off Log","Every check mark, who and when — its own tab on Chores & Stars"),
     pageOn("play")?_hqRow("play","🧸","School Room","Bins, stations, labels (Mom mode inside)"):""
@@ -13197,6 +13221,7 @@ function momGateTry(inp,final){
 }
 function renderMomsPlanView(el){
   mpInit();
+  if(typeof areaViewOn==="function"&&!areaViewOn(mpSubView)&&!(typeof _kioskD==="function"&&_kioskD())) mpSubView='plan';   // 🧩 AREAS: an area that is off has no page — Home Base (asked before the Mom door)
   if(!momGateOpen()){ el.innerHTML=momGateHTML(); setTimeout(function(){ const i=document.getElementById("mg-pin"); if(i) i.focus(); },30); return; }   // 🔒 MOMGATE
   if(typeof MP_SCHOOL_VIEWS!=="undefined"&&MP_SCHOOL_VIEWS[mpSubView]){ return renderMPSchool(el); }   // SCHOOLPAGES: Curriculum · Settings · Purchases · History · Wins · Mastery settings
   if(typeof MP_GROUP_VIEWS!=="undefined"&&MP_GROUP_VIEWS[mpSubView]){ return renderMPGroupPage(el); }   // MPGROUPS: Household ▸ Chores & Stars · Home Base ▸ HQ / Generate Week
@@ -20318,12 +20343,17 @@ function renderMomsDay(el){
   try{ if(kitSettings.orderDay===today) h+=kitOrderCardHTML(true); }catch(e){}
 
   // These five are shared cards now — Dad's Day renders the same ones. See mdCard*.
+  const _arS=(typeof areaOn!=="function")||areaOn("school"), _arK=_arS||areaOn("chores");   // 🧩 AREAS: 🧒 Kids + 🧾 Check-offs go when School AND Chores & Stars are off; 🤝 Together + 📓 Word banks with School
+  if(_arK){   // 🧩 AREAS
   h+=_ss('kids','🧒 Kids');   // STICKYSTACK
   try{ h+=mdCardKidsToday(today,isSchoolDay,true); }catch(e){ h+=mdCardStarBank(true); h+=mdCardKidsToday(today,isSchoolDay); }   // 🧒 KIDBAR (folds ⭐ Star Bank into 🧒 Kids today)
   h+=_ss('checklog','🧾 Check-offs');   // STICKYSTACK
   try{ h+=mdCardCheckLog(); }catch(e){}   // 🧾 Today's check-offs · −100
+  }   // 🧩 AREAS
+  if(_arS){   // 🧩 AREAS
   h+=_ss('together','🤝 Together');   // STICKYSTACK
   try{ h+=mdCardTogether(); }catch(e){}   // 🤝 Together
+  }   // 🧩 AREAS
 
   // ── 📖 Mom's school schedule — the SAME two-column agenda as Schedule ▸
   // Mom, pinned to today. taskCard/tapTask are shared, so a check-off here is
@@ -20379,8 +20409,10 @@ function renderMomsDay(el){
     }
   }catch(e){}
 
+  if(_arS){   // 🧩 AREAS
   h+=_ss('banks','📓 Word banks');   // STICKYSTACK
   try{ h+=nbBankLowAlertHTML(); }catch(e){}   // 📓 a notebook word bank about to run out of unused words
+  }   // 🧩 AREAS
   // 💳 Bills + 🧺 Laundry now live in shared card functions (Dad's Day renders the same two).
   h+=_ss('bills','💳 Bills');   // STICKYSTACK
   h+=mdCardBills(iso);
@@ -27219,18 +27251,19 @@ function _calPageBody(){
 }
 // 📱 PHONEWIDTH (her yes 2026-10-06): the tab row wraps on a phone instead of widening the whole page (pop-ups ran off the right edge).
 function mpSubnav(active){
+  const _ao=k=>(typeof areaOn!=="function")||areaOn(k);   // 🧩 AREAS: a tab whose area is off is not drawn
   if(active==='cal'&&typeof schedShowAdmin!=="undefined"&&schedShowAdmin&&typeof adminSubTab!=="undefined"&&adminSubTab==="curriculum") active='curriculum';   // SCHOOLTAB: ▸ Schedule ▸ Admin ▸ Curriculum shows as 🎓 School ▸ Curriculum
   const btn=(v,lbl)=>`<button onclick="mpGoto('${v}')" style="flex:1 1 auto;white-space:nowrap;padding:9px 6px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:none;border-radius:9px;cursor:pointer;color:${active===v?'#fff':'#9ca3af'};background:${active===v?'#2B7A78':'transparent'};transition:all .2s;white-space:nowrap">${lbl}</button>`;
   const kit=(typeof MP_KITCHEN!=="undefined")&&MP_KITCHEN.indexOf(active)>=0;   // KITCHENTAB: on Menu / Shopping List / Prep the 🍳 Kitchen tab is the lit one
   const sch=(typeof MP_SCHOOL!=="undefined")&&MP_SCHOOL.indexOf(active)>=0;     // SCHOOLTAB: on Notebooks / Mastery / Units / Curriculum the 🎓 School tab is
   const tbtn=(on,click,lbl)=>`<button onclick="${click}" style="flex:1 1 auto;white-space:nowrap;padding:9px 6px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:none;border-radius:9px;cursor:pointer;color:${on?'#fff':'#9ca3af'};background:${on?'#2B7A78':'transparent'};transition:all .2s">${lbl}</button>`;
   const kbtn=tbtn(kit,"mpGoto(mpKitchenLast())",'🍳 Kitchen'), sbtn=tbtn(sch,"mpSchoolOpen(mpSchoolLast())",'🎓 School');
-  const home=(active==='plan'||active==='hq'||active==='gen'), house=(active==='house'||active==='chores'), hlth=(active==='weigh');   // MPGROUPS: each top tab with a sub-row
+  const home=(active==='plan'||active==='hq'||active==='gen'||active==='sset'), house=(active==='house'||active==='chores'), hlth=(active==='weigh');   // MPGROUPS: each top tab with a sub-row
   const hbtn=tbtn(home,"mpGoto('plan')",'🏡 Home Base'), hsbtn=tbtn(house,"mpGoto('house')",'🧹 Household'), hlbtn=tbtn(hlth,"mpGoto('weigh')",'❤️ Health');   // ❤️ Health (was ⚖️ Weigh-In — now its first sub-tab)
   const bud=(typeof MP_BUDGET!=="undefined")?MP_BUDGET.indexOf(active)>=0:active==='gifts';   // BUDGETTAB: on Overview / Gifts / ESA the 💰 Budget tab is the lit one
   const gbtn=tbtn(bud,(typeof mpBudgetLast==="function")?"mpGoto(mpBudgetLast())":"mpGoto('gifts')",'💰 Budget');   // GIFTS (her ask 2026-11-20: "a new tab in Mom's Day called budget") · BUDGETTAB: reopens the last Budget page
   const sub=(kit&&typeof mpKitchenRow==="function")?mpKitchenRow(active):((sch&&typeof mpSchoolRow==="function")?mpSchoolRow(active):((bud&&typeof mpBudgetRow==="function")?mpBudgetRow(active):((typeof mpGroupRow==="function")?mpGroupRow(active):'')));   // MPSUBROW: inside the sticky element
-  return `<div id="mp-subnav" style="background:#fff;border-bottom:2px solid #DEF2F1"><div class="mp-row" style="display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px">${hbtn}${btn('cal','🗓 Schedule')}${hsbtn}${kbtn}${sbtn}${gbtn}${hlbtn}</div>${sub}</div>`;
+  return `<div id="mp-subnav" style="background:#fff;border-bottom:2px solid #DEF2F1"><div class="mp-row" style="display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px">${hbtn}${btn('cal','🗓 Schedule')}${_ao('household')?hsbtn:''}${_ao('kitchen')?kbtn:''}${_ao('school')?sbtn:''}${_ao('budget')?gbtn:''}${_ao('health')?hlbtn:''}</div>${sub}</div>`;
 }
 // KITCHENTAB_START — one 🍳 Kitchen tab on Mom's Day's menu row in place of Meals · Shopping List · Prep; those three become its own
 // sub-row, pinned right under the menu row (her ask 2026-11-02: "Menu, Shopping list and Prep need a central title tab with those three
@@ -27266,7 +27299,7 @@ const MP_SCHOOL=['notebook','mastery','units','curriculum','settings','history',
 const MP_SCHOOL_VIEWS={curr:'curriculum',sset:'settings',hist:'history',wins:'wins',scor:'scores',mhq:'mhq'};   // SCORESPAGE: scor → 📊 Scores   // Mom's Day sub-view → School chip
 const MP_SCHOOL_SUBS={curriculum:'The whole curriculum \u2014 grid, subject cards, pacing, rules',settings:'Kids, codes, page switches, family rules',history:'Completed work, trends, attendance, the weekly report',wins:'Stars, trophies and book progress',scores:'Where each kid is \u2014 right %, ladder, week, minutes, load',mhq:'Mastery settings \u2014 rules, decks, sessions, cards'};
 function mpSchoolSub(t){ for(const k in MP_SCHOOL_VIEWS) if(MP_SCHOOL_VIEWS[k]===t) return k; return null; }   // chip → its Mom's Day sub-view, null for a framed tab
-function mpSchoolLast(){ let v=null; try{ v=HA_LS.getItem('ha_mp_school'); }catch(e){} return MP_SCHOOL.indexOf(v)>=0?v:'notebook'; }
+function mpSchoolLast(){ let v=null; try{ v=HA_LS.getItem('ha_mp_school'); }catch(e){} return (MP_SCHOOL.indexOf(v)>=0&&v!=='settings')?v:'notebook'; }
 function mpSchoolNote(t){ if(MP_SCHOOL.indexOf(t)<0) return; try{ HA_LS.setItem('ha_mp_school',t); }catch(e){} }
 function mpSchoolRow(active){
   const chip=(on,t,lbl)=>`<button onclick="mpSchoolOpen('${t}')" style="flex:0 0 auto;white-space:nowrap;padding:6px 12px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:1.5px solid ${on?'#2B7A78':'transparent'};border-radius:20px;cursor:pointer;color:${on?'#1f5e5c':'#6b7280'};background:${on?'#DEF2F1':'transparent'}">${lbl}</button>`;
@@ -27280,7 +27313,7 @@ function mpSchoolRow(active){
 function mpSchoolOpen(t){
   if(t==='purchases'&&typeof mpEsaOpen==="function"){ mpEsaOpen(); return; }   // BUDGETTAB: an old Purchases door lands in 💰 Budget
   if(MP_SCHOOL.indexOf(t)<0) t='notebook';
-  mpSchoolNote(t);
+  if(t!=='settings') mpSchoolNote(t);   // 🧩 AREAS: Settings is a jump to Home Base, not School's last page
   const v=mpSchoolSub(t);
   if(v){ if(t==='curriculum'){ try{ currInnerTab='grid'; }catch(e){} } mpGoto(v); return; }   // a Mom's Day page of its own (the Curriculum chip lands on the grid)
   mdFrameOpen(t);   // the tab itself (Notebooks / Mastery / Units), under Mom's Day's banner + menu
@@ -27302,7 +27335,7 @@ function mpSchoolKidRow(){
 }
 function renderMPSchool(el){
   const key=MP_SCHOOL_VIEWS[mpSubView]||'curriculum';
-  const top=mwBanner(MP_SCHOOL_SUBS[key]||'')+mpSubnav(key);
+  const top=mwBanner(MP_SCHOOL_SUBS[key]||'')+mpSubnav(key==='settings'?'sset':key);   // 🧩 AREAS: Settings is lit under 🏡 Home Base
   if(key==='curriculum'){ renderCurriculumView(el,top); return; }   // bare (mpCurrBare): no Grid bar, stickies under the menu
   if(key==='settings'){ renderSettings(el,top); return; }
   if(key==='mhq'){ renderMasteryHQ(el,top); return; }
@@ -27328,8 +27361,8 @@ const MP_GROUP_VIEWS={chores:1,hq:1,gen:1};
 var _hqFromMP=false;   // the last HQ jump left from Mom's Day ▸ HQ (the ← HQ pill comes back here, not to the Schedule's Admin)
 function mpGroupRow(active){
   const chip=(on,click,lbl)=>`<button onclick="${click}" style="flex:0 0 auto;white-space:nowrap;padding:6px 12px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:1.5px solid ${on?'#2B7A78':'transparent'};border-radius:20px;cursor:pointer;color:${on?'#1f5e5c':'#6b7280'};background:${on?'#DEF2F1':'transparent'}">${lbl}</button>`;
-  if(active==='plan'||active==='hq'||active==='gen') return `<div id="mp-home-row" class="mp-sub">${chip(active==='plan',"mpGoto('plan')",'🏡 Today')}${chip(active!=='plan',"mpGoto('hq')",'🗺 HQ')}</div>`;
-  if(active==='house'||active==='chores') return `<div id="mp-house-row" class="mp-sub">${chip(active==='house',"mpGoto('house')",'🧹 Household')}${chip(active==='chores',"mpGoto('chores')",'⭐ Chores & Stars')}</div>`;
+  if(active==='plan'||active==='hq'||active==='gen'||active==='sset') return `<div id="mp-home-row" class="mp-sub">${chip(active==='plan',"mpGoto('plan')",'🏡 Today')}${chip(active==='hq'||active==='gen',"mpGoto('hq')",'🗺 HQ')}${chip(active==='sset',"mpGoto('sset')",'⚙️ Settings')}</div>`;   // 🧩 AREAS: ⚙️ Settings' home, every family
+  if(active==='house'||active==='chores') return `<div id="mp-house-row" class="mp-sub">${chip(active==='house',"mpGoto('house')",'🧹 Household')}${((typeof areaOn!=="function")||areaOn('chores'))?chip(active==='chores',"mpGoto('chores')",'⭐ Chores & Stars'):''}</div>`;
   if(active==='weigh') return `<div id="mp-health-row" class="mp-sub">${chip(true,"mpGoto('weigh')",'⚖️ Weigh-In')}</div>`;
   return '';
 }
