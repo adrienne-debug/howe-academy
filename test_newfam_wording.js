@@ -82,6 +82,12 @@ function printFor(kid, roster) {
   ok("Milo's sheet says '🐢 Milo' (the kid printed, not the first kid)", m.header === "🐢 Milo", m.header);
   const nf = printFor("ivy", [{ id: "ivy", name: "Ivy", color: "#334155", schoolAge: true }]);
   ok("a kid with no emoji set gets the app's 🌟: '🌟 Ivy'", nf.header === "🌟 Ivy", nf.header);
+  // a saved name with markup prints as typed, never as HTML (the heading escapes it)
+  const mk = printFor("teo", [{ id: "teo", name: "Teo <b>x</b> & Co", color: "#334155", emoji: "🦊", schoolAge: true }]);
+  const mkHead = (mk.page.match(/font-size:1\.1rem;font-weight:700;color:[^"]*">([\s\S]*?)<\/div>/) || [])[1];
+  const unesc = s => String(s).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+  ok("a name holding markup is escaped in the heading (no raw <b>; reads 'Teo <b>x</b> & Co')",
+    mkHead === "🦊 Teo &lt;b&gt;x&lt;/b&gt; &amp; Co" && !/<b>/.test(mk.page) && unesc(mkHead) === "🦊 Teo <b>x</b> & Co", mkHead);
   // Howe's own print: Julian's sheet reads as today (🦕 Julian); a different kid's sheet now names that kid
   const howe = cfg.window.HA_FAMILY.roster;
   const j = printFor("julian", howe), l = printFor("lucy", howe);
