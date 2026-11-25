@@ -14,7 +14,11 @@
 //  (j) page fit in Google Chrome headless with the notebook's own CSS: every passage page at every level + the Companion
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os"), cp = require("child_process");
 const rd = (f) => fs.readFileSync(path.join(__dirname, f), "utf8");
-const SRC = rd("notebooks.js"), IX = rd("index.html"), READ = JSON.parse(rd("ladders/read_and_answer.json"));
+// slice 3 (NBLADREAD3, test_nb_ladread3.js) is cut out first: this test checks slice 2 as it stands on its own (SRC0); the
+// built notebook (NB) is the whole file, so every check below also holds with slice 3 in it.
+const SRC_ALL = rd("notebooks.js"), IX = rd("index.html");
+const cut3 = (s) => { const a = s.indexOf("  // NBLADREAD3_START"), b = s.indexOf("  // NBLADREAD3_END\n\n"); if (a > 0 && b > a) s = s.slice(0, a) + s.slice(b + "  // NBLADREAD3_END\n\n".length); return s.split("\n").filter((l) => !/NBLADREAD3/.test(l)).join("\n"); };
+const SRC = cut3(SRC_ALL), READ = JSON.parse(rd("ladders/read_and_answer.json"));
 let pass = 0, fail = 0;
 const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  " + JSON.stringify(x).slice(0, 500) : "")); } };
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -53,9 +57,9 @@ BASE = BASE.split("\n").filter((l) => !/NBLADREAD/.test(l)).join("\n");
 ok("the baseline cut takes only comment lines and marked call sites", cut.every((l) => /^\s*\/\//.test(l) || /\/\/ (📖 )?NBLADREAD/.test(l)) && cut.length === 8, cut.length);
 ok("the baseline has no trace of the block", !/lrWeek|lrPage|lrCompanion|LR_CSS|nbLadReadPages|readingCursor/.test(BASE));
 const load = (s) => { const w = {}; (new Function("window", "document", s))(w, undefined); return w.HoweNotebooks; };
-const NB = load(SRC.replace(HOOK, T_HOOK)), OLD = load(BASE), I = NB._internal, L = NB.ladders;
-const K1 = Object.keys(NB.GENERATORS).filter((k) => NB.ladderPages(k).reading);
-ok("exactly one built-in notebook prints the reading ladder (the 1st-grade one)", K1.length === 1 && NB.GENERATORS[K1[0]].build === I.generateLucy, K1);
+const NB = load(SRC_ALL.replace(HOOK, T_HOOK)), OLD = load(BASE), I = NB._internal, L = NB.ladders;
+const K1 = Object.keys(NB.GENERATORS).filter((k) => NB.ladderPages(k).reading && NB.GENERATORS[k].build === I.generateLucy);
+ok("the 1st-grade notebook prints the reading ladder (slice 3 adds the 4th- and 6th-grade ones — test_nb_ladread3.js)", K1.length === 1, K1);
 const KID = K1[0];
 ok("…a starter notebook and a Pre-K look print none; nothing prints the number ladder yet",
   NB.ladderPages("kidz").reading === false && NB.ladderPages("kidt", { notebookTheme: Object.keys(NB.themes)[0] }).reading === false && NB.ladderPages(KID).number === false);
@@ -101,14 +105,14 @@ console.log("(b) off, not ready, nothing left → byte for byte as before");
   }
   // every other notebook, with reading ON and loaded
   const themes = Object.keys(NB.themes || {});
-  const GENS = Object.keys(NB.GENERATORS).filter((k) => k !== KID).map((k) => [k]).concat(themes.map((th) => ["kidt_" + th, { notebookTheme: th, nbGrade: "Pre-K", kidName: "Sam" }]), [["kidz"], [KID + "_x"]]);
+  const GENS = Object.keys(NB.GENERATORS).filter((k) => k !== KID && !NB.ladderPages(k).reading).map((k) => [k]).concat(themes.map((th) => ["kidt_" + th, { notebookTheme: th, nbGrade: "Pre-K", kidName: "Sam" }]), [["kidz"], [KID + "_x"]]);
   let same = 0; const diff = [];
   for (const [kid, extra] of GENS) {
     const ctx = mkCtx(Object.assign({ ladders: rl({ lv: "g2" }) }, extra || {}));
     if (both(gen(ctx, kid)) === both(genOld(ctx, kid)) && !("readingCursor" in gen(ctx, kid))) same++; else diff.push(kid);
   }
-  ok("every other notebook (" + GENS.length + ": built-ins, every look, starter) prints the same with reading on", same === GENS.length, diff);
-  const byKid = {}, byKid0 = {}; Object.keys(NB.GENERATORS).forEach((k) => { byKid[k] = mkCtx({ ladders: k === KID ? { reading: Object.assign({}, rl().reading, { on: false }) } : rl() }); byKid0[k] = mkCtx(); });
+  ok("every other notebook that prints no reading (" + GENS.length + ": built-ins, every look, starter) prints the same with reading on", same === GENS.length, diff);
+  const byKid = {}, byKid0 = {}; Object.keys(NB.GENERATORS).forEach((k) => { byKid[k] = mkCtx({ ladders: NB.ladderPages(k).reading ? { reading: Object.assign({}, rl().reading, { on: false }) } : rl() }); byKid0[k] = mkCtx(); });
   ok("the combined parent packet with reading off = before", NB.combinedParent(byKid) === OLD.combinedParent(byKid0));
 }
 
@@ -323,7 +327,7 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
     ok("not Mom → nothing written, nothing kept", cM.writes.length === 0 && cM.ls.length === 0);
     const cD = sandbox({ dry: true }); cD.nbLadReadSetDay(KID, "monday", true);
     ok("?dryrun=1 → no Firebase write", cD.writes.length === 0);
-    ok("nbLadderWrite takes 'days' (and still nothing else new)", /\["on","lv","opt","cur","days"\]\.indexOf\(field\)<0/.test(ldBlk));
+    ok("nbLadderWrite takes 'days' (and slice 3's 'wf', nothing else new)", /\["on","lv","opt","cur","days","wf"\]\.indexOf\(field\)<0/.test(ldBlk));
     const cs = sandbox({ settings: { [KID]: { ladders: { reading: { on: true, lv: "g1", days: "monday wednesday" } } } } }); cs._nbLadData.reading = READ;
     const lc = clone(cs.nbLadderCtx(KID));
     ok("the saved ticks reach the builder through ctx.ladders (nbLadderCtx → generateLucy)", lc.reading.days === "monday wednesday" &&

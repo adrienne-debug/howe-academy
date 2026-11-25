@@ -32,10 +32,11 @@ ok("no 🔀 in index.html", src.indexOf("\u{1F500}") < 0);
 ok("no he/his/him in the card's words", !/\b(he|his|him|she|her)\b/i.test((code(ixBlk).match(/'[^']*'|"[^"]*"/g) || []).join(" ").replace(/<[^>]*>/g, " ")));
 ok("exported once: HoweNotebooks.ladders", nbSrc.split("ladders: NB_LADDERS,").length === 2);
 { // slice 2 (NBLADREAD): only the 1st-grade notebook reads ctx.ladders — the reading ladder, in its own block, called from generateLucy alone
-  const r0 = nbSrc.indexOf("  // NBLADREAD_START"), r1 = nbSrc.indexOf("  // NBLADREAD_END\n"), outside = code(nbSrc.slice(0, r0) + nbSrc.slice(r1));
+  const r0 = nbSrc.indexOf("  // NBLADREAD_START"), r1 = nbSrc.indexOf("  // NBLADREAD_END\n"), t0 = nbSrc.indexOf("  // NBLADREAD3_START"), t1 = nbSrc.indexOf("  // NBLADREAD3_END\n");
+  const outside = code(nbSrc.slice(0, r0) + nbSrc.slice(r1, t0) + nbSrc.slice(t1));   // slice 3 (NBLADREAD3) reads it too, in its own block — test_nb_ladread3.js
   const g0 = nbSrc.indexOf("  function generateLucy(ctx) {"), gLucy = nbSrc.slice(g0, nbSrc.indexOf("\n  }\n", g0));
   ok("only the 1st-grade notebook reads ctx.ladders, and only its reading ladder (NBLADREAD)", r0 > 0 && r1 > r0 && !/ctx\.ladders|ctx\[["']ladders["']\]/.test(outside) &&
-    (code(nbSrc.slice(r0, r1)).match(/ctx\.ladders[.\w]*/g) || []).every((m) => m === "ctx.ladders" || m === "ctx.ladders.reading") &&
+    (code(nbSrc.slice(r0, r1) + nbSrc.slice(t0, t1)).match(/ctx\.ladders[.\w]*/g) || []).every((m) => m === "ctx.ladders" || /^ctx\.ladders\.reading(\.(wf|on))?$/.test(m)) && t0 > r1 && t1 > t0 &&
     outside.split("lrWeek(").length === 2 && gLucy.indexOf("lrWeek(ctx, days)") > 0);
 }
 ok("haNbContext passes ctx.ladders, guarded", src.split('ladders:((typeof nbLadderCtx==="function")?nbLadderCtx(kid):null) }; // KIDNAME_ROSTER').length === 2);
