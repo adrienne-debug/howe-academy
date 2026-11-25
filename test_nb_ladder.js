@@ -277,6 +277,10 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
     number: { prek: ["prek", "k"], k: ["prek", "k"], g1: ["k", "g1"], g2: ["g1", "g2"], g3: ["g2", "g3"], g4: ["g3", "g5"], g5: ["g3", "g5"], g6: ["g5", "g7"], g7: ["g5", "g7"], g8: ["g7", "g8"] },
   };
   const docs = [];
+  // 🎨 NBLADPIC (slice: the pictures): a question drawn as a picture (every Pre-K / K one, and 1st/2nd's "about how many") prints
+  // the picture and picture choices instead of its plain words; the words go to the parent sheet ("the picture: …"). Its own
+  // checks are in test_nb_ladpic.js.
+  const moved = (q) => !!(q.pic && L.picture && L.picture(q) && (q.lv === "prek" || q.lv === "k" || !/^(parts|pairs)$/.test(q.pic.kind)));
   for (const kind of ["reading", "number"]) {
     const data = kind === "reading" ? READ : NUM, t = kind === "reading" ? tR : tN;
     for (const lv of Object.keys(PAIR[kind])) {
@@ -291,7 +295,8 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
       const leak = secret.filter((s) => s && (asked.indexOf(esc(s)) >= 0 || asked.indexOf(s) >= 0));
       ok("  child sheet: no answer, why or rule text", leak.length === 0 && !/lp-key|lp-banner|grown-up — not|Answers/.test(childH), leak[0]);
       ok("  child sheet: every question and choice is there", kind === "reading" ? items.every((p) => childH.indexOf(esc(p.title)) >= 0 && p.q.every((q) => childH.indexOf(esc(q.text)) >= 0 && q.c.every((ch) => childH.indexOf(esc(ch)) >= 0)))
-        : items.every((q) => String(q.text).split(" / ").every((s) => childH.indexOf(esc(s)) >= 0) && q.c.every((ch) => childH.indexOf(esc(q.lv === "prek" || q.lv === "k" ? String(ch).replace(/-/g, " ") : ch)) >= 0)));
+        : items.every((q) => moved(q) ? (childH.indexOf(esc(q.text)) < 0 && parentH.indexOf("the picture: " + esc(q.text)) >= 0)
+          : String(q.text).split(" / ").every((s) => childH.indexOf(esc(s)) >= 0) && q.c.every((ch) => childH.indexOf(esc(q.lv === "prek" || q.lv === "k" ? String(ch).replace(/-/g, " ") : ch)) >= 0)));
       const keys = (parentH.match(/<div class="lp-key"><b>\d+\. ([A-E])<\/b>/g) || []).map((m) => m.slice(-5, -4));
       const ansWant = kind === "reading" ? items.flatMap((p) => p.q.map((q) => q.ans)) : items.map((q) => q.ans);
       ok("  parent sheet: its own page, marked not for the child, every answer + why/rule in order", pg.parent.length === 1 && /^<div class="page lp-parent">/.test(pg.parent[0]) && /not for the child/.test(parentH) &&
