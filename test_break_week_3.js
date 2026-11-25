@@ -12,6 +12,8 @@
  *   3. World g (the plan has ended, no calendar break): "No school week planned", no back date.
  *   4. World c1, its second break week: the break's own dates; a day off on the first day back moves the back date.
  *   5. Fail open: the plan not loaded → no label at all; the plan and the week's own dates disagree → no dates for last week.
+ *   2b. Dad's 👨‍👩‍👧‍👦 Everyone today says the same line (a2, g); the This-week strip is not drawn on a day with no school week at all
+ *      (the Schedule tab shows its break card first) — nothing there to label, before or after.
  *   6. ZERO database writes from any of it.
  *   7. 300 random normal weeks (and a one-day holiday inside a real week): every screen touched renders byte-identical to the
  *      code before.
@@ -103,8 +105,11 @@ const SCREENS=`(function(){ var o={}; ${RESET}
   digestWkSel=null; try{ o.report=renderHistoryReport(); }catch(e){ o.report="ERR "+e; }
   return JSON.stringify(o); })()`;
 const screens=X=>JSON.parse(X.run(SCREENS));
+const SCHED=`(function(){ var el={innerHTML:""}; renderSchedule(el); return el.innerHTML; })()`;
+const SCHEDW=new Set();   // log entries the Schedule tab itself writes (renderSchedule's forfeitSweep on last week's unclaimed pools — as before this slice)
+const sched=(W,X)=>{ const m=W.db.log.length, h=X.run(SCHED); for(let i=m;i<W.db.log.length;i++) SCHEDW.add(W.db.log[i]); return {h,w:W.db.log.slice(m).map(l=>l.op+" "+l.path)}; };
 const WRITE=/^(set|update|remove|inc|transaction|push)\s/;
-const writesSince=(W,m)=>W.db.log.slice(m).map(l=>l.op+" "+l.path).filter(x=>WRITE.test(x));
+const writesSince=(W,m)=>W.db.log.slice(m).filter(l=>!SCHEDW.has(l)).map(l=>l.op+" "+l.path).filter(x=>WRITE.test(x));
 const lit=h=>count(h,"background:#2B7A78;color:#fff\">");   // a Week grid day header lit as today
 
 (async function(){
@@ -123,7 +128,13 @@ const lit=h=>count(h,"background:#2B7A78;color:#fff\">");   // a Week grid day h
     ok("a2 Tue: the Week grid's line — \"No school this week — Fall Break, Nov 16–20 · back Mon Nov 23\"",t.indexOf("No school this week — Fall Break, Nov 16–20 · back Mon Nov 23")>=0,t);
     ok("a2 Tue: its header — \"This week\", this week's own dates (Nov 16–20); no week number, no last week's cards, no day lit",/^‹ This week Nov 16–20 ›/.test(t)&&t.indexOf("Week 1 ›")<0&&t.indexOf("Math — Math 1")<0&&lit(o.week)===0,t);
     ok("a2 Tue: one tap — \"‹ Last school week (Week 1 · Nov 9–13)\"",count(o.week,'onclick="mpSchWkLastSet(true)"')===1&&t.indexOf("‹ Last school week (Week 1 · Nov 9–13)")>=0,t);
-    ok("a2 Tue: the All view says the same",txt(o.weekAll)===t); }
+    ok("a2 Tue: the All view says the same",txt(o.weekAll)===t);
+    const dad=txt(o.dad), dadO=txt(screens(a2o.A).dad);
+    ok("BEFORE: Dad's Everyone today said only \"No school today — Fall Break 🎉\"",/marked done with Dad\. No school today — Fall Break 🎉$/.test(dadO),dadO.slice(-120));
+    ok("a2 Tue: Dad's Everyone today — the same line, \"No school this week — Fall Break, Nov 16–20 · back Mon Nov 23\", then the day as before",/marked done with Dad\. No school this week — Fall Break, Nov 16–20 · back Mon Nov 23 No school today — Fall Break 🎉$/.test(dad),dad.slice(-160));
+    const SN=sched(a2,a2.A), SO=sched(a2o,a2o.A), sN=SN.h, sO=SO.h;
+    ok("a2 Tue: the This-week strip isn't drawn on a day with no school week (the Schedule's break card comes first) — before and after alike",sN.indexOf("tws-strip")<0&&sO.indexOf("tws-strip")<0&&sN===sO&&/Fall Break/.test(txt(sN)),txt(sN).slice(0,120));
+    ok("(the Schedule tab's own forfeit sweep wrote the same "+SN.w.length+" pointClaims on both builds — as before this slice, not counted below)",JSON.stringify(SN.w)===JSON.stringify(SO.w)&&SN.w.every(x=>/^set pointClaims\//.test(x)),[SN.w,SO.w]); }
   { a2.A.run(RESET+"mpSchWkLastSet(true);"); const h=a2.A.run('mpSchWeekHTML("mom")'), t=txt(h), ho=a2o.A.run(RESET+'var __q=mlQueueLay, __d=dsDoneAtTime; mlQueueLay=function(x){ return x; }; dsDoneAtTime=function(x){ return x; }; var __r=mpSchWeekHTML("mom"); mlQueueLay=__q; dsDoneAtTime=__d; __r');   // the code before, today's column as laid
     ok("a2 Tue, tapped: \"Last school week\", \"Week 1 · Nov 9–13\", ↩ back to this week",/^‹ Last school week Week 1 · Nov 9–13 ↩ back to this week ›/.test(t),t.slice(0,120));
     ok("a2 Tue, tapped: last school week's cards — the same cards the code before drew (today's column as laid, not re-laid live)",t.indexOf("Math — Math 1")>=0&&t.indexOf("Mon Tue Wed Thu Fri")>=0
@@ -157,6 +168,8 @@ const lit=h=>count(h,"background:#2B7A78;color:#fff\">");   // a Week grid day h
     const m=g.db.log.length, o=screens(g.A), t=txt(o.week);
     ok("g Tue: \"No school week planned\" — her answer 1's words, no back date (no plan week ahead)",/^‹ This week Nov 16–20 › No school week planned ‹ Last school week \(Week 1 · Nov 9–13\)$/.test(t),t);
     g.A.run(RESET+"mpSchWkLastSet(true);"); const tl=txt(g.A.run('mpSchWeekHTML("mom")'));
+    ok("g Tue: Dad's Everyone today — \"No school week planned\", then the day's line as before",/marked done with Dad\. No school week planned No school week planned 🎉$/.test(txt(o.dad)),txt(o.dad).slice(-100));
+    ok("g Tue: the This-week strip isn't drawn (the Schedule's \"No school week planned\" card)",sched(g,g.A).h.indexOf("tws-strip")<0);
     ok("g Tue, tapped: last school week, labelled, no day lit",/^‹ Last school week Week 1 · Nov 9–13/.test(tl)&&tl.indexOf("•")<0);
     ok("g: ZERO database writes",writesSince(g,m).length===0);
   }
@@ -196,6 +209,7 @@ const lit=h=>count(h,"background:#2B7A78;color:#fff\">");   // a Week grid day h
       mpSchWkStep(-1); o.push(mpSchWkNavHTML()); mpSchWkStep(1); o.push(mpSchWkNavHTML()); mpSchWkStep(1); o.push(mpSchWkNavHTML()); mpSchWkBack(); o.push(mpSchWkNavHTML(),String(mpSchWkOff));
       var el={innerHTML:""}; renderDadAll(el); o.push(el.innerHTML); digestWkSel=null; o.push(renderHistoryReport());
       return JSON.stringify(o); })()`;
+    ok("a school day: the This-week strip is drawn (\"📅 This week · …\"), identical to the code before",(()=>{ const n=sched(NEW,NEW.A).h, o=sched(OLD,OLD.A).h; return n.indexOf("tws-strip")>=0&&n.indexOf("📅 This week ·")>=0&&n===o; })());
     for(const W of [OLD,NEW]) for(const X of W.devs) X.run('calendarData.holidays=Object.assign({},calendarData.holidays,{hx:{name:"Teacher Day",date:"2026-11-10",pause:"school"}});');
     ok("holiday inside a real week (Tue): every screen identical to the code before",OLD.A.run(NAV)===NEW.A.run(NAV)&&NEW.A.run("bwlInfo()")===null);
     for(const W of [OLD,NEW]) for(const X of W.devs) X.run('delete calendarData.holidays.hx;');
@@ -210,7 +224,7 @@ const lit=h=>count(h,"background:#2B7A78;color:#fff\">");   // a Week grid day h
       const today=WD[Math.floor(rnd()*6)], other=WD[Math.floor(rnd()*6)], who=["mom","all","kid_a","kid_b"][Math.floor(rnd()*4)];
       const set='weekData.tasks='+JSON.stringify(tasks)+'; checked='+JSON.stringify(ck)+'; _todayDay="'+today+'"; day="'+today+'"; ';
       const R=`(function(){ var o=[]; ${RESET} o.push(mpSchWeekHTML("${who}"),mpSchWkNavHTML()); mpSchWkStep(${rnd()<0.5?-1:1}); o.push(mpSchWkNavHTML(),String(mpSchWkOff)); mpSchWkBack();
-        var el={innerHTML:""}; renderDadAll(el); o.push(el.innerHTML); digestWkSel=null; o.push(renderHistoryReport());
+        var el={innerHTML:""}; renderDadAll(el); o.push(el.innerHTML); digestWkSel=null; o.push(renderHistoryReport()); o.push(twsHTML());
         return JSON.stringify(o); })()`;
       const rows=[];
       for(const W of [OLD,NEW]){ W.clock.now=hm(ISO[today],8+(it%10),(it*7)%60); W.A.run(set); rows.push(W.A.run(R)); }
