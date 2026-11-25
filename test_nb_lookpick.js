@@ -30,9 +30,12 @@ const SITES = [
 ];
 ok(SITES.every(([now, was]) => count(html, now) === 1 && (was === "" || count(html, was) === 0)), "index.html: four call sites, each once (nbSetLook's guard, the look's two halves, Kids' Corner)");
 let htmlBase = html.slice(0, hA) + html.slice(hB + hE.length);
+// NB_CUSTOM_COPY (2026-11-24): "Same as another kid…" copies the ticks — Mom's settings, not the build (test_nb_customize_copy.js)
+const cA = htmlBase.indexOf("// NB_CUSTOM_COPY_START"), cE = "// NB_CUSTOM_COPY_END\n", cB = htmlBase.indexOf(cE), copyBlk = cA >= 0 ? htmlBase.slice(cA, cB + cE.length) : "";
+if (copyBlk) htmlBase = htmlBase.replace(copyBlk, "");
 SITES.forEach(([now, was]) => { htmlBase = htmlBase.replace(now, was); });
 ok(!/NB_LOOKPICK|nbLookPick|nbLookKid|nbLookAllow|nbLooksAllowed|looksAllowed|lookCard/.test(htmlBase), "with the block and call sites cut out, index.html has no trace of this change");
-ok(count(html, "looksAllowed") === count(block, "looksAllowed") && count(html, "lookCard") === count(block, "lookCard"), "looksAllowed / lookCard are read only inside the block — the notebook build never sees the ticks");
+ok(count(html, "looksAllowed") === count(block, "looksAllowed") + count(copyBlk, "looksAllowed") && count(html, "lookCard") === count(block, "lookCard"), "looksAllowed / lookCard are read only inside the block (and the copy) — the notebook build never sees the ticks");
 const nS = "  // NB_LOOKPICK_START", nE = "  // NB_LOOKPICK_END\n", nA = nbSrc.indexOf(nS), nB = nbSrc.indexOf(nE);
 const EXPORT = "    lookCard: lookCard,                 // 🎨 NB_LOOKPICK: a look's mascot, picture row and colours (Kids' Corner look picker)\n";
 ok(nA > 0 && nB > nA && count(nbSrc, "// NB_LOOKPICK_START") === 1 && count(nbSrc, EXPORT) === 1, "notebooks.js: one NB_LOOKPICK block + one export line");
