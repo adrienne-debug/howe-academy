@@ -219,7 +219,7 @@ ok(!/col-(plain|ocean|forest|horses)/.test(html), "index.html names none of the 
 // looks). The colour sets have none, so this notebook offers 0 picture looks: the tick list and the kid's picker never show
 // for it, and Mom's pills above stay the one control. Plainly not offered there — no second control.
 ok(typeof NB.lookCard !== "function" || K.LU_LOOKS.every(l => NB.lookCard(l.key) === null), "the colour sets have no Kids' Corner picture card (lookCard → null): not offered in the tick list or Kids' Corner");
-ok(!/function nbLookPickRow/.test(html) || /const offer=nbLookPickOffer\(sel,o\); if\(offer\.length<2\) return pillsHtml;/.test(html), "…so Mom's look card keeps its plain pills for this notebook (fewer than two picture looks → pills untouched)");
+ok(!/function nbLookPickRow/.test(html) || /const offer=nbLookPickOffer\(sel,o\); if\(offer\.length<2\) return (part==="ticks"\?"":)?pillsHtml;/.test(html), "…so Mom's look card keeps its plain pills for this notebook (fewer than two picture looks → pills untouched)");
 
 // ── (f) page fit in Chrome ───────────────────────────────────────────────────────────────────────────────────────────
 // Each page's skeleton: every element's box height (0.1 px) and the page's own overflow, built IN the browser from notebooks.js
