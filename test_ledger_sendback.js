@@ -293,7 +293,7 @@ console.log("\n── G · Dad's link, a kid's device, ?dryrun=1 ──");
   const dl = pop(Dd, "kid_a", 0);
   ok("Dad's link, locked: the rows and the marks, no ↩ Send back; the taps refused, nothing written", !SBB.test(dl) && Dd.run("lgSendBack(" + aT + ",'w')") === false && Dd.run("lgSendBack(" + aT + ",'m')") === false && writes(w, m).length === 0);
   Dd.run("dadUnlocked=true;1"); const du = pop(Dd, "kid_a", 0), dw = pop(Dd, "kid_a", -1);
-  ok("with his code in: ↩ Send back on today's ticked rows, not on Wednesday's (his un-tick reaches today only)", /↩ Send back/.test(rowT(du, "Wipe the table")) && !SBB.test(dw) && Dd.run("lgSendBack('kid_a','" + wk + "','wednesday','s:chores:" + I.zone + "','w')") === false, rowT(du, "Wipe the table"));
+  ok("with his code in: ↩ Send back on today's ticked rows and on Wednesday's too (DADPAST, her \"yes\" 11/24: the same days as Mom's)", /↩ Send back/.test(rowT(du, "Wipe the table")) && /↩ Send back/.test(rowT(dw, "Zoned sweep")), [rowT(du, "Wipe the table"), rowT(dw, "Zoned sweep")]);
   const b0 = bal(A, "kid_a"), kt = logKey(A, "kid_a", "Wipe the table"); Dd.run("lgSendBack(" + aT + ",'w')"); await w.flush();
   const L = adj(w, "kid_a")["flg_" + kt.join("_")];
   ok("…Wasn't done by Dad: \"🚩 Wasn't done: Wipe the table · by Dad\" −100, the mark by dad; the un-tick's line \"↩︎ Dad undid: Wipe the table\"", !!L && L.note === "🚩 Wasn't done: Wipe the table · by Dad" && lineOf(w, "kid_a", kt).flagBy === "dad" && A.run("JSON.stringify(bankLedger('kid_a').map(function(x){ return x.note; }))").indexOf("↩︎ Dad undid: Wipe the table") >= 0 && bal(A, "kid_a") === b0 - 110, [L, bal(A, "kid_a") - b0]);
@@ -511,6 +511,61 @@ console.log("\n── C · C6's −1 on a 0 ⭐ daily, then ticked and sent back
   }
   S.zeroSteps = st;
   ok("the kid's bank against Tuesday night: " + st.map(x => x[0] + " " + x[1]).join(" → "), J(st.map(x => x[1])) === J([-1, -1, -1, -1, -101, -1]), st);
+}
+// ── DP ── (DADPAST, her "yes" 2026-11-24: Dad on his own link with his code in reaches the same days as Mom; Wed 12/9)
+console.log("\n── DP · Dad's past days (his link, his code in) ──");
+{ const wk4 = A.run("activeWk()"), pw4 = A.run("_prevWkKey()"), ci = idxOf(A, "chores", "kid_c", "Toys in the bin", "tuesday"), bi = idxOf(A, "morning", "kid_a", "Make the bed", "tuesday");
+  const onT = (slot, kid, i, dn) => A.run(slot === "morning" ? "mStepDoneOn('" + kid + "','" + dn + "'," + i + ")" : "rtDoneOn('" + slot + "','" + kid + "','" + dn + "'," + i + ")");
+  const onDay = (d, dn, js) => d.run("(function(){ const d0=day; day='" + dn + "'; try{ " + js + " } finally{ day=d0; } })()");
+  loadH(Dd, HJS); loadH(Kk, HJS);
+  // routineEditable on each kind of device
+  Dd.run("dadUnlocked=true;1"); const ed = d => onDay(d, "tuesday", "return routineEditable();");
+  const eds = { dadCode: ed(Dd), mom: ed(A), dadLocked: (Dd.run("dadUnlocked=false;1"), ed(Dd)), kid: ed(B), kioskKid: ed(Kk), kidWithCode: (Kk.run("dadUnlocked=true;1"), ed(Kk)) }; Kk.run("dadUnlocked=false;1");
+  ok("routineEditable on a past day (Tue): Mom yes · Dad's link with his code yes · Dad's link without it no · a kid's device no · a kids' kiosk no, even with a Dad code typed on it (only Dad's own link counts)", J(eds) === J({ dadCode: true, mom: true, dadLocked: false, kid: false, kioskKid: false, kidWithCode: false }), eds);
+  // each caller, on Dad's link with his code, on Tuesday
+  Dd.run("dadUnlocked=true;__toast.length=0;1"); const b0 = bal(A, "kid_c"), wasT = onT("chores", "kid_c", ci, "tuesday");
+  onDay(Dd, "tuesday", "toggleRtStep('chores','kid_c'," + ci + ");"); await w.flush();
+  ok("toggleRtStep (☀️ 🧹 🌙 lists): Dad ticks kid_c's Tuesday toys from his device: done, its stars paid (as Mom's tap would)", wasT === false && onT("chores", "kid_c", ci, "tuesday") === true && bal(A, "kid_c") > b0 && Dd.run("__toast.length") === 0, [wasT, bal(A, "kid_c") - b0]);
+  onDay(Dd, "tuesday", "toggleRtStep('chores','kid_c'," + ci + ");"); await w.flush();
+  ok("…and un-ticks it again: back to not done, the stars back off", onT("chores", "kid_c", ci, "tuesday") === false && bal(A, "kid_c") === b0);
+  Dd.run("mdKidTick('chores','kid_c','tuesday'," + ci + ")"); await w.flush(); const pt = onT("chores", "kid_c", ci, "tuesday"); Dd.run("mdKidTick('chores','kid_c','tuesday'," + ci + ")"); await w.flush();
+  ok("his Kids today pop-up's tick (mdKidTick) on Tuesday: ticks, and a second tap un-ticks", pt === true && onT("chores", "kid_c", ci, "tuesday") === false && bal(A, "kid_c") === b0);
+  const bb = bal(A, "kid_a"), wasB = onT("morning", "kid_a", bi, "tuesday"); onDay(Dd, "tuesday", "toggleMorningStep('kid_a'," + bi + ");"); await w.flush();
+  ok("toggleMorningStep (🌅 Morning list): Dad ticks kid_a's Tuesday bed: done, +5", wasB === false && onT("morning", "kid_a", bi, "tuesday") === true && bal(A, "kid_a") === bb + 5, [wasB, bal(A, "kid_a") - bb]);
+  onDay(Dd, "tuesday", "toggleMorningStep('kid_a'," + bi + ");"); await w.flush();
+  const pi = idxOf(A, "afternoon", "kid_a", "Water the plants", "monday"); A.run("amSend('afternoon','kid_a','monday'," + pi + ")"); await w.flush();
+  const cid = A.run("(function(){ const m=amCarry.kid_a||{}; return Object.keys(m).filter(function(k){ return m[k].fromDay==='monday'&&m[k].fromWk==='" + wk4 + "'; })[0]||''; })()"), pb = bal(A, "kid_a");
+  onDay(Dd, "tuesday", "amToggle('kid_a'," + J(cid) + ");"); await w.flush();
+  ok("amToggle (🌅 a carry on Tuesday's morning list): Dad ticks it there: done, its stars paid", !!cid && !!(w.get("amCarry/kid_a/" + cid) || {}).done && bal(A, "kid_a") > pb, [cid, bal(A, "kid_a") - pb]);
+  onDay(Dd, "tuesday", "amToggle('kid_a'," + J(cid) + ");"); await w.flush(); A.run("amTakeBack('kid_a'," + J(cid) + ")"); await w.flush();
+  const sk = wk4 + "_tuesday_kid_d_morning", s0 = J(w.get(wk4 + "/sl/" + sk) || null); onDay(Dd, "tuesday", "toggleSlot('kid_d','morning');"); await w.flush();
+  ok("toggleSlot (a list with no steps, ticked whole): Dad's tap sets Tuesday's kid_d Morning done (no stars on this tap)", (w.get(wk4 + "/sl/" + sk) || {}).done === true, [s0, w.get(wk4 + "/sl/" + sk)]);
+  onDay(Dd, "tuesday", "toggleSlot('kid_d','morning');"); await w.flush();
+  const lock = onDay(Dd, "tuesday", "return routineLockNote();"), mr = onDay(Dd, "tuesday", "mrOpen.kid_a=true; return mrIndividualHTML('kid_a');"), rs = onDay(Dd, "tuesday", "rtOpen={}; rtOpen[rtOpenKey('chores','kid_c')]=true; return rtSlotHTML('chores','kid_c');");
+  ok("mrIndividualHTML and rtSlotHTML (the lists as drawn on his device on Tuesday): open, no \"locked\" note — they are tappable", !!lock && mr.indexOf(lock) < 0 && rs.indexOf(lock) < 0 && /onclick/.test(mr) && /onclick/.test(rs), [lock.slice(0, 80)]);
+  // Send back on a past day, Dad
+  onDay(B, "tuesday", "toggleRtStep('chores','kid_c'," + ci + ");"); await w.flush();   // a kid's own back-filled tick? refused on her device
+  ok("(a kid's device) a past-day tick from the kid's own device is refused, as before (\"…you can only check off today ✋\")", onT("chores", "kid_c", ci, "tuesday") === false);
+  A.run("mdKidTick('chores','kid_c','tuesday'," + ci + ")"); await w.flush();   // Mom back-fills it (as she always could)
+  const aT = "'kid_c','" + wk4 + "','tuesday','s:chores:" + ci + "'", b1 = bal(A, "kid_c"), kt = logKey(A, "kid_c", "Toys in the bin", "tuesday");
+  ok("↩ Send back shows on Tuesday's ticked row on Dad's ledger (his code in)", /↩ Send back/.test(rowT(pop(Dd, "kid_c", -1), "Toys in the bin")), rowT(pop(Dd, "kid_c", -1), "Toys in the bin"));
+  const r = Dd.run("lgSendBack(" + aT + ",'w')"); await w.flush();
+  ok("Dad's Wasn't done on Tuesday's row: un-ticked, its pay back, −100, the mark \"by Dad\" — and his Undo puts it all back", r === true && onT("chores", "kid_c", ci, "tuesday") === false && bal(A, "kid_c") < b1 - 99 && lineOf(w, "kid_c", kt).flagBy === "dad" && (Dd.run("lgFlagUndo('step','kid_c'," + J(kt.join("/")) + ",0)"), await w.flush(), bal(A, "kid_c") === b1 && onT("chores", "kid_c", ci, "tuesday") === true), [r, bal(A, "kid_c") - b1]);
+  // refused: locked, another week, a day not here yet
+  Dd.run("dadUnlocked=false;__toast.length=0;1"); let m = w.mark();
+  onDay(Dd, "tuesday", "toggleRtStep('chores','kid_c'," + ci + ");"); onDay(Dd, "tuesday", "mdKidTick('chores','kid_c','tuesday'," + ci + ");");
+  const lk = onDay(Dd, "tuesday", "return routineLockNote();");
+  ok("…locked, his device draws Tuesday's lists with the \"locked\" note again", onDay(Dd, "tuesday", "rtOpen={}; rtOpen[rtOpenKey('chores','kid_c')]=true; return rtSlotHTML('chores','kid_c');").indexOf(lk) >= 0);
+  ok("Dad's link WITHOUT his code: a past-day tick and his pop-up's tick are refused, nothing written (the toast says why); no Send back, refused if called", (await w.flush(), writes(w, m).length === 0) && onT("chores", "kid_c", ci, "tuesday") === true && Dd.run("__toast.length") >= 1 && !SBB.test(pop(Dd, "kid_c", -1)) && Dd.run("lgSendBack(" + aT + ",'m')") === false);
+  Dd.run("dadUnlocked=true;1"); m = w.mark();
+  ok("Dad with his code: Send back named with LAST week's key on Tuesday's row is refused, nothing written", Dd.run("lgSendBack('kid_c','" + pw4 + "','tuesday','s:chores:" + ci + "','m')") === false && (await w.flush(), writes(w, m).length === 0));
+  const ti = idxOf(A, "chores", "kid_c", "Toys in the bin", "thursday"); A.run("mdKidTick('chores','kid_c','thursday'," + ti + ")"); await w.flush(); m = w.mark();
+  ok("…and on a row ticked ahead for Thursday (tomorrow): refused, nothing written", A.run("rtDoneOn('chores','kid_c','thursday'," + ti + ")") === true && Dd.run("lgSendBack('kid_c','" + wk4 + "','thursday','s:chores:" + ti + "','m')") === false && (await w.flush(), writes(w, m).length === 0));
+  A.run("mdKidTick('chores','kid_c','thursday'," + ti + ")"); await w.flush();
+  Dd.run("dadUnlocked=false;1");
+  // Mom: unchanged
+  const bm = bal(A, "kid_c"); A.run("mdKidTick('chores','kid_c','tuesday'," + ci + ")"); await w.flush();
+  ok("Mom: unchanged — her past-day un-tick works as before", onT("chores", "kid_c", ci, "tuesday") === false && bal(A, "kid_c") < bm);
 }
 if (process.env.LGS_DUMP) fs.writeFileSync(process.env.LGS_DUMP, J(S.dump));
 console.log("\n(two devices at the same moment: the un-tick itself, the pop-up's own, ran on both: kid_c's bank moved " + S.race + " — see the report)");
