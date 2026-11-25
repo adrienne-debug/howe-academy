@@ -2,6 +2,35 @@
 
 *For Mom · 2026-11-24 · branch `claude/ln-questions-plain-02c71e`*
 
+## Right-answer letters spread out (LN_ANSWER_SPREAD, added 2026-11-24)
+
+You said **"Yes, spread them."** B was the right answer far too often. Now some questions list their choices in a different order. Every question still has the same words, the same choices and the same right answer; only the letter it sits under changed. Your guide's answer key reads from the same list, so it always matches. The order is fixed: the notebook prints the same every time.
+
+| Table | Before | After |
+|---|---|---|
+| Word analogies (24) | A 2 · B 10 · C 8 · D 4 | **A 6 · B 6 · C 6 · D 6** |
+| Number questions (28) | A 1 · B 17 · C 10 · D 0 | A 2 · B 15 · C 11 · D 0 |
+| Passage questions (3 passages × 2) | A 1 · B 3 · C 2 · D 0 | A 1 · B 2 · C 2 · D 1 |
+
+- **Analogies:** the right letter is never the same two days running, and no letter comes up more than twice in a week. (Before, B could be right four days in one week.)
+- **Number questions — 26 of 28 could not move.** Their choices go from smallest to largest, the way real tests list numbers. Keeping that order means the right answer stays where its value falls. Moving it would mean changing the wrong numbers, and this job was not allowed to change any choice. So B is still right 15 times. ★ To really spread these, each question would need new wrong numbers (for example, adding a smaller or larger wrong answer so the right one lands on A or D). That needs your OK first.
+- Fix-the-sentence and word-of-the-day have no lettered choices, so nothing changed there.
+- The item lists further down show each question's letters **before** this change. These 9 moved:
+
+| Item | Question (start) | Right answer | Letter |
+|---|---|---|---|
+| cv02 | WATER is to HOSE as INK is to ___ | pen | B → A |
+| cv05 | CHEER is to EXCITEMENT as WAIL is to ___ | grief | B → A |
+| cv08 | PRACTICE is to IMPROVE as REST is to ___ | recover | C → A |
+| cv14 | TONGUE is to TASTE as EAR is to ___ | hear | C → A |
+| cv16 | HELMET is to PROTECT as MAP is to ___ | guide | B → D |
+| cv18 | ONION is to TEARS as PEPPER is to ___ | sneeze | B → D |
+| im18 | Which fraction is greater: 3/4 or 5/8? | 3/4, because it equals 6/8 | B → A (now listed 3/4 first, like the question; "equal" and "cannot compare" stay last) |
+| im20 | A tree grew 3/10 of a meter… | 7/10 m | B → C (its choices now go smallest to largest like the rest) |
+| Passage 1, Q2 | What is the main point of this passage? | Crows behave in more complex ways than most people expect | B → D |
+
+- **Checked:** a small program solved all 28 number questions in the new order and agreed with every key. A fresh reader who had never seen the key solved all 58 lettered questions in the new order and matched the new key on every one.
+
 ## What changed, in plain words
 
 - You said **"Replace them now."** So the questions the 6th-grade notebook carries in its own code no longer lean on snakes or reptiles.

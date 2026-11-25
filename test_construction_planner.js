@@ -45,8 +45,9 @@ if (process.argv.includes("--hashes")) { console.log(JSON.stringify(hashes(loadN
 
 // Pre-K hashes refreshed ON PURPOSE 2026-11-24 (PK_COVERFIT, test_prek_cover_fit.js): three CSS lines join every Pre-K notebook's
 // sheet so the cover's cards can't run off the page; with that block cut out of notebooks.js the old hashes come back exactly.
+// lincoln/empty·mastery·cursors·fourDay·picks refreshed ON PURPOSE 2026-11-24 (LN_ANSWER_SPREAD, test_ln_answer_spread.js): built-in choices reordered; block cut out → 1f57f4a9…/e33c9858…/52c51b7d… come back.
 const BEFORE = {
- "lincoln/empty": "1f57f4a97fbb0886", "lincoln/mastery": "1f57f4a97fbb0886", "lincoln/cursors": "e33c98589e09683b", "lincoln/fourDay": "52c51b7d3c56edc6", "lincoln/picks": "1f57f4a97fbb0886", "lincoln/theme": "2851b1b36aab33a8",
+ "lincoln/empty": "575d81da685d4a72", "lincoln/mastery": "575d81da685d4a72", "lincoln/cursors": "82c9d4e7d5942072", "lincoln/fourDay": "032e062d260350cc", "lincoln/picks": "575d81da685d4a72", "lincoln/theme": "2851b1b36aab33a8",
  "ellis/empty": "c3a87b363fbdcf7e", "ellis/mastery": "c3a87b363fbdcf7e", "ellis/cursors": "46e85ff74ade36f5", "ellis/fourDay": "25d955c9ae845aa2", "ellis/picks": "c3a87b363fbdcf7e", "ellis/theme": "2851b1b36aab33a8",
  "lucy/empty": "6396d3822f2d341e", "lucy/mastery": "6396d3822f2d341e", "lucy/cursors": "0917d7367019f92f", "lucy/fourDay": "85f73d959c6de9c2", "lucy/picks": "6396d3822f2d341e", "lucy/theme": "2851b1b36aab33a8",
  "julian/empty": "b81b956feb8e2a8e", "julian/mastery": "e96433639c199178", "julian/cursors": "90ed422a69e056a1", "julian/fourDay": "0e9c6a24b585ee61", "julian/picks": "12830dbf3c93d01a", "julian/theme": "2851b1b36aab33a8",

@@ -68,7 +68,14 @@ ok(!shapeBad.length, "every item: same fields in the same order, same tag, skill
 const spread = (d, t) => d.banks[t].map(q => q.ans).join("");
 ok(spread(NEWD, "cogat_verbal") === spread(OLDD, "cogat_verbal") && spread(NEWD, "iowa_math") === spread(OLDD, "iowa_math") &&
   NEWD.banks.fallback_passages.every((p, i) => p.q1_ans === OLDD.banks.fallback_passages[i].q1_ans && p.q2_ans === OLDD.banks.fallback_passages[i].q2_ans),
-  "answer letters week by week are the same: analogies " + spread(NEWD, "cogat_verbal") + " · numbers " + spread(NEWD, "iowa_math"));
+  "in the data line the rewrite kept every answer letter: analogies " + spread(NEWD, "cogat_verbal") + " · numbers " + spread(NEWD, "iowa_math"));
+// LN_ANSWER_SPREAD (2026-11-24) then moves some choices at load: the printed right answer is the same TEXT as the data line's,
+// under the letter LN_ANSWER_SPREAD's table gives (test_ln_answer_spread.js checks that table item by item).
+const SPREAD = new Function(src.slice(li, src.indexOf("  var LINCOLN_CONFIG = {")) + "\nreturn LINCOLN_DATA;")();
+const keyT = (ch, l) => (ch.find(c => c.l === l) || {}).t;
+ok(["cogat_verbal", "iowa_math"].every(t => SPREAD.banks[t].every((q, i) => keyT(q.choices, q.ans) === keyT(NEWD.banks[t][i].choices, NEWD.banks[t][i].ans))) &&
+  SPREAD.banks.fallback_passages.every((p, i) => ["q1", "q2"].every(f => keyT(p[f], p[f + "_ans"]) === keyT(NEWD.banks.fallback_passages[i][f], NEWD.banks.fallback_passages[i][f + "_ans"]))),
+  "after LN_ANSWER_SPREAD every right answer is the same text as before; letters now: analogies " + spread(SPREAD, "cogat_verbal") + " · numbers " + spread(SPREAD, "iowa_math"));
 const AN = /^[A-Z][A-Z -]*[A-Z] is to [A-Z][A-Z -]*[A-Z] as [A-Z][A-Z -]*[A-Z] is to ___$/;
 ok(NEWD.banks.cogat_verbal.every(q => AN.test(q.text) && q.choices.length === 4 && q.choices.every(c => c.t.length > 0)), "every analogy is still \"A is to B as C is to ___\" with four choices");
 ok(NEWD.banks.cogat_verbal.every(q => { const L = q.choices.map(c => c.t.split(" ").length); return L.filter(n => n === L[q.choices.findIndex(c => c.l === q.ans)]).length > 1; }),
@@ -105,7 +112,7 @@ ok(!d1.length && !d2.length && !d3.length && !d4.length && !d5.length, "no dupli
 const NAMES = ["Julian", "Lincoln", "Ellis", "Lucy", "Caleb", "Taylor", "David", "Kenzie", "Howe", "DeWalt", "Burris", "Mom", "Dad"];
 const named = PAIRS.filter(p => NAMES.some(n => new RegExp("\\b" + n + "\\b").test(p[4])));
 ok(!named.length, "no rewritten text names a child or family", named.map(p => p[1]).join(","));
-const solved = NEWD.banks.iowa_math.map(q => [q.id, solver.solve({ text: q.text, choices: q.choices }), q.ans]);
+const solved = SPREAD.banks.iowa_math.map(q => [q.id, solver.solve({ text: q.text, choices: q.choices }), q.ans]);   // the order that prints (after LN_ANSWER_SPREAD)
 ok(solved.every(s => s[1] === s[2]), "the blind number solver (question + choices only) agrees with the key on all " + solved.length + " number questions", solved.filter(s => s[1] !== s[2]).map(s => s[0] + " solver " + s[1] + " key " + s[2]).join(", "));
 const oldIm08 = OLDD.banks.iowa_math.find(q => q.id === "im08");
 ok(solver.solve(oldIm08) === "C" && oldIm08.ans === "B", "…and it does catch a wrong key: the old im08 solves to C ($295) while its key said B");
