@@ -6681,8 +6681,8 @@ function bankDirectRemove(kid,id){
 // are always in the bank balance itself.)
 function bankEarnedDay(kid,d){ const adjs=(bank[kid]&&bank[kid].adjustments)||{}; let n=0; Object.keys(adjs).forEach(id=>{ const a=adjs[id]; if(a&&!a.held&&a.src==="earn"&&a.wk===(typeof listWk==="function"?listWk(WK):WK)&&a.day===d) n+=(a.amount||0); }); return n; }
 function bankEarnedWeek(kid){ const adjs=(bank[kid]&&bank[kid].adjustments)||{}; let n=0; Object.keys(adjs).forEach(id=>{ const a=adjs[id]; if(a&&!a.held&&a.src==="earn"&&a.wk===(typeof listWk==="function"?listWk(WK):WK)) n+=(a.amount||0); }); return n; }
-function earnedDayTotal(kid,d){ return ((d===_todayDay&&typeof lwGap==="function"&&lwGap())?0:getKidDayPoints(kid,d))+bankEarnedDay(kid,d); }   // 📅 LISTWK: today on a week the board doesn't hold — no pool from last school week
-function earnedWeekTotal(kid){ return getKidPoints(kid)+bankEarnedWeek(kid); }
+function earnedDayTotal(kid,d){ return ((typeof lwGap==="function"&&lwGap())?0:getKidDayPoints(kid,d))+bankEarnedDay(kid,d); }   // 📅 LISTWK: today on a week the board doesn't hold — no pool from last school week · 📅 BWLABEL: nor on any other day of it (another day's tab showed last school week's pool for that weekday)
+function earnedWeekTotal(kid){ return getKidPoints(kid)+((typeof bwlBoardWages==="function"&&typeof lwGap==="function"&&lwGap())?bwlBoardWages(kid,null):bankEarnedWeek(kid)); }   // 📅 BWLABEL: a week with no school — last school week's own total (its pool + its wages), not its pool + this week's wages; every reader is a view of the board's week (🎰 Slot Machine Points, the Spin admin)
 
 let slotSpinDay=null;
 let slotPendingTaskId=null;
@@ -9713,6 +9713,105 @@ function _nextSchoolDayAfterToday(){
   }
   return null;
 }
+// 📅 BWLABEL_START — Mom's and Dad's week pages say what week it is (DESIGN_break_week_2026-11-24 §5 row 3; her "Yes, start
+//   step 3" 2026-11-25, with her answers 1, 4 and 5). A week the board doesn't hold (boardWeekIsThisWeek() false: a break week,
+//   a week after the plan ends) builds no week, so Mom's 🗓 Week grid said "This week · Week N" over LAST school week's cards
+//   with today's weekday lit on them, and the weekly report's chip said "This week". Now the Week grid gives one line — "No
+//   school this week — <the break's name from her calendar>, <its dates> · back <day date>", or "No school week planned" when
+//   her calendar has no break for the week — and one tap to "‹ Last school week (Week N · <dates>)": that week's cards,
+//   labelled as last school week, no day lit as today. Her answer 5: Mom checks off a leftover card from there exactly as
+//   before (a day → that day's agenda). FAIL OPEN, nothing guessed: the back date only when the plan says it for sure (the
+//   Schedule card's own next school day, in a plan week after the board's with lesson days); the break's name and dates only
+//   from her calendar; last school week's dates only when the plan's range and the week's own dates agree. Display only —
+//   reads, never a write. A school week never asks any of it, so it draws exactly as before.
+const BWL_MO=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], BWL_DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+function _bwlD(iso){ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso||"")); return m?new Date(+m[1],+m[2]-1,+m[3],12):null; }
+function _bwlShort(iso){ const d=_bwlD(iso); return d?BWL_MO[d.getMonth()]+" "+d.getDate():""; }
+// "Nov 16–20", "Dec 21 – Jan 2", "Nov 26" (one day)
+function _bwlRange(s,e){ const a=_bwlD(s), b=_bwlD(e||s); if(!a||!b||b<a) return ""; if(+a===+b) return _bwlShort(s);
+  return (a.getMonth()===b.getMonth()&&a.getFullYear()===b.getFullYear())?_bwlShort(s)+"\u2013"+b.getDate():_bwlShort(s)+" \u2013 "+_bwlShort(e); }
+function _bwlAdd(iso,n){ const d=_bwlD(iso); d.setDate(d.getDate()+n); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+// her calendar's break for this week: the one over today (a Sunday counted as the coming Monday), else the first one that
+// touches this week's Monday–Saturday (the Saturday after a break, a break that starts mid-week)
+function _bwlBreak(eff,mon,sat){
+  const cd=(typeof calendarData!=="undefined"&&calendarData)||{}, all=[];
+  [["holidays","Holiday"],["vacations","Vacation"]].forEach(function(p){ Object.values(cd[p[0]]||{}).forEach(function(v){
+    if(!v||typeof v!=="object") return; const st=calNormDate(v.start||v.date), en=calNormDate(v.end||v.start||v.date);
+    if(st&&en&&_bwlD(st)&&_bwlD(en)) all.push({name:v.name||p[1],start:st,end:en}); }); });
+  return all.find(function(b){ return eff>=b.start&&eff<=b.end; })
+    ||all.filter(function(b){ return b.start<=sat&&b.end>=mon; }).sort(function(a,b){ return a.start<b.start?-1:a.start>b.start?1:0; })[0]||null;
+}
+// back to school: the Schedule card's own answer, and only when the plan is sure of it
+function _bwlBack(){
+  if(typeof _nextSchoolDayAfterToday!=="function"||!currData||!currData.weekDays||!currData.lessons) return null;
+  const iso=_nextSchoolDayAfterToday(); if(!iso||!_bwlD(iso)) return null;
+  const wn=weekNumForDate(iso); if(!wn||wn<=currWeekNum()) return null;
+  const dd=gwReadWeek(wn,true); if(!dd||!Object.keys(dd).length) return null;
+  return iso;
+}
+// last school week (the board's): its number, and its Monday–Friday (Saturday when planned) when the plan and its own dates agree
+function _bwlLast(){
+  const wn=(typeof _mpSchWkCurNum==="function")?_mpSchWkCurNum():currWeekNum();
+  let dates="";
+  try{ const p=_bwkPlanSat(), o=_bwkOwnSat(), r=gwWeekDateRange(wn);
+    if(p&&r&&r.start&&(o===null||o===p)) dates=_bwlRange(calNormDate(r.start),_bwlAdd(p,(typeof gwSatPlanned==="function"&&gwSatPlanned(wn))?0:-1)); }catch(e){ dates=""; }
+  return {wn:wn,dates:dates};
+}
+function bwlInfo(){
+  try{
+    if(typeof boardWeekIsThisWeek!=="function"||boardWeekIsThisWeek()) return null;
+    const eff=calNormDate(_schoolWeekDateFor(_todayStr())), d=_bwlD(eff); if(!d) return null;
+    const mon=_bwlAdd(eff,-((d.getDay()+6)%7)), sat=_bwlAdd(mon,5);
+    const brk=_bwlBreak(eff,mon,sat), back=_bwlBack(), last=_bwlLast();
+    const bd=_bwlD(back), bt=bd?BWL_DOW[bd.getDay()]+" "+_bwlShort(back):"";
+    const line=(brk?"No school this week \u2014 "+brk.name+", "+_bwlRange(brk.start,brk.end):"No school week planned")+(bt?" \u00B7 back "+bt:"");
+    const lastTxt="Week "+last.wn+(last.dates?" \u00B7 "+last.dates:"");
+    return {line:line,brk:brk,back:back,week:_bwlRange(mon,_bwlAdd(mon,4)),lastWn:last.wn,lastDates:last.dates,lastTxt:lastTxt,lastBtn:"\u2039 Last school week ("+lastTxt+")"};
+  }catch(e){ return null; }
+}
+// Mom's 🗓 Week grid: which view of a week with no school — the line (false) or last school week (true). A page variable.
+let mpSchWkLast=false;
+function mpSchWkLastSet(on){ mpSchWkOff=0; mpSchWkDay=null; mpSchWkLast=!!on; _mpSchRender(); }
+function bwlWeekLineHTML(b){
+  return '<div style="max-width:560px;margin:0 auto;padding:18px 14px 0;text-align:center">'
+    +'<div style="font-size:15px;font-weight:700;color:var(--muted)">'+esc(b.line)+'</div>'
+    +'<button onclick="mpSchWkLastSet(true)" style="margin-top:12px;border:1.5px solid #2B7A78;background:#fff;color:#2B7A78;border-radius:20px;padding:7px 14px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+esc(b.lastBtn)+'</button></div>';
+}
+// last school week's cards for one view on weekday d, as laid — the Week grid's own filters (mpSchTasks) without today's live lay
+function bwlLaidTasks(who,d){
+  const src=getActiveTasks(), base=t=>t&&effectiveDay(t)===d&&!String(t.id).endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title||"");
+  if(who==="mom") return (typeof famMomView==="function"?famMomView:function(x){ return x; })(src)
+    .filter(t=>base(t)&&(t.mom==="required"||t.mom==="maybe"||(typeof famIsMomCard==="function"&&famIsMomCard(t))));
+  if(who==="all") return src.filter(base);
+  return src.filter(t=>base(t)&&t.who===who);
+}
+// ‹ › in a week with no school: … Week N−1 ‹ Last school week ‹ this week › Week N+1 … (true = handled here)
+function bwlStep(n){
+  if(!bwlInfo()){ mpSchWkLast=false; return false; }
+  if(mpSchWkOff===0&&!mpSchWkLast&&n<0){ mpSchWkLastSet(true); return true; }
+  if(mpSchWkOff===0&&mpSchWkLast&&n>0){ mpSchWkLastSet(false); return true; }
+  if(mpSchWkOff===-1&&n>0){ mpSchWkLastSet(true); return true; }
+  mpSchWkLast=false; return false;
+}
+function bwlNavHTML(b,wn,off){
+  const last=!off&&mpSchWkLast;
+  const lbl=off?'Week '+wn:(last?'Last school week':'This week'), sub=off?'read-only':(last?b.lastTxt:b.week);
+  const arrow=(n,ch,on)=>'<button '+(on?'onclick="mpSchWkStep('+n+')"':'disabled')+' aria-label="'+(n<0?'Previous':'Next')+' week" style="width:34px;height:34px;border-radius:50%;border:1.5px solid var(--border);background:#fff;font-size:16px;font-weight:800;cursor:'+(on?'pointer':'default')+';opacity:'+(on?1:.35)+'">'+ch+'</button>';
+  return '<div style="display:flex;align-items:center;gap:10px;justify-content:center;padding:12px 12px 0">'+arrow(-1,'\u2039',(!off&&!last)||wn>1)
+    +'<div style="text-align:center;min-width:150px"><div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700">'+lbl+'</div>'
+    +'<div style="font-size:11px;color:var(--muted);font-weight:700">'+esc(sub)+'</div>'
+    +((off||last)?'<button onclick="mpSchWkBack()" style="border:none;background:none;color:#2B7A78;font-size:11px;font-weight:800;cursor:pointer;padding:0">\u21A9 back to this week</button>':'')+'</div>'
+    +arrow(1,'\u203A',true)+'</div>';
+}
+// the weekly report's "This week" chip, in a week with no school: the week the report really shows (the board's) and its dates
+function bwlReportChip(){ const b=bwlInfo(); return b?esc("Wk "+b.lastWn+(b.lastDates?" \u00B7 "+b.lastDates:"")):null; }
+// The two halves of a star total in a week with no school: the board's pool is last school week's, the list wages are this
+// week's (stamped with the list week). Views of THIS week (Mom's 🧒 Kids day chips, the board, the ⭐ Today's stars pop-up) now
+// count no pool on any day; the views of the BOARD's week (🎰 Slot Machine Points ▸ Week total and its days, whose − + change
+// that week's pool) count that week alone — its pool and the wages stamped with it. A school week: exactly as before.
+function bwlBoardWages(k,d){ const adjs=(bank[k]&&bank[k].adjustments)||{}; let n=0; Object.keys(adjs).forEach(function(id){ const a=adjs[id]; if(a&&!a.held&&a.src==="earn"&&a.wk===WK&&(d==null||a.day===d)) n+=(a.amount||0); }); return n; }
+function bwlBoardDayTotal(k,d){ return (typeof lwGap==="function"&&lwGap())?getKidDayPoints(k,d)+bwlBoardWages(k,d):earnedDayTotal(k,d); }
+// 📅 BWLABEL_END
 function renderScheduleBreakCard(brk){
   const isVac=brk.type==="vacation";
   const nm=brk.name||(isVac?"Vacation":"Holiday");
@@ -10092,7 +10191,7 @@ function boardStatPop(kid,slot,d){
       .forEach(t=>{ const cv=checked[t.id]; rows.push({lab:t.title||"",done:!!cv,ts:(cv&&cv.ts)||(typeof cv==="string"?cv:"")}); });
   } else if(slot==="stars"){ title="⭐ Today's stars";
     const sp=(day===_todayDay&&typeof boardWeekIsThisWeek==="function"&&!boardWeekIsThisWeek())?0:getKidDayPoints(kid,day);   // 📅 BWNOWEEK: no star pool listed as today's from last school week (wages: slice 2)
-    if(sp) rows.push({lab:"🎰 School spins (pool"+(getPointClaim(kid,day)?", "+getPointClaim(kid,day).status:", unclaimed")+")",done:true,ts:"",amt:sp});
+    if(sp&&!(day!==_todayDay&&typeof lwGap==="function"&&lwGap())) rows.push({lab:"🎰 School spins (pool"+(getPointClaim(kid,day)?", "+getPointClaim(kid,day).status:", unclaimed")+")",done:true,ts:"",amt:sp});   // 📅 BWLABEL: a week with no school — no other day's pool either (today's: slice 1's line above)
     const adjs=(bank[kid]&&bank[kid].adjustments)||{};
     Object.keys(adjs).map(id=>adjs[id]).filter(a=>a&&a.src==="earn"&&a.wk===(typeof listWk==="function"?listWk(WK):WK)&&a.day===day)
       .sort((a,b)=>String(a.ts).localeCompare(String(b.ts)))
@@ -27130,15 +27229,18 @@ function mpSchWeekHTML(who){
   // 🗓 MPSCHWK_NAV: ‹ › to last / next week; another week draws read-only from its own Firebase copy.
   const nav=(typeof mpSchWkNavHTML==="function")?mpSchWkNavHTML():'';
   if(typeof mpSchWkIsOther==="function"&&mpSchWkIsOther()) return nav+mpSchWkOtherHTML(who);
-  const today=mdTodayName();
-  const days=DAYS_ALL.filter(d=>(d!=="saturday"&&d!=="sunday")||mpSchTasks(who,d).length);
+  const _bwl=(typeof bwlInfo==="function")?bwlInfo():null;   // 📅 BWLABEL: a week with no school — the line and one tap to last school week
+  if(_bwl&&!mpSchWkLast) return nav+bwlWeekLineHTML(_bwl);
+  const today=_bwl?null:mdTodayName();   // 📅 BWLABEL: last school week's cards — no day lit as today
+  const _ts=_bwl?bwlLaidTasks:mpSchTasks;   // 📅 BWLABEL: last school week's cards as laid (no live lay of today on last week)
+  const days=DAYS_ALL.filter(d=>(d!=="saturday"&&d!=="sunday")||_ts(who,d).length);   // 📅 BWLABEL
   let h=nav+'<div style="overflow-x:auto;padding:12px 10px 0"><div style="display:grid;grid-template-columns:repeat('+days.length+',minmax(120px,1fr));gap:6px;min-width:'+(days.length*124)+'px">';
   days.forEach(d=>{
     const isT=d===today;
     h+='<div onclick="mpSchDaySet(\''+d+'\')" style="cursor:pointer;text-align:center;font-size:12px;font-weight:800;padding:6px 0;border-radius:9px;background:'+(isT?'#2B7A78':'#f3f4f6')+';color:'+(isT?'#fff':'#374151')+'">'+cap(d).slice(0,3)+(isT?' •':'')+'</div>';
   });
   days.forEach(d=>{
-    const ts=mpSchTasks(who,d).slice().sort((a,b)=>(toMin(a.time)==null?9999:toMin(a.time))-(toMin(b.time)==null?9999:toMin(b.time)));
+    const ts=_ts(who,d).slice().sort((a,b)=>(toMin(a.time)==null?9999:toMin(a.time))-(toMin(b.time)==null?9999:toMin(b.time)));   // 📅 BWLABEL
     h+='<div onclick="mpSchDaySet(\''+d+'\')" style="cursor:pointer;display:flex;flex-direction:column;gap:4px;min-width:0">';
     if(typeof evWk==="function") h+=evWk(calDateForWeekDay(d),who);   // 🎉 EVDAY
     if(!ts.length) h+='<div style="color:var(--muted);font-size:11px;text-align:center;padding:8px 0">—</div>';
@@ -27202,13 +27304,14 @@ function _mpSchWkCurNum(){
 function mpSchWkNum(){ return _mpSchWkCurNum()+mpSchWkOff; }
 function mpSchWkIsOther(){ return !!mpSchWkOff; }
 function mpSchWkStep(n){
+  if(typeof bwlStep==="function"&&bwlStep(n)) return;   // 📅 BWLABEL: a week with no school steps through last school week
   const to=mpSchWkOff+(n<0?-1:1);
   if(_mpSchWkCurNum()+to<1) return;
   mpSchWkOff=to; mpSchWkDay=null;
   if(mpSchWkOff) mpSchWkLoad(mpSchWkNum());
   _mpSchRender();
 }
-function mpSchWkBack(){ mpSchWkOff=0; mpSchWkDay=null; _mpSchRender(); }
+function mpSchWkBack(){ mpSchWkOff=0; mpSchWkDay=null; if(typeof mpSchWkLast!=="undefined") mpSchWkLast=false; _mpSchRender(); }   // 📅 BWLABEL: back to this week
 function mpSchWkDaySet(d){ mpSchWkDay=(DAYS_ALL.indexOf(d)>=0)?d:null; _mpSchRender(); }
 function _mpSchWkArr(o){ return Array.isArray(o)?o.filter(Boolean):Object.keys(o||{}).map(k=>o[k]).filter(t=>t&&typeof t==="object"); }
 // Read-only load of week wn. Firebase first (once() — no listener left behind); the archive's closed-week copy
@@ -27254,6 +27357,8 @@ function mpSchWkTasks(c,who,d){
 function mpSchWkNavHTML(){
   const wn=mpSchWkNum(), off=mpSchWkOff;
   const lbl=off===0?'This week':(off===-1?'Last week':(off===1?'Next week':(off<0?(-off)+' weeks ago':'In '+off+' weeks')));
+  const _bwl=(typeof bwlInfo==="function")?bwlInfo():null;   // 📅 BWLABEL: a week with no school — its own words
+  if(_bwl) return bwlNavHTML(_bwl,wn,off);
   const arrow=(n,ch,on)=>'<button '+(on?'onclick="mpSchWkStep('+n+')"':'disabled')+' aria-label="'+(n<0?'Previous':'Next')+' week" style="width:34px;height:34px;border-radius:50%;border:1.5px solid var(--border);background:#fff;font-size:16px;font-weight:800;cursor:'+(on?'pointer':'default')+';opacity:'+(on?1:.35)+'">'+ch+'</button>';
   return '<div style="display:flex;align-items:center;gap:10px;justify-content:center;padding:12px 12px 0">'+arrow(-1,'‹',wn>1)
     +'<div style="text-align:center;min-width:150px"><div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700">'+lbl+'</div>'
@@ -27389,6 +27494,7 @@ function renderDadAll(el){
     +'<span style="flex:1"></span>'
     +'<button onclick="mpSubView=\'dad\';renderMomsPlan(document.getElementById(\'content\'))" style="border:1.5px solid #2C5F8A;background:#fff;color:#2C5F8A;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u2190 Dad\u2019s Day</button></div>';
   h+='<div style="padding:0 14px 6px;font-size:12px;color:var(--muted)">What everyone is on, by the clock. Tap a card\u2019s box when it\u2019s done \u2014 it counts like Mom\u2019s, marked done with Dad.</div>';
+  try{ const _bwl=(typeof bwlInfo==="function")?bwlInfo():null; if(_bwl) h+='<div style="margin:0 14px 6px;padding:7px 10px;border-radius:9px;background:#eef4fa;color:#2C5F8A;font-size:12.5px;font-weight:800">'+esc(_bwl.line)+'</div>'; }catch(e){}   // 📅 BWLABEL: a week with no school says so — the Week grid's own line
   let ag='';
   const _pk=kid, _pd=day;
   try{ kid="all"; day=d; dadTapView=true; ag=allAgendaHtml(mpSchTasks("all",d),null,{extra:{key:"dad",label:"\u{1F468} Dad",color:"#2C5F8A",items:dadSchedItems(d)}}); }
@@ -28870,7 +28976,7 @@ function renderHistoryReport(){
   const aks=Object.keys(archive||{}).map(w=>({w:w,n:dgWeekNum(w)})).filter(x=>x.n).sort((a,b)=>b.n-a.n).slice(0,10);
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 10px">';
   const chip=(on)=>'padding:5px 11px;border-radius:14px;font-size:11px;font-weight:700;cursor:pointer;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?'var(--header)':'transparent')+';color:'+(on?'#fff':'var(--muted)');
-  h+='<button onclick="digestSetWk(\'current\')" style="'+chip(isCur)+'">This week</button>';
+  h+='<button onclick="digestSetWk(\'current\')" style="'+chip(isCur)+'">'+(((typeof bwlReportChip==="function")&&bwlReportChip())||'This week')+'</button>';   // 📅 BWLABEL: a week with no school — the chip names the week it shows
   aks.forEach(x=>{ h+='<button onclick="digestSetWk(\''+x.w+'\')" style="'+chip(wk===x.w)+'">Wk '+x.n+'</button>'; });
   h+='</div>';
 
@@ -29311,7 +29417,7 @@ function renderHistory(el){
       h+='<div style="font-size:12px;font-weight:700;color:'+HIST_KCOL_LIGHT[k2]+';margin-bottom:6px">'+cap(k2)+' — Week total: ⭐'+earnedWeekTotal(k2)+'</div>';
       h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">';
       DAYS.slice(0,6).forEach(d=>{
-        const dp=earnedDayTotal(k2,d);
+        const dp=(typeof bwlBoardDayTotal==="function")?bwlBoardDayTotal(k2,d):earnedDayTotal(k2,d);   // 📅 BWLABEL: the board's week, as the Week total above it and its − + buttons
         h+='<div style="background:rgba(255,255,255,0.06);border-radius:6px;padding:6px;text-align:center">';
         h+='<div style="font-size:9px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.3px">'+cap(d).slice(0,3)+'</div>';
         h+='<div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;color:#fbbf24;margin:2px 0">'+dp+'</div>';

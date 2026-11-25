@@ -195,8 +195,10 @@ async function runWriter(W,expr){ const m=W.db.log.length; const v=W.R(expr); aw
   ok("after: the line is the only thing on All / a kid's view (no 'Nothing scheduled' under it)",nT.all.indexOf("Nothing scheduled")<0&&count(nT.all,"No school today")===1&&nT.mpBody.indexOf(LINE("Fall Break"))>0);
   ok("before: Dad's ▸ All drew the same stale agenda; after: exactly what Mom's All gets (the line, no cards)",cnt(oT.dadAll)===cnt(oT.all)&&cnt(nT.dadAll)===0&&nT.dadAll.indexOf(LINE("Fall Break"))>0&&count(nT.dadAll,"No school today")===1);
   ok("before: the helper's list had last Tuesday's cards; after: none",oT.help.length>0&&nT.help.length===0,[oT.help,nT.help]);
-  ok("the Week grid is a week view — not blanked, the same as before",nT.week===oT.week&&cnt(nT.week)===0&&/Week 1/.test(nT.week)&&(nT.week.match(/title="/g)||[]).length>=18,[nT.week.length,oT.week.length]);
-  ok("the Week grid says \"This week · Week 1\" and day names only (no dates) — REPORTED",/>This week<\/div><div[^>]*>Week 1</.test(nT.week)&&!/Nov|11\/1/.test(nT.week.replace(/title="[^"]*"/g,"")));
+  // 📅 BWLABEL (break week slice 3, 2026-11-25): what was REPORTED here — "This week · Week 1" over last week's cards — is fixed;
+  // the Week grid of a week with no school is the line and one tap to last school week (test_break_week_3.js proves it)
+  ok("the Week grid of a week with no school (slice 3): the line naming the break, one tap to last school week, no card",cnt(nT.week)===0&&nT.week.indexOf("No school this week \u2014 Fall Break, Nov 16\u201320")>=0&&nT.week.indexOf("Last school week (Week 1")>=0&&!/>This week<\/div><div[^>]*>Week 1</.test(nT.week),nT.week.replace(/<[^>]+>/g," ").replace(/\s+/g," ").slice(0,300));
+  ok("…the same in both worlds (BRKTODAY doesn't touch the Week grid)",nT.week===oT.week,[nT.week.length,oT.week.length]);
   console.log("3 · the board and the Today's-card tile — break Tuesday");
   ok("before: the 📅 pill counted last Tuesday's cards (e.g. 6/6) and its pop-up listed them",oT.boardPills.slice(0,3).every(p=>/^📅 [1-9]\d*\/[1-9]/.test(p))&&SCHOOL_KIDS.every(k=>/✅|○/.test(oT[k].pop)&&oT[k].pop.indexOf("nothing due today")<0),oT.boardPills);
   ok("after: the pill shows what a day with no school cards shows (0/0), the pop-up \"nothing due today\"",nT.boardPills.every(p=>p==="📅 0/0")&&KIDS.every(k=>nT[k].board.total===0&&nT[k].pop.indexOf("nothing due today")>0),nT.boardPills);
