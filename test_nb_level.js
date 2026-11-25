@@ -93,7 +93,7 @@ console.log("── the control: Mom only, one targeted value ──");
   ok("?dryrun=1 → no Firebase write (local copy only)", c.writes.length === 0 && c.notebookSettings.a.gradeOverride === "5");
   c = sandbox({ roster: { a: { grade: "4" } } });
   const h = c.nbLevelCardHtml("a");
-  ok("the card: 'Notebook level:' + 'follows the Family grade (4th)' first", /Notebook level:/.test(h) && /<option value="" selected>follows the Family grade \(4th\)<\/option>/.test(h), h.slice(0, 200));
+  ok("the card: 'Grade:' (the Customize card's top line) + 'follows the Family grade (4th)' first", /Grade:<select/.test(h) && /<option value="" selected>follows the Family grade \(4th\)<\/option>/.test(h), h.slice(0, 200));
   ok("the card: Pre-K, K, 1st … 8th to choose from", (h.match(/<option value="(PreK|K|[1-8])">/g) || []).length === 10 && />Pre-K</.test(h) && />8th</.test(h) && !/>9th</.test(h));
   c.notebookSettings.a = { gradeOverride: "6" };
   ok("the card shows an override as chosen", /<option value="6" selected>6th<\/option>/.test(c.nbLevelCardHtml("a")));
@@ -102,8 +102,8 @@ console.log("── the control: Mom only, one targeted value ──");
 }
 
 console.log("── wiring: one home, the only writer ──");
-ok("the card is placed once: the kid's section of the Notebook tab, after the look and extra-pages cards",
-  (src.match(/nbLevelCardHtml\(/g) || []).length === 2 && /        lookHtml\+\n        xpHtml\+\n        nbLevelCardHtml\(sel\)\+   \/\/ 📏 NBLEVEL: Notebook level \(Mom\)\n(        \(\(typeof nbLadderCardHtml==="function"\)\?nbLadderCardHtml\(sel\):""\)\+   \/\/ 📚 NBLADDER[^\n]*\n)?        reviewHtml\+\n/.test(src));   // NBLADDER (2026-11-24): the Ladders card may follow it
+ok("the picker is placed once: the top line of the kid's 🎛 Customize card (NB_CUSTOM, 2026-11-24)",
+  (src.match(/nbLevelCardHtml\(/g) || []).length === 2 && /\n    nbLevelCardHtml\(kid\)\+   \/\/ 📏 NBLEVEL: Grade\n/.test(src.slice(src.indexOf("// NB_CUSTOM_START"), src.indexOf("// NB_CUSTOM_END"))));
 ok("nbSetGradeOverride is called only from the card", (src.match(/nbSetGradeOverride\(/g) || []).length === 2);
 ok("gradeOverride is touched nowhere outside the block", src.split("gradeOverride").length - 1 === block.split("gradeOverride").length - 1);
 ok("haNbContext hands the generators ctx.grade + ctx.gradeBand (nbGrade unchanged)",
@@ -117,6 +117,8 @@ ok("nbGradeOf (the US Path page's grade — it changes that page's content) is u
   let out = src.slice(0, i0) + src.slice(i1);
   const l0 = out.indexOf("// NBLADDER_START"), l1 = out.indexOf("// NBLADDER_END");
   if (l0 >= 0 && l1 > l0) out = out.slice(0, l0) + out.slice(l1);   // NBLADDER (2026-11-24): the ladders' default level reads nbLevelGrade (test_nb_ladder.js)
+  const c0 = out.indexOf("// NB_CUSTOM_START"), c1 = out.indexOf("// NB_CUSTOM_END");
+  if (c0 >= 0 && c1 > c0) out = out.slice(0, c0) + out.slice(c1);   // NB_CUSTOM (2026-11-24): the Customize card draws the picker and reads the grade word (test_nb_customize.js)
   const stray = out.split("\n").filter((l) => /nbLevelCtx|nbLevelGrade|nbKidLabel|nbLevelCardHtml|nbSetGradeOverride|nbLvKey|nbLvBand|NB_LEVEL_CHOICES/.test(l))
     .filter((l) => !/const nbLv=nbLevelCtx\(kid\)|\$\{nbKidLabel\(k,g\.label\)\}|nbKidLabel\(x\.k,x\.label\)|nbKidLabel\(meta\.k,meta\.label\)|nbLevelCardHtml\(sel\)\+/.test(l));
   ok("no other line outside the block uses it", stray.length === 0, stray.map((l) => l.trim().slice(0, 80)));
