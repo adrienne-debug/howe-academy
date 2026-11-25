@@ -20113,7 +20113,7 @@ function renderMomsDay(el){
   // 🌙 Luteal/period support — surfaces ONLY during the hard-week phases
   try{
     const _ci=mwCycleInfo(mwTodayIso());
-    if(_ci.key==='luteal'||_ci.key==='menstrual'){
+    if((typeof mwCycleOwn!=="function"||mwCycleOwn())&&(_ci.key==='luteal'||_ci.key==='menstrual')){   // CYCLEOWN: only for a family with a cycle of its own
       const _lut=_ci.key==='luteal';
       h+='<div style="background:linear-gradient(135deg,'+(_lut?'#efe7f7':'#fbe3ec')+',#fff);border:1.5px solid '+(_lut?'#6B4C93':'#c2547e')+';border-radius:12px;padding:12px 14px">'
         +'<div style="display:flex;align-items:center;gap:9px;margin-bottom:7px">'
@@ -27622,6 +27622,21 @@ function mwCycleInfo(iso){
   const day=m+1;
   return Object.assign({day}, mwPhaseFor(day));
 }
+// CYCLEOWN_START — the built-in cycle start (wellnessCycle's fallback date) is Adrienne's own. Every other family's app used it
+// until a period was logged there, so Home Base showed "Luteal Week / Period Week" and Health showed a cycle day, a phase, a
+// "next period expected" date and a "last period started" date that family never entered (found 2026-11-24 reading for the
+// Household edition; her "Yes, start step 0" 2026-11-24 — DESIGN_household_edition_2026-11-24.md §5.4). mwCycleOwn() = this
+// family has a cycle of its own: Howe always (nothing changes there); any other family once a period is logged or a start
+// date other than the built-in one is saved. Not its own → the banner and the cycle wording are left out (every call site is
+// marked CYCLEOWN); weights, blood pressure, symptoms and the Period Log's own "Log period start" stay. No new database writes.
+const MW_BUILTIN_ANCHOR='2026-07-25';
+function mwCycleOwn(){
+  if(typeof HA_IS_HOWE==="undefined"||HA_IS_HOWE) return true;
+  if((wellnessPeriods||[]).some(p=>p&&p.iso)) return true;
+  const a=wellnessCycle&&wellnessCycle.anchor;
+  return !!a&&a!==MW_BUILTIN_ANCHOR;
+}
+// CYCLEOWN_END
 function mwFmtShort(iso){ const d=new Date(iso+'T00:00'); return (d.getMonth()+1)+'/'+d.getDate(); }
 function mwTodayIso(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function mwDelta(a,b){ const d=+(a-b).toFixed(1); const cls=d<-0.05?'down':(d>0.05?'up':'flat'); const arrow=d<-0.05?'▼':(d>0.05?'▲':'▬'); return {d,cls,arrow,str:(d>0?'+':'')+d.toFixed(1)}; }
@@ -27634,8 +27649,8 @@ function mwChartSVG(list){
   const y0=Math.floor(Math.min.apply(null,ys)-1), y1=Math.ceil(Math.max.apply(null,ys)+1);
   const px=t=>pad.l+(W-pad.l-pad.r)*(t-x0)/((x1-x0)||1);
   const py=v=>pad.t+(H-pad.t-pad.b)*(1-(v-y0)/((y1-y0)||1));
-  let bands='';
-  for(let i=0;i<list.length;i++){
+  let bands=''; const own=mwCycleOwn();   // CYCLEOWN: no phase bands or phase-coloured dots without a cycle of its own
+  for(let i=0;own&&i<list.length;i++){
     const c=mwCycleInfo(list[i].iso);
     const xL = i===0? pad.l : (px(xs[i-1])+px(xs[i]))/2;
     const xR = i===list.length-1? W-pad.r : (px(xs[i])+px(xs[i+1]))/2;
@@ -27647,7 +27662,7 @@ function mwChartSVG(list){
     grid+=`<line x1="${pad.l}" y1="${py(g)}" x2="${W-pad.r}" y2="${py(g)}" stroke="#e8e4de" stroke-width="1"/><text x="4" y="${py(g)+3}" font-size="9" fill="#9ca3af">${g}</text>`;
   }
   const line=list.map((w,i)=>(i?'L':'M')+px(xs[i]).toFixed(1)+' '+py(w.lb).toFixed(1)).join(' ');
-  const dots=list.map((w,i)=>{const c=mwCycleInfo(w.iso);return `<circle cx="${px(xs[i]).toFixed(1)}" cy="${py(w.lb).toFixed(1)}" r="3.4" fill="#fff" stroke="${c.txt}" stroke-width="2"/>`;}).join('');
+  const dots=list.map((w,i)=>{const c=mwCycleInfo(w.iso);return `<circle cx="${px(xs[i]).toFixed(1)}" cy="${py(w.lb).toFixed(1)}" r="3.4" fill="#fff" stroke="${own?c.txt:'#2B7A78'}" stroke-width="2"/>`;}).join('');
   const xlab=list.map((w,i)=> (i%2===0||i===list.length-1)?`<text x="${px(xs[i]).toFixed(1)}" y="${H-6}" font-size="8.5" fill="#9ca3af" text-anchor="middle">${mwFmtShort(w.iso)}</text>`:'').join('');
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${bands}${grid}<path d="${line}" fill="none" stroke="#2B7A78" stroke-width="2.5" stroke-linejoin="round"/>${dots}${xlab}</svg>`;
 }
@@ -27658,6 +27673,7 @@ function renderMPWeigh(el){
   const today=mwTodayIso();
 
   let currentCard='', comparisonCard='', trendCard='', historyCard='';
+  const own=mwCycleOwn();   // CYCLEOWN: false = another family that has not entered a cycle of its own
   let defaultDate=today;
 
   if(has){
@@ -27667,7 +27683,7 @@ function renderMPWeigh(el){
       <div class="stat">
         <div><div class="big">${latest.lb.toFixed(1)}<span style="font-size:16px;color:#6b6560"> lb</span></div>
           <div style="font-size:11px;color:#6b6560;margin-top:3px">${new Date(latest.iso+'T00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div></div>
-        <div style="margin-left:auto;text-align:right"><span class="badge" style="background:${ci.color};color:${ci.txt}">${ci.emoji} Cycle day ${ci.day} · ${ci.label}</span></div>
+        ${own?`<div style="margin-left:auto;text-align:right"><span class="badge" style="background:${ci.color};color:${ci.txt}">${ci.emoji} Cycle day ${ci.day} · ${ci.label}</span></div>`:''}
       </div></div></div>`;
 
     const prev=list[list.length-2];
@@ -27686,24 +27702,28 @@ function renderMPWeigh(el){
       }
     } else { ins+=`<br><br>Log ~4 weeks to unlock the same-cycle-phase comparison — that's the one that cancels out water weight.`; }
 
+    if(!own){   // CYCLEOWN: the plain four-week comparison, no phase wording
+      const d4=cycD?(cycD.d<-0.05?`down <b>${Math.abs(cycD.d).toFixed(1)} lb</b>`:(cycD.d>0.05?`up <b>${cycD.d.toFixed(1)} lb</b>`:`holding steady`)):'';
+      ins=cycD?`Compared with four weeks ago, you're ${d4}.`:`Log about 4 weeks to see how you compare with four weeks ago.`;
+    }
     comparisonCard=`<div class="card"><div class="head h-purple"><span>📊</span> How You're Actually Doing</div><div class="body">
       <div class="tiles">
-        <div class="tile"><div class="lbl">vs last week (raw)</div><div class="val ${rawD?rawD.cls:''}">${rawD?rawD.arrow+' '+rawD.str:'—'}</div><div class="cap">${prev?'from '+prev.lb.toFixed(1)+' on '+mwFmtShort(prev.iso)+' · <i>different phase, noisy</i>':'need a prior entry'}</div></div>
-        <div class="tile" style="border-color:#6B4C93;background:#F0EBF8"><div class="lbl">vs 4 wks ago · same phase ⭐</div><div class="val ${cycD?cycD.cls:''}">${cycD?cycD.arrow+' '+cycD.str:'—'}</div><div class="cap">${samePhase?'from '+samePhase.w.lb.toFixed(1)+' on '+mwFmtShort(samePhase.w.iso)+' ('+mwCycleInfo(samePhase.w.iso).label+') · <b>the true trend</b>':'need ~4 wks of data'}</div></div>
+        <div class="tile"><div class="lbl">vs last week (raw)</div><div class="val ${rawD?rawD.cls:''}">${rawD?rawD.arrow+' '+rawD.str:'—'}</div><div class="cap">${prev?'from '+prev.lb.toFixed(1)+' on '+mwFmtShort(prev.iso)+(own?' · <i>different phase, noisy</i>':''):'need a prior entry'}</div></div>
+        <div class="tile" style="border-color:#6B4C93;background:#F0EBF8"><div class="lbl">${own?'vs 4 wks ago · same phase ⭐':'vs 4 wks ago'}</div><div class="val ${cycD?cycD.cls:''}">${cycD?cycD.arrow+' '+cycD.str:'—'}</div><div class="cap">${samePhase?'from '+samePhase.w.lb.toFixed(1)+' on '+mwFmtShort(samePhase.w.iso)+(own?' ('+mwCycleInfo(samePhase.w.iso).label+') · <b>the true trend</b>':''):'need ~4 wks of data'}</div></div>
       </div>
       <div class="note rose" style="margin-top:10px">${ins}</div></div></div>`;
 
-    trendCard=`<div class="card"><div class="head h-green"><span>📈</span> Trend (shaded by cycle phase)</div><div class="body">
+    trendCard=`<div class="card"><div class="head h-green"><span>📈</span> Trend${own?' (shaded by cycle phase)':''}</div><div class="body">
       ${mwChartSVG(list)}
-      <div class="legend"><span><i class="sw" style="background:#fbe3ec"></i>🩸 Menstrual</span><span><i class="sw" style="background:#eaf4ec"></i>🌱 Follicular</span><span><i class="sw" style="background:#fff6d6"></i>✨ Ovulation</span><span><i class="sw" style="background:#efe7f7"></i>🌙 Luteal</span></div>
+      ${own?`<div class="legend"><span><i class="sw" style="background:#fbe3ec"></i>🩸 Menstrual</span><span><i class="sw" style="background:#eaf4ec"></i>🌱 Follicular</span><span><i class="sw" style="background:#fff6d6"></i>✨ Ovulation</span><span><i class="sw" style="background:#efe7f7"></i>🌙 Luteal</span></div>`:''}
     </div></div>`;
 
-    const rows=list.slice().reverse().map(w=>{const c=mwCycleInfo(w.iso);return `<div class="wrow"><div class="wdate">${mwFmtShort(w.iso)}</div><div class="wlb">${w.lb.toFixed(1)}</div><span class="mini" style="background:${c.color};color:${c.txt}">${c.emoji} d${c.day}</span><div style="flex:1;color:#6b6560;font-size:11px">${w.note||''}</div></div>`;}).join('');
+    const rows=list.slice().reverse().map(w=>{const c=mwCycleInfo(w.iso);return `<div class="wrow"><div class="wdate">${mwFmtShort(w.iso)}</div><div class="wlb">${w.lb.toFixed(1)}</div>${own?`<span class="mini" style="background:${c.color};color:${c.txt}">${c.emoji} d${c.day}</span>`:''}<div style="flex:1;color:#6b6560;font-size:11px">${w.note||''}</div></div>`;}).join('');
     historyCard=`<div class="card"><div class="head h-blue"><span>🗓️</span> History</div><div class="body">${rows}</div></div>`;
 
     defaultDate = today>latest.iso ? today : new Date(Date.parse(latest.iso)+7*86400000).toISOString().slice(0,10);
   } else {
-    currentCard=`<div class="card"><div class="head h-teal"><span>⚖️</span> Weekly Weigh-In</div><div class="body"><div style="font-size:13px;color:#6b6560;line-height:1.5">No weigh-ins yet. Log your first below — pick the same day each week (Fridays work well). After ~4 weeks the app compares each reading to the <b>same point in your cycle a month earlier</b>, so a premenstrual bump never looks like fat.</div></div></div>`;
+    currentCard=`<div class="card"><div class="head h-teal"><span>⚖️</span> Weekly Weigh-In</div><div class="body"><div style="font-size:13px;color:#6b6560;line-height:1.5">No weigh-ins yet. Log your first below — pick the same day each week (Fridays work well).${own?` After ~4 weeks the app compares each reading to the <b>same point in your cycle a month earlier</b>, so a premenstrual bump never looks like fat.`:''}</div></div></div>`;
   }
 
   const logCard=`<div class="card"><div class="head h-orange"><span>➕</span> Log This Week</div><div class="body">
@@ -27749,11 +27769,11 @@ function renderMPWeigh(el){
     const days=Object.keys(wellnessSymptoms).filter(d=>Object.keys(wellnessSymptoms[d]||{}).length).sort().reverse().slice(0,14);
     const rows=days.map(d=>{ const c=mwCycleInfo(d);
       const chips=Object.keys(wellnessSymptoms[d]).map(k=>'<span class="mini" style="background:#fbe3ec;color:#b03a5b">'+(lbl[k]||k)+'</span>').join(' ');
-      return '<div class="wrow"><div class="wdate">'+mwFmtShort(d)+'</div><span class="mini" style="background:'+c.color+';color:'+c.txt+'">'+c.emoji+' d'+c.day+'</span><div style="flex:1">'+chips+'</div></div>'; }).join('');
+      return '<div class="wrow"><div class="wdate">'+mwFmtShort(d)+'</div>'+(own?'<span class="mini" style="background:'+c.color+';color:'+c.txt+'">'+c.emoji+' d'+c.day+'</span>':'')+'<div style="flex:1">'+chips+'</div></div>'; }).join('');
     return `<div class="card"><div class="head h-purple"><span>🌡</span> Symptoms</div><div class="body">
       ${rows||'<div style="font-size:12px;color:#6b6560">Nothing logged yet — tap symptom chips on Mom\'s Day as they happen.</div>'}
       ${Object.keys(wellnessSymBank).length?'<div style="margin-top:10px;font-size:11px;color:#6b6560"><b>Your added symptoms:</b> '+Object.keys(wellnessSymBank).sort().map(k=>'<span class="mini" style="background:#fbe3ec;color:#b03a5b">'+wellnessSymBank[k]+' <span onclick="mwDelSymType(\''+k+'\')" style="cursor:pointer;font-weight:800">✕</span></span>').join(' ')+'</div>':''}
-      <div class="note" style="margin-top:10px">Every logged day carries its cycle day, so once a few weeks build up, trends can show which symptoms cluster in which phase.</div>
+      ${own?`<div class="note" style="margin-top:10px">Every logged day carries its cycle day, so once a few weeks build up, trends can show which symptoms cluster in which phase.</div>`:''}
     </div></div>`;
   })();
 
@@ -27778,15 +27798,15 @@ function renderMPWeigh(el){
     return `<div class="wrow"><div class="wdate">${mwFmtShort(p.iso)}</div><div style="flex:1;font-size:12px;color:#5a544e">${new Date(p.iso+'T00:00').toLocaleDateString('en-US',{weekday:'short',year:'numeric'})}${gap?` · <span style="color:#6b6560">${gap}-day cycle</span>`:` · <span style="color:#b03a5b;font-weight:700">current</span>`}</div><button onclick="mwRemovePeriod('${p.iso}')" style="border:none;background:transparent;color:#c0392b;font-size:14px;cursor:pointer;padding:2px 6px" title="Remove this entry">✕</button></div>`;
   }).join('');
   const periodCard=`<div class="card"><div class="head" style="background:#c2547e"><span>🩸</span> Period Log</div><div class="body">
-    <span class="badge" style="background:${nowCi.color};color:${nowCi.txt}">${nowCi.emoji} Today · cycle day ${nowCi.day} · ${nowCi.label}</span>
-    ${nextLine}${avgLine}
+    ${own?`<span class="badge" style="background:${nowCi.color};color:${nowCi.txt}">${nowCi.emoji} Today · cycle day ${nowCi.day} · ${nowCi.label}</span>
+    ${nextLine}${avgLine}`:''}
     <div class="field" style="margin-top:10px"><label>Period started on</label><input type="date" id="period-date" value="${todayI}"></div>
     <button class="act" style="background:#c2547e" onclick="mwLogPeriod()">🩸 Log period start</button>
     ${pStarts.length?`<div style="margin-top:10px">${pRows}</div>`:`<div class="note rose" style="margin-top:10px">Log the day each period starts. The app uses your most recent start as the cycle anchor and learns your true cycle length from the gaps — so all the phase math and comparisons stay accurate over time.</div>`}
   </div></div>`;
 
   const cycleCard=`<details><summary>⚙️ Cycle Settings <span class="caret">▶</span></summary><div class="inner">
-    <div class="field"><label>Last period started</label><input type="date" id="cy-anchor" value="${wellnessCycle.anchor}"></div>
+    <div class="field"><label>Last period started</label><input type="date" id="cy-anchor" value="${own?wellnessCycle.anchor:''}"></div>
     <div class="field"><label>Cycle length (days)</label><input type="number" id="cy-len" min="20" max="40" value="${wellnessCycle.len}"></div>
     <button class="act" onclick="mwSaveCycle()">Update cycle</button>
     <div class="note" style="margin-top:9px">Comparisons line up the <b>same cycle day, 4 weeks apart</b> — so a premenstrual bump isn't mistaken for fat. Truest read is <b>follicular (days ~7–12)</b>.</div>
@@ -27794,7 +27814,7 @@ function renderMPWeigh(el){
 
   el.innerHTML=`<div class="mwv" style="font-family:'DM Sans',sans-serif;padding-bottom:28px">
     <style>${MW_CSS}</style>
-    ${mwBanner('Weekly weigh-in · read against your cycle')}
+    ${mwBanner(own?'Weekly weigh-in · read against your cycle':'Weekly weigh-in')}
     ${mpSubnav('weigh')}
     <div style="padding:12px 12px 0;display:flex;flex-direction:column;gap:11px">
       ${currentCard}${periodCard}${comparisonCard}${trendCard}${logCard}${bpCard}${symCard}${historyCard}${cycleCard}
@@ -27806,6 +27826,7 @@ function mwUpdateDayBadge(){
   const inp=document.getElementById('wi-date'); const out=document.getElementById('wi-daybadge');
   if(!inp||!out) return;
   const iso=inp.value; if(!iso){ out.textContent=''; return; }
+  if(!mwCycleOwn()){ out.textContent=''; return; }   // CYCLEOWN: no cycle day beside the date
   const c=mwCycleInfo(iso);
   out.innerHTML=`That date is <b style="color:${c.txt}">${c.emoji} cycle day ${c.day} · ${c.label}</b>${c.key==='follicular'?' — great time to weigh 👍':''}`;
 }
@@ -27828,6 +27849,7 @@ function mwSaveWeighin(){
 function mwSaveCycle(){
   const a=(document.getElementById('cy-anchor')||{}).value;
   const l=parseInt((document.getElementById('cy-len')||{}).value);
+  if(!a&&!mwCycleOwn()){ alert('Pick the date your last period started.'); return; }   // CYCLEOWN: an empty date must not save the built-in one into this family's database
   if(a) wellnessCycle.anchor=a;
   if(l) wellnessCycle.len=l;
   try{HA_LS.setItem('wellness_cycle',JSON.stringify(wellnessCycle));}catch(e){}
