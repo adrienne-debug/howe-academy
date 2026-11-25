@@ -157,7 +157,8 @@ function appScript(indexPath){
   // MCNEWFAM (2026-11-24, new-family slice 1): a family that is not Howe no longer gets Howe's 8 Mom chores. A test that replays the
   // made-up family against an OLDER copy of the app (git show …) sees that copy with the same lines, so it still compares only its
   // own change (the archBlind idea). A copy that already says MCNEWFAM (this tree, test_newfam_mom_list_empty's baseline) is left alone.
-  if(text.indexOf("MCNEWFAM")<0) MCNEWFAM.forEach(function(p){ if(text.split(p[0]).length===2) text=text.replace(p[0],function(){ return p[1]; }); });
+  // MCSEEDNF (her "Yes, remove it" 2026-11-24): the same for the ✨ basics button a non-Howe Mom no longer gets.
+  [["MCNEWFAM",MCNEWFAM],["MCSEEDNF",MCSEEDNF]].forEach(function(m){ if(text.indexOf(m[0])<0) m[1].forEach(function(p){ if(text.split(p[0]).length===2) text=text.replace(p[0],function(){ return p[1]; }); }); });
   _scriptCache={path:indexPath,text};
   return text;
 }
@@ -171,6 +172,9 @@ const MCNEWFAM=[
   ["6px\">Nothing of yours due today. 🎉</div>';",
    "6px\">'+((!P.dad&&typeof HA_IS_HOWE!==\"undefined\"&&!HA_IS_HOWE&&!Object.keys(list).length)?'Nothing here yet — add the things you actually do.':'Nothing of yours due today. 🎉')+'</div>';   // MCNEWFAM: her list is empty"]
 ];
+
+// the MCSEEDNF lines of index.html: [before, after]
+const MCSEEDNF=[ [  "    emptySlot:function(slotNow){ return '<div style=\"font-size:12px;color:var(--muted);padding:2px 0 6px\">Nothing set for '",   "    emptySlot:function(slotNow){ if(typeof HA_IS_HOWE!==\"undefined\"&&!HA_IS_HOWE) return '<div style=\"font-size:12px;color:var(--muted);padding:2px 0 6px\">Nothing set for '+MC_SLOTS[slotNow].nm.toLowerCase()+' yet — ✎ Edit to slot a chore you already have.</div>';   // MCSEEDNF: no ✨ basics button\n      return '<div style=\"font-size:12px;color:var(--muted);padding:2px 0 6px\">Nothing set for '" ],  [  "  if(!momHere()||!MC_SEEDS[slot]) return;\n",   "  if(!momHere()||!MC_SEEDS[slot]) return;\n  if(typeof HA_IS_HOWE!==\"undefined\"&&!HA_IS_HOWE) return;   // MCSEEDNF: the starters are Howe's own (her \"Yes, remove it\" 2026-11-24)\n" ]];
 
 // ── a device ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // o = {name, dev (HA_DEV_ID), db, clock, sched, family (window.HA_FAMILY), indexPath, mom:boolean, verbose}
@@ -226,4 +230,4 @@ function bootDevice(o){
   return dev;
 }
 
-module.exports={makeClock,makeScheduler,makeDb,makeDom,makeEl,bootDevice,appScript,MCNEWFAM};
+module.exports={makeClock,makeScheduler,makeDb,makeDom,makeEl,bootDevice,appScript,MCNEWFAM,MCSEEDNF};

@@ -122,11 +122,8 @@ const KEYS = ["list", "due", "home", "dad", "today", "edit", "add", "listAfterAd
   ok(N.live.length === 0 && /\(0 rows\)/.test(N.review), "📥 Bring in finds no rows for her (\"… (0 rows)\")", N.live);
   ok(N0.live.filter(id => /^mc_mc_/.test(id)).length === 8 && /\(8 rows\)/.test(N0.review), "baseline: Bring in offered Howe's 8 (\"(8 rows)\")", N0.live);
   ok(N.bring.r === 0 && N.bring.writes.length === 0, "Bring in writes nothing (no household/jobs/mc_* row, no meta/imported)", N.bring.writes);
-  // ✨ Start with the morning basics (MC_SEEDS is not changed in this slice — what it writes now)
-  const seedW = N.seed.writes.map(w => w[1]), seedT = JSON.parse(N.seed.tree).momChores || {};
-  ok(seedW.length === N.seeds.morning.length && seedW.every(p => /^momChores\/mc[0-9a-z]+$/.test(p) && !/^momChores\/mc_/.test(p)) && seedT._seeded === undefined,
-    "✨ morning basics writes only its " + N.seeds.morning.length + " starter rows (no Howe 8, no _seeded)", seedW);
-  ok(Object.values(seedT).map(c => c.label).sort().join("|") === N.seeds.morning.slice().sort().join("|"), "…the rows are exactly MC_SEEDS.morning (unchanged in this slice)", Object.values(seedT).map(c => c.label));
+  // ✨ Start with the morning basics: gone for a new family since MCSEEDNF (test_newfam_seed_button.js) — a tap writes nothing
+  ok(N.seed.writes.length === 0 && !(JSON.parse(N.seed.tree).momChores), "✨ basics, called anyway, writes nothing for her (no Howe 8, no starters, no _seeded)", N.seed.writes);
   // the other readers of her list draw with an empty list
   ok(N.pages.every(n => typeof n === "number" && n > 100), "Household ▸ Kitchen / By person / Levels / Habits / Week / Rooms draw with an empty Mom list", N.pages);
   ok(/when you tick your 🌙 Kitchen close-down/.test(N.kitchen), "(not changed here) the Kitchen tab hint still names a \"Kitchen close-down\" — reported, known #1k in test_new_family_clean.js");

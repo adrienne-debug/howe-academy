@@ -52,7 +52,7 @@ const KNOWN = [
   { item: "7", what: "printed flash cards headed \"🦕 Julian\"", cat: "kid", pages: ["Mastery ▸ 🖨 Print flash cards"] },
   { item: "8", what: "note-box hint \"Note (move to Tue, give to Lucy, …)\" on a Review row", cat: "kid", pages: ["Household ▸ review row"], near: /give to/ },
   { item: "8", what: "star-box hint \"e.g. helped Lucy without being asked\"", cat: "kid", pages: ["Mom's Day ⭐ give stars box"], near: /helped .* without being asked/ },
-  { item: "11", what: "\"Morning routine not done\" on 🔴 Now for kids who have no morning list", cat: "morningAlarm", pages: ["Home Base", AT("Home Base")] },
+  { item: "11", what: "\"Morning routine not done\" on 🔴 Now for kids who have no morning list", cat: "morningAlarm", pages: ["Home Base", "Home Base ▸ afternoon", "Home Base ▸ night", AT("Home Base")] },
 ];
 
 // ── boot ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -94,6 +94,8 @@ const RENDER = 'renderMomsPlan(document.getElementById("content"))';
 async function pagesOf(B, kids) {
   const P = [];
   P.push(draw(B, "Home Base", MOM("plan"), RENDER));
+  ["afternoon", "night"].forEach(sl => P.push(draw(B, "Home Base ▸ " + sl, MOM("plan") + ' mpSlot="' + sl + '";', RENDER)));   // My day at each time of day
+  B.A.run("mpSlot=null");
   P.push(draw(B, "Home Base ▸ ✎ Edit my chores", MOM("plan") + " mcManage=true;", "mcPopHTML(_todayStr(),mdTodayName())"));
   B.A.run("mcManage=false");
   P.push(draw(B, "Dad's Day ▸ ✎ Edit his chores", MOM("dad") + " ddManage=true;", "ddPopHTML(_todayStr(),mdTodayName())"));
@@ -134,9 +136,11 @@ function howeWords(H, N) {
   // pets / people named inside Howe's own lists: a capital word that is not the first word (Let Chloe out, Bella's chair)
   const pets = new Set(["Sunny", "Greg"]);   // these two live only in the Bring-in guessing rules (hhGuessArea), in no default list
   routine.concat(grabs).forEach(l => String(l).split(/\s+/).slice(1).forEach(w => { const m = w.match(/^[A-Z][a-z]{2,}/); if (m && kids.indexOf(m[0]) < 0 && !/^(Teeth|Pjs)$/.test(m[0])) { pets.add(m[0]); if (/s$/.test(m[0])) pets.add(m[0].slice(0, -1)); } }));   // "Bellas chair" → Bella too
+  // Mom's own starters behind "✨ Start with the … basics" (MC_SEEDS): the longer ones, not already a Mom chore
+  const seeds = [].concat(...Object.values(g(H, "MC_SEEDS"))).map(core).filter(l => l.length >= 12 && momChores.indexOf(l) < 0);
   const cycle = g(H, "wellnessCycle");
   const pins = [g(H, "APP_PIN"), g(H, "DAD_PIN")].filter(Boolean);
-  return { kids, momChores, rooms, grabs, pets: Array.from(pets), cycle, pins };
+  return { kids, momChores, rooms, grabs, pets: Array.from(pets), cycle, pins, seeds };
 }
 function scanner(W) {
   const T = [];
@@ -145,6 +149,8 @@ function scanner(W) {
   W.rooms.forEach(s => T.push(["room", word(s)]));
   W.grabs.forEach(s => T.push(["grab", word(s)]));
   W.pets.forEach(s => T.push(["pet", word(s)]));
+  W.seeds.forEach(s => T.push(["seed", word(s)]));
+  T.push(["seed", /Start with the [a-z]+ basics/g]);   // the ✨ button itself (gone for a new family: MCSEEDNF)
   W.pins.forEach(s => T.push(["pin", new RegExp("(?<!\\d)" + s + "(?!\\d)", "g")]));
   T.push(["cycle", /cycle day \d+|Next period expected/g]);   // a cycle day shown with nothing logged = the built-in date
   T.push(["morningAlarm", /Morning routine not done/g]);      // every kid here has no morning list
@@ -164,8 +170,8 @@ function scanner(W) {
   ok(H.A.run("HA_IS_HOWE") === true && N.A.run("HA_IS_HOWE") === false, "the two boots: Howe (HA_IS_HOWE) and a made-up family (not Howe)");
   ok(N.A.run("momHere()") === true, "Mom mode is on for the made-up family");
   const W = howeWords(H, N), scan = scanner(W);
-  ok(W.kids.length === 4 && W.momChores.length === 8 && W.rooms.length >= 11 && W.grabs.length > 0 && W.pets.length >= 3 && W.pins.length === 2,
-    "Howe's words read from the app: " + W.kids.length + " kids, " + W.momChores.length + " Mom chores, " + W.rooms.length + " room names, " + W.grabs.length + " Up for Grabs jobs, pets " + W.pets.join("/") + ", 2 codes");
+  ok(W.kids.length === 4 && W.momChores.length === 8 && W.rooms.length >= 11 && W.grabs.length > 0 && W.pets.length >= 3 && W.pins.length === 2 && W.seeds.length >= 5,
+    "Howe's words read from the app: " + W.kids.length + " kids, " + W.momChores.length + " Mom chores, " + W.rooms.length + " room names, " + W.grabs.length + " Up for Grabs jobs, pets " + W.pets.join("/") + ", 2 codes, " + W.seeds.length + " starter items");
   ok(Object.keys(N.db.tree.root).every(k => /^(connDiary|settings)$/.test(k)), "the made-up family's database is empty after boot (only the app's own connection notes): " + Object.keys(N.db.tree.root).join(","));
 
   // ── 2. the pages, untouched ─────────────────────────────────────────────────────────────────────────────────────────
@@ -216,6 +222,7 @@ function scanner(W) {
   const hb = draw(H, "Howe · Home Base", MOM("plan"), RENDER).text || "";
   const dueH = hj("mcDueToday(mdTodayName())").map(id => W.momChores[Object.keys(hj("MC_DEFAULT")).indexOf(id)]);
   ok(dueH.length > 0 && dueH.every(l => hb.indexOf(l) >= 0), "Howe: Home Base ▸ My day shows today's chores of the 8 (" + dueH.join(", ") + ")");
+  ok(/✨ Start with the morning basics/.test(hb), "Howe: an empty time of day still offers \"✨ Start with the morning basics\"");
   const ht = draw(H, "Howe · Household ▸ today", HH("today"), RENDER).text || "";
   ok(dueH.every(l => ht.indexOf(l) >= 0), "Howe: Household ▸ Today lists them under Mom");
   ok(JSON.stringify(hj("hhRoomList()")) === JSON.stringify(hj("HH_ROOMS")) && hj("hhRoomList()").some(r => r[1] === "Boys' room"), "Howe: its 12 rooms with its own names (Boys' room …)");
