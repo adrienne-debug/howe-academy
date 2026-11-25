@@ -18,7 +18,9 @@ const A = src.indexOf("  // NB_LOOKS2_START"), endMark = "  // NB_LOOKS2_END\n",
 const load = (code) => { const w = {}; new Function("window", code)(w); return w.HoweNotebooks; };
 const NB = load(src), I = NB._internal;
 const block = src.slice(A, B + endMark.length);
-const OLD = load(src.slice(0, A) + src.slice(B + endMark.length));   // this tree with the block taken out
+// this tree with the block taken out — and NB_LOOKS3 with it (2026-11-24: that block builds its looks with this one's helpers)
+const A3 = src.indexOf("  // NB_LOOKS3_START"), end3 = "  // NB_LOOKS3_END\n", B3 = src.indexOf(end3);
+const OLD = load(A3 > B ? src.slice(0, A) + src.slice(B + endMark.length, A3) + src.slice(B3 + end3.length) : src.slice(0, A) + src.slice(B + endMark.length));
 let pass = 0, fail = 0;
 function ok(c, name, d) { if (c) { pass++; console.log("  ✓ " + name); } else { fail++; console.log("  ✗ " + name + (d ? "  → " + d : "")); } }
 const noStyle = (h) => String(h).replace(/<style[\s\S]*?<\/style>/g, "");
@@ -45,12 +47,12 @@ const theme = (N, k, ctx) => N.themes[k].theme(Object.assign({ kidName: "Finn" }
 
 console.log("the block and the picker");
 ok(A > 0 && B > A && src.indexOf("// NB_LOOKS2_START", A + 10) < 0, "one NB_LOOKS2 block, marked start and end");
-ok(JSON.stringify(Object.keys(NB.themes)) === '["dino","construction","shark","space","farm","forest"]' && JSON.stringify(Object.keys(OLD.themes)) === '["dino","construction","shark"]', "six looks with the block, the first three without it");
+ok(JSON.stringify(Object.keys(NB.themes).slice(0, 6)) === '["dino","construction","shark","space","farm","forest"]' && JSON.stringify(Object.keys(OLD.themes)) === '["dino","construction","shark"]', "the six looks lead the picker with the block (NB_LOOKS3's follow), the first three without it");
 ok(NB.themes.space.chip === "🚀 Space" && NB.themes.farm.chip === "🐮 Farm" && NB.themes.forest.chip === "🦊 Forest", "picker names: 🚀 Space · 🐮 Farm · 🦊 Forest");
 let op = NB.notebookOptions("julian", {});
-ok(op.looks.map(l => l.key).join() === "dino,construction,shark,space,farm,forest" && op.current === "dino", "a Pre-K kid's picker lists all six; the kid's own look stays on");
+ok(op.looks.map(l => l.key).join() === "dino,construction,shark,space,farm,forest,plain,horses,sports" && op.current === "dino", "a Pre-K kid's picker lists all nine (NB_LOOKS3's after these); the kid's own look stays on");
 op = NB.notebookOptions("kid9", { isPreK: true });
-ok(op.looks.map(l => l.key).join() === ",dino,construction,shark,space,farm,forest" && op.current === "", "a Pre-K kid on the starter notebook: Starter + the six");
+ok(op.looks.map(l => l.key).join() === ",dino,construction,shark,space,farm,forest,plain,horses,sports" && op.current === "", "a Pre-K kid on the starter notebook: Starter + the nine");
 op = NB.notebookOptions("kid9", { notebookTheme: "farm" });
 ok(op.current === "farm" && op.prek && op.levels.length === 5 && op.extraPages.length === 3, "picking a new look gives the level switches and the three extra pages, as any Pre-K look");
 ok(NB.notebookOptions("lincoln", {}).looks.length === 1 && NB.notebookOptions("lucy", {}).looks.every(l => !NEW.includes(l.key)) && NB.notebookOptions("kid9", {}).looks.length === 1, "an older kid's picker gets none of the new Pre-K looks (the 1st-grade colour sets: test_lu_looka.js)");
@@ -130,12 +132,12 @@ NEW.forEach(k => {
     .concat(az.filter(l => !seen["1" + l + " says /" + l + "/ · " + T.soundWords[l][0] + " " + T.soundWords[l][1]]));
   ok(!notSeen.length, k + ": all 26 “A is for …” words and all 26 “a says /a/ · …” words really printed in those notebooks", notSeen.join(""));
 });
-// the three pieces the first looks leave to another look (reported in PLAN_notebook_looks_2026-11-23.md, not changed here)
+// the three pieces the first looks used to leave to another look — fixed by NB_LOOKFIX (2026-11-24, test_nb_lookfix.js)
 const lowSound = { nbLowercase: true };
-ok(/says \/d\/ · dig|says \/t\/ · truck|says \/h\/ · hammer/.test(text(NB.generate("kid9", full("shark", lowSound)).student + NB.generate("kid9", full("shark", lowSound, { weekNum: "week31", letterCursor: { week: 30, idx: 5, adv: 5, from: 30 } })).student + NB.generate("kid9", full("shark", lowSound, { weekNum: "week32", letterCursor: { week: 31, idx: 10, adv: 5, from: 30 } })).student)),
-  "(known, unchanged) the shark look still borrows the construction sound words — the new looks carry their own");
-ok(/My Animal Friends[\s\S]*?🦁 🦖 🦕 🦒/.test(NB.generate("kid9", base({ kidName: "Finn", notebookTheme: "construction" })).student) &&
-   NEW.every(k => !/🦖|🦕/.test(NB.generate("kid9", base({ kidName: "Finn", notebookTheme: k })).student)), "(known, unchanged) the construction cover lists the dinosaur friends — a new look lists its own");
+ok(!/says \/d\/ · dig|says \/t\/ · truck|says \/h\/ · hammer/.test(text(NB.generate("kid9", full("shark", lowSound)).student + NB.generate("kid9", full("shark", lowSound, { weekNum: "week31", letterCursor: { week: 30, idx: 5, adv: 5, from: 30 } })).student + NB.generate("kid9", full("shark", lowSound, { weekNum: "week32", letterCursor: { week: 31, idx: 10, adv: 5, from: 30 } })).student)),
+  "the shark look no longer borrows the construction sound words (NB_LOOKFIX) — and the new looks carry their own");
+ok(/My Animal Friends[\s\S]*?🦫 🐜 🐝 🐦/.test(NB.generate("kid9", base({ kidName: "Finn", notebookTheme: "construction" })).student) &&
+   NEW.every(k => !/🦖|🦕/.test(NB.generate("kid9", base({ kidName: "Finn", notebookTheme: k })).student)), "the construction cover lists its own friends (NB_LOOKFIX) — a new look lists its own");
 ok(/My Animal Friends[\s\S]*?🐮 🐷 🐴 🐔/.test(NB.generate("kid9", base({ kidName: "Finn", notebookTheme: "farm" })).student) &&
    /My Animal Friends[\s\S]*?🦊 🐻 🦉 🦌/.test(NB.generate("kid9", base({ kidName: "Finn", notebookTheme: "forest" })).student) &&
    /My Animal Friends[\s\S]*?🦁 🦒 🐘 🐵/.test(NB.generate("kid9", base({ kidName: "Finn", notebookTheme: "space" })).student), "no Animals deck → each look's own four friends");
