@@ -24,8 +24,8 @@ const count = (s, sub) => s.split(sub).length - 1;
 const CALLS = [
   ["    var words = luWordsWeek(ctx, days.length);   // LU_WORDS: the week's sight words, or null → nothing new prints\n    var math = luMathWeek(ctx, wn, days.length);   // LU_MATH: the week's facts from the Math Facts cards, or null → the old subtraction block\n    if (math) focus = [focus[0], math.focus];   // LU_MATH: the focus card describes the deck\n",
    "    var words = luWordsWeek(ctx, days.length);   // LU_WORDS: the week's sight words, or null → nothing new prints\n"],
-  ["        xpStrip(pagesForDay(ctx, \"lucy\", day), \"#f472b6\", \"#fdf2f8\", \"#be185d\"), words ? words.days[i] : null, math ? math.days[i] : null), day, \"Daily page\"));   // LU_MATH\n",
-   "        xpStrip(pagesForDay(ctx, \"lucy\", day), \"#f472b6\", \"#fdf2f8\", \"#be185d\"), words ? words.days[i] : null), day, \"Daily page\"));\n"],
+  ["        xpStrip(pagesForDay(ctx, \"lucy\", day), \"{{lu:bbPink}}\", \"{{lu:ppale}}\", \"{{lu:pink}}\"), words ? words.days[i] : null, math ? math.days[i] : null), day, \"Daily page\"));   // LU_MATH\n",
+   "        xpStrip(pagesForDay(ctx, \"lucy\", day), \"{{lu:bbPink}}\", \"{{lu:ppale}}\", \"{{lu:pink}}\"), words ? words.days[i] : null), day, \"Daily page\"));\n"],
   ["    parts.push(nbTag(ctx, luPageEndOfWeek(wn, weekDates, blends, subtraction, days, tasks, math), \"last\", \"End of week\"));   // LU_MATH\n",
    "    parts.push(nbTag(ctx, luPageEndOfWeek(wn, weekDates, blends, subtraction, days, tasks), \"last\", \"End of week\"));\n"],
   ["    var luCss = (phono ? LU_PHONO_CSS : \"\") + (words ? LU_WORDS_CSS : \"\") + (math ? LU_MATH_CSS : \"\");   // LU_WORDS · LU_MATH\n",
