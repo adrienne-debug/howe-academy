@@ -36,6 +36,7 @@ const IDX_PIECES = [
    `title="Didn’t actually do it — dock 100" style="flex-shrink:0;padding:3px 9px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:800;cursor:pointer;font-family:\\'DM Sans\\',sans-serif">−100</button>';`, "🧾's button"],
   [`A dock takes '+(fP.on?fP.pts+' ⭐ from the Star Bank':'no stars (the penalty is off)')+' and marks the line.`, `A dock takes 100 ⭐ from the Star Bank and marks the line.`, "🧾's foot"],
   [`🔒 Put your code in under Star controls to use '+fl+'.</div>';`, `🔒 Put your code in under Star controls to use −100.</div>';`, "🧾's lock line"],
+  [`to use ⚠️ '+flagLbl()+'.</div>')`, `to use ⚠️ −100.</div>')`, "Dad's Click-off Log's lock line (DADSPOTLOG)"],
   [`tap ⚠️ '+flagLbl()+(spPenalty().on?' to dock '+spPenalty().pts+' points.':' to mark it.')+'</div>';`, `tap ⚠️ −100 to dock 100 points.</div>';`, "the log's words"],
   [`title="Didn\\'t actually do it — '+(spPenalty().on?'dock '+spPenalty().pts+' points':'mark it')+'" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ '+flagLbl()+'</button>';
       else if(e.flagged) h+=flagUndoBtn("step",kid,_rlwk+"/"+e._day+"/"+e._key);   // FLAGONE: undo`,
