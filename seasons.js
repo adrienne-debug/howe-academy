@@ -215,7 +215,7 @@ function whens(it){
 function state(it){if(it.skip)return "skip";if(it.did)return "done";const W=whens(it);if(!W.length)return "todo";const t=today();return W.some(w=>w.d>=t)?"sched":"past";}
 function counts(sid){const c={n:0,todo:0,sched:0,past:0,done:0,skip:0};ideasOf(sid).forEach(it=>{c.n++;c[state(it)]++;});return c;}
 function roster(){try{return (typeof ROSTER_DEF!=="undefined"&&Array.isArray(ROSTER_DEF))?ROSTER_DEF:[];}catch(e){return [];}}
-function people(){return roster().map(k=>({id:k.id,name:k.name,color:k.color||"#64748b",kid:true})).concat([SN_MOM,SN_DAD]);}
+function people(){return roster().map(k=>({id:k.id,name:k.name,color:k.color||"#64748b",kid:true})).concat([SN_MOM,SN_DAD].map(p=>{const n=(typeof haAdult==="function")?haAdult(p.id,p.name):p.name;return n===p.name?p:Object.assign({},p,{name:n});}));}   // 🏡 HHNAMES: a household's adults by name
 function who(id){return id==="family"?SN_FAM:(people().find(p=>p.id===id)||{id,name:String(id||""),color:"#64748b"});}
 function starMax(s){const n=+((s||{}).stars);return n>0?Math.floor(n):SN_STARS;}
 function starsUsed(sid,w,exceptIid){return ideasOf(sid).filter(it=>it.id!==exceptIid&&it.star&&it.star[w]).length;}
