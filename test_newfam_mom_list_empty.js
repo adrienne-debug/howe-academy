@@ -21,19 +21,16 @@ let pass = 0, fail = 0;
 const ok = (c, m, why) => { if (c) pass++; else { fail++; console.log("  ✗ " + m + (why !== undefined ? "  → " + JSON.stringify(why).slice(0, 400) : "")); } };
 
 // ── the feature's three lines, and the baseline without them ─────────────────────────────────────────────────────────────
-const FEATURE = [
-  ["  return (n||momChoresData._seeded||(typeof HA_IS_HOWE!==\"undefined\"&&!HA_IS_HOWE))?stored:MC_DEFAULT;   // MCNEWFAM: Howe's 8 are Howe's only (her answer 2026-11-24: \"Remove them completely\")\n",
-   "  return (n||momChoresData._seeded)?stored:MC_DEFAULT;\n"],
-  ["  if(typeof HA_IS_HOWE!==\"undefined\"&&!HA_IS_HOWE) return;   // MCNEWFAM: nothing to copy for a new family — no rows, no _seeded\n", ""],
-  ["'+((!P.dad&&typeof HA_IS_HOWE!==\"undefined\"&&!HA_IS_HOWE&&!Object.keys(list).length)?'Nothing here yet — add the things you actually do.':'Nothing of yours due today. 🎉')+'</div>';   // MCNEWFAM: her list is empty",
-   "Nothing of yours due today. 🎉</div>';"],
-];
+// the lines live once, in the sandbox (it also gives OLDER app copies the same lines — see demo_week_sandbox.js): [before, after]
+const FEATURE = S.MCNEWFAM.map(p => [p[1], p[0]]);
 FEATURE.forEach(([now], i) => ok(SRC.split(now).length === 2, "MCNEWFAM line " + (i + 1) + " is in index.html exactly once"));
 let BASE_SRC = SRC; FEATURE.forEach(([now, was]) => { BASE_SRC = BASE_SRC.split(now).join(was); });
+ok(FEATURE.every(([now]) => BASE_SRC.indexOf(now) < 0) && BASE_SRC.split("MCNEWFAM").length === 1, "the baseline is this tree minus the feature (no MCNEWFAM line left)");
+// one marker line at the top of the main script, so the sandbox does not put the lines back into this baseline
+{ const L = BASE_SRC.split("\n"), a = L.lastIndexOf("<script>"); L.splice(a + 1, 0, "// MCNEWFAM baseline: the three lines taken out (test_newfam_mom_list_empty.js)"); BASE_SRC = L.join("\n"); }
 const BASE = path.join(os.tmpdir(), "newfam_base_" + process.pid + ".html");
 fs.writeFileSync(BASE, BASE_SRC);
 process.on("exit", () => { try { fs.unlinkSync(BASE); } catch (e) {} });
-ok(BASE_SRC.indexOf("MCNEWFAM") < 0, "the baseline is this tree minus the feature (no MCNEWFAM left)");
 
 // ── boot ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
 const FAMILY = { familyId: "ridge", familyName: "Ridge Family", windowText: "School day",

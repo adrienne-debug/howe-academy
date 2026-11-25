@@ -154,9 +154,23 @@ function appScript(indexPath){
   const patch=(from,to,what)=>{ const i=text.indexOf(from); if(i<0) throw new Error("sandbox patch target missing: "+what); text=text.slice(0,i)+to+text.slice(i+from.length); };
   patch("function renderAll(){\n","function renderAll(){\n  if(typeof __HARNESS_NO_RENDER!==\"undefined\"&&__HARNESS_NO_RENDER) return;\n","renderAll");
   patch("function renderAllSoon(){\n","function renderAllSoon(){\n  if(typeof __HARNESS_NO_RENDER!==\"undefined\"&&__HARNESS_NO_RENDER) return;\n","renderAllSoon");
+  // MCNEWFAM (2026-11-24, new-family slice 1): a family that is not Howe no longer gets Howe's 8 Mom chores. A test that replays the
+  // made-up family against an OLDER copy of the app (git show …) sees that copy with the same lines, so it still compares only its
+  // own change (the archBlind idea). A copy that already says MCNEWFAM (this tree, test_newfam_mom_list_empty's baseline) is left alone.
+  if(text.indexOf("MCNEWFAM")<0) MCNEWFAM.forEach(function(p){ if(text.split(p[0]).length===2) text=text.replace(p[0],function(){ return p[1]; }); });
   _scriptCache={path:indexPath,text};
   return text;
 }
+
+// the MCNEWFAM lines of index.html: [before, after]
+const MCNEWFAM=[
+  ["  return (n||momChoresData._seeded)?stored:MC_DEFAULT;\n",
+   "  return (n||momChoresData._seeded||(typeof HA_IS_HOWE!==\"undefined\"&&!HA_IS_HOWE))?stored:MC_DEFAULT;   // MCNEWFAM: Howe's 8 are Howe's only (her answer 2026-11-24: \"Remove them completely\")\n"],
+  ["  if(momChoresData._seeded) return;\n  let n=0;",
+   "  if(momChoresData._seeded) return;\n  if(typeof HA_IS_HOWE!==\"undefined\"&&!HA_IS_HOWE) return;   // MCNEWFAM: nothing to copy for a new family — no rows, no _seeded\n  let n=0;"],
+  ["6px\">Nothing of yours due today. 🎉</div>';",
+   "6px\">'+((!P.dad&&typeof HA_IS_HOWE!==\"undefined\"&&!HA_IS_HOWE&&!Object.keys(list).length)?'Nothing here yet — add the things you actually do.':'Nothing of yours due today. 🎉')+'</div>';   // MCNEWFAM: her list is empty"]
+];
 
 // ── a device ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // o = {name, dev (HA_DEV_ID), db, clock, sched, family (window.HA_FAMILY), indexPath, mom:boolean, verbose}
@@ -212,4 +226,4 @@ function bootDevice(o){
   return dev;
 }
 
-module.exports={makeClock,makeScheduler,makeDb,makeDom,makeEl,bootDevice,appScript};
+module.exports={makeClock,makeScheduler,makeDb,makeDom,makeEl,bootDevice,appScript,MCNEWFAM};
