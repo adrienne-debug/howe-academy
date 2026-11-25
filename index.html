@@ -59350,13 +59350,91 @@ function nbCustomCardHtml(kid,p){
     '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;font-size:11.5px;color:var(--muted)">'+
       '<span style="flex:1;min-width:180px">'+(changed.length?'Changed from the usual'+forG+': <b style="color:#9a3412">'+changed.join(' · ')+'</b>':'Everything else is the usual'+forG+'.')+'</span>'+
       '<button onclick="nbCustomToggle(\''+kid+'\')" aria-expanded="'+open+'" style="min-height:36px;padding:6px 12px;border-radius:9px;border:1.5px solid #fed7aa;background:#fff7ed;color:#9a3412;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(open?'▾':'▸')+' Customize</button>'+
-    '</div>';
+      ((typeof nbCopyBtnHtml==="function")?nbCopyBtnHtml(kid):"")+   // 🎛 NB_CUSTOM_COPY: ▸ Same as another kid…
+    '</div>'+
+    ((typeof nbCopyPanelHtml==="function")?nbCopyPanelHtml(kid):"");   // 🎛 NB_CUSTOM_COPY: pick a kid → old → new → Copy / Cancel
   if(open) h+=DIALS.map(x=>'<div id="nbc-'+x[0]+'" style="margin-top:14px;padding-top:10px;border-top:1.5px solid #fed7aa">'+
     '<div style="font-size:12px;font-weight:800;color:#9a3412">'+x[1]+(dots[x[0]]?dot:'')+' <span style="font-weight:600;color:var(--muted)">— '+x[2]+'</span></div>'+
     (body[x[0]]||'<div style="font-size:11.5px;color:var(--muted);margin-top:6px">Nothing to set here for this notebook.</div>')+'</div>').join("");
   return h+'</div>';
 }
 // NB_CUSTOM_END
+// NB_CUSTOM_COPY_START — 🎛 "Same as another kid…" (looks plan §14; her answer 2026-11-24, question 12: "copies settings only").
+// Pick one of this family's other notebook kids (NB_KIDS — the roster); the card lists each change (old → new), Copy / Cancel. Copy
+// writes one path per change under notebookSettings/<kid>/ (set, or remove), db && !_dryRun() only — never the whole node.
+//   · COPIES, where this kid's notebook offers it: gradeOverride · nbMode · notebookTheme (only Mom's choice) · looksAllowed/<look> ·
+//     nbLevel/<switch>, countPic (Pre-K) · extraPages/<page> · reviewCap · unitDays/<unit> (both in it) · ladders/<kind>/on|opt|wf.
+//   · NEVER: notebookName, every cursor, dailyGrams, ladder lv/cur/days, tablet, juPicks, banks, checks, personal info, a kid's own
+//     look pick (2+ ticked: the ticks copy, the look stays until the kid picks), anything outside notebookSettings.
+let _nbcCopy=null;   // {kid, from}: this screen only
+function nbCopyRepaint(){ if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); } }
+function nbCopyOpen(kid,from){ if(!momHere()) return; _nbcCopy=(from===undefined&&_nbcCopy&&_nbcCopy.kid===kid)?null:{kid:kid,from:from||""}; nbCopyRepaint(); }
+function nbCopyKids(kid){ return NB_KIDS.map(x=>x.k).filter(k=>k!==kid&&ROSTER.indexOf(k)>=0); }
+// [{p: path under notebookSettings/<to>/, l: what it is, o: old words, n: new words, v: value to set (undefined = remove)}]
+function nbCopyPlan(from,to){
+  const S=k=>(((notebookSettings||{})[k])||{}), F=S(from), T=S(to), out=[], N=window.HoweNotebooks;
+  if(!N||nbCopyKids(to).indexOf(from)<0) return out;
+  const J=v=>JSON.stringify(v===undefined?null:v);
+  const add=(p,l,ov,nv,ow,nw,...val)=>{ if(J(ov)!==J(nv)) out.push({p:p,l:l,o:ow,n:nw,v:val.length?val[0]:nv}); };   // compared as the notebook reads them; val = what is written
+  const onW=v=>v===true?"on":v===false?"off":"the usual";
+  const gT=nbGradeOverride(to), gF=nbGradeOverride(from), mW=m=>m==="tablet"?"On the tablet":"Printed";
+  add("gradeOverride","Grade",gT,gF,gT?nbLvShort(gT):"the Family grade",gF?nbLvShort(gF):"the Family grade",gF||undefined);
+  add("nbMode","This notebook is",nbtMode(to),nbtMode(from),mW(nbtMode(to)),mW(nbtMode(from)),F.nbMode);
+  const tOpt=nbLookOpts(to)||{looks:[]}, offer=tOpt.looks.map(l=>l.key), lab=k=>((tOpt.looks.find(l=>l.key===k)||{}).label)||k||"—";
+  const fT=F.looksAllowed||{}, tT=T.looksAllowed||{}, fTheme=nbThemeOf(from)||"";
+  // the look copies only when it is Mom's choice on both sides: the other kid doesn't pick their own (0–1 ticked) and this kid
+  // won't either once the ticks are copied — a kid's own pick (2+ ticked) is never copied, never overwritten
+  if(offer.indexOf(fTheme)>=0&&!nbLookKidPicks(from)&&offer.filter(k=>fT[k]===true).length<2) add("notebookTheme","Look",nbThemeOf(to)||"",fTheme,lab(tOpt.current),lab(fTheme));
+  nbLookPickOffer(to,tOpt).forEach(x=>add("looksAllowed/"+x.key,"May choose "+x.label,tT[x.key]===true||undefined,fT[x.key]===true||undefined,tT[x.key]===true?"☑":"☐",fT[x.key]===true?"☑":"☐"));
+  const nOpt=N.notebookOptions(to,{isPreK:isPreK(to),notebookTheme:(out.find(c=>c.p==="notebookTheme")?fTheme:nbThemeOf(to)),nbLevel:{}})||{};
+  if(nOpt.prek){
+    (nOpt.levels||[]).forEach(d=>{ const a=(T.nbLevel||{})[d.key], b=(F.nbLevel||{})[d.key]; add("nbLevel/"+d.key,d.emoji+" "+d.label,typeof a==="boolean"?a:undefined,typeof b==="boolean"?b:undefined,onW(a),onW(b)); });
+    const cT=nbCountPicOf(to), cF=nbCountPicOf(from);
+    add("countPic","Number card counts",cT,cF,cT||"the look’s own",cF||"the look’s own",cF||undefined);
+  }
+  const dW=o=>o&&Object.keys(o).length?Object.keys(o).map(d=>d.slice(0,3)).join(" "):"no day", xpW=c=>(c.on?"on":"off")+" · "+dW(c.days);
+  (nOpt.extraPages||[]).forEach(pg=>{ const a=nbXpCfg(to,pg.key), b=nbXpCfg(from,pg.key); add("extraPages/"+pg.key,pg.emoji+" "+pg.label,a,b,xpW(a),xpW(b),(F.extraPages||{})[pg.key]); });
+  if(nbNeedsReadsCap(to)) add("reviewCap","Review slots",nbReviewCap(to),nbReviewCap(from),String(nbReviewCap(to)),String(nbReviewCap(from)),F.reviewCap);
+  const fu={}; haKidUnits(from).forEach(u=>{ fu[u.id]=1; });
+  haKidUnits(to).filter(u=>fu[u.id]).forEach(u=>{ const a=nbUnitDays(to,u.id), b=nbUnitDays(from,u.id); add("unitDays/"+u.id,"📌 "+(u.title||"unit")+" days",a,b,dW(a),dW(b),Object.keys(b).length?b:undefined); });
+  NBLADDER_KINDS.forEach(k=>["on","opt","wf"].forEach(f=>{ const a=nbLadderSaved(to,k)[f], b=nbLadderSaved(from,k)[f]; add("ladders/"+k+"/"+f,NBLADDER_NAMES[k]+(f==="on"?"":f==="opt"?" · harder stage":" · write first"),a,b,a===undefined?"off":String(a===true?"on":a),b===undefined?"off":String(b===true?"on":b)); }));
+  return out;
+}
+function nbCopyDo(to){
+  if(!momHere()||!_nbcCopy||_nbcCopy.kid!==to||!_nbcCopy.from) return 0;
+  const plan=nbCopyPlan(_nbcCopy.from,to);
+  if(!notebookSettings[to]) notebookSettings[to]={};
+  plan.forEach(c=>{
+    const parts=c.p.split("/"); let o=notebookSettings[to];
+    for(let i=0;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=="object") o[parts[i]]={}; o=o[parts[i]]; }
+    if(c.v===undefined) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=c.v;
+    try{ if(typeof db!=="undefined"&&db&&!_dryRun()){ const r=db.ref("notebookSettings/"+to+"/"+c.p); if(c.v===undefined) r.remove(); else r.set(c.v); } }catch(e){}
+  });
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  _nbcCopy=null; nbCopyRepaint(); return plan.length;
+}
+function nbCopyBtnHtml(kid){
+  if(!momHere()||!nbCopyKids(kid).length) return "";
+  const on=!!_nbcCopy&&_nbcCopy.kid===kid;
+  return '<button onclick="nbCopyOpen(\''+kid+'\')" aria-expanded="'+on+'" style="min-height:36px;padding:6px 12px;border-radius:9px;border:1.5px solid #fed7aa;background:#fff;color:#9a3412;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(on?'▾':'▸')+' Same as another kid…</button>';
+}
+function nbCopyPanelHtml(kid){
+  if(!momHere()||!_nbcCopy||_nbcCopy.kid!==kid) return "";
+  const from=_nbcCopy.from, B='padding:6px 12px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;';
+  let h='<div id="nbcopy-panel" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:#fff7ed;border:1.5px solid #fed7aa">'+
+    '<div style="font-size:12px;font-weight:800;color:#9a3412;margin-bottom:6px">Make '+esc(cap(kid))+'’s notebook settings the same as:</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+
+    nbCopyKids(kid).map(k=>'<button onclick="nbCopyOpen(\''+kid+'\',\''+k+'\')" style="'+B+'border:1.5px solid '+(k===from?'#ea580c':'var(--border)')+';background:'+(k===from?'#ffedd5':'#fff')+';color:#1f2937">'+esc(cap(k))+'</button>').join("")+'</div>';
+  if(from){
+    const plan=nbCopyPlan(from,kid);
+    h+=!plan.length?'<div style="font-size:12px;color:#166534;font-weight:700;margin-top:8px">Already the same as '+esc(cap(from))+' — nothing to copy.</div>':
+      '<div style="font-size:11.5px;color:#1f2937;margin-top:8px;line-height:1.5">'+plan.map(c=>'<div>'+esc(c.l)+': <s style="color:var(--muted)">'+esc(c.o)+'</s> → <b>'+esc(c.n)+'</b></div>').join("")+'</div>'+
+      '<div style="font-size:10.5px;color:var(--muted);margin-top:6px">Settings only — the name, places in the lessons, cards and answers stay '+esc(cap(kid))+'’s. It changes the next notebook you print.</div>'+
+      '<div style="display:flex;gap:8px;margin-top:8px"><button onclick="nbCopyDo(\''+kid+'\')" style="'+B+'border:none;background:#ea580c;color:#fff">Copy</button>'+
+      '<button onclick="nbCopyOpen(\''+kid+'\')" style="'+B+'border:1.5px solid var(--border);background:#fff;color:#6b7280">Cancel</button></div>';
+  }
+  return h+'</div>';
+}
+// NB_CUSTOM_COPY_END
 function renderNotebook(el){
   const con=el||document.getElementById("content"); if(!con)return;
   const _fr=(typeof mpSchoolFrame==="function")?mpSchoolFrame("notebook"):'';   // SCHOOLTAB: Mom's Day ▸ School ▸ Notebooks — her banner + menu on top, else ''
