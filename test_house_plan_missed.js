@@ -253,6 +253,20 @@ ok("…gone: Mop is on Ben's list 12/07–12/09, dropped the morning of 12/10 (�
   ok("…the 📒 Ledger's row: ✅ +16, \"paid 16 of 20 ⭐\", 4 short", r.pts === 16 && r.note === "paid 16 of 20 ⭐" && r.sh === 4, r);
 }
 
+// ════════════════════════════════════════ B0 · before the slate ════════════════════════════════════════
+console.log("\n── B0 · the week before the slate (Mon 11/30 – Sun 12/06), plan ON, some rows ticked: = the app before ──");
+{ const EB = () => Object.assign(FAM12(), { a_wk3: K({ label: "Wipe the table", emoji: "🧽", who: "kid_a", slot: "chores", cad: "wk:0,2,4", minutes: 5, pts: 50, order: 6 }) });
+  const N0 = await mkW(IDX, HJS, { jobs: EB() }), O0 = await mkW(BASE_IDX, BASE_HJS, { jobs: EB() }), m0 = N0.w.mark(), m1 = O0.w.mark(), bad = [];
+  for (let n = -7; n < 0; n++) { const sn = [];
+    for (const S of [N0, O0]) { await go(S.w, n, 9); const r = day(S.w, isoN(n)), late = Object.keys(r.plan || {}).filter(id => r.plan[id].late > 0);   // tick one waiting row and one fresh one
+      [late[0], Object.keys(r.plan || {}).filter(id => !r.plan[id].late)[n & 1 ? 0 : 1]].filter(Boolean).forEach(id => tickPlan(S.A, r.plan[id].who, id)); await S.w.flush(); await go(S.w, n, 18);
+      sn.push({ day: J(day(S.w, isoN(n))), kid: ["kid_a", "kid_b", "kid_c"].map(k => draw(S.B, k)).join(""), pop: S.A.run("(function(){ __pop=''; boardStatPop('kid_a','chores',_todayDay); return __pop; })()"), lists: J(W.lists(S.B, { days: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] })) }); }
+    Object.keys(sn[0]).forEach(k => { if (sn[0][k] !== sn[1][k]) bad.push(isoN(n) + " " + k); }); }
+  ok("every stored day, every kid's list (drawn and as rows), Kid A's Kids today pop-up: the app before's, all 7 days", bad.length === 0, bad.slice(0, 6));
+  ok("…every write and the whole database: the app before's (carried rows, an every-7 chore staying due, a 3-a-week row late, ticks)", J(WS(N0.w, m0)) === J(WS(O0.w, m1)) && J(root(N0.w)) === J(root(O0.w)), (() => { const a = WS(N0.w, m0), b = WS(O0.w, m1), i = a.findIndex((x, j) => x !== b[j]); return [i, a[i], b[i]]; })());
+  ok("(sanity) that week had waiting rows and ticks on them", logLines(N0.w, "kid_a", /./).concat(logLines(N0.w, "kid_b", /./)).filter(l => l.act === "on").length >= 6 && Object.values(root(N0.w).houseDay || {}).some(d => Object.values(d.plan || {}).some(p => p.late > 0)));
+}
+
 // ════════════════════════════════════════ C · stars and records ════════════════════════════════════════
 console.log("\n── C · stars and records: the falling pill, the drop's −20% once, the switches, days off, the 📒 Ledger ──");
 const FAMS = () => ({
@@ -316,7 +330,8 @@ ok("Take stars away Off: nothing taken (why \"off\") — Kid B's porch", J(r11.m
 ok("😷 a Kid Off day in its wait: nothing taken (why \"away\", checked before the switches, as C3) — Kid C's tub", J(r11.miss.c_tub.drop) === J({ n: 0, why: "away", due: "2026-12-08", job: "c_tub" }), r11.miss.c_tub);
 ok("exactly one device built Friday (one claim): one update wrote the day's plan and its notes", writes(w, m11).filter(e => e.op === "update" && (e.keys || []).some(k => /^houseDay\/2026-12-11\/built\/ok$/.test((e.path ? e.path + "/" : "") + k))).length === 1);
 // The 2 ⭐ case, the ledger and exactly-once: a fresh world without the pause
-const X = await mkW(IDX, HJS, { jobs: FAMS(), people: P(60, 60, 60, 20), meta: { starRules: { take: { kid_b: false } } } });
+const PX = Object.assign(P(60, 60, 60, 20), { mom: { school: 10, weekend: 10 } });
+const X = await mkW(IDX, HJS, { jobs: Object.assign(FAMS(), { a_teeth: K({ label: "Floss", emoji: "🦷", who: "kid_a", slot: "chores", cad: "daily", area: "health", pts: 0, order: 9 }), m_wipe: K({ label: "Wipe the oven", who: "mom", slot: "", cad: "wk:1", minutes: 5, pts: 0, src: { kind: "momChore", id: "oven" }, order: 3 }) }), people: PX, meta: { starRules: { take: { kid_b: false } } } });
 const Dd = X.w.boot("D", "devD"); Dd.run("HA_LS.setItem('ha_kiosk','dad');1"); Dd.run(CAP); Dd.run(HJS); const X2 = X.w.boot("X2", "devX2", { mom: true }); X2.run(CAP); X2.run(HJS); await X.w.flush();
 for (let n = 0; n <= 3; n++) await go(X.w, n, 7);
 const mF = X.w.mark(); await go(X.w, 4, 7);
@@ -327,16 +342,23 @@ ok("…one bank line, that id: −2, \"🧹 Vacuum the den · not done\", src \"
 ok("…one \"— not done\" line under Tuesday (miss_h_a_vac) carrying the same decision, and the chore's id", (() => { const L = logLines(X.w, "kid_a", /^miss_h_a_vac$/); return L.length === 1 && L[0]._dn === "tuesday" && J(L[0].drop) === J(vac.drop) && L[0].house === "a_vac" && L[0].label === "Vacuum the den — not done"; })());
 ok("…the bank line was written only after the log line's transaction committed (one tx, one set)", WS(X.w, mF).filter(l => /miss_h_a_vac/.test(l)).length === 1 && WS(X.w, mF).filter(l => /miss_h_a_vac/.test(l))[0].endsWith("✓") && WS(X.w, mF).filter(l => l.indexOf(bid) >= 0).length === 1);
 ok("Take stars away Off (Kid B): its drop is decided once, n 0 why \"off\", no bank line", J(rF.miss.b_sweep.drop) === J({ n: 0, why: "off", due: "2026-12-08", job: "b_sweep" }) && hdrops(X.w, "kid_b").length === 0);
+ok("a grown-up's chore (Mom's oven, on her list Tue, not done) drops too, stays hers, and nothing is decided or taken: no drop on its note", J(rF.miss.m_wipe) === J({ since: "2026-12-08", out: "wait", who: "mom", sk: 3 }) && !Object.keys(root(X.w).bank || {}).some(k => /mom/.test(k)), rF.miss.m_wipe);
 // two devices, redraws, a reload, a second filer
 for (let k = 0; k < 3; k++) { for (const d of [X.A, X.B, X2]) { ["kid_a", "kid_b", "kid_c", "kid_d"].forEach(kid => draw(d, kid)); d.run("try{ renderAll(); }catch(e){} 1"); } X.A.run("JSON.stringify(lgDayData('kid_a',0))"); await X.w.flush(); }
 const R1 = X.w.boot("R1", "devR1", { mom: true }); R1.run(CAP); R1.run(HJS); await X.w.flush(); draw(R1, "kid_a"); R1.run("JSON.stringify(lgDayData('kid_a',0))"); await X.w.flush();
 X2.run("(function(){ const w=hdWkDay('2026-12-08'); delete routineLog.kid_a[w.wk][w.dn].miss_h_a_vac; hdLogMisses('2026-12-11',houseDayData['2026-12-11'].miss); })()"); await X.w.flush();
 ok("exactly once across devices: three devices drawing every list and the ledger 3×, a reload, and a second device filing the notes again → still one bank line and one log line (the second filer's transaction found the line and wrote nothing)", hdrops(X.w, "kid_a").filter(x => /a_vac/.test(x.id)).length === 1 && logLines(X.w, "kid_a", /^miss_h_a_vac$/).length === 1 && J(adj(X.w, "kid_a")[bid]) === J(lineF) && WS(X.w, mF).filter(l => l.indexOf(bid) >= 0).length === 1);
+{ const loc = () => X2.run("(function(){ const w=hdWkDay('2026-12-08'); return JSON.stringify(routineLog.kid_a[w.wk][w.dn].miss_h_a_vac); })()"), l0 = loc(), m = X.w.mark();
+  X2.run("hdLogMisses('2026-12-11',houseDayData['2026-12-11'].miss)"); await X.w.flush();
+  ok("…a device that already has the line files the notes again: it does not even try (no transaction, no write) and its line is untouched", writes(X.w, m).length === 0 && loc() === l0, WS(X.w, m));
+  const m2 = X.w.mark(); X2.run("HA_LS.setItem('ha_dryrun','1'); (function(){ const w=hdWkDay('2026-12-08'); delete routineLog.kid_a[w.wk][w.dn].miss_h_a_vac; })(); hdLogMisses('2026-12-11',houseDayData['2026-12-11'].miss); HA_LS.removeItem('ha_dryrun'); 1"); await X.w.flush();
+  ok("…on ?dryrun=1 the filer writes nothing at all (it is reached through the day's builder, which checks first; this calls it directly)", writes(X.w, m2).length === 0, WS(X.w, m2)); }
 // the 📒 Ledger
 const lgRow = (d, kid, name) => (JSON.parse(d.run("JSON.stringify(lgDayData(" + J(kid) + ",0))")).gone || []).find(g => g.nm.indexOf(name) >= 0) || null;
 { const g = lgRow(X.A, "kid_a", "Vacuum the den");
   ok("📒 Mom's ledger, Fri, Kid A: \"Gone from her list\" — ✖ 🧹 Vacuum the den · due Tue, not done in time · 2 ⭐ taken, with ⭐ Give stars back and ➖ Excuse", g && g.ic === "✖" && g.note === "due Tue, not done in time · 2 ⭐ taken" && /lgHDropGive\('kid_a','2026-12-11','a_vac'\)/.test(g.gbH) && /lgHExcuse\('kid_a','2026-12-11','a_vac'\)/.test(g.xH) && g.tk === 2, g);
-  { const x = JSON.parse(X.A.run("JSON.stringify(lgDayData('kid_a',0))")), sum = -hdrops(X.w, "kid_a").filter(y => Object.values(rF.miss).some(m => m.drop && m.drop.bid === y.id)).reduce((a, y) => a + y.amount, 0); ok("…that day's line adds up what Friday's drops took from Kid A (" + x.taken + " ⭐: Vacuum 2, Wash the bins 2, Wipe the table 10) — the same as the bank lines of that morning's drops", x.taken === 14 && sum === 14 && x.gone.length === 3, [x.taken, sum, x.gone.map(g => g.nm)]); }
+  { const x = JSON.parse(X.A.run("JSON.stringify(lgDayData('kid_a',0))")), sum = -hdrops(X.w, "kid_a").filter(y => Object.values(rF.miss).some(m => m.drop && m.drop.bid === y.id)).reduce((a, y) => a + y.amount, 0); const z = Object.entries(adj(X.w, "kid_a")).filter(([k, a]) => /^czero_/.test(k) && a.day === "friday");
+    ok("…that day's line adds up what Friday's drops took from Kid A (Vacuum 2, Wash the bins 2, Wipe the table 10) — the same as the bank lines of that morning's drops — and C6's −1 for her 0 ⭐ daily the same morning: taken " + x.taken + " = 14 + 1", sum === 14 && x.gone.length === 3 && z.length === 1 && z[0][1].amount === -1 && x.taken === 15, [x.taken, sum, z.map(q => q[0]), x.gone.map(g => g.nm)]); }
   const gb = lgRow(X.A, "kid_b", "Sweep the porch"); ok("…Kid B's: \"nothing taken (Take stars away was off)\", no Give back", gb && /nothing taken \(Take stars away was off\)/.test(gb.note) && !gb.gbH, gb);
   const gd = lgRow(Dd, "kid_a", "Vacuum the den"); ok("Dad's own link, locked: he sees the row, \"2 ⭐ taken\", and no buttons", gd && /2 ⭐ taken/.test(gd.note) && !gd.gbH && !gd.xH, gd);
   const m = X.w.mark(); ok("…and his taps are refused, nothing written", Dd.run("lgHDropGive('kid_a','2026-12-11','a_vac')") === false && Dd.run("lgHExcuse('kid_a','2026-12-11','a_vac')") === false && (await X.w.flush(), writes(X.w, m).length === 0));
@@ -347,13 +369,18 @@ const lgRow = (d, kid, name) => (JSON.parse(d.run("JSON.stringify(lgDayData(" + 
   ok("⭐ Give stars back: one update — the bank line removed, the log line's drop marked gb {by mom, line}; the balance up 2", !adj(X.w, "kid_a")[bid] && L.drop.gb && L.drop.gb.by === "mom" && J(L.drop.gb.line) === J(before) && WS(X.w, m).length === 1);
   const g = lgRow(X.A, "kid_a", "Vacuum the den"); ok("…the row: \"⭐ Mom gave back +2 ⭐\" with Undo; taken 0", g && /Mom gave back \+2 ⭐/.test(g.gbH) && /lgHDropUndo/.test(g.gbH) && !g.tk);
   ok("…a second tap does nothing", X.A.run("lgHDropGive('kid_a','2026-12-11','a_vac')") === false);
+  { X2.run("bank.kid_a.adjustments[" + J(bid) + "]=" + J(before) + ";1"); const m2 = X.w.mark();
+    ok("…a second device that still shows the bank line (its listener behind) but has heard the give-back: its tap is refused, nothing written", X2.run("lgHDropGive('kid_a','2026-12-11','a_vac')") === false && (await X.w.flush(), writes(X.w, m2).length === 0)); X2.run("delete bank.kid_a.adjustments[" + J(bid) + "];1"); }
   X.A.run("lgHDropUndo('kid_a','2026-12-11','a_vac')"); await X.w.flush();
   ok("Undo: the same bank line back, byte for byte, and gb gone", J(adj(X.w, "kid_a")[bid]) === J(before) && !logLines(X.w, "kid_a", /^miss_h_a_vac$/)[0].drop.gb);
 }
 { const L0 = clone(logLines(X.w, "kid_a", /^miss_h_a_vac$/)[0]), b0 = clone(adj(X.w, "kid_a")[bid]); delete L0._wk; delete L0._dn; delete L0._k; X.A.run("lgHExcuse('kid_a','2026-12-11','a_vac')"); await X.w.flush();
   const n = day(X.w, isoN(4)).miss.a_vac;
   ok("➖ Excuse: the stars back (bank line removed), its \"— not done\" out, a \"— waved by Mom\" line in, both kept on the note's x", !adj(X.w, "kid_a")[bid] && logLines(X.w, "kid_a", /^miss_h_a_vac$/).length === 0 && logLines(X.w, "kid_a", /^wave_h_a_vac$/)[0].label === "Vacuum the den — waved by Mom" && n.x && J(n.x.c3.line) === J(b0) && J(n.x.c3.log) === J(L0));
-  const g = lgRow(X.A, "kid_a", "Vacuum the den"); ok("…the row: ➖ \"due Tue · excused\" with Undo; the day's taken is 2 less (12)", g && g.ic === "➖" && g.note === "due Tue · excused" && /lgHExcuseUndo/.test(g.xH) && JSON.parse(X.A.run("JSON.stringify(lgDayData('kid_a',0))")).taken === 12);
+  const g = lgRow(X.A, "kid_a", "Vacuum the den"); ok("…the row: ➖ \"due Tue · excused\" with Undo; the day's taken is 2 less (13)", g && g.ic === "➖" && g.note === "due Tue · excused" && /lgHExcuseUndo/.test(g.xH) && JSON.parse(X.A.run("JSON.stringify(lgDayData('kid_a',0))")).taken === 13);
+  { X2.run("(function(){ const w=hdWkDay('2026-12-08'); routineLog.kid_a[w.wk][w.dn].miss_h_a_vac=" + J(L0) + "; })()"); const m2 = X.w.mark();
+    ok("…a second device that still shows its \"— not done\" line (behind) but has heard the excuse: a second Excuse is refused, nothing written, the kept lines untouched", X2.run("lgHExcuse('kid_a','2026-12-11','a_vac')") === false && (await X.w.flush(), writes(X.w, m2).length === 0) && J(day(X.w, isoN(4)).miss.a_vac.x.c3.line) === J(b0));
+    X2.run("(function(){ const w=hdWkDay('2026-12-08'); delete routineLog.kid_a[w.wk][w.dn].miss_h_a_vac; })()"); }
   X.A.run("lgHExcuseUndo('kid_a','2026-12-11','a_vac')"); await X.w.flush();
   const L1 = clone(logLines(X.w, "kid_a", /^miss_h_a_vac$/)[0]); delete L1._wk; delete L1._dn; delete L1._k;
   ok("Undo: the log line and the bank line back exactly, the waved line and x gone", J(L1) === J(L0) && J(adj(X.w, "kid_a")[bid]) === J(b0) && logLines(X.w, "kid_a", /^wave_h_a_vac$/).length === 0 && !day(X.w, isoN(4)).miss.a_vac.x);
