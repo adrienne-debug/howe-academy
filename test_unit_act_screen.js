@@ -29,6 +29,7 @@ const BLK = cutIn(src, "// UACTSCREEN_START", "// UACTSCREEN_END") + "// UACTSCR
 const HOOK_LINES = src.split("\n").filter(l => /\/\/ UACTSCREEN:/.test(l));
 let BASE = src.replace(BLK, "");
 if (src.indexOf("// UACTANS_START") >= 0) BASE = BASE.replace(cutIn(src, "// UACTANS_START", "// UACTANS_END") + "// UACTANS_END\n", "");   // the next piece (typed answers) has its own test
+if (src.indexOf("// WBLBOARD_START") >= 0) BASE = BASE.replace(cutIn(src, "// WBLBOARD_START", "// WBLBOARD_END") + "// WBLBOARD_END\n", "");   // the strip's ✍️ chip (test_wbl_board.js) asks uascIs too
 {
   const strip = [/^\s+h\+=\(\(typeof uascLookBtnHTML===/, /^\s+if\(typeof uascDoHTML===/, /^\s+if\(typeof uascDoEdit===/, /^\s+return \(typeof uascCardHTML===/, /^\s+if\(typeof uascDoNew===/, /^\s+\(typeof uascIs==="function"&&uascIs\(v\.bookId\)\)\?uascBarHTML/, /^\s+if\(typeof uascIs==="function"&&uascIs\(v\.bookId\)\) return uascSave/];
   HOOK_LINES.forEach(l => { if (strip.some(r => r.test(l))) BASE = BASE.split(l + "\n").join(""); });
