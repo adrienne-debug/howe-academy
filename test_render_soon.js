@@ -92,10 +92,12 @@ const MUST=['"ha_active_wk"','"calendar"','"esa"','"plans"','"scheduleOverrides"
   'pw+"/sl"','"curriculum/resources"','"rebuildLog"'];
 ok("initFb's feeds that repainted now combine ("+MUST.length+")",MUST.every(p=>soon.includes(p)),MUST.filter(p=>!soon.includes(p)));
 ok("curriculum (📚 CURRLIVE, live since 2026-11-08): the listener hands the value to currOnValue, which combines and never paints directly",/db\.ref\("curriculum"\)\.on\("value",s=>\{ currOnValue\(s\.val\(\)\); \}\);/.test(html)&&/renderAllSoon\(\)/.test(fnSrc("currOnValue"))&&!/\brenderAll\(\)/.test(fnSrc("currOnValue")));
-const WEEK=["meta","checked","claimed","sentBack","discuss","momMoves","sl","tasks","blockouts","dayStart","momHold","pending_spins","spin_results","co_manual_sat"];
+const WEEK=["meta","checked","claimed","sentBack","discuss","momMoves","tasks","blockouts","dayStart","momHold","pending_spins","spin_results","co_manual_sat"];
 const aw=fnSrc("attachWeekListeners");
 ok("this week's feeds combine ("+WEEK.length+": meta, checked, claimed, … co_manual_sat)",WEEK.every(k=>{ const i=aw.indexOf('db.ref(wk+"/'+k+'")'); const j=aw.indexOf("fbWeekRefs.push",i); return i>0&&/renderAllSoon\(\)/.test(aw.slice(i,j))&&!/\brenderAll\(\)/.test(aw.slice(i,j)); }),
   WEEK.filter(k=>{ const i=aw.indexOf('db.ref(wk+"/'+k+'")'); const j=aw.indexOf("fbWeekRefs.push",i); return !(i>0&&/renderAllSoon\(\)/.test(aw.slice(i,j))); }));
+{ const lw=fnSrc("lwAttachSl"), i=lw.indexOf('db.ref(lwk+"/sl")');   // 📅 LISTWK (break week slice 2, 2026-11-24): the sl feed moved out of attachWeekListeners into lwAttachSl (it follows the list week) — it still combines
+  ok("the sl feed (📅 LISTWK: lwAttachSl, asked by attachWeekListeners) combines",i>0&&/renderAllSoon\(\)/.test(lw.slice(i))&&!/\brenderAll\(\)/.test(lw.slice(i))&&/lwAttachSl\(wk\)/.test(aw)); }
 const mm=fnSrc("mmAttachWeek"); ok("⏱ started + minAlerts combine",(mm.match(/renderAllSoon\(\)/g)||[]).length===2&&!/\brenderAll\(\)/.test(mm));
 const mb=fnSrc("momBlocksListen"); ok("momBlocks/<today> combines",/renderAllSoon\(\)/.test(mb)&&!/\brenderAll\(\)/.test(mb));
 const pk=fnSrc("peekLoad"); ok("next week's peek data, when it lands, combines",/renderAllSoon\(\)/.test(pk)&&!/\brenderAll\(\)/.test(pk));
@@ -126,6 +128,7 @@ const ALLOWED_FN=["cpuWatch",   // 📦 CPUNIT (2026-10-28): a unit's catalog en
   "skJobsN",   // 🧹 SEASONJOBS (2026-11-21): a kid's planner-job count arriving for the ✨ Our plans button (seasonJobs/<kid>, read once) — never a tap
   "csmOnValue",   // 🧭 CURRSIMPLE (slice 6, 2026-11-23): the family's Simple / Everything switch arriving (config/ui/curriculum/view listener) — never a tap
   "currOnValue",   // 📚 CURRLIVE (2026-11-08): the curriculum arriving (first load, or another device's edit) — the listener's one helper
+  "lwAttachSl",   // 📅 LISTWK (break week slice 2, 2026-11-24): the sl feed arriving — moved here from attachWeekListeners, never a tap
   "attachWeekListeners","initFb","_loadPrevSl","mmAttachWeek","momBlocksListen","peekLoad","lrListen","rbLogListen","wsOnValue","hrOnValue","helpersOnValue","helperDaysOnValue","helperGiveOnValue","famProgOnValue","msgOnValue","pagesApply","envmRelease","envtFinalAttach","envsReadShared","envsHomeReadHowe","envcSub","envClsKidLoad"];   // 🌿 ENVMIRROR / ENVSITE: listener-attach helpers whose arrivals combine; the teacher's release listener (data arrived)
 const stray=[]; { let cur=null; html.split("\n").forEach((l,i)=>{ const m=l.match(/^(?:async\s+)?function\s+([\w$]+)/); if(m) cur=m[1];
   if(/renderAllSoon\(\)/.test(l)&&!/^function renderAllSoon|^\/\//.test(l)&&!/^\/\/ /.test(l.trim())&&!ALLOWED_FN.includes(cur)) stray.push((i+1)+" in "+cur); }); }
