@@ -1991,6 +1991,7 @@ function morningComplete(kid,d){
 function toggleMrOpen(kid){ mrOpen[kid]=(mrOpen[kid]!==false)?false:true; renderSkylight(); }
 function toggleMorningStep(kid,i){
   if(!routineEditable()){ _rtBlockedToast(); return; }
+  if(typeof lwHold==="function"&&lwHold()) return;   // 📅 LISTWK: the seconds before a real week builds — the tap waits ("One moment — this week is loading")
   { const _hs=morningStepsFor(kid)[i], _mk=slState[activeWk()+"_"+day+"_"+kid+"_mstep"+i]; if(_hs&&_hs.house&&typeof hdToggle==="function"){ hdToggle("morning",kid,i,_hs); return; }   // 🚪 HOUSEDAY: a plan row is checked by chore
     if(_mk&&_mk.done&&_mk.hd&&typeof hdUnmark==="function"&&hdUnmark("morning",kid,i,_mk)) return; }   // …and an old row the plan marked done un-checks through the plan (no double pay across OFF / ON)
   const wk=activeWk(), _slB=slBefore();   // SLTARGET
@@ -2387,6 +2388,7 @@ function _amLog(kid,wk,dn,rec){
 // TODAY's Morning record follows the carries when one is added, taken back or closed from its own list — the same tail as
 // toggleMorningStep (list record, ⏱ day start, 🏁 list bonus, 🏆 day bonus), and only when done-ness actually flips.
 function _amSettleToday(kid){
+  if(typeof lwHold==="function"&&lwHold(true)) return;   // 📅 LISTWK: the seconds before a real week builds — an automatic write waits too
   const wk=activeWk(), d=_todayDay, mk=wk+"_"+d+"_"+kid+"_morning", prev=slState[mk], _pd=day;
   try{ day=d;
     const all=morningComplete(kid,d); if(!!(prev&&prev.done)===!!all) return;
@@ -2449,6 +2451,7 @@ function amSendRest(kid,d){
 // The kid's tap on a carried row of the Morning list (or Mom's, through amMomTick). See the three writes in the header.
 function amToggle(kid,id){
   if(!routineEditable()){ _rtBlockedToast(); return; }
+  if(typeof lwHold==="function"&&lwHold()) return;   // 📅 LISTWK: the seconds before a real week builds — the tap waits ("One moment — this week is loading")
   const it=amCarry[kid]&&amCarry[kid][id], iso=amIso(day); if(!it||!iso||!it.dueIso||it.dueIso>iso) return;
   if(it.done&&!amDoneBy(it,iso)) return;                        // finished on a later day than the tab on screen
   const now=!it.done, label=it.label||"Chore", wk=activeWk(), _slB=slBefore();
@@ -2680,6 +2683,7 @@ function toggleRtStep(slot,kid,i){
     return;
   }
   if(!routineEditable()){ _rtBlockedToast(); return; }  // stars ride this path too — a stray tap paid the wrong day
+  if(typeof lwHold==="function"&&lwHold()) return;   // 📅 LISTWK: the seconds before a real week builds — the tap waits ("One moment — this week is loading")
   { const _hs=rtStepsFor(slot,kid)[i], _mk=slState[activeWk()+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i]; if(_hs&&_hs.house&&typeof hdToggle==="function"){ hdToggle(slot,kid,i,_hs); return; }   // 🚪 HOUSEDAY: a plan row is checked by chore
     if(_mk&&_mk.done&&_mk.hd&&typeof hdUnmark==="function"&&hdUnmark(slot,kid,i,_mk)) return; }   // …and an old row the plan marked done un-checks through the plan (no double pay across OFF / ON)
   const wk=activeWk(), sk=wk+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i, cur=slState[sk], now=!(cur&&cur.done), _slB=slBefore();   // SLTARGET
@@ -5585,6 +5589,7 @@ function getSlot(who,slot){ return slState[slKey(who,slot)]||{done:false,ts:""};
 
 function toggleSlot(who,slot){
   if(!routineEditable()){ _rtBlockedToast(); return; }
+  if(typeof lwHold==="function"&&lwHold()) return;   // 📅 LISTWK: the seconds before a real week builds — the tap waits ("One moment — this week is loading")
   const k=slKey(who,slot), cur=getSlot(who,slot);
   const ts=cur.done?"":nowTs(), _slB=slBefore();   // SLTARGET
   slState[k]={done:!cur.done,ts};
@@ -9661,6 +9666,33 @@ function lwCheck(){
     lwAttachSl(WK);
     try{ if(typeof rlWindowAttach==="function") rlWindowAttach(WK); }catch(e){}
     if(typeof renderAll==="function") renderAll();
+    return true;
+  }catch(e){ return false; }
+}
+// THE SECONDS BEFORE A REAL WEEK BUILDS: today is past the board's week by every source and a week for today will build
+// (Sunday 00:00, a tablet waking on Monday). boardWeekIsThisWeek() says yes then, so the list week is still last week's — a tap
+// would land in, or un-tick, last week. The lists hold taps with one plain line until the week lands. The hold never traps a
+// family: it lasts at most LW_HOLD_MS from the moment this device first saw it today; after that a tap goes through as it did
+// before this slice (into the board's week).
+const LW_HOLD_MS=5*60*1000;
+let _lwHoldSeen=null;   // {iso, at}
+function lwLoading(){
+  try{
+    if(typeof weekData==="undefined"||_activeWeekEmpty()) return false;
+    const today=_todayStr(), eff=_schoolWeekDateFor(today), p=_bwkPlanSat(), o=_bwkOwnSat(), read=[p,o].filter(Boolean);
+    if(o==="unsure"||!read.length||read.some(x=>eff<=x)) return false;
+    return !!_bwkBuildComing(today);
+  }catch(e){ return false; }
+}
+// quiet = an automatic writer (the laundry line's ticks, the morning carry's settle): it just waits, with no line.
+function lwHold(quiet){
+  try{
+    try{ lwCheck(); }catch(e){}
+    if(!lwLoading()){ _lwHoldSeen=null; return false; }
+    const iso=_todayStr(), now=Date.now();
+    if(!_lwHoldSeen||_lwHoldSeen.iso!==iso) _lwHoldSeen={iso:iso,at:now};
+    if(now-_lwHoldSeen.at>=LW_HOLD_MS) return false;
+    if(!quiet&&typeof gwShowToast==="function") gwShowToast("One moment \u2014 this week is loading");
     return true;
   }catch(e){ return false; }
 }
@@ -16873,6 +16905,7 @@ function llPutAway(lid){ const LD=(typeof laundryData!=="undefined"&&laundryData
 function llKidRowLineDone(st){ const t=llToday(), e=llDayLog(t)[st.line], LD=(typeof laundryData!=="undefined"&&laundryData)||{};
   if(st.laundry===true) return !!e; if(st.laundry==="lineFold"){ const o=(typeof llOutFor==="function")?llOutFor(st.line,t):null; return !!e&&!o&&!(e.load&&(LD[e.load]||(typeof laundrySplitHung==="function"&&laundrySplitHung(e.load)))); } return false; }   // LAUNDRY_SPLIT: done only when the hung half is away too · LAUNDRY_SYNC: and no earlier day's load of it is still out
 function llSyncKidRows(){ if(typeof slState==="undefined"||typeof activeWk!=="function"||typeof _todayDay!=="string"||typeof rtStepsFor!=="function") return 0;
+  if(typeof lwHold==="function"&&lwHold(true)) return 0;   // 📅 LISTWK: the seconds before a real week builds — an automatic write waits too
   const wk=activeWk(), dn=_todayDay, before=(typeof slBefore==="function")?slBefore():null, ts=(typeof nowTs==="function")?nowTs():""; let n=0;
   llPeople().slice(2).forEach(function(kid){ if(!llDrivesKid(kid)) return;
     [["morning","mstep"],["afternoon",((typeof RT_ABBR!=="undefined"&&RT_ABBR.afternoon)||"a")+"step"]].forEach(function(p){ let ch=false;

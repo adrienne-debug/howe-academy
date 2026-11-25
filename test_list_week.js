@@ -25,6 +25,10 @@
  *   5. An older build on a second device: what it shows on a gap day; the gap node untouched by it.
  *   6. 300 random normal weeks, two children, two devices: every list write (path and value), every list render, every
  *      "earned" number byte-identical to the code before.
+ *   7. The seconds before a real week builds (the hold): a Sunday-midnight roll and a tablet waking on Monday mid-build —
+ *      a tap waits with "One moment — this week is loading" and writes nothing; once the week lands it goes to the new
+ *      week; nothing ever lands in last week or in a gap week. A build that never comes: the hold lasts 5 minutes from the
+ *      first tap, then taps go where they went before this slice (the board's week).
  * No kid or family names: the fixture is synthetic.   run: node test_list_week.js
  */
 "use strict";
@@ -120,7 +124,7 @@ const playWeek=async(W,mon)=>{ for(let i=0;i<5;i++){ const iso=addDays(mon,i); i
 const LP=`(function(){ var d=_todayDay, o={wk:activeWk(),gapTok:(typeof lwGap==="function")?lwGap():null,slots:activeSlots().length};
   ["kid_a","kid_b"].forEach(function(k){ o[k]={m0:mStepDoneOn(k,d,0),m1:k==="kid_a"?mStepDoneOn(k,d,1):null,morning:morningComplete(k,d),aft:rtDoneOn("afternoon",k,d,0),ch:rtDoneOn("chores",k,d,0),
     earned:bankEarnedDay(k,d),week:bankEarnedWeek(k),total:earnedDayTotal(k,d),held:bankHeldToday(k,d)}; });
-  o.monIso=routineDateISO("monday"); o.friIso=routineDateISO("friday"); o.pureMon=(typeof lwDateISO==="function")?lwDateISO("monday"):null; o.monOff=!!(o.pureMon&&smapIsOff(o.pureMon)); o.friOff=!!(o.pureMon&&smapIsOff(_amIsoAdd(o.pureMon,4))); o.today=_todayDay;
+  o.monIso=routineDateISO("monday"); o.friIso=routineDateISO("friday"); o.pureMon=(typeof lwDateISO==="function")?lwDateISO("monday"):null; o.monOff=!!(o.pureMon&&smapIsOff(o.pureMon)); o.friOff=!!(o.pureMon&&smapIsOff(_amIsoAdd(o.pureMon,4))); o.today=_todayDay; try{ o.prev=_prevWkKey(); o.streak=lsStreak("morning","kid_a"); }catch(e){ o.prev="CRASH "+e; }
   return JSON.stringify(o); })()`;
 const lp=X=>JSON.parse(X.run(LP));
 const WEEKW=/^(set|update|remove|inc|transaction|push)\s+week\d+(\/|$)|^update\s+\S*\s+(.*,)?week\d+\//;   // a write under a week* path (an update at the root lists its keys)
@@ -138,6 +142,7 @@ async function gapDay(W,iso,opt){
   }
   ok(lbl+": both devices' list week is "+tok+" (the board stays "+W.wk()+")",b0.wk===tok&&a0.wk===tok&&b0.gapTok===tok&&W.wk()!==tok,[b0.wk,a0.wk,W.wk()]);
   ok(lbl+": the lists start un-ticked, \"earned today\" 0, the ⭐ total 0, both devices",["kid_a","kid_b"].every(k=>[b0,a0].every(P=>!P[k].m0&&!P[k].morning&&!P[k].aft&&!P[k].ch&&P[k].earned===0&&P[k].total===0)),b0);
+  ok(lbl+": _prevWkKey() meets the gap week without crashing — it returns null (no earlier list week is looked up: slice 4); the 🔥 streak still counts ("+b0.streak+")",b0.prev===null&&typeof b0.streak==="number",[b0.prev,b0.streak]);
   ok(lbl+": the list week's dates are its own (Monday "+b0.pureMon+"); a calendar day off has none, as in a built week's own dates",b0.pureMon.replace(/-/g,"")===monOf(iso)&&b0.monIso===((b0.monOff&&b0.today!=="monday")?null:b0.pureMon)&&b0.friIso===((b0.friOff&&b0.today!=="friday")?null:addDays(b0.pureMon,4)),b0);   // (today always reads its own date)
   const bank0=Object.keys(W.db.get("bank/kid_a/adjustments")||{}).length;
   const pay=+W.B.run('day=_todayDay; rtDailyPay("morning","kid_a",0,morningStepsFor("kid_a")[0])');   // what the row pays today (a daily's pay steps down after missed days — the list week's own days)
@@ -266,6 +271,42 @@ async function gapDay(W,iso,opt){
     const bb=JSON.parse(W.B.run('JSON.stringify({m0:mStepDoneOn("kid_a","tuesday",0)})'));
     ok("older build: a tick on Mom's tablet goes to the gap week only; the older tablet ignores the gap node (it still shows last Tuesday's)",!!(W.db.get("gap20261116/sl/gap20261116_tuesday_kid_a_mstep0")||{}).done&&bb.m0===true&&!logSince(W,m).some(x=>WEEKW.test(x)));
   }
+
+  // ═══ 7. the seconds before a real week builds ═══
+  console.log("7 · the hold");
+  const LOADING="One moment \u2014 this week is loading";
+  const tap=(X,what)=>{ X.run("__toasts=[]; day=_todayDay; "+(what||'toggleMorningStep("kid_a",0)')+";"); return JSON.parse(X.run("JSON.stringify(__toasts)")); };
+  const slWrites=(W,m)=>logSince(W,m).filter(x=>/\/sl( |\/|$)|^update \S*\/sl /.test(x));
+  { const W=await world({name:"hold sunday"});
+    await playWeek(W,"2026-11-09"); await W.roll("2026-11-14");
+    W.clock.now=hm("2026-11-15",0,0)+5000;   // Sunday 00:00:05 — the clock has turned, the roll hasn't run yet
+    const m=W.db.log.length;
+    const t1=tap(W.B), t2=tap(W.B,'toggleRtStep("chores","kid_b",0)');
+    ok("Sunday 00:00, before the build: the board is week1, a week for today is due — a tap says \""+LOADING+"\" and writes nothing (morning and chores)",JSON.stringify(t1)===JSON.stringify([LOADING])&&JSON.stringify(t2)===JSON.stringify([LOADING])&&logSince(W,m).length===0&&lp(W.B).wk==="week1",[t1,t2,logSince(W,m)]);
+    await W.roll("2026-11-15");
+    const m2=W.db.log.length, t3=tap(W.B); await W.flush(4000);
+    ok("…the roll builds week 2; the same tap now lands in week2/sl (week2_sunday_kid_a_mstep0), no line",W.wk()==="week2"&&t3.length===0&&!!(W.db.get("week2/sl/week2_sunday_kid_a_mstep0")||{}).done,[W.wk(),t3]);
+    ok("…nothing landed in week1/sl or any gap week across it",slWrites(W,m).every(x=>/ week2\/sl/.test(x))&&!Object.keys(W.db.tree.root).some(k=>/^gap/.test(k)),slWrites(W,m)); }
+  { const W=await world({name:"hold monday"});
+    await playWeek(W,"2026-11-09"); await W.roll("2026-11-14");
+    const m=W.db.log.length;
+    W.clock.now=hm("2026-11-16",7,0); W.B.fn("dayRollCheck")();   // the kid's tablet wakes Monday 7:00 (nobody built on Sunday): its roll starts the build
+    const t1=tap(W.B);
+    ok("a tablet waking on Monday, its build under way: a tap says \""+LOADING+"\" and writes no tick",JSON.stringify(t1)===JSON.stringify([LOADING])&&slWrites(W,m).length===0,[t1,slWrites(W,m)]);
+    await W.flush(200000); for(const X of W.devs) X.fn("dayRollCheck")(); await W.flush(5000);
+    const t2=tap(W.B); await W.flush(4000);
+    ok("…once week 2 lands the tap goes to week2/sl (week2_monday_kid_a_mstep0)",W.wk()==="week2"&&t2.length===0&&!!(W.db.get("week2/sl/week2_monday_kid_a_mstep0")||{}).done,[W.wk(),t2]);
+    ok("…nothing in week1/sl or a gap week",slWrites(W,m).every(x=>/ week2\/sl/.test(x))&&!Object.keys(W.db.tree.root).some(k=>/^gap/.test(k)),slWrites(W,m)); }
+  { const W=await world({name:"hold stuck"});
+    await playWeek(W,"2026-11-09"); await W.roll("2026-11-14");
+    for(const X of W.devs) X.run('autoBuildOnDayRoll=function(){ return false; }; autoGenerateWeekIfNeeded=function(){};');   // a build that never comes (offline, a lock never released)
+    W.clock.now=hm("2026-11-15",8,0); const m=W.db.log.length;
+    const t1=tap(W.B); W.clock.now+=4*60*1000; const t2=tap(W.B); W.clock.now+=60*1000+1000; const t3=tap(W.B); await W.flush(4000);
+    ok("a build that never comes: refused at the first tap and 4 minutes later, with the line",JSON.stringify(t1)===JSON.stringify([LOADING])&&JSON.stringify(t2)===JSON.stringify([LOADING]));
+    ok("…from 5 minutes after the first tap the lists don't wait any more: the tap goes where it went before this slice (week1/sl, week1_sunday_kid_a_mstep0) — the family is never trapped",t3.length===0&&!!(W.db.get("week1/sl/week1_sunday_kid_a_mstep0")||{}).done,[t3,slWrites(W,m)]); }
+  { const W=await world({name:"hold off"});
+    await playWeek(W,"2026-11-09");
+    ok("a normal day: lwHold() is false, no line (the 300 weeks above ran every tap through it)",W.B.run("lwHold()")===false&&tap(W.B).length===0); }
 
   try{ fs.unlinkSync(BASE_PATH); }catch(e){}
   console.log("\n"+pass+" passed, "+fail+" failed  ("+Math.round((Date.now()-T0)/1000)+" s)");
