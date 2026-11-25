@@ -42,7 +42,7 @@ function tree(kind) { const c = JSON.parse(JSON.stringify(W.FX.db.config)); c.zo
 const BUILTIN_ID = (() => { const s = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8"); const m = /const HA_IS_HOWE\s*=\s*!\(window\.HA_FAMILY&&window\.HA_FAMILY\.familyId&&window\.HA_FAMILY\.familyId!=="([a-z]+)"\)/.exec(s); if (!m) throw new Error("built-in family id not found"); return m[1]; })();
 async function world(kind, mode, o) {
   o = o || {}; const fam = W.FX.family, id0 = fam.familyId, as = () => { if (kind === "builtin") fam.familyId = BUILTIN_ID; };
-  as(); let w; try { w = await W.world({ household: o.household || household(mode, o), tree: o.tree || tree(kind), index: o.index, deny: o.deny }); } finally { fam.familyId = id0; }
+  as(); let w; try { w = await W.world({ household: o.household || household(mode, o), tree: o.tree || tree(kind), index: o.index, deny: o.deny, longPlan: o.longPlan });   /* 📅 LISTWK: a 60-day replay's long plan (house_world.js) */ } finally { fam.familyId = id0; }
   const boot = w.boot.bind(w);
   w.boot = (name, dev, bo) => { as(); let d; try { d = boot(name, dev, bo); } finally { fam.familyId = id0; } if (kind === "builtin") d.run("GRAB_DEFAULT.splice(0,GRAB_DEFAULT.length).length; GRAB_DEFAULT.push.apply(GRAB_DEFAULT," + JSON.stringify(POOL) + "); 1"); return d; };
   return w;
