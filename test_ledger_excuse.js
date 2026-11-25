@@ -111,7 +111,8 @@ const argsOf = (raw, fn) => { const m = new RegExp(fn + "\\(([^)]*)\\)").exec(ra
 const adj = (w, kid) => (((w.db.tree.root.bank || {})[kid] || {}).adjustments) || {};
 const writes = (w, m) => w.since(m).filter(e => !/^(get|once|on|read)/.test(String(e.op || "")));
 const WS = (w, m) => writes(w, m).map(e => e.op + " " + e.path + (e.keys ? " [" + e.keys.join(",") + "]" : ""));
-const kidLists = d => JSON.parse(d.run("(function(){ const d0=day, o={}; day=_todayDay; try{ ROSTER.forEach(function(k){ ['afternoon','chores','evening'].forEach(function(s){ rtOpen={}; o[k+s]=rtSlotHTML(s,k); }); o[k+'morning']=mrIndividualHTML(k); }); } finally{ day=d0; } return JSON.stringify(o); })()"));
+const kidLists = d => { const o = JSON.parse(d.run("(function(){ const d0=day, o={}; day=_todayDay; try{ ROSTER.forEach(function(k){ ['afternoon','chores','evening'].forEach(function(s){ rtOpen={}; o[k+s]=rtSlotHTML(s,k); }); o[k+'morning']=mrIndividualHTML(k); }); } finally{ day=d0; } return JSON.stringify(o); })()"));
+  Object.keys(o).forEach(k => { o[k] = o[k].replace(/ <span class="ls-fire"[^>]*>🔥 \d+<\/span>/g, ""); }); return o; };   // LISTSTREAK (P2): an excuse does not break a list's 🔥 streak (§4.1), so the title's 🔥 may follow it; the rows are what this checks
 const page = (d, f) => { d.run("globalThis.__el={innerHTML:'',style:{},appendChild(){},querySelector(){ return null; },querySelectorAll(){ return []; }};1"); try { d.run(f + "(__el);1"); } catch (e) { return "threw " + e.message; } return d.run("__el.innerHTML"); };
 const bal = (d, kid) => d.run("bankBalance(" + J(kid) + ")");
 const tree = w => J(w.db.tree.root);

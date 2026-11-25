@@ -30,6 +30,7 @@ const BASE_HJS = (() => { let s = fs.readFileSync(path.join(__dirname, "house.js
     'function lgRulesOk(){ return typeof momHere==="function"&&momHere(); }\n', "the gate");
   R('lgRBy(lgRFallOn(kid)?{on:false}:{from:lgRToday()})', 'lgRFallOn(kid)?{on:false}:{from:lgRToday()}', "the fall switch's by");
   R('lgRBy(lgRPaused()?{from:lgRToday()}:{on:true})', 'lgRPaused()?{from:lgRToday()}:{on:true}', "the pause's by");
+  R('lgRBy({from:lgRToday()})', '{from:lgRToday()}', "the take switch's by (C3 made On an object)");
   R(`function lgRLine(t,where,js){ const m=lgRulesMom(); return '<div'+(m?' onclick="'+js+'" style="cursor:pointer;padding:4px 0"':' style="padding:4px 0"')+'><b>'+esc(t)+(m?' ›':'')+'</b>`,
     `function lgRLine(t,where,js){ return '<div onclick="'+js+'" style="cursor:pointer;padding:4px 0"><b>'+esc(t)+' ›</b>`, "the › lines");
   R('function lgRulesGoSpot(){ if(!lgRulesMom())', 'function lgRulesGoSpot(){ if(!lgRulesOk())', "› Penalty");
@@ -122,9 +123,9 @@ M.actor = M.A; D.actor = D.Dd; D.Dd.run("dadUnlocked=true;1");
   ok("paused (by him): his own −100 on kid_a takes nothing — it asks with ⏸ and marks the line, penalty 0, as Mom's does (FLAGWHO)", J(zd.w) === J(zm.w) && zd.w.length === 1 && zd.a === zm.a && /⏸ Star rules are paused for everyone, so no stars come off\./.test(zd.a) && zd.pen === 0 && zd.t === "[]", [zm, zd]);
   same("⏸ Pause Off", "lgRulePause()", SR + "/pause", true);
   same("Stars fall when late, kid_a On again", "lgRuleFall('kid_a')", SR + "/fall/kid_a", true);
-  same("Take stars away, kid_b On again (removed)", "lgRuleTake('kid_b')", SR + "/take/kid_b", false);
+  same("Take stars away, kid_b On again ({from: today}, C3)", "lgRuleTake('kid_b')", SR + "/take/kid_b", true);
   await M.w.flush(); await D.w.flush();
-  ok("…the stored rules: his = Mom's but each object says by:\"dad\" (" + J(D.w.get(SR)) + ")", J(M.w.get(SR)) === J({ fall: { kid_a: { from: isoN(10) } }, pause: { from: isoN(10) } }) && J(D.w.get(SR)) === J({ fall: { kid_a: { from: isoN(10), by: "dad" } }, pause: { from: isoN(10), by: "dad" } }));
+  ok("…the stored rules: his = Mom's but each object says by:\"dad\" (" + J(D.w.get(SR)) + ")", J(M.w.get(SR)) === J({ fall: { kid_a: { from: isoN(10) } }, take: { kid_b: { from: isoN(10) } }, pause: { from: isoN(10) } }) && J(D.w.get(SR)) === J({ fall: { kid_a: { from: isoN(10), by: "dad" } }, take: { kid_b: { from: isoN(10), by: "dad" } }, pause: { from: isoN(10), by: "dad" } }));
   ok("…and every device reads his the same as hers: kid_a falls from today, nothing paused, kid_b's stars may be taken again", [M, D].every(S => S.Kk.run("starFallFrom('kid_a')") === isoN(10) && S.Kk.run("starTakeOk('kid_b')") === true && S.B.run("starTakeOk('kid_a')") === true));
   ok("refused for him too: a made-up kid, \"mom\", a key with a period; nothing written", (() => { const m = D.w.mark(); return [D.Dd.run("lgRuleFall('kid_x')"), D.Dd.run("lgRuleTake('mom')"), D.Dd.run("lgRuleFall('kid_b.x')")].every(x => x === false) && D.w.since(m).length === 0; })());
   D.Dd.run("lgClose();lgRulesOpen=false;1"); M.A.run("lgClose();lgRulesOpen=false;1");
@@ -169,16 +170,16 @@ console.log("\n── C · the two \"›\" lines are Mom's ──");
 }
 
 // ── D ──
-console.log("\n── D · the 🔎 Spot check and the Click-off Log: not drawn for Dad, unchanged ──");
+console.log("\n── D · the 🔎 Spot check and the Click-off Log on Dad's Day (DADSPOT 2026-11-24; the rest in test_dad_spot_log.js) ──");
 { const dd = S => { const o = {}; S.Dd.run("dadUnlocked=false;1"); o.locked = page(S.Dd, "renderDadsDay"); S.Dd.run("dadUnlocked=true;1"); o.open = page(S.Dd, "renderDadsDay"); S.Dd.run("dadUnlocked=false;1"); return o; };
   const a = dd(L), b = dd(O);
-  ok("Dad's Day, locked and unlocked: the same page as before; no 🔎 Spot check card, no ✓ / ✗, no Click-off Log or door to Chores & Stars", J(a) === J(b) && a.open !== a.locked && [a.locked, a.open].every(h => !/sp-card|spResolve|rlogFlag|Click-off Log|mpGoto\(\\?'chores\\?'\)|Chores &amp; Stars|Chores & Stars/.test(h)) && /🔓 Star controls unlocked/.test(a.open), [a.open.slice(0, 120)]);
-  const tryIt = async S => { const { w, Dd, Kk } = S; Dd.run("dadUnlocked=true;1"); tick(Kk, "kid_c", "Toys in the bin"); await w.flush();
+  ok("Dad's Day, locked and unlocked: the same page as before; the 🔎 Spot check card and the 🕵️ Click-off Log line are on it (DADSPOT), locked with no ✓ / ✗ / ⚠️; no door to Chores & Stars", J(a) === J(b) && a.open !== a.locked && [a.locked, a.open].every(h => /id="sp-card"/.test(h) && /🕵️ Click-off Log \(this week\)/.test(h) && !/mpGoto\(\\?'chores\\?'\)|Chores &amp; Stars|Chores & Stars/.test(h)) && !/spResolve|rlogFlag/.test(a.locked) && /🔓 Star controls unlocked/.test(a.open), [a.open.slice(0, 120)]);
+  const tryIt = async S => { const { w, Dd, Kk } = S; Dd.run("dadUnlocked=false;1"); tick(Kk, "kid_c", "Toys in the bin"); await w.flush();
     spotPick(Dd, "kid_c", "Toys in the bin", 3); const k = logKey(Dd, "kid_c", "Toys in the bin"), m = w.mark(), b0 = J(bankOf(w, "kid_c"));
-    const r = [Dd.run("spResolve('kid_c',0,'no')"), Dd.run("spResolve('kid_c',0,'ok')"), Dd.run("rlogFlag('kid_c','" + k.join("','") + "')"), Dd.run("mdCardSpotCheck()")];
+    const r = [Dd.run("spResolve('kid_c',0,'no')"), Dd.run("spResolve('kid_c',0,'ok')"), Dd.run("rlogFlag('kid_c','" + k.join("','") + "')"), /spResolve/.test(Dd.run("mdCardSpotCheck()"))];
     Dd.run("dadUnlocked=false;1"); return { r, w: writes(w, m), bank: J(bankOf(w, "kid_c")) === b0 }; };
   const ta = await tryIt(L), tb = await tryIt(O);
-  ok("an unlocked Dad's spResolve (✓ and ✗) and rlogFlag are refused exactly as before: nothing written, no stars move, no card drawn", J(ta) === J(tb) && ta.r[0] === false && ta.r[1] === false && ta.r[2] === undefined && ta.r[3] === "" && ta.w.length === 0 && ta.bank, [ta, tb]);
+  ok("a locked Dad's spResolve (✓ and ✗) and rlogFlag are refused: nothing written, no stars move, no ✓ / ✗ drawn (DADSPOT: with his code they work, test_dad_spot_log.js)", J(ta) === J(tb) && ta.r[0] === false && ta.r[1] === false && ta.r[2] === undefined && ta.r[3] === false && ta.w.length === 0 && ta.bank, [ta, tb]);
 }
 
 // ── E ──

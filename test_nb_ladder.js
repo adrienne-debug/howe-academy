@@ -31,7 +31,13 @@ ok("notebooks.js block: no DOM, no Firebase", !/db\.ref|firebase|document\.|getE
 ok("no 🔀 in index.html", src.indexOf("\u{1F500}") < 0);
 ok("no he/his/him in the card's words", !/\b(he|his|him|she|her)\b/i.test((code(ixBlk).match(/'[^']*'|"[^"]*"/g) || []).join(" ").replace(/<[^>]*>/g, " ")));
 ok("exported once: HoweNotebooks.ladders", nbSrc.split("ladders: NB_LADDERS,").length === 2);
-ok("no generator reads ctx.ladders (only index.html passes it)", !/ctx\.ladders|ctx\[["']ladders["']\]/.test(code(nbSrc)));
+{ // slice 2 (NBLADREAD): only the 1st-grade notebook reads ctx.ladders — the reading ladder, in its own block, called from generateLucy alone
+  const r0 = nbSrc.indexOf("  // NBLADREAD_START"), r1 = nbSrc.indexOf("  // NBLADREAD_END\n"), outside = code(nbSrc.slice(0, r0) + nbSrc.slice(r1));
+  const g0 = nbSrc.indexOf("  function generateLucy(ctx) {"), gLucy = nbSrc.slice(g0, nbSrc.indexOf("\n  }\n", g0));
+  ok("only the 1st-grade notebook reads ctx.ladders, and only its reading ladder (NBLADREAD)", r0 > 0 && r1 > r0 && !/ctx\.ladders|ctx\[["']ladders["']\]/.test(outside) &&
+    (code(nbSrc.slice(r0, r1)).match(/ctx\.ladders[.\w]*/g) || []).every((m) => m === "ctx.ladders" || m === "ctx.ladders.reading") &&
+    outside.split("lrWeek(").length === 2 && gLucy.indexOf("lrWeek(ctx, days)") > 0);
+}
 ok("haNbContext passes ctx.ladders, guarded", src.split('ladders:((typeof nbLadderCtx==="function")?nbLadderCtx(kid):null) }; // KIDNAME_ROSTER').length === 2);
 ok("the card sits right after the Notebook level card", src.indexOf('nbLevelCardHtml(sel)+   // 📏 NBLEVEL: Notebook level (Mom)\n        ((typeof nbLadderCardHtml==="function")?nbLadderCardHtml(sel):"")+') > 0);
 ok("one home: the card is drawn in one place", src.split("nbLadderCardHtml(").length === 3);   // its definition + the one call
@@ -317,7 +323,7 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
 
   // ════════════════════════════════════════ byte for byte ════════════════════════════════════════
   console.log("── every built-in notebook = this tree minus NBLADDER ──");
-  const exportLine = "    ladders: NB_LADDERS,                // 📚 NBLADDER: the two notebook ladders — engine + placement (slice 1; no page reads them yet)\n";
+  const exportLine = "    ladders: NB_LADDERS,                // 📚 NBLADDER: the two notebook ladders — engine + placement (the 1st-grade notebook prints reading)\n";
   ok("the export line is where the cut expects it", nbSrc.split(exportLine).length === 2);
   const base = nbSrc.slice(0, n0) + nbSrc.slice(n1 + "  // NBLADDER_END\n".length).replace(exportLine, "");
   ok("the baseline has no trace of NBLADDER", !/NBLADDER|NB_LADDERS|ladderNext|LADDER_/.test(base));
@@ -336,10 +342,11 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
   ok("every generator in GENERATORS + every look + a starter notebook (" + GENS.length + ")", GENS.length >= Object.keys(NB.GENERATORS).length + 2);
   for (const [kid, extra] of GENS) {
     const was = all(NB0.generate(kid, mk(kid, extra)));
-    ok(kid + ": student + guide = before, ladders or not", all(NB.generate(kid, mk(kid, extra))) === was && all(NB.generate(kid, mk(kid, Object.assign({ ladders: LCTX }, extra)))) === was);
+    const lc = NB.ladderPages(kid, extra || {}).reading ? { number: LCTX.number } : LCTX;   // slice 2: a notebook that prints reading → test_nb_ladread.js
+    ok(kid + ": student + guide = before, ladders or not", all(NB.generate(kid, mk(kid, extra))) === was && all(NB.generate(kid, mk(kid, Object.assign({ ladders: lc }, extra)))) === was);
   }
   {
-    const byKid = {}; Object.keys(NB.GENERATORS).forEach((k) => (byKid[k] = mk(k, { ladders: LCTX })));
+    const byKid = {}; Object.keys(NB.GENERATORS).forEach((k) => (byKid[k] = mk(k, { ladders: NB.ladderPages(k).reading ? { number: LCTX.number } : LCTX })));
     const byKid0 = {}; Object.keys(NB.GENERATORS).forEach((k) => (byKid0[k] = mk(k)));
     ok("the combined parent packet = before", NB.combinedParent(byKid) === NB0.combinedParent(byKid0));
   }

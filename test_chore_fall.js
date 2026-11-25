@@ -29,6 +29,7 @@ const fs = require("fs"), path = require("path"), os = require("os"), cp = requi
 const W = require(path.join(__dirname, "test_fixtures", "house_world.js"));
 let pass = 0, fail = 0; const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + JSON.stringify(x).slice(0, 700) + ")" : "")); } };
 const J = x => JSON.stringify(x), clone = x => JSON.parse(J(x));
+const unLS = s => String(s).replace(/ <span class=\\*"ls-fire\\*"[^>]*>🔥 \d+<\/span>/g, "").replace(/<div class=\\*"ls-four\\*"[^>]*>.*?<\/div>/g, "");   // LISTSTREAK (P2): the 🔥 streak's own markup, left out of the comparisons with older copies (test_list_streak.js checks it)
 const BASE_SHA = "c4561ba8";
 let BASE = null; try { const t = path.join(os.tmpdir(), "chore_fall_base_" + process.pid + ".html"); fs.writeFileSync(t, cp.execSync("git show " + BASE_SHA + ":index.html", { cwd: __dirname, maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] })); BASE = t; } catch (e) { BASE = null; }
 console.log("(the app before: " + (BASE ? BASE_SHA : "none — git show " + BASE_SHA + " failed; the checks against it are skipped") + ")");
@@ -225,7 +226,7 @@ if (BASE) {
       ["kid_a", "kid_b", "kid_c", "kid_d"].forEach(k => { const st = JSON.parse(B.run("JSON.stringify(rtStepsFor('chores','" + k + "',false,day))")); st.forEach(x => { if (x && x.cad !== "none" && B.run("cadDueOn(" + J(x.cad || "daily") + ",day)&&stepWindowOk(" + J(x) + ",day)")) tick(B, "chores", k, x.label); }); }); await w.flush();
       snaps.push(J([s0, ["kid_a", "kid_b", "kid_c", "kid_d"].map(k => draw(B, "chores", k)), pop(A, "kid_a", "chores"), pop(A, "kid_b", "chores"), B.run("kcPointsHTML('kid_a')"), J(W.lists(B, { days: [DN[dOf(n).getDay()]] }))])); }
     return { snaps, writes: writes(w, 0).join("\n"), tree: treeJ(w) }; };
-  { const N = await run1(undefined), O = await run1(BASE); const bad = N.snaps.map((s, i) => s === O.snaps[i] ? null : isoN(i)).filter(Boolean);
+  { const N = await run1(undefined), O = await run1(BASE); const bad = N.snaps.map((s, i) => unLS(s) === O.snaps[i] ? null : isoN(i)).filter(Boolean);
     ok("every chore done on its day, 14 days (11/16 … 11/29): every kid list, Mom's pop-ups, Kids' Corner = the app before", bad.length === 0, bad);
     ok("…every write, in order (" + N.writes.split("\n").length + "), and the whole database (bank, log, check-offs) = the app before", N.writes === O.writes && N.tree === O.tree, (() => { const x = N.writes.split("\n"), y = O.writes.split("\n"); const i = x.findIndex((l, j) => l !== y[j]); return [i, x[i], y[i]]; })()); }
   // H2 · a missed week before the blank slate, the late rows ticked on their wait days (all turns due before 11/22)
@@ -237,7 +238,7 @@ if (BASE) {
         L.forEach(([lb, late]) => { if (late === ((k === "kid_a" || k === "kid_b") ? 1 : 2)) tick(B, "chores", k, lb); }); }); await w.flush();
       snaps.push(J([s0, p0, ["kid_a", "kid_b", "kid_c", "kid_d"].map(k => draw(B, "chores", k)), B.run("kcPointsHTML('kid_d')")])); }
     return { snaps, writes: writes(w, 0).join("\n"), tree: treeJ(w), banks: J(w.get("bank")) }; };
-  { const N = await run2(undefined), O = await run2(BASE); const bad = N.snaps.map((s, i) => s === O.snaps[i] ? null : isoN(i)).filter(Boolean);
+  { const N = await run2(undefined), O = await run2(BASE); const bad = N.snaps.map((s, i) => unLS(s) === O.snaps[i] ? null : isoN(i)).filter(Boolean);
     ok("a missed week before the blank slate (11/16 … 11/23), late rows ticked 1 or 2 days late: every list, pop-up, Kids' Corner = the app before", bad.length === 0, bad);
     ok("…every write, the banks (full stars) and the whole database = the app before", N.writes === O.writes && N.tree === O.tree && /"amount":10\b/.test(N.banks), (() => { const x = N.writes.split("\n"), y = O.writes.split("\n"); const i = x.findIndex((l, j) => l !== y[j]); return [i, x[i], y[i]]; })()); }
   // H3 · the plan ON (slice E is the plan's part): a missed week after the slate, its late plan rows ticked
@@ -248,7 +249,7 @@ if (BASE) {
         L.forEach(([lb, house, late, done]) => { if (house && late > 0 && !done) { tick(B, "chores", k, lb); ticked++; } }); });
       await w.flush(); snaps.push(J([s0, ["kid_a", "kid_b", "kid_c", "kid_d"].map(k => draw(B, "chores", k))])); }
     return { snaps, ticked, writes: writes(w, 0).join("\n"), tree: treeJ(w) }; };
-  { const N = await run3(undefined), O = await run3(BASE); const bad = N.snaps.map((s, i) => s === O.snaps[i] ? null : isoN(i + 6)).filter(Boolean);
+  { const N = await run3(undefined), O = await run3(BASE); const bad = N.snaps.map((s, i) => unLS(s) === O.snaps[i] ? null : isoN(i + 6)).filter(Boolean);
     ok("the plan ON, 11/22 … 11/28, nothing done then its carried plan rows ticked late (" + N.ticked + " ticks): every list = the app before (no \"→\")", bad.length === 0 && N.ticked > 0 && N.snaps.join("").indexOf("</s> →") < 0, [bad, N.ticked]);
     ok("…every write and the whole database (full stars on each late plan row) = the app before", N.writes === O.writes && N.tree === O.tree); }
 } else console.log("  (skipped: the app before)");
