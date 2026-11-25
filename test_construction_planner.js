@@ -43,12 +43,14 @@ function hashes(NB) {
 }
 if (process.argv.includes("--hashes")) { console.log(JSON.stringify(hashes(loadNb(NB_FILE)), null, 1)); process.exit(0); }
 
+// Pre-K hashes refreshed ON PURPOSE 2026-11-24 (PK_COVERFIT, test_prek_cover_fit.js): three CSS lines join every Pre-K notebook's
+// sheet so the cover's cards can't run off the page; with that block cut out of notebooks.js the old hashes come back exactly.
 const BEFORE = {
  "lincoln/empty": "1f57f4a97fbb0886", "lincoln/mastery": "1f57f4a97fbb0886", "lincoln/cursors": "e33c98589e09683b", "lincoln/fourDay": "52c51b7d3c56edc6", "lincoln/picks": "1f57f4a97fbb0886", "lincoln/theme": "2851b1b36aab33a8",
  "ellis/empty": "c3a87b363fbdcf7e", "ellis/mastery": "c3a87b363fbdcf7e", "ellis/cursors": "46e85ff74ade36f5", "ellis/fourDay": "25d955c9ae845aa2", "ellis/picks": "c3a87b363fbdcf7e", "ellis/theme": "2851b1b36aab33a8",
  "lucy/empty": "6396d3822f2d341e", "lucy/mastery": "6396d3822f2d341e", "lucy/cursors": "0917d7367019f92f", "lucy/fourDay": "85f73d959c6de9c2", "lucy/picks": "6396d3822f2d341e", "lucy/theme": "2851b1b36aab33a8",
- "julian/empty": "8a86b1e0d153f181", "julian/mastery": "c36581d4afc79708", "julian/cursors": "dedbf10fcee93f3c", "julian/fourDay": "785327ce90891c75", "julian/picks": "84106bb6874bd39d", "julian/theme": "2851b1b36aab33a8",
- "caleb/empty": "8b37fe802fbd9ed6", "caleb/mastery": "a52f4600e15d7483", "caleb/cursors": "96386ec7824807a4", "caleb/fourDay": "529367779ed92d70", "caleb/picks": "d2d83137ff5e8bee", "caleb/theme": "2851b1b36aab33a8",
+ "julian/empty": "b81b956feb8e2a8e", "julian/mastery": "e96433639c199178", "julian/cursors": "90ed422a69e056a1", "julian/fourDay": "0e9c6a24b585ee61", "julian/picks": "12830dbf3c93d01a", "julian/theme": "2851b1b36aab33a8",
+ "caleb/empty": "8d606791cb80f6c4", "caleb/mastery": "8c3db8b6bc42c734", "caleb/cursors": "e2b532c8efd75301", "caleb/fourDay": "0e5292eabbaf91af", "caleb/picks": "d2d83137ff5e8bee", "caleb/theme": "2851b1b36aab33a8",
  "kidx/empty": "98cd36b5413f5b91", "kidx/mastery": "98cd36b5413f5b91", "kidx/cursors": "2cf707483a0b2775", "kidx/fourDay": "98cd36b5413f5b91", "kidx/picks": "98cd36b5413f5b91", "kidx/theme": "2851b1b36aab33a8",
  "juPlanPreview/empty": "2d0d0b2f20d7012f", "juPlanPreview/mastery": "204d506f889cda4e", "juPlanPreview/cursors": "5d1ad6bf9b03921c", "juPlanPreview/fourDay": "dcace5405162a444", "juPlanPreview/picks": "b3ba3b886911e339", "juPlanPreview/theme": "204d506f889cda4e"
 };
