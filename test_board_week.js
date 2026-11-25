@@ -63,7 +63,7 @@ ok("stripped: no BWCLAIM left, the old lines back once each, the file shorter",B
 ok("claimDayPoints' guard is its first line, ahead of the gate's toast",SRC.indexOf(CHANGES[0][2])===SRC.indexOf("function claimDayPoints(kid,d){"));
 ok("the claim tile's change is inside kcPointsHTML",SRC.indexOf(CHANGES[1][2])>SRC.indexOf("function kcPointsHTML(k){")&&SRC.indexOf(CHANGES[1][2])<SRC.indexOf("function kcTodayHTML(k){"));
 const HB=SRC.slice(SRC.indexOf("// 📅 BOARDWK_START"),SRC.indexOf("// 📅 BOARDWK_END"));
-ok("the helper is one marked block, defined once, after BRKTODAY's",count(SRC,"// 📅 BOARDWK_START")===1&&count(SRC,"function boardWeekIsThisWeek(")===1&&SRC.indexOf("// 📅 BOARDWK_START")>SRC.indexOf("// 🏖 BRKTODAY_END")&&HB.indexOf("function _bwkActiveSat(")>0&&HB.indexOf("function _bwkBuildComing(")>0);
+ok("the helper is one marked block, defined once, after BRKTODAY's",count(SRC,"// 📅 BOARDWK_START")===1&&count(SRC,"function boardWeekIsThisWeek(")===1&&SRC.indexOf("// 📅 BOARDWK_START")>SRC.indexOf("// 🏖 BRKTODAY_END")&&HB.indexOf("function _bwkPlanSat(")>0&&HB.indexOf("function _bwkOwnSat(")>0&&HB.indexOf("function _bwkBuildComing(")>0);
 { const code=HB.replace(/\/\/[^\n]*/g,"");
   ok("the helper writes nothing (no db, storage, timer, set/update/remove, sv)",!/\bdb\b|HA_LS|localStorage|\bsv\(|setTimeout|setInterval|\.set\(|\.update\(|\.remove\(|obSet|obInc|obRemove/.test(code),code.match(/\bdb\b|\.set\(|HA_LS/));
   ok("…and fails open: one try, whose catch answers true",/\}catch\(e\)\{ return true; \}/.test(code)&&count(code,"try{")===1); }
@@ -131,7 +131,9 @@ async function world(o){
   return W;
 }
 const playWeek=async(W,mon,lateFrom)=>{ for(let i=0;i<5;i++){ const iso=addDays(mon,i); if(i||W.clock.now<hm(iso,0,0)) await W.roll(iso); await W.play(iso,dnOf(iso),i>=lateFrom?9*60+40:24*60); } };
-const truth=async(W,from,to)=>{ const out=[]; let iso=from; while(iso<=to){ await W.roll(iso); out.push(iso.slice(5)+dnOf(iso).slice(0,2)+"="+(W.bw()?"T":"f")); iso=addDays(iso,1); } return out; };
+// …and which source decided (the helper keeps it on its memo): W.whys = [[iso, answer, why], …]
+const truth=async(W,from,to)=>{ const out=[]; let iso=from; while(iso<=to){ await W.roll(iso); const v=W.bw(); (W.whys=W.whys||[]).push([iso,v,W.R("_bwkMemo&&_bwkMemo.why")]); out.push(iso.slice(5)+dnOf(iso).slice(0,2)+"="+(v?"T":"f")); iso=addDays(iso,1); } return out; };
+const whySet=(W,v)=>[...new Set((W.whys||[]).filter(x=>x[1]===v).map(x=>x[2]))];
 const expect=(days,falseFrom,falseTo)=>days.map(s=>{ const md=s.slice(0,5); return s.slice(0,7)+"="+((md>=falseFrom&&md<=falseTo)?"f":"T"); });
 
 async function runWriter(W,expr){ const m=W.db.log.length; W.R("__toasts=[]"); const v=W.R(expr); await W.flush(3000); return {v:v,toasts:JSON.parse(W.R("JSON.stringify(__toasts)")),writes:W.db.log.slice(m).map(l=>l.op+" "+l.path+(l.keys?" "+l.keys.join(","):"")+(l.val!==undefined?" "+JSON.stringify(l.val):""))}; }
@@ -166,6 +168,32 @@ let staleWrites=[];   // every write made by a NEW-code probe or refused claim o
     await W.roll("2026-11-24");
     ok("normal: probing writes nothing",true);
   }
+  // (a) the board was built for this week, then the plan's label for its number moved to last week (Align renumbering) or was removed
+  { const W=await world({name:"relabel"});
+    await playWeek(W,"2026-11-09",5); await W.roll("2026-11-14"); await W.roll("2026-11-15");
+    ok("(set-up) relabel: week 2 built for Mon Nov 16 – Fri 20, its own dates say so",W.wk()==="week2"&&W.R("DAY_DT.monday")==="November 16");
+    W.R('var __cd=JSON.stringify({w:currData.weekDays,l:currData.lessons}); function __sh(iso,n){ var d=gwParseDate(iso); d.setDate(d.getDate()+n); return _bwkIso(d); }'
+      +' function __mv(lbl,n){ Object.keys(currData.weekDays).forEach(function(k){ (currData.weekDays[k][lbl]||[]).forEach(function(dn){ var l=currData.lessons[k][dn]; if(l&&l.date) l.date=__sh(l.date,n); }); }); }'
+      +' function __rm(lbl){ Object.keys(currData.weekDays).forEach(function(k){ delete currData.weekDays[k][lbl]; }); }'
+      +' function __restore(){ var o=JSON.parse(__cd); currData.weekDays=o.w; currData.lessons=o.l; _bwkMemo=null; }');
+    const V=[["the label for week 2 moved to last week, no plan week for today","__mv(\"Wk 2\",-7);"],
+             ["the label for week 2 moved to last week, the next label renumbered onto this week","__mv(\"Wk 2\",-7); __mv(\"Wk 3\",-7);"],
+             ["the label for week 2 removed, no plan week for today","__rm(\"Wk 2\");"],
+             ["the label for week 2 removed, the next label renumbered onto this week","__rm(\"Wk 2\"); __mv(\"Wk 3\",-7);"]];
+    for(const [lbl,mut] of V){
+      W.R("__restore(); "+mut);
+      const res=[]; for(const iso of ["2026-11-16","2026-11-17","2026-11-18","2026-11-19","2026-11-20","2026-11-21"]){ W.clock.now=hm(iso,10,0); res.push([iso.slice(5),W.bw(),W.R("_bwkMemo.why")]); }
+      const plan=W.R("_bwkPlanSat()");
+      ok("relabel · "+lbl+": true Mon–Sat of the board's week, decided by the week's own dates (plan's Saturday now "+plan+")",res.every(r=>r[1]===true&&/^own says this week$/.test(r[2])),res);
+    }
+    W.R("__restore(); __mv(\"Wk 2\",-7);"); W.clock.now=hm("2026-11-18",10,0);
+    const pl=W.R("var __d=DAY_DT; DAY_DT={}; _bwkMemo=null; var __v=boardWeekIsThisWeek(); DAY_DT=__d; __v");
+    ok("relabel · …the same day with the week's own dates unread, the plan alone would say not this week (what the old helper answered)",pl===false&&W.R("_bwkMemo.why")==="plan say after the week");
+    W.R("__restore();"); W.clock.now=hm("2026-11-18",10,0); ok("relabel · plan restored → true, both sources",W.bw()===true&&W.R("_bwkMemo.why")==="plan+own says this week");
+    // the other way round: the plan says this week, the week's own dates are last week's → still true (any source saying this week wins)
+    W.R('var __d2=DAY_DT; DAY_DT={monday:"November 9",friday:"November 13"};'); const ow=[W.bw(),W.R("_bwkMemo.why")]; W.R("DAY_DT=__d2; _bwkMemo=null;");
+    ok("relabel · the plan says this week but the week's own dates are last week's → true (the plan decides)",ow[0]===true&&ow[1]==="plan says this week",ow);
+  }
   const worldsA=[
     {k:"a1",lbl:"a1 · full-week holiday, the plan has no week for it (numbers run on)",cal:HOL("2026-11-16","2026-11-20"),plan:d=>gap(d,2,1,false),from:"2026-11-14",to:"2026-11-24",f:["11-15","11-21"],wkAfter:"week2"},
     {k:"a2",lbl:"a2 · full-week holiday, its number skipped (our own plan's shape)",cal:HOL("2026-11-16","2026-11-20"),plan:d=>gap(d,2,1,true),from:"2026-11-14",to:"2026-11-24",f:["11-15","11-21"],wkAfter:"week3"},
@@ -184,6 +212,9 @@ let staleWrites=[];   // every write made by a NEW-code probe or refused claim o
     const days=await truth(W,D.from,D.to);
     const want=expect(days,D.f[0],D.f[1]);
     ok(D.lbl+": "+days.filter(s=>/=f$/.test(s)).length+" days false ("+D.f[0]+" … "+(D.f[1]==="12-31"?"for good":D.f[1])+"), true on the days around them",JSON.stringify(days)===JSON.stringify(want),{got:days,want});
+    const wf=whySet(W,false), wt=whySet(W,true);
+    ok(D.lbl+": every false day was decided by BOTH sources (the plan's range and the week's own dates put today after its Saturday)",wf.length===1&&wf[0]==="plan+own say after the week",wf);
+    console.log("      (true days decided by: "+wt.join(" · ")+")");
     ok(D.lbl+": the board afterwards is "+D.wkAfter+(D.k==="g"?" (never moves)":" — the first school Monday after is true"),W.wk()===D.wkAfter&&(D.k==="g"||days.some(s=>s.indexOf("mo=T")>0&&s.slice(0,5)>D.f[1])),[W.wk()]);
     if(D.wkMid) ok(D.lbl+": its first week was a real plan week, built on Sunday ("+D.wkMid+"), true Mon–Sat",days.filter(s=>s.slice(0,5)>="11-16"&&s.slice(0,5)<="11-21").every(s=>/=T$/.test(s)));
     ok(D.lbl+": the helper wrote nothing on a gap day",(()=>{ const m=W.db.log.length; W.clock.now=hm(D.from==="2026-11-14"?"2026-11-17":D.from,10,0); for(let i=0;i<50;i++) W.bw(); return W.db.log.length===m; })());
@@ -217,6 +248,7 @@ let staleWrites=[];   // every write made by a NEW-code probe or refused claim o
     ok("(set-up) year turn, real week: week 1 = Dec 28 – Jan 1, built Sun Dec 27",W.wk()==="week1"&&JSON.stringify(W.R("JSON.stringify(gwWeekDateRange(1))"))===JSON.stringify(JSON.stringify({start:"2026-12-28",end:"2027-01-03"})),W.R("JSON.stringify(gwWeekDateRange(1))"));
     const days=[]; for(const iso of ["2026-12-28","2026-12-29","2026-12-30","2026-12-31","2027-01-01","2027-01-02"]){ await W.roll(iso); days.push(iso+"="+(W.bw()?"T":"f")); }
     ok("year turn, real week: Mon Dec 28 … Sat Jan 2 → true every day",days.every(s=>/=T$/.test(s)),days);
+    { const w=W.R("_bwkMemo&&_bwkMemo.why"); ok("year turn, real week: on Sat Jan 2 both sources say this week (the plan's dates and \"December 28\" read as 2026)",w==="plan+own says this week",w); }
     W.R("var __g=gwWeekDateRange; gwWeekDateRange=function(){ return null; };");
     const dd=W.R("JSON.stringify(DAY_DT)"); const fb=[]; for(const [iso,h] of [["2026-12-31",10],["2027-01-01",10],["2027-01-02",18]]){ W.clock.now=hm(iso,h,0); fb.push(iso+"="+W.bw()); }
     W.R("gwWeekDateRange=__g; _bwkMemo=null;");
@@ -227,6 +259,7 @@ let staleWrites=[];   // every write made by a NEW-code probe or refused claim o
     await playWeek(W,"2026-12-21",3);
     const days=await truth(W,"2026-12-26","2027-01-05");
     const want=expect(days,"12-27","01-02").map((s,i)=>s.slice(5,7)==="01"&&days[i].slice(0,5)<="01-02"?s.slice(0,7)+"=f":s);
+    { const wf=whySet(W,false); ok("year turn, a gap: every false day decided by both sources (\"December 21\" read as 2026 in January)",wf.length===1&&wf[0]==="plan+own say after the week",wf); }
     ok("year turn, a gap: Sat Dec 26 true; Sun Dec 27 … Sat Jan 2 false; Sun Jan 3 (week 3 builds) and after true",JSON.stringify(days)===JSON.stringify(["12-26sa=T","12-27su=f","12-28mo=f","12-29tu=f","12-30we=f","12-31th=f","01-01fr=f","01-02sa=f","01-03su=T","01-04mo=T","01-05tu=T"]),days);
     await W.roll("2026-12-26"); W.R("var __g=gwWeekDateRange; gwWeekDateRange=function(){ return null; };");   // rolling back the clock: week 3 is active now, so look at week 1's dates by hand
     W.R("WK=\"week1\"; DAY_DT={monday:\"December 21\",tuesday:\"December 22\",wednesday:\"December 23\",thursday:\"December 24\",friday:\"December 25\"};");
