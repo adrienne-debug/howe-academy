@@ -73,8 +73,20 @@ function archBlind(db){
     return a; };
   return db;
 }
+// 📅 LISTWK (break week slice 2, 2026-11-24): the made-up plan (weeks 1–6) ended Fri Dec 18, so a 60-day replay from Nov 15 ran on for
+//   26 days with no school week built — the board kept week 6 and the code before slice 2 read week 6's same-day records as today's. Those
+//   days are a gap week now (test_list_week.js). A replay that compares 60 days with main passes {longPlan:true}: the plan's six weeks again
+//   as weeks 7–12 (Dec 21 – Jan 29), so its days are all school weeks, on main and on a branch alike. Tests that mean the plan to end keep it.
+function extendPlan(c){
+  if(!c||!c.weekDays||!c.lessons) return;
+  const add=(iso,n)=>{ const d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+n); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+  Object.keys(c.weekDays).forEach(function(kid){ const wd=c.weekDays[kid], L=c.lessons[kid]||{}, top=Math.max(0,...Object.keys(L).map(Number));
+    for(let w=1;w<=6;w++){ const src=wd["Wk "+w]; if(!src||wd["Wk "+(w+6)]) continue;
+      wd["Wk "+(w+6)]=src.map(function(dn){ const nd=+dn+top, l=JSON.parse(JSON.stringify(L[dn]||{})); l.week="Wk "+(w+6); if(l.date) l.date=add(l.date,42); L[nd]=l; return nd; }); } });
+}
 async function world(o){
   o=o||{}; const fx=JSON.parse(JSON.stringify(FX.db)); fx.household=o.household||household(o.mode);
+  if(o.longPlan) extendPlan(fx.curriculum);   // 📅 LISTWK: a 60-day replay asks for the plan to reach past it (below)
   if(o.tree) Object.assign(fx,o.tree);
   const clock=S.makeClock(new Date(2026,10,15,0,0,30).getTime()); clock.boot=clock.now; const sched=S.makeScheduler(clock);
   const db=archBlind(guarded(S.makeDb(fx,clock,sched),o.deny));   // ARCHCORE: blind to the smaller past-weeks copy (above)
