@@ -131,7 +131,9 @@ else {
   // 🎉 SEASONS_NOW (2026-11-20, seasons slice 2): one 🔴 Now line (due season to-dos + book-by dates, asked of seasons.js), tagged — normalized away on both sides
   ok("renderMomsDay source untouched", unstick(unnudge(unroute(sliceFrom(old, "renderMomsDay")))) === unstick(unnudge(unroute(sliceFrom(src, "renderMomsDay")))));
   // 🏡 HOUSEHOLD_TAKEOVER (PR 3, 2026-10-09) routes Mom's list writes through _mcDb; that one line is normalized away here so the guard keeps asking "nothing ELSE changed".
-  ok("Mom's starter seeds / editor untouched", ["mcSeedSlot", "mcToggle", "mcPopHTML", "grMdShopHTML"].every(n => unshop(unroute(sliceFrom(old, n))) === unshop(unroute(sliceFrom(src, n)))));
+  // MCSEEDNF (her "Yes, remove it" 2026-11-24): mcSeedSlot's one marked line (a family that is not Howe gets no starters) is normalized away the same way.
+  const unseed = t => String(t).replace(/\n  if\(typeof HA_IS_HOWE!=="undefined"&&!HA_IS_HOWE\) return;   \/\/ MCSEEDNF[^\n]*/, "");
+  ok("Mom's starter seeds / editor untouched", ["mcSeedSlot", "mcToggle", "mcPopHTML", "grMdShopHTML"].every(n => unseed(unshop(unroute(sliceFrom(old, n)))) === unseed(unshop(unroute(sliceFrom(src, n))))));
   // 📅 CAD_CHIPS (her ask 2026-10-18): mcAdd and the ✎ card's add row changed on purpose — and only this:
   ok("mcAdd reads the day chips beside the box she typed in (mc-cad-q on My day, mc-cad on the ✎ card)", /getElementById\(inp&&inp\.id==="mc-new"\?'mc-cad-q':'mc-cad'\)/.test(sliceFrom(src, "mcAdd")));
   ok("the ✎ card's add row: day chips in place of the one-day dropdown", /cadChipsHTML\("mc-cad","daily",\[\["2w","2 wks"\]\]\)/.test(sliceFrom(src, "momChoresCardHTML"))&&!/<select id="mc-cad"/.test(sliceFrom(src, "momChoresCardHTML")));
