@@ -65,7 +65,10 @@ const BEFORE_IDX = /*PAIRS_IDX*/[
   ["  if(s.wait) Object.keys(Object.assign({},r.wait,s.wait)).forEach(function(id){ if(JSON.stringify((r.wait||{})[id]||null)!==JSON.stringify(s.wait[id]||null)) upd[B+\"wait/\"+id]=s.wait[id]||null; });   // MISSEDDAY\n",""],
   ["  upd[B+\"built/sig\"]=hdSig(); upd[B+\"keep\"]=null; r.plan=plan; r.over=s.over; if(s.wait) r.wait=s.wait; r.built=Object.assign({},r.built,{sig:upd[B+\"built/sig\"]}); delete r.keep;\n","  upd[B+\"built/sig\"]=hdSig(); upd[B+\"keep\"]=null; r.plan=plan; r.over=s.over; r.built=Object.assign({},r.built,{sig:upd[B+\"built/sig\"]}); delete r.keep;\n"]
 ];
+const COVF = require(path.join(__dirname, "test_fixtures", "covered_pairs.js"));   // slice F sits on E: take it out first (its own test checks it)
 const carve = (file, blocks, pairs) => { let s = fs.readFileSync(path.join(__dirname, file), "utf8");
+  const fb = file === "house.js" ? COVF.HJS_BLOCKS : COVF.IDX_BLOCKS, fp = file === "house.js" ? COVF.HJS_PAIRS : COVF.IDX_PAIRS;
+  blocks = fb.concat(blocks); pairs = fp.filter(x => x[2] !== "inE").map(x => [x[0], x[1]]).concat(pairs);
   blocks.forEach(b => { const re = new RegExp("^ *// " + b + "_START[^\\n]*\\n[\\s\\S]*?^ *// " + b + "_END\\n", "m"), n = (s.match(new RegExp(re.source, "gm")) || []).length;
     if (n !== 1) throw new Error("test_house_plan_missed: the app before cannot be built — the " + b + " block found " + n + "× in " + file); s = s.replace(re, ""); });
   pairs.forEach(([a, b], i) => { const n = s.split(a).length - 1; if (n !== 1) throw new Error("test_house_plan_missed: the app before cannot be built — piece " + (i + 1) + " of " + file + " found " + n + "× (" + J(a.slice(0, 90)) + ")"); s = s.replace(a, () => b); });

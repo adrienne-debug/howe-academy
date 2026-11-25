@@ -692,6 +692,7 @@ function hpPersonHTML(){
   if(d0){ const mine=(d0.list[who]||[]).filter(function(id){ return d0.plan[id].house; }), mv=hpMovedOff(d0,who);
     h+='<div style="'+HP_HEAD+'">🔭 House chores the plan WOULD give today — preview</div><div style="display:flex;gap:8px;align-items:center;padding:2px 12px 4px;font-size:11px;color:var(--muted)">'+hpBar(d0.used[who],d0.limit[who])+'<span>'+d0.used[who]+' / '+d0.limit[who]+' min</span></div>';
     h+=mine.length?mine.map(function(id){ const x=d0.plan[id], j=J[id]||{}; return hpRow(id,j.emoji,j.label,(x.why==="deep"?_hhChip('✨ grown-up turn','#ede9fe','#5b21b6'):'')+(typeof hqPlanNote==="function"?hqChip(hqPlanNote(j,x.late,today)):(x.late>0?_hhChip(x.late+' day'+(x.late===1?'':'s')+' late','#fee2e2','#991b1b'):''))+(x.from?_hhChip('from '+hhWhoName(x.from),'#e0f2fe','#075985'):'')+_hhChip(x.mins+' min','#f3f4f6','#475569')); }).join(''):'<div style="padding:3px 12px 6px;font-size:12px;color:var(--muted)">No house chores for them today.</div>';
+    h+=(typeof hpCovHTML==="function")?hpCovHTML(who,d0.covered||[]):'';   // COVERED (slice F): the preview's own (days from the plan's start date)
     if(mv.length) h+='<div style="'+HP_HEAD+'">Moved off them today</div>'+mv.map(function(m){ const j=J[m.id]||{}; return hpRow(m.id,j.emoji,j.label,_hhChip(hpMovedTxt(m)+(m.to==="grab"?' · '+hgX2For(m.id,m.can,'for ','no kid can'):''),m.to==="grab"?'#fef3c7':'#e0f2fe',m.to==="grab"?'#92400e':'#075985')); }).join('');
   }
   h+='<div style="height:6px"></div></div>';
@@ -708,6 +709,13 @@ function hpPersonHTML(){
   h+='<div style="font-size:14px;font-weight:800;margin:4px 2px 6px">📈 Habits</div>'+hhHabitsHTML(who);
   return h;
 }
+// COVEREDSEEN_START — slice F (missed-chores design §1.3: "Tuesday's is covered: not on her list; your pages say 'done Mon'"): on 👤 By person,
+// Today (the plan on: hdCovered, worked out from the stored day's rules) and the preview's "WOULD give today" (the engine's own covered list),
+// each chore whose turn today is skipped because it was done within its window before its day. Mom's page only; kids see nothing (the row is
+// simply not on their list). A view: nothing written.
+function hpCovHTML(who,list){ const J=hhJobs(), L=(list||[]).filter(function(c){ return c&&c.turn===who&&J[c.id]; }); if(!L.length) return '';
+  return '<div style="'+HP_HEAD+'">Done ahead of its day · skipped today ('+L.length+')</div>'+L.map(function(c){ const j=J[c.id]; return hpRow(c.id,j.emoji,j.label,_hhChip('done '+hpDay(c.done),'#dcfce7','#166534')+_hhChip('not on a list today','#f3f4f6','#6b7280')); }).join(''); }
+// COVEREDSEEN_END
 // HOUSEPERSON_END
 // HOUSEPREVIEW_START — the room pages with the preview on (DESIGN §3.2 "future days are the plan"; §4.3 "for the next 4 weeks the
 // names respect the limits"): the grid's next 28 days, one square per chore = who the plan WOULD give it to (dashed, in their colour;
@@ -2362,6 +2370,7 @@ function hpOnHTML(who){
   h+=ids.length?ids.map(function(id){ const x=r.plan[id], j=J[id], sk=!!(r.skip&&r.skip[id]), dn=hdDone(t,id);
     return hpRow(id,j.emoji,j.label,(x.why==="deep"?_hhChip('✨ grown-up turn','#ede9fe','#5b21b6'):'')+(typeof hqPlanNote==="function"?hqChip(hqPlanNote(j,x.late,t)):(x.late>0?_hhChip(x.late+' day'+(x.late===1?'':'s')+' late','#fee2e2','#991b1b'):''))+(x.from?_hhChip('from '+hhWhoName(x.from),'#e0f2fe','#075985'):'')+(sk?_hhChip('skipped','#f3f4f6','#6b7280'):'')+_hhChip(x.mins+' min','#f3f4f6','#475569')
       +(mom&&!dn?'<span onclick="event.stopPropagation()" style="display:flex;gap:4px">'+hpGiveSel(t,id,who)+_hhBtn("hdSkipToggle('"+t+"','"+id+"','"+who+"');hhRender()",sk?'Put back':'✕ Skip',false,'#94a3b8')+'</span>':''),dn); }).join(''):'<div style="padding:3px 12px 6px;font-size:12px;color:var(--muted)">No house chores for them today.</div>';
+  h+=(typeof hpCovHTML==="function")?hpCovHTML(who,(typeof hdCovered==="function")?hdCovered(t):[]):'';   // COVERED (slice F): done early, so today's turn is skipped
   const over=Object.keys(r.over||{}).filter(function(id){ return J[id]; });
   const wt=Object.keys(r.wait||{}).filter(function(id){ return r.wait[id].who===who&&J[id]; });   // MISSEDDAY (slice E): skipped earlier, no room today — still theirs, not on their list
   if(wt.length) h+='<div style="'+HP_HEAD+'">Waiting with '+esc(hhWhoName(who))+' · no room today ('+wt.length+')</div>'+wt.map(function(id){ const x=r.wait[id], j=J[id]; return hpRow(id,j.emoji,j.label,hqChip(hqPlanNote(j,x.late,t))+_hhChip('not on their list today','#f3f4f6','#6b7280')+_hhChip(x.mins+' min','#f3f4f6','#475569')); }).join('');
