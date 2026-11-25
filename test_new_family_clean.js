@@ -36,19 +36,13 @@ const ok = (c, m) => { if (c) { pass++; if (VERBOSE) console.log("  ✓ " + m); 
 // ── KNOWN: what a new family is still shown today ──────────────────────────────────────────────────────────────────────
 // {item: design 1.2 #, what, cat (which Howe words), pages (each must still show it), near (optional: the words around the hit)}
 // A later slice that fixes an item takes its line off this list.
+// Off the list: #1 Howe's 8 Mom chores (slice 1, MCNEWFAM — test_newfam_mom_list_empty.js); with them went the rows Bring in
+// copied, so the "give to Lucy" hint and the room pickers on those rows went too. #3 the cycle date was already clean (CYCLEOWN).
 const AB = v => "After Bring in · Household ▸ " + v, AT = v => "After Take over · " + v;
 const KNOWN = [
-  { item: "1", what: "Howe's 8 Mom chores shown as hers: Home Base ▸ My day, its ✎ Edit list, Household ▸ Today", cat: "momChore", pages: ["Home Base", "Home Base ▸ ✎ Edit my chores", "Household ▸ today"] },
-  { item: "1", what: "📥 Bring in offers them: \"(8 rows)\"", cat: "momCount", pages: ["Household ▸ review", "Household ▸ + Add a chore"] },
-  { item: "1", what: "📥 Bring in copies them into her table; every view after shows them", cat: "momChore",
-    pages: [AB("rooms"), AB("review"), AB("levels"), AB("today"), AT("Home Base"), AT("By person ▸ Mom"), AT("Rooms ▸ Parents' room"), AT("chore card"), AT("room rules")] },
-  { item: "1", what: "saved to her database: momChores/mc_* + _seeded on her first chore (mcEnsure); household/jobs/mc_mc_* by Bring in; the Take over snapshot", cat: "momChore",
-    pages: ["Saved after her first chore", "Saved after Bring in", "Saved after Take over"] },
   { item: "1k", what: "Kitchen tab hint names Howe's chore: \"when you tick your 🌙 Kitchen close-down\" (fixed wording, shown with no such chore)", cat: "momChore", pages: ["Household ▸ kitchen"], near: /when you tick your/ },
-  { item: "8", what: "\"give to Lucy\" hint on the rows Bring in made (goes with #1: no rows, no hint)", cat: "kid", pages: [AB("review")], near: /give to/ },
   { item: "2", what: "Howe's room layout in every Room picker and filter", cat: "room",
-    pages: ["Household ▸ person", "Household ▸ laundry", "Household ▸ + Add a chore", "By person", AB("rooms"), AB("room"), AB("person"), AB("laundry"),
-      AT("By person ▸ Mom"), AT("By person ▸ kid"), AT("Rooms ▸ Parents' room"), AT("chore card"), AT("room rules")] },
+    pages: ["Household ▸ person", "Household ▸ laundry", "Household ▸ + Add a chore", "By person", AB("person"), AB("laundry"), AT("By person ▸ Mom"), AT("By person ▸ kid")] },
   { item: "2", what: "Howe's 12 rooms + 2 floors saved with her first room of her own (_hhRoomSeed)", cat: "room", pages: ["Saved after her first room"] },
   { item: "4", what: "the built-in Mom code on Settings (\"Current PIN\")", cat: "pin", pages: ["Admin ▸ settings", "Admin ▸ rules", "Mom's Day ▸ sset"], near: /Current PIN/ },
   { item: "4", what: "the built-in Dad code in Settings' Dad code box", cat: "pin", pages: ["Admin ▸ settings", "Admin ▸ rules", "Mom's Day ▸ sset"], near: /Dad code . lets Dad give stars/ },
