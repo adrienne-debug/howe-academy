@@ -1138,6 +1138,20 @@
     };
   }
 
+  // PK_WHITESHAPE_START — "too pale to see": relative luminance (the WCAG measure, 0 = black … 1 = white) of 0.70 or more,
+  // i.e. less than 1.4 : 1 against white paper. White #f3f4f6 is 0.90; the lightest colour any deck prints, Yellow #eab308, is
+  // 0.50 and keeps its colour. Reads #rgb, #rrggbb, rgb(…) and the word "white"; anything else is left alone.
+  function pkTooPale(c) {
+    var s = String(c == null ? "" : c).trim().toLowerCase(), m, rgb = null;
+    if (s === "white") rgb = [255, 255, 255];
+    else if ((m = /^#([0-9a-f]{3})$/.exec(s))) rgb = m[1].split("").map(function (h) { return parseInt(h + h, 16); });
+    else if ((m = /^#([0-9a-f]{6})$/.exec(s))) rgb = [0, 2, 4].map(function (k) { return parseInt(m[1].slice(k, k + 2), 16); });
+    else if ((m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(s))) rgb = [m[1], m[2], m[3]].map(Number);
+    if (!rgb) return false;
+    var lin = rgb.map(function (v) { v = Math.min(255, v) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2] >= 0.70;
+  }
+  // PK_WHITESHAPE_END
   function juPageCover(weekNum, weekDates, cur, T, picks, lv) {
     T = T || JU_THEME;   // PREKTHEME: the theme's words + pictures; Julian's by default
     lv = lv || PK_LEVEL_OFF;   // PREKLEVEL: the kid's level switches
@@ -1153,6 +1167,12 @@
     var colorsx = colorList.concat(colorList);
     var shapes = shapeList.map(function (s, i) {
       var c = (colorsx[i] || ["", ""])[1];
+      // PK_WHITESHAPE_START — her yes 2026-11-24 ("Yes, fix it"): a shape that borrows White (#f3f4f6) from the colour list
+      // printed invisible on the pale Shapes card (the 10th shape for an 11-colour deck). A borrowed colour this light — by
+      // lightness, so a custom pale colour is caught too — is drawn in the look's ordinary outline colour instead, the one the
+      // daily page's "Color it" shape uses. Every other shape keeps its colour; the Colors card is not touched.
+      if (pkTooPale(c)) c = T.shapeStroke || "#6b5544";
+      // PK_WHITESHAPE_END
       return juSvgShape(s, { dashed: false, stroke: c, size: 22 });
     }).join(" ");
     var colorSwatches = colorList.map(function (pair) {
