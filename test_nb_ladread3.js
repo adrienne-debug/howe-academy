@@ -1,12 +1,12 @@
 // 📖 NBLADREAD3 — "Read and answer" in the 4th- and 6th-grade notebooks, write-first days, and the 4th-grade notebook's old
-// built-in passages retired: slice 3 of the notebook ladders (notebooks study, her words 2026-11-23/24: "Build it"; reading
+// built-in passages (first retired, now deleted — EL_OLDPASS_OUT, her call 2026-11-24 "Delete them"): slice 3 of the notebook ladders (notebooks study, her words 2026-11-23/24: "Build it"; reading
 // "twice a week sounds great"; from 3rd grade up "Write first some days"; "A full page" for 6th–8th; the old passages "Retire
 // them" when the ladder goes into that notebook). Run: node test_nb_ladread3.js
 //  (a) the blocks: one in each file, right after slice 2's; no family names, no answer giver; the two notebooks are found
 //      through HoweNotebooks.ladderPages + their builders (the test names no kid)
 //  (b) ladder off (every way) → every notebook byte for byte = THIS tree with the NBLADREAD3 block and its call sites cut out
-//      (built below — no git, no pinned commit); the retirement rule exactly: reading switched on → the old passage box and
-//      its two key rows are gone and nothing else changed; a week the CogAT bank covers → nothing changes at all
+//      (built below — no git, no pinned commit); EL_OLDPASS_OUT: the old passages are gone from notebooks.js (no title, text,
+//      question or id left), reading on but nothing printed → the 4th-grade notebook = the baseline too, ladder on or off
 //  (c) on → the engine's passages on the right days in both notebooks, right behind the day's own pages, every other page in
 //      its place; the place to save (readingCursor)
 //  (d) no answer, no why line, no mark, no extra attribute on any child page — front, back and plain, every passage, both looks
@@ -15,7 +15,7 @@
 //      the sheet: the front on a sheet front, its back right after, a Notes pad only when needed
 //  (g) the tablet tags; (h) index.html: the wf choice (where it shows, one field, Mom only, dry-run inert), the card note
 //  (i) page fit in Google Chrome headless with each notebook's real CSS: every passage plain, every g3+ passage front and back,
-//      the parent page, whole builds, the retired daily page
+//      the parent page, whole builds, the 4th-grade daily and key pages with no passage box
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os"), cp = require("child_process");
 const rd = (f) => fs.readFileSync(path.join(__dirname, f), "utf8");
 const SRC = rd("notebooks.js"), IX = rd("index.html"), READ = JSON.parse(rd("ladders/read_and_answer.json"));
@@ -45,8 +45,8 @@ ok("no CSS text columns", !/column-count|column-width|(^|[^-])columns\s*:/.test(
 const fnOf = (sig) => { const a = SRC.indexOf(sig); return SRC.slice(a, SRC.indexOf("\n  }\n", a)); };
 const gE = fnOf("  function generateEllis(ctx) {"), gL = fnOf("  function generateLincoln(ctx) {"), gU = fnOf("  function generateLucy(ctx) {");
 const marks = (f) => f.split("\n").filter((l) => /NBLADREAD3/.test(l));
-ok("marked call sites: 4 in the 4th-grade builder, 3 in the 6th-grade one, 3 in the 1st-grade one (+ one note line), each a single line",
-  marks(gE).length === 4 && marks(gL).length === 3 && marks(gU).length === 3 && [gE, gL].every((f) => marks(f).every((l) => /\/\/ NBLADREAD3/.test(l))));
+ok("marked call sites: 3 in the 4th-grade builder (EL_OLDPASS_OUT took the retire line), 3 in the 6th-grade one, 3 in the 1st-grade one (+ one note line), each a single line",
+  marks(gE).length === 3 && marks(gL).length === 3 && marks(gU).length === 3 && [gE, gL].every((f) => marks(f).every((l) => /\/\/ NBLADREAD3/.test(l))));
 ok("the card's marked lines in index.html: state, write list, reading row", (IX.match(/✍️ NBLADREAD3/g) || []).length === 3);
 
 // ════════════════════════════════════ load: now + the baseline ════════════════════════════════════
@@ -56,7 +56,8 @@ const T_HOOK = HOOK + " lr3Page: lr3Page, lr3Css: lr3Css, lr3AddCss: lr3AddCss, 
 let BASE = SRC.slice(0, B0) + SRC.slice(B1 + "  // NBLADREAD3_END\n\n".length);
 const cut = BASE.split("\n").filter((l) => /NBLADREAD3/.test(l));
 BASE = BASE.split("\n").filter((l) => !/NBLADREAD3/.test(l)).join("\n");
-ok("the baseline cut takes only comment lines and marked call sites", cut.every((l) => /^\s*\/\//.test(l) || /\/\/ NBLADREAD3/.test(l)) && cut.length === 14, cut.length);
+ok("the baseline cut takes only comment lines and marked call sites", cut.every((l) => /^\s*\/\//.test(l) || /\/\/ NBLADREAD3/.test(l)) && cut.length === 10, cut.length);   // EL_OLDPASS_OUT: 14 → 10 (the retire call line and its 3 comment lines are gone)
+ok("EL_OLDPASS_OUT: no retire gate left anywhere in notebooks.js", !/lr3Retire/.test(SRC) && (SRC.match(/EL_OLDPASS_OUT/g) || []).length >= 4);
 ok("the baseline has no definition or call of the block (the 1st-grade push only reads pg.wf, which nothing sets there)",
   !/function lr3|lr3Week\(|lr3Finish\(|lr3Retire\(|lr3Flags\(|lr3Prints\(|lr3Css\(|LR3_/.test(BASE) && (BASE.match(/lr3Push\(/g) || []).length === 1);
 const load = (s) => { const w = {}; (new Function("window", "document", s))(w, undefined); return w.HoweNotebooks; };
@@ -125,26 +126,29 @@ console.log("(b) off → byte for byte as before; the retirement rule exactly");
     "on, ladder finished": { ladders: rl({ lv: "g78", cur: { week: 11, lv: "g78", from: 10, adv: 1, opt: false } }, 12) },
   };
   ok("the finished fixture really is finished", ON0["on, ladder finished"].ladders.reading.next.end === true);
-  const BOX = /    <div class="sec-label sec-red">🎯 Iowa Reading — Test Prep<\/div>\n    <div class="card card-read">\n      <div class="passage-block">[\s\S]*?<div class="skill-note">⚙️ Skill: [^<]*<\/div>\n    <\/div>/g;
-  const KEY1 = /<div class="key-row"><div class="key-label">Iowa R<\/div>[\s\S]*?<\/div><\/div>/g;
-  const KEY2 = /<div style="font-size:7\.5px;font-weight:700;color:var\(--tf-dark\);margin:2px 0 1px;">📡 [^<]*<\/div><div style="font-size:7\.5px;color:#444;margin-bottom:1px;">[^<]*<\/div>[\s\S]*?(?=<div style="font-size:7\.5px;font-weight:700;color:#8b0000)/g;
-  const retired = (o) => ({ student: o.student.replace(BOX, ""), parent: o.parent.replace(KEY1, "").replace(KEY2, "").replace("Word · Iowa Reading · Language · Math", "Word · Language · Math") });
-  const P8 = I.ELLIS_DATA.banks.passages;
-  ok("the old built-in passages: 8 of them, still in the file (a week with reading off still prints them)", P8.length === 8);
+  // EL_OLDPASS_OUT (her call 2026-11-24, "Delete them"): the eight old built-in passages are gone from the file — no title, no
+  // passage text, no question, no skill line, no id. (Listed here only to prove they are gone.)
+  const GONE = [["p01", "The Bridge at Sector Seven", "Optimus Prime stood at the edge of the bridge"], ["p02", "Bumblebee's Choice", "Bumblebee found a small injured bird near the base"],
+    ["p03", "The Lost Signal", "Jazz picked up a weak signal from deep in the forest"], ["p04", "Ironhide's Lesson", "Ironhide had been a warrior for a long time"],
+    ["p05", "Two Sides of Cybertron", "On Cybertron, the Autobots and Decepticons did not always fight"], ["p06", "The Energon Garden", "Wheeljack had an idea no one had tried before"],
+    ["p07", "Ratchet's Promise", "Ratchet made a promise the day he became a medic"], ["p08", "The Map Inside", "Perceptor could remember every map he had ever seen"]];
+  ok("the old passages are gone: no title or passage text of the eight in notebooks.js", GONE.every(([, t, x]) => SRC.indexOf(t) < 0 && SRC.indexOf(x) < 0), GONE.filter(([, t, x]) => SRC.indexOf(t) >= 0 || SRC.indexOf(x) >= 0));
+  ok("…no passage bank, no passage ids, no question / skill fields in the 4th-grade data", !("passages" in I.ELLIS_DATA.banks) && JSON.stringify(Object.keys(I.ELLIS_DATA.banks)) === '["lang","math","words"]' &&
+    GONE.every(([id]) => SRC.indexOf('"id": "' + id + '"') < 0) && !/q1_skill|q2_text|"passage": "/.test(JSON.stringify(I.ELLIS_DATA)));
+  ok("…and nothing in the 4th-grade builder or its pages reads a passage any more", !/passage/.test(code(fnOf("  function generateEllis(ctx) {"))) && !/passage/.test(code(fnOf("  function ellParentPage1("))) && !/passage/.test(code(fnOf("  function ellParentPage2("))) &&
+    !/\bpassage\b|Iowa Reading/.test(code(fnOf("  function ellDailyPage("))));   // (code(): the EL_OLDPASS_OUT comments may say "passage")
   for (const [name, extra] of Object.entries(ON0)) {
-    const c6 = mkCtx(K6, extra), c4 = mkCtx(K4, extra), a6 = gen(K6, c6), a4 = gen(K4, c4), o4 = genOld(K4, c4);
+    const c6 = mkCtx(K6, extra), c4 = mkCtx(K4, extra), a6 = gen(K6, c6), a4 = gen(K4, c4);
     ok(name + ": 6th grade = before, no cursor", both(a6) === both(genOld(K6, c6)) && !("readingCursor" in a6));
-    ok(name + ": 4th grade, no CogAT bank — before had the old box on every day (" + (o4.student.match(BOX) || []).length + "), now none",
-      (o4.student.match(BOX) || []).length === 5 && a4.student.indexOf("Iowa Reading — Test Prep") < 0 && P8.every((p) => a4.student.indexOf(p.title) < 0 && a4.parent.indexOf(p.title) < 0));
-    ok(name + ": …and that is the ONLY change: before minus the box = now (student); minus the two key rows (parent)", both(a4) === both(retired(o4)) && !("readingCursor" in a4), [a4.student.length, retired(o4).student.length, a4.parent.length, retired(o4).parent.length]);
+    ok(name + ": 4th grade, no CogAT bank — no old passage box, no Iowa Reading key row, = before byte for byte, no cursor",
+      a4.student.indexOf("Iowa Reading — Test Prep") < 0 && a4.parent.indexOf("Iowa R<") < 0 && a4.parent.indexOf("Word · Language · Math") > 0 && both(a4) === both(genOld(K4, c4)) && !("readingCursor" in a4));
   }
-  // live: the CogAT bank (from its start week) fills the reading box every day → switching the ladder on changes nothing there
+  // live: the CogAT bank (from its start week) fills the reading box every day; before its start week there is no reading box
   const cov = mkCtx(K4, Object.assign({ cogatBank: cqBank(10) }, ON0["on, file not loaded yet"]));
-  ok("a week the CogAT bank covers: on (nothing printed) = before, byte for byte", both(gen(K4, cov)) === both(genOld(K4, cov)) && genOld(K4, cov).student.indexOf("Iowa Reading — Test Prep") < 0);
-  const pre = mkCtx(K4, Object.assign({ cogatBank: cqBank(20) }, ON0["on, file not loaded yet"]));
-  ok("a week before the bank's start week: before showed the old passages; on → retired exactly", genOld(K4, pre).student.indexOf("Iowa Reading — Test Prep") > 0 && both(gen(K4, pre)) === both(retired(genOld(K4, pre))));
-  const preOff = mkCtx(K4, { cogatBank: cqBank(20) });
-  ok("…the same week with the ladder off: the old passages print exactly as before", both(gen(K4, preOff)) === both(genOld(K4, preOff)));
+  ok("a week the CogAT bank covers: on (nothing printed) = before, byte for byte, the CogAT box every day", both(gen(K4, cov)) === both(genOld(K4, cov)) && (gen(K4, cov).student.match(/🧠 CogAT — /g) || []).length === 5);
+  const pre = mkCtx(K4, Object.assign({ cogatBank: cqBank(20) }, ON0["on, file not loaded yet"])), preOff = mkCtx(K4, { cogatBank: cqBank(20) });
+  ok("a week before the bank's start week, ladder on or off: no reading box at all, = before", [pre, preOff].every((c) => { const a = gen(K4, c); return a.student.indexOf("Iowa Reading — Test Prep") < 0 && a.student.indexOf("🧠 CogAT — ") < 0 && both(a) === both(genOld(K4, c)); }));
+  ok("…ladder off and on print the same 4th-grade notebook when the ladder has nothing to print", both(gen(K4, preOff)) === both(gen(K4, pre)));
 }
 
 // ════════════════════════════════════ (c) on → the engine's passages, on the right days, right behind the day ════════════════════════════════════
@@ -434,13 +438,14 @@ else {
         r && rp.length === (part === "student" ? 4 : 1) && rp.every((p) => p.h === 1056 && p.spare >= 0 && p.clip <= 0));
     }
   }
-  // the 4th-grade daily page with the old passage retired and no CogAT box that day: nothing clipped, no empty box
+  // EL_OLDPASS_OUT: the 4th-grade daily pages and key pages with no passage box (ladder off, no CogAT bank): 11in, nothing clipped
   {
-    const ctx = mkCtx(K4, { ladders: { reading: { on: true, ready: false } } }), out = gen(K4, ctx), old = genOld(K4, mkCtx(K4, {}));
-    const tagD = (h) => h.replace(/<!-- DAILY PAGE: (\w+) -->\n<div class="page"/g, (m, d) => m.replace('<div class="page"', '<div class="page" data-lab="D|' + d + '"'));
-    const r = run(tagD(out.student), "retired"), r0 = run(tagD(old.student), "beforeRetire"), d = (r || []).filter((p) => /^D\|/.test(p.lab)), d0 = (r0 || []).filter((p) => /^D\|/.test(p.lab));
-    ok("4th-grade daily pages with the old passage retired: 11in, nothing clipped, no empty box (spare now " + d.map((p) => p.spare + "px").join(", ") + "; before " + d0.map((p) => p.spare + "px").join(", ") + ")",
-      d.length === 5 && d.every((p) => p.h === 1056 && p.clip <= 0) && out.student.indexOf('<div class="card card-read">\n      <div class="passage-block">') < 0);
+    const out = gen(K4, mkCtx(K4, {}));
+    const tagD = (h) => h.replace(/<!-- (DAILY PAGE: \w+|PARENT PAGE \d) -->\n<div class="page"/g, (m, d) => m.replace('<div class="page"', '<div class="page" data-lab="D|' + d + '"'));
+    const r = run(tagD(out.student), "nopassage"), rp = run(tagD(out.parent), "nopassageP"), d = (r || []).filter((p) => /^D\|/.test(p.lab)), dp = (rp || []).filter((p) => /^D\|/.test(p.lab));
+    ok("4th-grade daily pages with no passage box: 11in, nothing clipped, no empty box (spare " + d.map((p) => p.spare + "px").join(", ") + ")",
+      d.length === 5 && d.every((p) => p.h === 1056 && p.clip <= 0 && p.wide <= 0) && out.student.indexOf('<div class="card card-read">') < 0);
+    ok("…its two key pages: 11in, nothing clipped (spare " + dp.map((p) => p.spare + "px").join(", ") + ")", dp.length === 2 && dp.every((p) => p.h === 1056 && p.clip <= 0 && p.wide <= 0));
   }
   fs.writeFileSync(path.join(dir, "report.json"), JSON.stringify(report, null, 1));
   console.log("  (per-level numbers also in " + path.join(dir, "report.json") + ")");
