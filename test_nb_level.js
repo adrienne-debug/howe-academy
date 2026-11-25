@@ -105,7 +105,8 @@ console.log("── wiring: one home, the only writer ──");
 ok("the picker is placed once: the top line of the kid's 🎛 Customize card (NB_CUSTOM, 2026-11-24)",
   (src.match(/nbLevelCardHtml\(/g) || []).length === 2 && /\n    nbLevelCardHtml\(kid\)\+   \/\/ 📏 NBLEVEL: Grade\n/.test(src.slice(src.indexOf("// NB_CUSTOM_START"), src.indexOf("// NB_CUSTOM_END"))));
 ok("nbSetGradeOverride is called only from the card", (src.match(/nbSetGradeOverride\(/g) || []).length === 2);
-ok("gradeOverride is touched nowhere outside the block", src.split("gradeOverride").length - 1 === block.split("gradeOverride").length - 1);
+{ const cp0 = src.indexOf("// NB_CUSTOM_COPY_START"), cp1 = src.indexOf("// NB_CUSTOM_COPY_END"), cp = cp0 >= 0 ? src.slice(cp0, cp1) : "";   // NB_CUSTOM_COPY (2026-11-24): "Same as another kid…" copies it, one path (test_nb_customize_copy.js)
+  ok("gradeOverride is touched nowhere outside the block (and the copy)", src.split("gradeOverride").length - 1 === block.split("gradeOverride").length - 1 + cp.split("gradeOverride").length - 1); }
 ok("haNbContext hands the generators ctx.grade + ctx.gradeBand (nbGrade unchanged)",
   /  const nbLv=nbLevelCtx\(kid\);   \/\/ NBLEVEL: ctx\.grade \+ ctx\.gradeBand\n  return \{ nbKidName:cap\(kid\), kidName:/.test(src) && src.indexOf("nbLevel:nbLevelOf(kid), nbGrade:nbGradeOf(kid), grade:nbLv.grade, gradeBand:nbLv.gradeBand, ") > 0);
 ok("the kid's label follows the level in all three places it shows (Generate list, kid chips, section title)",
