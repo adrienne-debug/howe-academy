@@ -39,7 +39,10 @@ const hm=(iso,h,m)=>{ const d=new Date(iso+"T12:00:00"); d.setHours(h,m,0,0); re
 const toMin=s=>{ const m=/(\d+):(\d+)\s*([AP]M)/i.exec(s||""); if(!m) return null; return (+m[1]%12+(m[3].toUpperCase()==="PM"?12:0))*60+ +m[2]; };
 
 // ── the change, and the same file with the change stripped (= the code before it) ──
-const CUT1="    if(typeof scheduleBreakToday===\"function\"&&scheduleBreakToday()) return [];   // \u{1F3D6} KC_BREAK";
+// 📅 BWNOWEEK (break week slice 1, 2026-11-24): the line asks schoolOffToday() — a break day, or a week the board doesn't hold — and the
+// empty line names a no-week day "No school week planned" (it reads _brk, so it is stripped with NEW2a). test_break_week_1.js covers both.
+const CUT1="    if(typeof schoolOffToday===\"function\"&&schoolOffToday()) return [];   // \u{1F3D6} KC_BREAK";
+const NEW2n="      if(!_brk&&typeof boardWeekIsThisWeek===\"function\"&&!boardWeekIsThisWeek()) _brk={name:\"No school week planned\",type:\"noweek\"};   // \u{1F4C5} BWNOWEEK: no break behind it — her answer 1's words\n";
 const NEW2a="      let _brk=null; try{ _brk=(typeof scheduleBreakToday===\"function\")?scheduleBreakToday():null; }catch(e){}   // \u{1F3D6} KC_BREAK: a break day names the break\n";
 const NEW2b="'+(_brk?(_brk.type===\"cleaning\"?'No school today \\u2014 it\\u2019s cleaning day \\u{1F9FD}':'No school today \\u2014 '+esc(_brk.name)+' \\u{1F389}'):'No school cards today \\u{1F389}')+'";
 const OLD2b="No school cards today \\u{1F389}";
@@ -47,12 +50,12 @@ const count=(s,x)=>s.split(x).length-1;
 function strip(src){
   const a=src.indexOf(CUT1); const b=src.indexOf("\n",a);
   let out=src.slice(0,a)+src.slice(b+1);
-  out=out.replace(NEW2a,"").replace(NEW2b,OLD2b);
+  out=out.replace(NEW2a,"").replace(NEW2n,"").replace(NEW2b,OLD2b);
   return out;
 }
 console.log("the change is where it should be");
 ok("_kcTodayCards opens with the break check (once)",count(SRC,CUT1)===1&&SRC.indexOf(CUT1)>SRC.indexOf("function _kcTodayCards(")&&SRC.indexOf(CUT1)<SRC.indexOf("function kcSchoolHTML("));
-ok("kcSchoolHTML's empty line names the break (once each)",count(SRC,NEW2a)===1&&count(SRC,NEW2b)===1&&SRC.indexOf(NEW2b)>SRC.indexOf("function kcSchoolHTML(")&&SRC.indexOf(NEW2b)<SRC.indexOf("function kcChoresHTML("));
+ok("kcSchoolHTML's empty line names the break (once each)",count(SRC,NEW2a)===1&&count(SRC,NEW2n)===1&&SRC.indexOf(NEW2a+NEW2n)>0&&count(SRC,NEW2b)===1&&SRC.indexOf(NEW2b)>SRC.indexOf("function kcSchoolHTML(")&&SRC.indexOf(NEW2b)<SRC.indexOf("function kcChoresHTML("));
 const BASE=strip(SRC);
 ok("stripped, the file has no KC_BREAK left and the old empty line once",BASE.indexOf("KC_BREAK")<0&&count(BASE,"No school cards today \\u{1F389}</div>';")===1&&BASE.length<SRC.length);
 ok("stripped, _kcTodayCards and kcSchoolHTML read as before (the decision is the only line in _kcTodayCards)",
