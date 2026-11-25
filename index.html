@@ -1821,7 +1821,22 @@ let DAY_DT={}; let CONSTRAINT={}; let WIN={default:(window.HA_FAMILY&&window.HA_
 // ── FAMILY IDENTITY — single source of truth. Edit in Admin → Settings → Family (saved to Firebase).
 //    First-boot default comes from family-config.js (per-family deployment); the Howe
 //    literals below are the last-resort fallback if that file is missing. ──
-const FAMILY_DEFAULT = (window.HA_FAMILY && Array.isArray(window.HA_FAMILY.roster) && window.HA_FAMILY.roster.length &&
+// HHKIND_START — a home with no school (her ask 2026-11-24: her mom's house, "she does not have kids there … the household stuff";
+// her "Yes, start step 1" 2026-11-24 — DESIGN_household_edition_2026-11-24.md §5.1, slice 1). family-config.js kind:"household"
+// marks such a home. It is never the Howe app: it needs a familyId of its own. In this slice the kind does three things, and
+// nothing any other family can see (every call site is marked HHKIND):
+//   1. an EMPTY kid list is real. Before, an empty roster in the family file, in the saved copy or in settings/family fell back
+//      to the four Howe kids, and the Kids editor refused to save with nobody on it.
+//   2. Household's "who" list and laundry's people list stay empty of kids, instead of falling back to the Howe four.
+//   3. the weekly build and the 8 PM sweep do not run — there is no school week to build or sweep.
+// Kids can still be added in the Kids editor; the family file's own roster should stay empty for a household (an emptied list
+// is stored as "nothing saved", and nothing saved means the family file's list).
+const HA_HOUSEHOLD = !!(window.HA_FAMILY&&window.HA_FAMILY.kind==="household"&&window.HA_FAMILY.familyId&&window.HA_FAMILY.familyId!=="howe");
+function haHousehold(){ return HA_HOUSEHOLD; }
+function haRosterOk(v){ return Array.isArray(v)&&v.every(function(k){return k&&k.id&&k.name&&k.color;}); }
+// HHKIND_END
+const FAMILY_DEFAULT = HA_HOUSEHOLD ? (haRosterOk(window.HA_FAMILY.roster)?window.HA_FAMILY.roster:[]) :   // HHKIND: a household with no kids listed has no kids
+                       (window.HA_FAMILY && Array.isArray(window.HA_FAMILY.roster) && window.HA_FAMILY.roster.length &&
                         window.HA_FAMILY.roster.every(function(k){return k&&k.id&&k.name&&k.color;}))
   ? window.HA_FAMILY.roster
   : [
@@ -1833,7 +1848,7 @@ const FAMILY_DEFAULT = (window.HA_FAMILY && Array.isArray(window.HA_FAMILY.roste
 // Loaded synchronously from the localStorage cache (kept in sync with Firebase settings/family); defaults to FAMILY_DEFAULT
 const ROSTER_DEF = (function(){
   try{ var v=JSON.parse(HA_LS.getItem("ha_family")||"null");
-       if(Array.isArray(v)&&v.length&&v.every(function(k){return k&&k.id&&k.name&&k.color;})) return v; }catch(e){}
+       if(Array.isArray(v)&&(v.length||HA_HOUSEHOLD)&&v.every(function(k){return k&&k.id&&k.name&&k.color;})) return v; }catch(e){}   // HHKIND: a household's saved empty list counts
   return FAMILY_DEFAULT;
 })();
 const ROSTER       = ROSTER_DEF.map(k=>k.id);                         // all kids, in roster order
@@ -5108,6 +5123,7 @@ function initFb() {
         var str=JSON.stringify(v);
         if(str!==HA_LS.getItem("ha_family")){ HA_LS.setItem("ha_family",str); try{ sessionStorage.setItem("ha_reload_why","family"); }catch(e){} location.reload(); }   // ⏱ CDBOOTS label
       }
+      else if(HA_HOUSEHOLD&&v==null){ var c0=HA_LS.getItem("ha_family"); if(c0&&c0!=="[]"){ HA_LS.setItem("ha_family","[]"); try{ sessionStorage.setItem("ha_reload_why","family-empty"); }catch(e){} location.reload(); } }   // HHKIND: a household's last kid was removed on another device
     });
     db.ref("settings/celebration_songs").on("value",s=>{
       if(s.val()) celebSongs=Object.values(s.val());
@@ -7539,7 +7555,7 @@ function famSave(){
     if(emoji) rec.emoji=emoji; else delete rec.emoji;
     out.push(rec);
   }
-  if(!out.length){ alert("You need at least one kid."); return; }
+  if(!out.length&&!HA_HOUSEHOLD){ alert("You need at least one kid."); return; }   // HHKIND: a household may have none
   var msg=document.getElementById("fam-save-msg"); if(msg){ msg.textContent="Saving…"; msg.style.color="var(--muted)"; }
   HA_LS.setItem("ha_family",JSON.stringify(out));
   var done=function(){ try{ sessionStorage.setItem("ha_reload_why","family-save"); }catch(e){} location.reload(); };   // ⏱ CDBOOTS label
@@ -13799,7 +13815,7 @@ const HH_VERDICTS={keep:["✅","Keep","#15803d"],change:["✏️","Change","#b45
 // HHROSTER (audit 2026-10-24, her "go"): the household "who" list is THIS family's kids in roster order, then Mom, Dad, Up for
 // Grabs — it was Howe's four by name, so Settings ▸ 🧽 Cleaning Day listed Lincoln/Ellis/Lucy/Julian in every family's app and a
 // family's own kids' household jobs would never show. For Howe the list comes out identical.
-const HH_WHO=((typeof ROSTER!=="undefined"&&Array.isArray(ROSTER)&&ROSTER.length)?ROSTER.slice():["lincoln","ellis","lucy","julian"]).concat(["mom","dad","grab"]);
+const HH_WHO=((typeof ROSTER!=="undefined"&&Array.isArray(ROSTER)&&(ROSTER.length||(typeof HA_HOUSEHOLD!=="undefined"&&HA_HOUSEHOLD)))?ROSTER.slice():["lincoln","ellis","lucy","julian"]).concat(["mom","dad","grab"]);   // HHKIND: a household's empty list stays empty
 function hhWhoName(w){ return w==="mom"?"Mom":w==="dad"?"Dad":w==="grab"?"Up for Grabs":((typeof KID_NAME!=="undefined"&&KID_NAME[w])||cap(w)); }
 function hhSlug(l){ return String(l||"").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,96)||"x"; }
 // Ids are "<source>_<slug of the label>"; two rows with the same label on the same list get _2, _3 … so nothing is lost.
@@ -15922,7 +15938,7 @@ function llAddEvery(iso,x){ const e=llEvery(x); if(e.unit==="d") return llAddDay
 function llDue(x,lastIso){ const l=lastIso||(x&&x.last); if(x&&x.next&&/^\d{4}-\d{2}-\d{2}$/.test(x.next)&&(!lastIso||lastIso===(x.last||""))) return x.next; return l?llAddEvery(l,x):""; }
 function llCap(dow){ const c=laundryLine&&laundryLine.caps; const v=c?parseInt(c[dow],10):NaN; return (v>=0&&v<=LL_CAP_MAX)?v:(dow===6?0:1); }   // default: one load Mon–Sat, Sunday off
 // 👤 Who runs a load (step 5). People: Mom, Dad, the kids.
-function llPeople(){ const R=(typeof ROSTER!=="undefined"&&ROSTER&&ROSTER.length)?ROSTER:["lincoln","ellis","lucy","julian"]; return ["mom","dad"].concat(R); }
+function llPeople(){ const R=(typeof ROSTER!=="undefined"&&ROSTER&&(ROSTER.length||(typeof HA_HOUSEHOLD!=="undefined"&&HA_HOUSEHOLD)))?ROSTER:["lincoln","ellis","lucy","julian"]; return ["mom","dad"].concat(R); }   // HHKIND: a household's empty list stays empty
 // "both" = Mom or Dad (her ask 2026-10-18: "a mom or dad choice where it shows up on both"): either parent runs it — it reads
 // "Mom or Dad" everywhere, whoever taps 🫧 Start has it, and 🤒 Mom's sick asks nobody (Dad has it).
 function llDoerChoices(){ const P=llPeople(); return P.slice(0,2).concat(["both"],P.slice(2)); }
@@ -86022,6 +86038,7 @@ let _mlSweepArmed=false;   // ⏩ is a two-tap button: arm, then tap again withi
 const ML_SWEEP_MIN=20*60;
 function _mlSweepDue(nowMin,marker,force){ return !!force||(nowMin>=ML_SWEEP_MIN&&!marker); }
 function mlEveningSweep(force){
+  if(typeof HA_HOUSEHOLD!=="undefined"&&HA_HOUSEHOLD) return false;   // HHKIND: a household has no school day to sweep
   try{
     if(typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return false;
     if(typeof fbTasksLoaded!=="undefined"&&!fbTasksLoaded) return false;
@@ -94771,6 +94788,7 @@ function autoBuildOnDayRoll(){
 }
 let _autoGenTried=false;
 function autoGenerateWeekIfNeeded(){
+  if(typeof HA_HOUSEHOLD!=="undefined"&&HA_HOUSEHOLD) return;   // HHKIND: a household has no school week to build
   if(_autoGenTried) return;
   if(!db||!currData||!currData.subjects||!currData.weekDays||!currData.lessons) return;
   const wn=weekNumForDate(_todayStr());
