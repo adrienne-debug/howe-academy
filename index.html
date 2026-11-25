@@ -3327,7 +3327,28 @@ let SITTER_NAME=window.HA_FAMILY?(window.HA_FAMILY.sitterName||""):"Maggie";
 // turns the rest on in Settings ▸ Pages as the family is ready. Kiosk links (?kiosk=…) ignore this.
 const PAGE_KEYS=["notebook","mastery","units","play","moms-plan","kids","purchases","workbooks","eic","helpers"];   // purchases / workbooks / eic = Mom HQ rows, not top tabs
 const PAGE_LABEL={notebook:"Notebook",mastery:"Mastery",units:"Units",play:"School Room","moms-plan":"Mom's Day",kids:"Kids' Corner",purchases:"Purchases & ESA",workbooks:"Workbooks",eic:"Editor in Chief",helpers:"Helpers"};
-const PAGE_DEFAULT=(function(){ const howe=!(window.HA_FAMILY&&window.HA_FAMILY.familyId&&window.HA_FAMILY.familyId!=="howe"); const d={}; PAGE_KEYS.forEach(k=>{ d[k]=k!=="helpers"&&(howe||k==="moms-plan"||k==="kids"); }); return d; })();   // 🙋 helpers starts off everywhere
+// AREAS_START — 🧩 switches for the areas INSIDE Mom's Day (her ask 2026-11-24: "build this in a way where we could just turn off those
+// other areas"; her "Every family" 2026-11-24 for the Settings chip — slice 2 of DESIGN_household_edition_2026-11-24.md §5.2). Same
+// home as the top-tab switches: settings/pages/<area> = true|false, set from Adrienne's families dashboard, one listener, one saved
+// copy (ha_pages). Every area starts ON for every family, so nothing changes until a switch is turned off — and an area nobody has
+// set is not written into the saved copy either, so a family with no switch set stores exactly what it stored before; a household
+// (HHKIND) starts with School, Chores & Stars and Dad's Day off, and Kids' Corner off. A switch that is off takes away: the area's
+// tab on Mom's Day's menu row, its HQ rows, its way in from other pages (the page falls back to Home Base), and — for School and
+// Chores & Stars — their cards on Home Base. It does NOT stop what the area does elsewhere (a kid's chores, stars, the week build),
+// and kiosk links (?kiosk=…) ignore it, as they ignore the top-tab switches. Every call site is marked 🧩 AREAS.
+// Settings' one home is 🏡 Home Base ▸ ⚙️ Settings for every family (it only had a chip under 🎓 School, which a home with School
+// off would lose); the School chip and HQ still jump to it.
+const AREA_KEYS=["household","chores","kitchen","school","budget","health","dad","seasons"];
+const AREA_LABEL={household:"Household",chores:"Chores & Stars",kitchen:"Kitchen",school:"School",budget:"Budget",health:"Health",dad:"Dad's Day",seasons:"Seasons & Events"};
+const AREA_OFF_HOUSEHOLD=["school","chores","dad"];
+const AREA_VIEWS={house:["household"],chores:["household","chores"],meals:["kitchen"],grocery:["kitchen"],prep:["kitchen"],curr:["school"],hist:["school"],wins:["school"],scor:["school"],mhq:["school"],gen:["school"],
+  budget:["budget"],gifts:["budget"],esa:["budget"],weigh:["health"],dad:["dad"],dadcal:["dad"],dadall:["dad"],dadmast:["dad"],dadgifts:["dad"],seasons:["seasons"]};   // Mom's Day page → the area(s) that must be on
+function areaHome(){ return (typeof HA_HOUSEHOLD!=="undefined")&&HA_HOUSEHOLD; }
+function areaDefaults(d){ if(areaHome()) d.kids=false; return d; }   // the top-tab starting values: a household starts with Kids' Corner off too
+function areaOn(k){ if(AREA_KEYS.indexOf(k)<0) return true; const v=PAGES[k]; return (v===true||v===false)?v:!(areaHome()&&AREA_OFF_HOUSEHOLD.indexOf(k)>=0); }   // set from the dashboard, else its starting value
+function areaViewOn(v){ const a=AREA_VIEWS[v]; return !a||a.every(areaOn); }
+// AREAS_END
+const PAGE_DEFAULT=(function(){ const howe=!(window.HA_FAMILY&&window.HA_FAMILY.familyId&&window.HA_FAMILY.familyId!=="howe"); const d={}; PAGE_KEYS.forEach(k=>{ d[k]=k!=="helpers"&&(howe||k==="moms-plan"||k==="kids"); }); return (typeof areaDefaults==="function")?areaDefaults(d):d; })();   // 🙋 helpers starts off everywhere
 let PAGES=(function(){ try{ const v=JSON.parse(HA_LS.getItem("ha_pages")||"null"); if(v&&typeof v==="object") return Object.assign({},PAGE_DEFAULT,v); }catch(e){} return Object.assign({},PAGE_DEFAULT); })();
 function pageOn(k){ return PAGE_KEYS.includes(k)?PAGES[k]!==false:true; }
 function pagesApply(v,soon){
@@ -3335,6 +3356,7 @@ function pagesApply(v,soon){
   try{ HA_LS.setItem("ha_pages",JSON.stringify(PAGES)); }catch(e){}
   const kiosk=(typeof _kiosk==="function"&&_kiosk())||(typeof _kioskR==="function"&&_kioskR())||(typeof _kioskD==="function"&&_kioskD())||(typeof _kioskK==="function"&&_kioskK());
   if(typeof adminSubTab!=="undefined"&&((!pageOn("purchases")&&adminSubTab==="purchases")||(!pageOn("mastery")&&adminSubTab==="mastery"))) adminSubTab="hq";
+  try{ if(!kiosk&&typeof mpSubView!=="undefined"&&!areaViewOn(mpSubView)) mpSubView="plan"; }catch(e){}   // 🧩 AREAS: the open Mom's Day page was just switched off → Home Base
   if(!kiosk&&!pageOn(tab)) showTab("schedule"); else if(soon) renderAllSoon(); else renderAll();   // RENDERSOON: the listener combines; pagesToggle (a tap) paints now
 }
 function pagesToggle(k){
@@ -7857,6 +7879,7 @@ function hqLinksCard(){
   return h;
 }
 function _hqGroup(emoji,title,rows){
+  if(!rows.join('')) return '';   // 🧩 AREAS: a group with no row left draws no heading
   return '<div class="rules-card"><div style="display:flex;align-items:center;gap:8px;padding:12px 14px;font-family:\'Fraunces\',serif;font-size:15px;font-weight:700">'+
     '<span style="font-size:18px">'+emoji+'</span>'+title+'</div>'+rows.join('')+'</div>';
 }
@@ -7925,6 +7948,7 @@ function giftNowRepaint(){ if(!giftHomeBase()) return; const el=document.getElem
 // one pill under the Schedule page's Today · Week · Month chips, the route, and the loader. No calendar or scheduler code changes —
 // a scheduled idea is an ordinary calendar/events record, which this app only ever displays.
 function mpSeasonsPill(on,pad){
+  if(typeof areaOn==="function"&&!areaOn("seasons")) return '';   // 🧩 AREAS
   return '<div style="padding:'+(pad||'8px 12px 0')+';max-width:520px;margin:0 auto"><button id="mp-seasons-pill" onclick="mpGoto(\'seasons\')" style="width:100%;padding:8px 10px;border-radius:20px;border:2px solid #2B7A78;background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'#2B7A78')+';font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F389} Seasons &amp; Events</button></div>';
 }
 function mpSeasonsBar(){   // the Schedule page's own chips (none lit — this is its fourth page) + the lit pill
@@ -9427,7 +9451,7 @@ function renderMomHQ(el,ah){
   try{ if(typeof haKeyHealHTML==="function") h+=haKeyHealHTML(); }catch(e){}   // 🔤 HAKEY: names with a period or slash saved under the wrong key (only when there are some)
   h+=_hqGroup("🏫","School",[
     _hqB?"":_hqRow("grid","📚","Curriculum","The whole thing — grid, subject cards, pacing & build, rules, add subjects"),   // MPGROUPS: School ▸ Curriculum
-    _hqRow("generate","🪄","Generate Week","Notebooks, week JSON — the week builds itself; change it in 📅 This week"),   // GWGONE
+    ((typeof areaOn!=="function")||areaOn("school"))?_hqRow("generate","🪄","Generate Week","Notebooks, week JSON — the week builds itself; change it in 📅 This week"):"",   // GWGONE · 🧩 AREAS
     (!_hqB&&pageOn("mastery"))?_hqRowFn("setAdminSub('mastery')","🧠","Drills & Mastery","Rules, decks, sessions, cards — all in Mastery HQ"):"",   // School ▸ Mastery ▸ Settings
     (!_hqB&&pageOn("units"))?_hqRow("units","🗺","Unit Studies","Units, decks, activities (🔒 Mom chip inside)"):"",   // School ▸ Units
     (!_hqB&&pageOn("notebook"))?_hqRow("notebook","📓","Notebooks","Extra pages, prong margin, printing (🔒 Mom chip inside)"):"",   // School ▸ Notebooks
@@ -9436,7 +9460,7 @@ function renderMomHQ(el,ah){
   ]);
   h+=_hqGroup("🧹","Home & Chores",[
     _hqB?"":_hqRow("chorePlan","🧹","Chores & Stars","Each kid's lists, Up for Grabs, Star Store, points, rooms & times, Click-off Log"),   // MPGROUPS: Household ▸ Chores & Stars
-    _hqRow("dadsday","👨","Dad's Day","His own checklist plus bills, laundry, dinner and the kids"),
+    ((typeof areaOn!=="function")||areaOn("dad"))?_hqRow("dadsday","👨","Dad's Day","His own checklist plus bills, laundry, dinner and the kids"):"",   // 🧩 AREAS
     _hqB?"":_hqRow("grabs","🙌","Up for Grabs","Stock the grab list kids can claim"),
     _hqB?"":_hqRow("chores","🕵️","Click-off Log","Every check mark, who and when — its own tab on Chores & Stars"),
     pageOn("play")?_hqRow("play","🧸","School Room","Bins, stations, labels (Mom mode inside)"):""
@@ -13197,6 +13221,7 @@ function momGateTry(inp,final){
 }
 function renderMomsPlanView(el){
   mpInit();
+  if(typeof areaViewOn==="function"&&!areaViewOn(mpSubView)&&!(typeof _kioskD==="function"&&_kioskD())) mpSubView='plan';   // 🧩 AREAS: an area that is off has no page — Home Base (asked before the Mom door)
   if(!momGateOpen()){ el.innerHTML=momGateHTML(); setTimeout(function(){ const i=document.getElementById("mg-pin"); if(i) i.focus(); },30); return; }   // 🔒 MOMGATE
   if(typeof MP_SCHOOL_VIEWS!=="undefined"&&MP_SCHOOL_VIEWS[mpSubView]){ return renderMPSchool(el); }   // SCHOOLPAGES: Curriculum · Settings · Purchases · History · Wins · Mastery settings
   if(typeof MP_GROUP_VIEWS!=="undefined"&&MP_GROUP_VIEWS[mpSubView]){ return renderMPGroupPage(el); }   // MPGROUPS: Household ▸ Chores & Stars · Home Base ▸ HQ / Generate Week
@@ -20318,12 +20343,17 @@ function renderMomsDay(el){
   try{ if(kitSettings.orderDay===today) h+=kitOrderCardHTML(true); }catch(e){}
 
   // These five are shared cards now — Dad's Day renders the same ones. See mdCard*.
+  const _arS=(typeof areaOn!=="function")||areaOn("school"), _arK=_arS||areaOn("chores");   // 🧩 AREAS: 🧒 Kids + 🧾 Check-offs go when School AND Chores & Stars are off; 🤝 Together + 📓 Word banks with School
+  if(_arK){   // 🧩 AREAS
   h+=_ss('kids','🧒 Kids');   // STICKYSTACK
   try{ h+=mdCardKidsToday(today,isSchoolDay,true); }catch(e){ h+=mdCardStarBank(true); h+=mdCardKidsToday(today,isSchoolDay); }   // 🧒 KIDBAR (folds ⭐ Star Bank into 🧒 Kids today)
   h+=_ss('checklog','🧾 Check-offs');   // STICKYSTACK
   try{ h+=mdCardCheckLog(); }catch(e){}   // 🧾 Today's check-offs · −100
+  }   // 🧩 AREAS
+  if(_arS){   // 🧩 AREAS
   h+=_ss('together','🤝 Together');   // STICKYSTACK
   try{ h+=mdCardTogether(); }catch(e){}   // 🤝 Together
+  }   // 🧩 AREAS
 
   // ── 📖 Mom's school schedule — the SAME two-column agenda as Schedule ▸
   // Mom, pinned to today. taskCard/tapTask are shared, so a check-off here is
@@ -20379,8 +20409,10 @@ function renderMomsDay(el){
     }
   }catch(e){}
 
+  if(_arS){   // 🧩 AREAS
   h+=_ss('banks','📓 Word banks');   // STICKYSTACK
   try{ h+=nbBankLowAlertHTML(); }catch(e){}   // 📓 a notebook word bank about to run out of unused words
+  }   // 🧩 AREAS
   // 💳 Bills + 🧺 Laundry now live in shared card functions (Dad's Day renders the same two).
   h+=_ss('bills','💳 Bills');   // STICKYSTACK
   h+=mdCardBills(iso);
@@ -27219,18 +27251,19 @@ function _calPageBody(){
 }
 // 📱 PHONEWIDTH (her yes 2026-10-06): the tab row wraps on a phone instead of widening the whole page (pop-ups ran off the right edge).
 function mpSubnav(active){
+  const _ao=k=>(typeof areaOn!=="function")||areaOn(k);   // 🧩 AREAS: a tab whose area is off is not drawn
   if(active==='cal'&&typeof schedShowAdmin!=="undefined"&&schedShowAdmin&&typeof adminSubTab!=="undefined"&&adminSubTab==="curriculum") active='curriculum';   // SCHOOLTAB: ▸ Schedule ▸ Admin ▸ Curriculum shows as 🎓 School ▸ Curriculum
   const btn=(v,lbl)=>`<button onclick="mpGoto('${v}')" style="flex:1 1 auto;white-space:nowrap;padding:9px 6px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:none;border-radius:9px;cursor:pointer;color:${active===v?'#fff':'#9ca3af'};background:${active===v?'#2B7A78':'transparent'};transition:all .2s;white-space:nowrap">${lbl}</button>`;
   const kit=(typeof MP_KITCHEN!=="undefined")&&MP_KITCHEN.indexOf(active)>=0;   // KITCHENTAB: on Menu / Shopping List / Prep the 🍳 Kitchen tab is the lit one
   const sch=(typeof MP_SCHOOL!=="undefined")&&MP_SCHOOL.indexOf(active)>=0;     // SCHOOLTAB: on Notebooks / Mastery / Units / Curriculum the 🎓 School tab is
   const tbtn=(on,click,lbl)=>`<button onclick="${click}" style="flex:1 1 auto;white-space:nowrap;padding:9px 6px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:none;border-radius:9px;cursor:pointer;color:${on?'#fff':'#9ca3af'};background:${on?'#2B7A78':'transparent'};transition:all .2s">${lbl}</button>`;
   const kbtn=tbtn(kit,"mpGoto(mpKitchenLast())",'🍳 Kitchen'), sbtn=tbtn(sch,"mpSchoolOpen(mpSchoolLast())",'🎓 School');
-  const home=(active==='plan'||active==='hq'||active==='gen'), house=(active==='house'||active==='chores'), hlth=(active==='weigh');   // MPGROUPS: each top tab with a sub-row
+  const home=(active==='plan'||active==='hq'||active==='gen'||active==='sset'), house=(active==='house'||active==='chores'), hlth=(active==='weigh');   // MPGROUPS: each top tab with a sub-row
   const hbtn=tbtn(home,"mpGoto('plan')",'🏡 Home Base'), hsbtn=tbtn(house,"mpGoto('house')",'🧹 Household'), hlbtn=tbtn(hlth,"mpGoto('weigh')",'❤️ Health');   // ❤️ Health (was ⚖️ Weigh-In — now its first sub-tab)
   const bud=(typeof MP_BUDGET!=="undefined")?MP_BUDGET.indexOf(active)>=0:active==='gifts';   // BUDGETTAB: on Overview / Gifts / ESA the 💰 Budget tab is the lit one
   const gbtn=tbtn(bud,(typeof mpBudgetLast==="function")?"mpGoto(mpBudgetLast())":"mpGoto('gifts')",'💰 Budget');   // GIFTS (her ask 2026-11-20: "a new tab in Mom's Day called budget") · BUDGETTAB: reopens the last Budget page
   const sub=(kit&&typeof mpKitchenRow==="function")?mpKitchenRow(active):((sch&&typeof mpSchoolRow==="function")?mpSchoolRow(active):((bud&&typeof mpBudgetRow==="function")?mpBudgetRow(active):((typeof mpGroupRow==="function")?mpGroupRow(active):'')));   // MPSUBROW: inside the sticky element
-  return `<div id="mp-subnav" style="background:#fff;border-bottom:2px solid #DEF2F1"><div class="mp-row" style="display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px">${hbtn}${btn('cal','🗓 Schedule')}${hsbtn}${kbtn}${sbtn}${gbtn}${hlbtn}</div>${sub}</div>`;
+  return `<div id="mp-subnav" style="background:#fff;border-bottom:2px solid #DEF2F1"><div class="mp-row" style="display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px">${hbtn}${btn('cal','🗓 Schedule')}${_ao('household')?hsbtn:''}${_ao('kitchen')?kbtn:''}${_ao('school')?sbtn:''}${_ao('budget')?gbtn:''}${_ao('health')?hlbtn:''}</div>${sub}</div>`;
 }
 // KITCHENTAB_START — one 🍳 Kitchen tab on Mom's Day's menu row in place of Meals · Shopping List · Prep; those three become its own
 // sub-row, pinned right under the menu row (her ask 2026-11-02: "Menu, Shopping list and Prep need a central title tab with those three
@@ -27266,7 +27299,7 @@ const MP_SCHOOL=['notebook','mastery','units','curriculum','settings','history',
 const MP_SCHOOL_VIEWS={curr:'curriculum',sset:'settings',hist:'history',wins:'wins',scor:'scores',mhq:'mhq'};   // SCORESPAGE: scor → 📊 Scores   // Mom's Day sub-view → School chip
 const MP_SCHOOL_SUBS={curriculum:'The whole curriculum \u2014 grid, subject cards, pacing, rules',settings:'Kids, codes, page switches, family rules',history:'Completed work, trends, attendance, the weekly report',wins:'Stars, trophies and book progress',scores:'Where each kid is \u2014 right %, ladder, week, minutes, load',mhq:'Mastery settings \u2014 rules, decks, sessions, cards'};
 function mpSchoolSub(t){ for(const k in MP_SCHOOL_VIEWS) if(MP_SCHOOL_VIEWS[k]===t) return k; return null; }   // chip → its Mom's Day sub-view, null for a framed tab
-function mpSchoolLast(){ let v=null; try{ v=HA_LS.getItem('ha_mp_school'); }catch(e){} return MP_SCHOOL.indexOf(v)>=0?v:'notebook'; }
+function mpSchoolLast(){ let v=null; try{ v=HA_LS.getItem('ha_mp_school'); }catch(e){} return (MP_SCHOOL.indexOf(v)>=0&&v!=='settings')?v:'notebook'; }
 function mpSchoolNote(t){ if(MP_SCHOOL.indexOf(t)<0) return; try{ HA_LS.setItem('ha_mp_school',t); }catch(e){} }
 function mpSchoolRow(active){
   const chip=(on,t,lbl)=>`<button onclick="mpSchoolOpen('${t}')" style="flex:0 0 auto;white-space:nowrap;padding:6px 12px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:1.5px solid ${on?'#2B7A78':'transparent'};border-radius:20px;cursor:pointer;color:${on?'#1f5e5c':'#6b7280'};background:${on?'#DEF2F1':'transparent'}">${lbl}</button>`;
@@ -27280,7 +27313,7 @@ function mpSchoolRow(active){
 function mpSchoolOpen(t){
   if(t==='purchases'&&typeof mpEsaOpen==="function"){ mpEsaOpen(); return; }   // BUDGETTAB: an old Purchases door lands in 💰 Budget
   if(MP_SCHOOL.indexOf(t)<0) t='notebook';
-  mpSchoolNote(t);
+  if(t!=='settings') mpSchoolNote(t);   // 🧩 AREAS: Settings is a jump to Home Base, not School's last page
   const v=mpSchoolSub(t);
   if(v){ if(t==='curriculum'){ try{ currInnerTab='grid'; }catch(e){} } mpGoto(v); return; }   // a Mom's Day page of its own (the Curriculum chip lands on the grid)
   mdFrameOpen(t);   // the tab itself (Notebooks / Mastery / Units), under Mom's Day's banner + menu
@@ -27302,7 +27335,7 @@ function mpSchoolKidRow(){
 }
 function renderMPSchool(el){
   const key=MP_SCHOOL_VIEWS[mpSubView]||'curriculum';
-  const top=mwBanner(MP_SCHOOL_SUBS[key]||'')+mpSubnav(key);
+  const top=mwBanner(MP_SCHOOL_SUBS[key]||'')+mpSubnav(key==='settings'?'sset':key);   // 🧩 AREAS: Settings is lit under 🏡 Home Base
   if(key==='curriculum'){ renderCurriculumView(el,top); return; }   // bare (mpCurrBare): no Grid bar, stickies under the menu
   if(key==='settings'){ renderSettings(el,top); return; }
   if(key==='mhq'){ renderMasteryHQ(el,top); return; }
@@ -27328,8 +27361,8 @@ const MP_GROUP_VIEWS={chores:1,hq:1,gen:1};
 var _hqFromMP=false;   // the last HQ jump left from Mom's Day ▸ HQ (the ← HQ pill comes back here, not to the Schedule's Admin)
 function mpGroupRow(active){
   const chip=(on,click,lbl)=>`<button onclick="${click}" style="flex:0 0 auto;white-space:nowrap;padding:6px 12px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:1.5px solid ${on?'#2B7A78':'transparent'};border-radius:20px;cursor:pointer;color:${on?'#1f5e5c':'#6b7280'};background:${on?'#DEF2F1':'transparent'}">${lbl}</button>`;
-  if(active==='plan'||active==='hq'||active==='gen') return `<div id="mp-home-row" class="mp-sub">${chip(active==='plan',"mpGoto('plan')",'🏡 Today')}${chip(active!=='plan',"mpGoto('hq')",'🗺 HQ')}</div>`;
-  if(active==='house'||active==='chores') return `<div id="mp-house-row" class="mp-sub">${chip(active==='house',"mpGoto('house')",'🧹 Household')}${chip(active==='chores',"mpGoto('chores')",'⭐ Chores & Stars')}</div>`;
+  if(active==='plan'||active==='hq'||active==='gen'||active==='sset') return `<div id="mp-home-row" class="mp-sub">${chip(active==='plan',"mpGoto('plan')",'🏡 Today')}${chip(active==='hq'||active==='gen',"mpGoto('hq')",'🗺 HQ')}${chip(active==='sset',"mpGoto('sset')",'⚙️ Settings')}</div>`;   // 🧩 AREAS: ⚙️ Settings' home, every family
+  if(active==='house'||active==='chores') return `<div id="mp-house-row" class="mp-sub">${chip(active==='house',"mpGoto('house')",'🧹 Household')}${((typeof areaOn!=="function")||areaOn('chores'))?chip(active==='chores',"mpGoto('chores')",'⭐ Chores & Stars'):''}</div>`;
   if(active==='weigh') return `<div id="mp-health-row" class="mp-sub">${chip(true,"mpGoto('weigh')",'⚖️ Weigh-In')}</div>`;
   return '';
 }
@@ -50497,8 +50530,8 @@ function nbLevelCardHtml(kid){
 //   · The level: the one Mom picked (lv), else the kid's notebook grade (nbLevelGrade — Mom's override or the Family grade, not
 //     today's fallback) through HoweNotebooks.ladders.defaultLevel; neither → "Pick a level".
 //   · ctx.ladders (haNbContext): { reading|number: { on, lv, lvFrom, opt, cur, ready, next } } for the kid's saved ladders, or
-//     null. next = ladders.next(…) for the target week when the ladder is on and loaded. Only the 1st-grade notebook reads it
-//     (reading, NBLADREAD); every other notebook and the number ladder print nothing yet.
+//     null. next = ladders.next(…) for the target week when the ladder is on and loaded. The 1st-grade notebook reads reading
+//     (NBLADREAD); the Pre-K / K and 1st-grade notebooks read number (NBLADNUM, after NBNAME); every other notebook prints nothing new.
 //   · The card's note says per notebook what prints (NBLADREAD's note); NBLADDER_PAGES_NOTE is the "not yet" wording.
 const NBLADDER_FILES={reading:"ladders/read_and_answer.json",number:"ladders/number_thinking.json"};
 const NBLADDER_KINDS=["reading","number"];
@@ -50536,9 +50569,9 @@ function nbLadderLevelOf(kid,kind){
   const d=nbLadderDefault(kid,kind);
   return d?{lv:d,from:"grade"}:{lv:"",from:""};
 }
-function nbLadderState(kid,kind){ const s=nbLadderSaved(kid,kind), lv=nbLadderLevelOf(kid,kind); return {on:s.on===true, lv:lv.lv||null, lvFrom:lv.from||null, opt:s.opt===true, cur:(s.cur&&typeof s.cur==="object")?s.cur:null, days:(typeof s.days==="string"&&s.days)?s.days:null}; }   // 📖 NBLADREAD: days = the reading pages' day ticks
+function nbLadderState(kid,kind){ const s=nbLadderSaved(kid,kind), lv=nbLadderLevelOf(kid,kind); return {on:s.on===true, lv:lv.lv||null, lvFrom:lv.from||null, opt:s.opt===true, cur:(s.cur&&typeof s.cur==="object")?s.cur:null, days:(typeof s.days==="string"&&s.days)?s.days:null, wf:(s.wf==="one"||s.wf==="both")?s.wf:null}; }   // 📖 NBLADREAD: days = the reading pages' day ticks · ✍️ NBLADREAD3: wf = write-first days
 // For haNbContext: the kid's saved ladders + this week's items when on and loaded; null when nothing is saved. Only the 1st-grade
-// notebook reads it (reading — NBLADREAD).
+// notebook reads reading (NBLADREAD); the Pre-K / K and 1st-grade notebooks read number (NBLADNUM).
 function nbLadderCtx(kid){
   try{
     const L=nbLadderLib(), out={}; let any=false;
@@ -50554,7 +50587,7 @@ function nbLadderCtx(kid){
 }
 // The one writer: ONE targeted field of notebookSettings/<kid>/ladders/<kind>. false / "" / null = remove (nothing saved = off).
 function nbLadderWrite(kid,kind,field,val){
-  if(!momHere()||!NBLADDER_FILES[kind]||["on","lv","opt","cur","days"].indexOf(field)<0) return false;   // 📖 NBLADREAD: + days (the reading pages' day ticks)
+  if(!momHere()||!NBLADDER_FILES[kind]||["on","lv","opt","cur","days","wf"].indexOf(field)<0) return false;   // 📖 NBLADREAD: + days (the reading pages' day ticks) · ✍️ NBLADREAD3: + wf (write-first days)
   if(!notebookSettings[kid]) notebookSettings[kid]={};
   const ns=notebookSettings[kid]; if(!ns.ladders||typeof ns.ladders!=="object") ns.ladders={};
   if(!ns.ladders[kind]||typeof ns.ladders[kind]!=="object") ns.ladders[kind]={};
@@ -50609,6 +50642,7 @@ function nbLadderRowHtml(kid,kind){
       '<select onchange="nbLadderSetLevel(\''+kid+'\',\''+kind+'\',this.value)" style="padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:11.5px;background:#fff;'+F+'">'+first+opts+'</select></label>'+
     '<div style="font-size:11.5px;color:#374151;margin-top:5px">'+nbLadderWhereText(kid,kind,t,st)+'</div>'+optHtml+
     ((kind==="reading"&&typeof nbLadReadDaysHtml==="function")?nbLadReadDaysHtml(kid):"")+   // 📖 NBLADREAD: the day ticks (a notebook that prints reading)
+    ((kind==="reading"&&typeof nbLadReadWfHtml==="function")?nbLadReadWfHtml(kid):"")+   // ✍️ NBLADREAD3: write-first days (levels g3 and up)
     '<div style="margin-top:7px">'+place+'</div></div>';
 }
 // The one home: this kid's section of the Notebook tab, Mom only, after the Notebook level card. Closed, it reads only the saved
@@ -50695,26 +50729,29 @@ function nbLadReadDaysHtml(kid){
 }
 // The card's note: what this kid's notebook prints.
 function nbLadReadNoteHtml(kid){
-  if(!nbLadReadPrints(kid)) return NBLADDER_PAGES_NOTE;
+  if(!nbLadReadPrints(kid)) return (typeof nbLadNumNoteHtml==="function")?nbLadNumNoteHtml(kid):NBLADDER_PAGES_NOTE;   // 🔢 NBLADNUM: a Pre-K / K notebook prints number questions
   const st=nbLadderState(kid,"reading"), t=nbLadderTrack("reading"), L=nbLadderLib(), w=(st.lv&&t&&L)?L.where(t,st):null;
   const read=(w&&w.end)?"📖 Reading passages: the last level is finished, so no reading page prints."
     :st.on?"📖 Reading passages: prints in the notebook on "+nbLadReadDaysWord(kid)+" — one passage a day, with the answers on a Teaching Companion page."
     :"📖 Reading passages: when it’s on, it prints in the notebook on "+nbLadReadDaysWord(kid)+".";
-  return read+'<div style="margin-top:3px">🔢 '+NBLADREAD_NUM_NOTE+'</div>';
+  return read+'<div style="margin-top:3px">🔢 '+((typeof nbLadNumNote==="function")?nbLadNumNote(kid):NBLADREAD_NUM_NOTE)+'</div>';   // 🔢 NBLADNUM: the number line
 }
 // Before a Mom build: the reading file is here when this kid's notebook will print it. → "" or the plain note for Mom.
 async function nbLadReadReady(kid){
-  if(nbLadderSaved(kid,"reading").on!==true||!nbLadReadPrints(kid)) return "";
-  try{ await nbLadderLoad("reading"); return ""; }catch(e){ return NBLADREAD_LOAD_FAIL; }
+  const nm=(typeof nbLadNumReady==="function")?await nbLadNumReady(kid):"";   // 🔢 NBLADNUM: the number questions too (their own note)
+  if(nbLadderSaved(kid,"reading").on!==true||!nbLadReadPrints(kid)) return nm;
+  try{ await nbLadderLoad("reading"); return nm; }catch(e){ return NBLADREAD_LOAD_FAIL+(nm?" "+nm:""); }
 }
 async function nbLadReadReadyAll(){   // the combined parent guide: any kid whose notebook prints reading
+  const nm=(typeof nbLadNumReadyAll==="function")?await nbLadNumReadyAll():"";   // 🔢 NBLADNUM
   const any=Object.keys(notebookSettings||{}).some(k=>nbLadderSaved(k,"reading").on===true&&nbLadReadPrints(k));
-  if(!any) return "";
-  try{ await nbLadderLoad("reading"); return ""; }catch(e){ return NBLADREAD_LOAD_FAIL; }
+  if(!any) return nm;
+  try{ await nbLadderLoad("reading"); return nm; }catch(e){ return NBLADREAD_LOAD_FAIL+(nm?" "+nm:""); }
 }
 function nbLadReadNote(out,msg){ if(out&&msg) out.warnings=(out.warnings||[]).concat([msg]); }
 // After a Mom build: save where this week's passages landed (the reading ladder's "cur"), only when it changed.
 function nbLadReadPersist(kid,out){
+  if(typeof nbLadNumPersist==="function") nbLadNumPersist(kid,out);   // 🔢 NBLADNUM: the number ladder's place, same moment
   try{
     if(!out||!out.readingCursor||!momHere()||typeof db==="undefined"||!db||_dryRun()) return;
     const oc=nbLadderSaved(kid,"reading").cur||{}, nc=out.readingCursor;
@@ -50723,6 +50760,37 @@ function nbLadReadPersist(kid,out){
   }catch(e){}
 }
 // NBLADREAD_END
+// NBLADREAD3_START — ✍️ write-first days for the reading passages, slice 3 of the notebook ladders (notebooks study, her words
+// 2026-11-23/24: from 3rd grade up "Write first some days"). notebooks.js NBLADREAD3 prints the Read and answer page in the 4th-
+// and 6th-grade notebooks too (the card's note follows HoweNotebooks.ladderPages, so it now says where it prints for them) and
+// prints write-first days in all three. This block is the card's one home for the choice:
+//   · "Write first: never · one day a week · both days" on the READING row, only for a notebook that prints reading and only
+//     while the child's place is at a 3rd-grade level or higher (a 1st/2nd-grade page always shows its choices).
+//   · Saved as ONE field — the reading ladder's "wf" = "one" | "both"; never = the field removed — through nbLadderWrite (Mom only,
+//     one targeted field, inert under ?dryrun=1). Nothing saved = never. "One day a week" = the week's 2nd reading day.
+const NBLADREAD3_WF=[["","Never"],["one","One day a week"],["both","Both days"]];
+function nbLadReadWfOf(kid){ const v=nbLadderSaved(kid,"reading").wf; return (v==="one"||v==="both")?v:""; }
+// The level the child's next page is at (the ladder moves up by itself), or "" when there is none.
+function nbLadReadWfLevel(kid){
+  const st=nbLadderState(kid,"reading"), t=nbLadderTrack("reading"), L=nbLadderLib();
+  if(!st.lv) return ""; const w=(t&&L)?L.where(t,st):null;
+  if(w&&(w.end||w.stop)) return ""; return String((w&&w.lv)||st.lv);
+}
+function nbLadReadWfShown(kid){ const lv=nbLadReadWfLevel(kid); return nbLadReadPrints(kid)&&!!lv&&!/^g[12]$/.test(lv); }
+function nbLadReadSetWf(kid,v){
+  if(!momHere()||["","one","both"].indexOf(v)<0||v===nbLadReadWfOf(kid)) return;
+  nbLadderWrite(kid,"reading","wf",v||null);
+  nbLadderRepaint();
+}
+function nbLadReadWfHtml(kid){
+  if(!nbLadReadWfShown(kid)) return "";
+  const cur=nbLadReadWfOf(kid), F='font-family:\'DM Sans\',sans-serif';
+  const btn=o=>{ const on=o[0]===cur;
+    return '<button onclick="nbLadReadSetWf(\''+kid+'\',\''+o[0]+'\')" style="padding:4px 10px;border-radius:20px;border:1.5px solid '+(on?'#4338ca':'var(--border)')+';background:'+(on?'#e0e7ff':'#fff')+';color:'+(on?'#3730a3':'#6b7280')+';font-size:11px;font-weight:800;cursor:pointer;'+F+'">'+o[1]+'</button>'; };
+  return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;font-weight:700;color:#1f2937">Write first:'+NBLADREAD3_WF.map(btn).join("")+'</div>'+
+    '<div style="font-size:10.5px;font-weight:600;color:var(--muted);margin-top:3px;line-height:1.4">On a write-first day, the questions marked for it print with lines: the child writes an answer first, and their choices are on the back of the sheet to check against. One day a week = the second reading day. Never on a 1st- or 2nd-grade page.</div>';
+}
+// NBLADREAD3_END
 // NBNAME_START — the name in a Pre-K notebook, set on the Notebook tab (her ask 2026-11-10: "can we also have the option on
 // notebooks for caleb 3d and julian to edit the name, so 3d will be David in his notebook"). Mom only. Save writes ONE targeted
 // path, notebookSettings/<kid>/notebookName (removed by "Use the family name"); dry-run inert; the local notebookSettings is kept
@@ -50757,6 +50825,57 @@ function nbClearName(kid){ if(!momHere()) return;
   if(tab==="notebook"){ const c=document.getElementById("content"); if(c) renderNotebook(c); }
 }
 // NBNAME_END
+// NBLADNUM_START — 🔢 number questions in the notebook, slice 4 of the notebook ladders (notebooks study, her words 2026-11-23/24:
+// "Build it"; number questions "5 a week"; Pre-K and K done with a grown-up). notebooks.js NBLADNUM prints a "Number thinking" page
+// in the Pre-K / K notebooks (every look) and the 1st-grade notebook from the number ladder haNbContext hands it; this block is the
+// app's side of it, the same shape as NBLADREAD's for reading:
+//   · Which notebooks print it: asked of notebooks.js (HoweNotebooks.ladderPages(kid).number), never a list of kids here. The
+//     card's note says so on the number line; every other notebook keeps the "not yet" wording.
+//   · Every Mom build (Print / Look, PDF, tablet send, the combined parent guide) waits for the number file first when that kid's
+//     number ladder is on and the notebook prints it — nbLadReadReady / nbLadReadReadyAll ask here. A failed load builds exactly
+//     as before (no number page) plus a plain note for Mom.
+//   · The place: the builder reports out.numberLadderCursor only when the page prints; nbLadReadPersist hands it here and it is
+//     saved as the number ladder's "cur" through nbLadderWrite — only when it changed, Mom only, one field, never under ?dryrun=1.
+const NBLADNUM_LOAD_FAIL="The number questions couldn’t load (check the internet), so the Number thinking page and its answers aren’t in this build — everything else is as usual. Build it again once you’re online; the Ladders card on the Notebook tab shows when they’re back.";
+function nbLadNumPrints(kid){
+  try{ const N=window.HoweNotebooks; if(!N||typeof N.ladderPages!=="function") return false;
+    const r=N.ladderPages(kid,{notebookTheme:nbThemeOf(kid),nbLevel:nbLevelOf(kid)}); return !!(r&&r.number); }catch(e){ return false; }
+}
+// The number line of the card's note: what this kid's notebook prints.
+function nbLadNumNote(kid){
+  if(!nbLadNumPrints(kid)) return NBLADREAD_NUM_NOTE;
+  const st=nbLadderState(kid,"number"), t=nbLadderTrack("number"), L=nbLadderLib(), w=(st.lv&&t&&L)?L.where(t,st):null, n=(L&&L.perWeek&&L.perWeek.number)||5;
+  if(w&&w.end) return "Number thinking: the last level is finished, so no number page prints.";
+  if(w&&w.stop) return "Number thinking: the ladder is at the question bank, so no number page prints until you pick the next level.";
+  const grown=/^(prek|k)$/.test(String((w&&w.lv)||st.lv||""));
+  return (st.on?"Number thinking: prints in the notebook":"Number thinking: when it’s on, it prints in the notebook")+" as a page of its own — "+n+" questions a week"+
+    (grown?", done with a grown-up who reads each one aloud":", read by the child")+" — with the answers on a page for you in the parent copy.";
+}
+// The whole note for a notebook that prints number questions but not reading (a Pre-K / K notebook).
+function nbLadNumNoteHtml(kid){
+  if(!nbLadNumPrints(kid)) return NBLADDER_PAGES_NOTE;
+  return "📖 Reading passages: don’t print in this notebook."+'<div style="margin-top:3px">🔢 '+nbLadNumNote(kid)+'</div>';
+}
+// Before a Mom build: the number file is here when this kid's notebook will print it. → "" or the plain note for Mom.
+async function nbLadNumReady(kid){
+  if(nbLadderSaved(kid,"number").on!==true||!nbLadNumPrints(kid)) return "";
+  try{ await nbLadderLoad("number"); return ""; }catch(e){ return NBLADNUM_LOAD_FAIL; }
+}
+async function nbLadNumReadyAll(){   // the combined parent guide: any kid whose notebook prints number questions
+  const any=Object.keys(notebookSettings||{}).some(k=>nbLadderSaved(k,"number").on===true&&nbLadNumPrints(k));
+  if(!any) return "";
+  try{ await nbLadderLoad("number"); return ""; }catch(e){ return NBLADNUM_LOAD_FAIL; }
+}
+// After a Mom build: save where this week's questions landed (the number ladder's "cur"), only when it changed.
+function nbLadNumPersist(kid,out){
+  try{
+    if(!out||!out.numberLadderCursor||!momHere()||typeof db==="undefined"||!db||_dryRun()) return;
+    const oc=nbLadderSaved(kid,"number").cur||{}, nc=out.numberLadderCursor;
+    if(oc.week===nc.week&&oc.lv===nc.lv&&oc.from===nc.from&&oc.adv===nc.adv&&oc.opt===nc.opt) return;
+    nbLadderWrite(kid,"number","cur",nc);
+  }catch(e){}
+}
+// NBLADNUM_END
 // NB_COUNTPIC_START — what the Pre-K number card counts, per kid, for any look (looks study §4 row 4; her answer 2026-11-24:
 // "Make it a setting"). notebookSettings/<kid>/countPic = "animal" | "picture"; nothing saved = the look's own rule (construction
 // counts the counting picture, every other look the animal of the day), so nothing prints differently until Mom taps. The answer
