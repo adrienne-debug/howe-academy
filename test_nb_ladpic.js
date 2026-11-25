@@ -33,7 +33,9 @@ ok("no DOM, no Firebase, no emoji in the block's code", !/db\.ref|firebase|docum
 ok("no brand or character words", !/disney|lego|pokemon|marvel|barbie|sesame|paw patrol|peppa|crayola/i.test(blk));
 // the call sites outside the block: each guarded by typeof, so the tree with the block cut out prints what it printed before
 const CALLS = ['(typeof ladPicQ === "function") ? ladPicQ(q, qn, x.lv) : null', '(typeof LADPIC_HOW === "string" && body.indexOf("lp-pq") >= 0) ? LADPIC_HOW : ', '((typeof ladPicKeyNote === "function") ? ladPicKeyNote(q, x.lv) : "")'];
-const rest = nbSrc.slice(0, b0) + nbSrc.slice(b1);
+const n0 = nbSrc.indexOf("  // NBLADNUM_START"), n1 = nbSrc.indexOf("  // NBLADNUM_END\n");   // slice 4 draws these pictures on the notebook page, typeof-guarded in its own block — test_nb_ladnum.js
+const noNum = (s) => { const a = s.indexOf("  // NBLADNUM_START"), z = s.indexOf("  // NBLADNUM_END\n"); return a >= 0 && z > a ? s.slice(0, a) + s.slice(z) : s; };
+const rest = noNum(nbSrc.slice(0, b0) + nbSrc.slice(b1));
 ok("three guarded call sites in the placement builder, nothing else names the block's functions", CALLS.every((c) => rest.split(c).length === 2) &&
   (rest.match(/\bladPicQ\b|\bladPicKeyNote\b|\bLADPIC_HOW\b|\bladPicture\b|\blpGlyph\b|\bLADPIC_CSS\b/g) || []).length === 6);
 
@@ -214,7 +216,8 @@ ok("the drawing never sees the answer (the picture function's code never reads .
 // ════════════════════════════════════════ byte for byte ════════════════════════════════════════
 console.log("── every notebook = this tree minus NBLADPIC ──");
 const base = nbSrc.slice(0, b0) + nbSrc.slice(b1 + "  // NBLADPIC_END\n".length);
-ok("the baseline has no trace of the block (only the guarded call sites)", !/NBLADPIC_|ladPicture|lpGlyph|LADPIC_CSS/.test(code(base)) && base.length < nbSrc.length - 10000);
+ok("the baseline has no trace of the block (only the guarded call sites)", !/NBLADPIC_|ladPicture|lpGlyph|LADPIC_CSS/.test(code(noNum(base))) && base.length < nbSrc.length - 10000 &&
+  (code(base).match(/\bladPicture\b|\bLADPIC_OWN_TEXT\b/g) || []).length === (code(nbSrc.slice(n0, n1)).match(/\bladPicture\b|\bLADPIC_OWN_TEXT\b/g) || []).length && /typeof ladPicture === "function"/.test(nbSrc.slice(n0, n1)));
 const NB0 = load(base);
 ok("the baseline has no picture function and loads", NB0 && NB0.ladders && NB0.ladders.picture === undefined);
 const dates = { monday: "November 16", tuesday: "November 17", wednesday: "November 18", thursday: "November 19", friday: "November 20" };
@@ -229,7 +232,8 @@ const GENS = Object.keys(NB.GENERATORS).map((k) => [k]).concat(themes.map((th) =
 ok("every generator + every Pre-K look + a starter notebook (" + GENS.length + ")", GENS.length >= Object.keys(NB.GENERATORS).length + 2 && themes.length >= 1);
 for (const [kid, extra] of GENS) {
   const was = all(NB0.generate(kid, mk(kid, extra)));
-  ok(kid + ": student + guide = before, ladders or not", all(NB.generate(kid, mk(kid, extra))) === was && all(NB.generate(kid, mk(kid, Object.assign({ ladders: LCTX }, extra)))) === all(NB0.generate(kid, mk(kid, Object.assign({ ladders: LCTX }, extra)))));
+  const lc = NB.ladderPages(kid, extra || {}).number ? { reading: LCTX.reading } : LCTX;   // a notebook that prints number questions draws these pictures — test_nb_ladnum.js
+  ok(kid + ": student + guide = before, ladders or not", all(NB.generate(kid, mk(kid, extra))) === was && all(NB.generate(kid, mk(kid, Object.assign({ ladders: lc }, extra)))) === all(NB0.generate(kid, mk(kid, Object.assign({ ladders: lc }, extra)))));
 }
 {
   const byKid = {}; Object.keys(NB.GENERATORS).forEach((k) => (byKid[k] = mk(k)));
