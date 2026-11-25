@@ -29,7 +29,7 @@ const dOf = n => new Date(2026, 10, 16 + n), isoN = n => { const d = dOf(n); ret
 const go = (w, n, h, mi) => { const d = dOf(n); return w.at(d.getFullYear(), d.getMonth() + 1, d.getDate(), h, mi || 0); };
 const writes = (w, m) => w.since(m).map(l => l.op + " " + l.path + " " + (l.keys || []).slice().sort().join(","));
 const R = (d, expr) => JSON.parse(d.run("JSON.stringify((function(){ " + expr + " })())"));
-const mkW = async (kind, mode, o) => { o = o || {}; const w = await F.world(kind, mode, o); const A = w.boot("A", "devA", { mom: true }), B = w.boot("B", "devB"); A.run(o.hjs || HJS); await w.flush();
+const mkW = async (kind, mode, o) => { o = o || {}; const w = await F.world(kind, mode, Object.assign({ longPlan: true }, o));   /* 📅 LISTWK: 60 school days (test_fixtures/house_world.js) */ const A = w.boot("A", "devA", { mom: true }), B = w.boot("B", "devB"); A.run(o.hjs || HJS); await w.flush();
   if (o.sw) { A.run("hgOpen(); hgSwitch()"); await w.flush(); } return { w, A, B }; };
 const snap = S => J({ kid: F.G.kidHTML(S.B), mom: F.G.kidHTML(S.A, true).map(h => h.replace(/<span onclick="event\.stopPropagation\(\);hcGo\('[^']*'\)" title="Edit this chore" style="[^"]*">✎<\/span>/g, "")) });
 const lists = (S, iso) => { const L = F.W.lists(S.B, { days: [S.B.run("day")] }); return J(L); };
