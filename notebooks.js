@@ -667,6 +667,16 @@
 "  .cover-dinos{ font-size:34px; margin-top:8px; letter-spacing:6px; }\n" +
 "  .cover-learn{ padding:14px 38px; flex-shrink:0; }\n" +
 "  .learn-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin-top:7px; }\n" +
+  // PK_COVERFIT_START — her report 2026-11-24 (Pre-K cover): "the colors and the numbers little area is falling off … his shapes
+  // and his letters are so large. So those actually need to not extend to the right too much, but maybe go down". A 1fr track
+  // never shrinks below its content, so 19 shapes in one unwrapped row grew the left column to ~570 px and pushed Numbers and
+  // Colors past the page edge (CB_COVER_WEEK only wrapped when little letters / the Shapes Path were on). Now the two columns
+  // stay equal whatever the lists, and the shape and colour rows always wrap DOWN inside their own card; the draw box below
+  // (flex:1) gives up the height. A cover that already fit is unchanged.
+"  .learn-grid { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }\n" +
+"  .learn-grid .learn-card > div { min-width:0; }\n" +
+"  .learn-grid .learn-val { flex-wrap:wrap; }\n" +
+  // PK_COVERFIT_END
 "  .learn-card { border-radius:12px; padding:9px 13px; display:flex; align-items:center; gap:10px; }\n" +
 "  .learn-ico  { font-size:25px; line-height:1; flex-shrink:0; }\n" +
 "  .learn-lab  { font-size:9px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; color:var(--ju-deep); }\n" +
