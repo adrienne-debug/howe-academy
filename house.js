@@ -2110,7 +2110,7 @@ function lgSbBack(kid,j,c){ const W=lgSbW(kid), L=lgSbList(j), core=L.filter(fun
   L.forEach(function(x){ if(lgSbEq(lgSbAt(W,x[0]),x[2])){ lgSbAt(W,x[0],1,x[1]); u[x[0]]=x[1]; } }); return u; }
 // a "— not done" line a device filed for this turn while it was sent back (_rtLogMiss / C3's _rtDropFileC3, under its own day or the
 // day it was due) goes again with the tick's return, and C3's drop line with it (cdrop_…, −20%): the turn was done.
-function lgSbMiss(R,at,u){ if(!R||!R.slot||R.st.house) return; const D=lgSbDay(R.wk,R.dn), E=D&&lgDueBefore(R.st,D), k="miss_"+R.slot+"_"+R.i;
+function lgSbMiss(R,at,u){ if(typeof lgAmzSbBack==="function") lgAmzSbBack(R,at,u)/* LEDGERAMZ (C4): a 🌅 row's line since */; if(!R||!R.slot||R.st.house) return; const D=lgSbDay(R.wk,R.dn), E=D&&lgDueBefore(R.st,D), k="miss_"+R.slot+"_"+R.i;
   [D,E].forEach(function(T){ const L=T&&((routineLog[R.kid]||{})[T.wk]||{})[T.dn], x=L&&L[k], b=x&&x.drop&&x.drop.bid, A=bank[R.kid]&&bank[R.kid].adjustments;
     if(x&&(x.at||0)>=at){ delete L[k]; u["routineLog/"+R.kid+"/"+T.wk+"/"+T.dn+"/"+k]=null; if(b&&A&&A[b]){ delete A[b]; u["bank/"+R.kid+"/adjustments/"+b]=null; } } }); }   // C3: and the drop it took
 function lgSbDone(u){ const ks=" "+Object.keys(u||{}).join(" ");
@@ -2269,6 +2269,13 @@ function lgAmzExcuse(kid,id){ const c=lgDropOk()&&amCarry[kid]&&amCarry[kid][id]
 function lgAmzExUndo(kid,wk,dn,id){ const c=lgDropOk()&&amCarry[kid]&&amCarry[kid][id]; if(!c||c.why!=="notfault"){ lgDropDone(); return false; } const u={};
   lgAmzAll(kid,id).forEach(function(a){ const t=a[2], gb=t.gb; if(!gb||!gb.x||!gb.line||lgDropLine(kid,t.bid)) return; delete t.gb; bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{}; bank[kid].adjustments[t.bid]=gb.line; u[lgAmzP(kid,a[0],a[1],id)]=null; u["bank/"+kid+"/adjustments/"+t.bid]=gb.line; });
   if(!Object.keys(u).length){ lgDropDone(); return false; } c.why="ignored"; u["amCarry/"+kid+"/"+id+"/why"]="ignored"; lgDropUp(u); amOnValue(Object.assign({},amCarry)); lgDropDone(); return true; }
+// ↩ L5's Send back on a 🌅 row, undone (its Undo calls this): a line this carry filed since the send back goes with the tick's return, and
+// its bank line — the chore was done. A line from before it, one given back or excused, and other carries' lines stay. Into u (targeted).
+// "Since" = at or after the send back, or after the tick now put back (no line can be filed while it is ticked: one filed by the un-tick's
+// own redraw, a few ms before L5's at, counts too).
+function lgAmzSbBack(R,at,u){ if(!R||!R.it||!R.id||!(at>0)) return; const kid=R.kid, W=(routineLog[kid]||{})[R.wk]||{}, A=bank[kid]&&bank[kid].adjustments, d0=_amIsoOf(at), k=(R.rec&&R.rec.at)||0;
+  Object.keys(W).forEach(function(dn){ const L=W[dn], x=L&&L["amz_"+R.id], t=x&&x.amz, a=(x&&x.at)||0; if(!t||t.gb||t.id!==R.id||!(a>=at||(k>0&&a>k))||!(t.day>=d0)) return;
+    delete L["amz_"+R.id]; u["routineLog/"+kid+"/"+R.wk+"/"+dn+"/amz_"+R.id]=null; if(t.bid&&A&&A[t.bid]){ delete A[t.bid]; u["bank/"+kid+"/adjustments/"+t.bid]=null; } }); }
 // LEDGERAMZ_END
 // LEDGERZERO_START — a 0 ⭐ daily's −1 on its 📒 Ledger row (missed-chores design §2.8 and §4, slice C6; C3's LEDGERDROP pattern and gate).
 // index.html CHOREZERO files the day's line (routineLog/<kid>/<wk>/<day>/zero_<chore>, .zero) and the bank line. Here, on that day's row:

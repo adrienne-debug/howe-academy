@@ -47,6 +47,7 @@ const baseHjs = src => { let s = src; const R = (a, b, l) => { s = once(s, "hous
   R("+(typeof lgAmzSent===\"function\"?lgAmzSent(kid,slot,i,D):\"\")});   // LEDGERAMZ", "});", "the ledger's 🌅 sent row");
   R(/^ {8}if\(typeof lgAmzRow===[^\n]*\n/m, "", "the ledger's carry row"); R(/\n {6}if\(slot==="morning"&&typeof lgAmzLost===[^\n]*/, "", "the ledger's lost lines");
   R(/^ {2}out\.lists\.forEach\(function\(L\)\{ L\.rows\.forEach\(function\(r\)\{ out\.taken\+=r\.atk[^\n]*\n/m, "", "the day's taken");
+  R("if(typeof lgAmzSbBack===\"function\") lgAmzSbBack(R,at,u)/* LEDGERAMZ (C4): a 🌅 row's line since */; ", "", "L5's Send back Undo hook");
   if (/LEDGERAMZ|lgAmz|\bamPay|CHOREAMWHY|\batk\b/.test(s)) throw new Error("test_morning_why: the app before's house.js still mentions C4");
   return s; };
 const BASE_IDX = (() => { const t = path.join(os.tmpdir(), "morning_why_before_" + process.pid + ".html"); fs.writeFileSync(t, baseIdx(fs.readFileSync(path.join(__dirname, "index.html"), "utf8"))); return t; })();
@@ -72,6 +73,7 @@ const FAM = () => ({
 const FAM2 = () => ({
   a_win: K({ label: "Wipe the window", emoji: "🪟", who: "kid_a", slot: "chores", cad: "wk:1", pts: 15, order: 1 }),
   a_sink: K({ label: "Wipe the sink", emoji: "🧽", who: "kid_a", slot: "chores", cad: "wk:0", pts: 3, order: 2 }),
+  a_shelf: K({ label: "Dust the shelf", emoji: "📚", who: "kid_a", slot: "chores", cad: "wk:0", pts: 3, order: 3 }),
   b_fish: K({ label: "Feed the fish", emoji: "🐟", who: "kid_b", slot: "chores", cad: "daily", pts: 0, order: 1 }),
   b_porch: K({ label: "Sweep the porch", emoji: "🧹", who: "kid_b", slot: "chores", cad: "wk:0", pts: 3, order: 2 })
 });
@@ -346,10 +348,10 @@ const lgBtns = (h, name) => (lgRows(h).filter(r => r.indexOf(name) >= 0)[0] || "
 const ex2 = {}; let wkT = "";
 for (let n = 7; n <= 12; n++) {
   for (const V of [T, TB]) { const X = V === T, vw = V.w, vA = V.A;
-    await go(vw, n, 8); drawAll(V.B, ["kid_a", "kid_b"]); await vw.flush();
+    await go(vw, n, 8); drawAll(V.B, n === 11 ? ["kid_b"] : ["kid_a", "kid_b"]); await vw.flush();
     if (n === 7) { await go(vw, n, 19);
       const send = (kid, label, why) => { const i = tix(kid, label); if (X) ANS(vA, "amAsk('chores'," + J(kid) + ",'monday'," + i + ")", why); else vA.run("amSend('chores'," + J(kid) + ",'monday'," + i + ")"); };
-      send("kid_a", "Wipe the sink", "ignored"); send("kid_b", "Sweep the porch", "ignored"); send("kid_b", "Feed the fish", "ignored"); }
+      send("kid_a", "Wipe the sink", "ignored"); send("kid_a", "Dust the shelf", "ignored"); send("kid_b", "Sweep the porch", "ignored"); send("kid_b", "Feed the fish", "ignored"); }
     if (n === 8) { await go(vw, n, 19); const i = tix("kid_a", "Wipe the window"); if (X) ANS(vA, "amAsk('chores','kid_a','tuesday'," + i + ")", "ignored"); else vA.run("amSend('chores','kid_a','tuesday'," + i + ")"); }
     await vw.flush();
   }
@@ -375,23 +377,46 @@ for (let n = 7; n <= 12; n++) {
     const id = tId("kid_a", "Wipe the sink"), b0 = bal(B, "kid_a"); B.run("(function(){ day=_todayDay; amToggle('kid_a'," + J(id) + "); })()"); await tw.flush();
     ok("S · Thu 12/10: kid_a ticks the ignored sink at zero: +0 ⭐; no line (zero is not \"after 0\")", bal(B, "kid_a") === b0 && tCar("kid_a", "Wipe the sink").done.pts === 0 && amzLines(tw, "kid_a").length === 0, [bal(B, "kid_a") - b0, amzLines(tw, "kid_a")]);
   }
-  if (n === 11) {   // Fri: Mom sends back Thursday's sink tick (Just a mistake), a draw, then her Undo
+  if (n === 11) {   // Fri: Thursday's sink tick sent back and undone, both ways (the 8 AM draw skipped kid_a: nobody has drawn her list yet)
     const id = tId("kid_a", "Wipe the sink"), ref = "a:" + id, args = J("kid_a") + "," + J(wkT) + ",'thursday'," + J(ref), b0 = bal(B, "kid_a");
-    ok("S · Fri 12/11 8 AM: the sink was done Thursday → Friday files nothing", amzLines(tw, "kid_a").length === 0);
-    const r = A.run("lgSendBack(" + args + ",'m')"); await tw.flush(); const c = tCar("kid_a", "Wipe the sink");
-    drawAll(B, ["kid_a"]); await tw.flush(); const L = amzLines(tw, "kid_a");
-    ok("S · Mom sends back Thursday's tick (Just a mistake): open again, still \"ignored\" — the next draw files Friday's −1 (20% of 3) like any open turn after 0 (decision 14)", r === true && !c.done && c.why === "ignored" && L.length === 1 && L[0].amz.n === 1 && L[0].amz.day === "2026-12-11" && bal(B, "kid_a") === b0 - 1, [r, c.done, L.map(l => l.amz), bal(B, "kid_a") - b0]);
-    ex2.row = lgRowOf(LG(A, "lgGo('kid_a',-1,0)"), "Wipe the sink");
-    A.run("lgSbUndo(" + args + ")"); await tw.flush(); const c2 = tCar("kid_a", "Wipe the sink");
-    ok("S · its Undo: Thursday's tick is back exactly (done Thu, 0 ⭐), still \"ignored\"", c2.done && c2.done.iso === "2026-12-10" && c2.done.pts === 0 && c2.why === "ignored", c2.done);
-    ex2.stray = { lines: amzLines(tw, "kid_a").length, bank: bal(B, "kid_a") - b0 };   // reported to the hub (not a check): Friday's −1 stays after the Undo
-    console.log("  NOTE · after the Undo Friday's −1 line " + (ex2.stray.lines ? "STAYS (bank " + ex2.stray.bank + ")" : "is gone") + " — L5's lgSbMiss takes back C3's line in this case, not C4's (see the report)");
+    const sinkL = () => amzLines(tw, "kid_a").filter(l => /sink/.test(l.label)), shelfL = () => amzLines(tw, "kid_a").filter(l => /shelf/.test(l.label)), hasB = bid => !!adj(tw, "kid_a")[bid];
+    const fri = "routineLog/kid_a/" + wkT + "/friday/amz_" + id, sbIn = (ws, L) => ws.length === 1 && ws[0].indexOf(fri) >= 0 && ws[0].indexOf("bank/kid_a/adjustments/" + L.amz.bid) >= 0;
+    ok("S · Fri 12/11: the sink was done Thursday; kid_a's list not drawn yet — no line for it", sinkL().length === 0 && shelfL().length === 0);
+    await go(tw, n, 9); let r = A.run("lgSendBack(" + args + ",'m')"); await tw.flush(); const c = tCar("kid_a", "Wipe the sink");
+    await go(tw, n, 9, 5); drawAll(B, ["kid_a"]); await tw.flush(); let L = sinkL();
+    ok("S · Mom sends back Thursday's tick (Just a mistake): open again, still \"ignored\" — the next draw files Friday's −1 (20% of 3), as any open turn after 0; the shelf (another ignored carry) files its own −1", r === true && !c.done && c.why === "ignored" && L.length === 1 && L[0].amz.n === 1 && L[0].amz.day === "2026-12-11" && shelfL().length === 1 && bal(B, "kid_a") === b0 - 2, [r, c.done, L.map(l => l.amz), bal(B, "kid_a") - b0]);
+    const shelf0 = J(shelfL()[0]), shelfBid = shelfL()[0].amz.bid;
+    await go(tw, n, 9, 10); let m = tw.mark(); A.run("lgSbUndo(" + args + ")"); await tw.flush(); let c2 = tCar("kid_a", "Wipe the sink"), uw = WS(tw, m);
+    ok("S · Just a mistake's Undo: Thursday's tick back exactly AND Friday's sink line and its bank line gone — both inside the Undo's ONE update (targeted paths, no outbox)", c2.done && c2.done.iso === "2026-12-10" && c2.done.pts === 0 && c2.why === "ignored" && sinkL().length === 0 && !hasB(L[0].amz.bid) && bal(B, "kid_a") === b0 - 1 && sbIn(uw, L[0]), [c2.done, sinkL(), bal(B, "kid_a") - b0, uw]);
+    ok("…another carry's line (the shelf's Friday −1) is untouched, with its bank line", J(shelfL()[0]) === shelf0 && hasB(shelfBid));
+    // 🚩 Wasn't done, its Undo from the Click-off Log / 🧾 (flagUndo → lgFlagUndo); the line was filed by the un-tick's own redraw (a few ms before L5's at)
+    const pen = A.run("flagN('kid_a')"); await go(tw, n, 10); r = A.run("lgSendBack(" + args + ",'w')"); await tw.flush(); drawAll(B, ["kid_a"]); await tw.flush(); L = sinkL();
+    ok("S · 🚩 Wasn't done on the same tick: open again; the next draw files Friday's sink line again (−1), with L5's penalty", r === true && L.length === 1 && bal(B, "kid_a") === b0 - 1 - 1 - pen, [r, L.length, bal(B, "kid_a") - b0, pen]);
+    const sbAt = A.run("(function(){ const M=lgSbMarks('kid_a'), k=Object.keys(M).filter(function(q){ return q.indexOf('|thursday|" + ref + "')>0; })[0]; return k?M[k].r.sb.at:0; })()");
+    A.run("routineLog.kid_a[" + J(wkT) + "].friday[" + J("amz_" + id) + "].at=" + (sbAt - 5) + ";db.ref(" + J(fri + "/at") + ").set(" + (sbAt - 5) + ");1"); await tw.flush();
+    const mk = A.run("(function(){ const M=lgSbMarks('kid_a'), k=Object.keys(M).filter(function(q){ return q.indexOf('|thursday|" + ref + "')>0; })[0]; return k?M[k].ref:''; })()");
+    await go(tw, n, 10, 10); m = tw.mark(); A.run("confirm=function(){ return true; };1"); A.run("flagUndo('step','kid_a'," + J(mk) + ")"); await tw.flush(); c2 = tCar("kid_a", "Wipe the sink"); uw = WS(tw, m);
+    ok("S · the 🚩's Undo (the Click-off Log's / 🧾's): the tick, the penalty AND that line with its bank line — the balance is as before the send back; one update", !!mk && sbAt > 0 && c2.done && c2.done.iso === "2026-12-10" && sinkL().length === 0 && !hasB(L[0].amz.bid) && bal(B, "kid_a") === b0 - 1 && sbIn(uw, L[0]), [mk, sinkL(), bal(B, "kid_a") - b0, uw]);
+    ok("…a line filed a few ms before L5's at (by the un-tick's own redraw, after the tick put back) still counts as \"since\" (5 ms before, here)", sinkL().length === 0);
+    // a line filed since, then given back: it stays as Mom left it (never returned twice)
+    await go(tw, n, 11); A.run("lgSendBack(" + args + ",'m')"); await tw.flush(); drawAll(B, ["kid_a"]); await tw.flush(); L = sinkL();
+    A.run("lgAmzGive('kid_a'," + J(wkT) + ",'friday'," + J(id) + ")"); await tw.flush(); const gb0 = J(sinkL()[0]), bG = bal(B, "kid_a");
+    await go(tw, n, 11, 10); m = tw.mark(); A.run("lgSbUndo(" + args + ")"); await tw.flush(); uw = WS(tw, m);
+    ok("S · a line filed since and given back (⭐ Mom gave back +1) stays exactly as it is after the Undo; the balance does not move again (never returned twice)", L.length === 1 && bG === b0 - 1 && J(sinkL()[0]) === gb0 && bal(B, "kid_a") === bG && tCar("kid_a", "Wipe the sink").done && !uw.some(x => x.indexOf(fri) >= 0), [gb0, bal(B, "kid_a") - b0, uw]);
+    // main's shape: no helper (house.js without LEDGERAMZ) → L5 alone, nothing thrown
+    await go(tw, n, 12); A.run("lgSendBack(" + args + ",'m')"); await tw.flush();
+    const ms = A.run("(function(){ const k=lgAmzSbBack; lgAmzSbBack=undefined; try{ return lgSbUndo(" + args + ")?'ok':'refused'; }catch(e){ return 'threw '+e.message; } finally{ lgAmzSbBack=k; } })()"); await tw.flush();
+    ok("S · main's shape (no lgAmzSbBack): a 🌅 Send back's Undo runs as L5 alone — nothing thrown, the tick back", ms === "ok" && !!tCar("kid_a", "Wipe the sink").done, ms);
     // kid_b's porch (3 ⭐, Mon, ignored) is after 0 today: its line beside C6's 0 ⭐ fish line
     const D = A.run("(function(){ const x=lgDayData('kid_b',0); let t=0,a=0; x.lists.forEach(function(L){ L.rows.forEach(function(r){ t+=r.tk||0; a+=r.atk||0; }); }); return [x.taken,t,a]; })()");
     ok("Z · Fri 12/11, kid_b: C6's 0 ⭐ fish (−1 ⭐) and C4's porch (−1 ⭐ after 0) on the same 📒 day — its \"taken\" adds both (" + D[0] + ")", D[1] === 1 && D[2] === 1 && D[0] === 2 && /taken 2 ⭐/.test(top(LG(A, "lgGo('kid_b',0,0)"))), D);
-    const pid = tId("kid_b", "Sweep the porch"); B.run("(function(){ day=_todayDay; amToggle('kid_b'," + J(pid) + "); })()"); await tw.flush();
+    await go(tw, n, 13); const pid = tId("kid_b", "Sweep the porch"); B.run("(function(){ day=_todayDay; amToggle('kid_b'," + J(pid) + "); })()"); await tw.flush();
     const lp = LG(A, "lgGo('kid_b',0,0)"), nb = lgBtns(lp, "Sweep the porch");
     ok("S · the porch ticked after its line was filed: the 🌅 row has ↩ Send back and ⭐ Give stars back — no ➖ Excuse (two buttons at most, design §3)", nb === 2 && /lgSbAskSet/.test(lp) && !/lgAmzExcuse\('kid_b'/.test(lp) && /lgAmzGive\('kid_b'/.test(lp), [nb, lgRowOf(lp, "Sweep the porch")]);
+    // a line filed BEFORE the send back (the porch's, this morning, then ticked): Send back + Undo leave it alone
+    const pL = () => amzLines(tw, "kid_b").filter(l => /porch/.test(l.label)), p0 = J(pL()), pb0 = bal(B, "kid_b"), pargs = J("kid_b") + "," + J(wkT) + ",'friday'," + J("a:" + pid);
+    await go(tw, n, 14); const pr = A.run("lgSendBack(" + pargs + ",'m')"); await tw.flush(); drawAll(B, ["kid_b"]); await tw.flush(); await go(tw, n, 14, 10); A.run("lgSbUndo(" + pargs + ")"); await tw.flush();
+    ok("S · a line filed BEFORE the send back (the porch's 8 AM −1, ticked at 1 PM): Send back + Undo leave it and its bank line alone", pr === true && pL().length === 1 && J(pL()) === p0 && !!adj(tw, "kid_b")[pL()[0].amz.bid] && bal(B, "kid_b") === pb0 && !!tCar("kid_b", "Sweep the porch").done, [pr, pL(), bal(B, "kid_b") - pb0]);
   }
   if (n === 12) {
     const za = zeroOf(T), zb = zeroOf(TB);
