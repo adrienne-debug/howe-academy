@@ -33,7 +33,8 @@ const IDX = process.env.CDROP_INDEX || path.join(__dirname, "index.html"), HJS =
 // ── the app before: this tree, C3 taken out ──
 const once = (src, what, from, to, label) => { const n = typeof from === "string" ? src.split(from).length - 1 : (src.match(from) || []).length;
   if (n !== 1) throw new Error("test_chore_drop: the app before cannot be built — " + label + " found " + n + "× in " + what + " (must be exactly once)"); return src.replace(from, () => to); };
-const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.html"), "utf8"); const R = (a, b, l) => { s = once(s, "index.html", a, b, l); };
+const C6 = require(path.join(__dirname, "test_fixtures", "carve_c6.js"));   // C6 (test_chore_zero_daily.js) is built on C3: its app before goes too
+const BASE_IDX = (() => { let s = C6.idx(fs.readFileSync(path.join(__dirname, "index.html"), "utf8")); const R = (a, b, l) => { s = once(s, "index.html", a, b, l); };
   R(/^\/\/ CHOREDROP_START[^\n]*\n[\s\S]*?^\/\/ CHOREDROP_END\n/m, "", "the CHOREDROP block");
   R(/^\/\/ CHOREAMWHY_START[^\n]*\n[\s\S]*?^\/\/ CHOREAMWHY_END\n/m, "", "C4's block (it reads starTakeAt; its hooks are typeof-guarded)");
   R(/^const RT_TAKE_FROM=[^\n]*\n/m, "", "RT_TAKE_FROM");
@@ -44,7 +45,7 @@ const BASE_IDX = (() => { let s = fs.readFileSync(path.join(__dirname, "index.ht
   R(/\+\(\(e\.drop&&e\.drop\.n\)\?[^\n]*?\/\* CHOREDROP: what the drop took \*\//, "", "the Click-off Log's −2");
   if (/CHOREDROP|RT_TAKE_FROM|starTakeAt|_rtDropFile|cdrop_/.test(s)) throw new Error("test_chore_drop: the app before still mentions CHOREDROP");
   const t = path.join(os.tmpdir(), "chore_drop_before_" + process.pid + ".html"); fs.writeFileSync(t, s); return t; })();
-const BASE_HJS = (() => { let s = fs.readFileSync(path.join(__dirname, "house.js"), "utf8"); const R = (a, b, l) => { s = once(s, "house.js", a, b, l); };
+const BASE_HJS = (() => { let s = C6.hjs(fs.readFileSync(path.join(__dirname, "house.js"), "utf8")); const R = (a, b, l) => { s = once(s, "house.js", a, b, l); };
   R(/^\/\/ LEDGERDROP_START[^\n]*\n[\s\S]*?^\/\/ LEDGERDROP_END\n/m, "", "the LEDGERDROP block");
   R(/^\/\/ LEDGERAMZ_START[^\n]*\n[\s\S]*?^\/\/ LEDGERAMZ_END\n/m, "", "C4's ledger block (it reads LEDGERDROP's gate)"); R(/^ {2}out\.lists\.forEach\(function\(L\)\{ L\.rows\.forEach\(function\(r\)\{ out\.taken\+=r\.atk[^\n]*\n/m, "", "C4's taken");
   R(/^ {6}const g0=out\.gone\.length;[^\n]*\n/m, "", "the gone rows' start");
