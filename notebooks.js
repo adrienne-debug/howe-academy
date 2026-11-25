@@ -473,6 +473,54 @@
   };
 
   // Plain string (NOT a template with ${…}) so CSS braces stay literal.
+  // PK_DAILYFIT_START — three Pre-K daily-page fit problems found by measuring (her "Yes, fix them" 2026-11-24: one clean-up that
+  // makes each fit, measured across every look and switch setting, without changing a page that fits today). Each change below
+  // only acts when a page is too big — a page that fits lays out exactly as before (same place, same size, every element):
+  //  1. "How was today?" (the closing row, every look): on a day the "Look what I learned today!" chips need two lines (long
+  //     shape + colour words), the card ran 8–28 px below its row and the "high five" line was cut off (28 px = the original
+  //     three looks with all switches, a "pages to do today" strip, 22 and little q). Now the card's three gaps (6 / 11 / 7 px)
+  //     tighten first, and the row may take what it still needs from the spare room in the top cards.
+  //  2. The dinosaur family look prints its own 6-letter name at full size (52 px — every other look's rule: full size up to 5
+  //     letters, see pkKidName), so on a wide number day (20, 41–100) the two top cards ran 10–65 px past the right margin. Now
+  //     that name may give way to the width it has, and only then; any other name, or a renamed notebook, is untouched.
+  //  3. The construction family look keeps its original find-it card word for word (PK_FIT: T.legacyFindLayout), which is 12 px
+  //     taller than its row (33 px with a "pages to do today" strip), so "Trace My Name" ran under the drive-to-the-job-site strip.
+  //     Now that row may take the height it needs from the bottom row (the drawing box gives it up); the card itself is unchanged.
+  // juPageDaily hands its finished page to pkdfDaily (guarded), and the shared Pre-K sheet (JU_CSS, right below) takes PKDF_CSS — cut
+  // this block out and every notebook is byte for byte the old one. Test: test_prek_daily_fit.js.
+  var PKDF_CSS = "  .grid2.pkdf-grow { min-height:auto; }\n" +
+    "  .pkdf-rate > .slabel, .pkdf-rate > .recap-lab { margin-bottom:0; }\n  .pkdf-rate > .rate-faces { margin-top:0; }\n" +
+    "  .pkdf-gap { display:block; flex:1 1 0; min-height:0; }\n  .pkdf-name { container-type:inline-size; }\n";
+  // the dotted tracing font's width of each letter, in em (measured in Chrome at 100 px; a word is exactly the sum of its letters)
+  var PKDF_NT_EM = { A: .972, B: .8611, C: .98, D: .965, E: .87, F: .87, G: 1.0841, H: 1.03, I: .72, J: .9491, K: .8961, L: .84, M: 1.172,
+    N: 1.0191, O: 1.0541, P: .8511, Q: 1.0541, R: .8511, S: .8981, T: .93, U: 1.0461, V: .992, W: 1.2141, X: .885, Y: .885, Z: .905,
+    a: .84, b: .855, c: .8031, d: .855, e: .8211, f: .7141, g: .8481, h: .895, i: .6261, j: .6111, k: .7361, l: .60, m: 1.19, n: .895,
+    o: .8441, p: .855, q: .8531, r: .7281, s: .725, t: .65, u: .895, v: .7011, w: .8411, x: .685, y: .7041, z: .7181 };
+  function pkdfDaily(html, legacyCard) {
+    var out = html;
+    // 1. the closing row may grow into the top cards' spare room; its "How was today?" card's gaps become ones that only fill room
+    var rate = /<div class="grid2" style="flex:0\.82;">\n    <div class="card card-peach" style="display:flex;flex-direction:column;">\n      <div class="slabel">(How was today\?[^<]*)<\/div>\n      <div class="rate-faces">([\s\S]*?)\n      <\/div>\n      <div class="recap">\n        <div class="recap-lab">([^<]*)<\/div>\n        <div class="recap-chips">([\s\S]*?)\n        <\/div>\n      <\/div>\n/;
+    var gap = function (px) { return '      <i class="pkdf-gap" style="flex-grow:' + px + ';max-height:' + px + 'px;"></i>\n'; };
+    out = out.replace(rate, function (m, lab, faces, recapLab, chips) {
+      return '<div class="grid2 pkdf-grow" style="flex:0.82;">\n    <div class="card card-peach pkdf-rate" style="display:flex;flex-direction:column;">\n' +
+        '      <div class="slabel">' + lab + '</div>\n' + gap(6) + '      <div class="rate-faces">' + faces + '\n      </div>\n' + gap(11) +
+        '      <div class="recap-lab">' + recapLab + '</div>\n' + gap(7) + '      <div class="recap-chips">' + chips + '\n      </div>\n';
+    });
+    // 3. the original construction find-it card's row may take the height it needs from the bottom row
+    if (legacyCard) out = out.replace('<div class="grid2" style="flex:1.75;">', '<div class="grid2 pkdf-grow" style="flex:1.75;">');
+    // 2. a name printed above the size rule may give way to the width its card has (never wider than it prints today)
+    out = out.replace(/(<div class="card card-gold)(" style="flex-shrink:0;">\n        <div class="slabel">Trace My Name<\/div>\n        <div class="nt-trace" style="font-size:)(\d+)px(;color:[^;]*;letter-spacing:([^;]*);">)((?:#[A-Za-z])+)</,
+      function (m, a, b, size, c, ls, dots) {
+        var name = dots.replace(/#/g, ""), n = name.length, rule = n <= 5 ? 52 : Math.max(24, Math.floor(52 * 5 / n)), em = 0;
+        if (+size <= rule || !/^(0|\d*\.?\d+em)$/.test(ls)) return m;
+        for (var i = 0; i < n; i++) em += PKDF_NT_EM[name[i]];
+        em = (em + n * 2 * (parseFloat(ls) || 0)) * 0.999;   // letter-spacing counts twice a letter (the dot mark + the letter)
+        return a + ' pkdf-name' + b + 'min(' + size + 'px,calc(100cqi / ' + em.toFixed(4) + '))' + c + dots + '<';
+      });
+    return out;
+  }
+  // PK_DAILYFIT_END
+
   var JU_CSS = "" +
 "  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n" +
 "  :root {\n" +
@@ -625,6 +673,7 @@
 "  .recap-chips { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; }\n" +
 "  .recap-chip { font-size:13px; font-weight:800; color:var(--ju-dark); background:white;\n" +
 "                border:1.5px solid var(--ju-light); border-radius:20px; padding:4px 12px; }\n" +
+  (typeof PKDF_CSS === "string" ? PKDF_CSS : "") +   // PK_DAILYFIT: the daily page's fit rules (the block sits right above this sheet)
 "  .abc-intro { display:flex; align-items:center; justify-content:space-between; gap:12px;\n" +
 "               background:var(--ju-gpale2); border:1.5px solid var(--ju-light); border-radius:12px;\n" +
 "               padding:7px 16px; flex-shrink:0; }\n" +
@@ -1431,7 +1480,7 @@
     var nameTrace = lv.nbLowercase ? juTrace(T.traceNameMixed, fit ? Math.min(44, T.traceSizeMixed || 52) : (T.traceSizeMixed || 52), null, "0.06em")
       : juTrace(T.traceName, fit ? Math.min(44, T.traceSize) : T.traceSize);
 
-    return '<div class="page-label">Daily Page — ' + cap(day) + '</div>\n<div class="page">\n' +
+    var pkdfPage = '<div class="page-label">Daily Page — ' + cap(day) + '</div>\n<div class="page">\n' +
       juHeader(T.eyebrow + " · Daily Notebook", T.dayTitle, T.daySub, cap(day), dateStr, badge) +
       '\n<div class="body">\n\n' +
       '  <div class="bookend bookend-start">\n' +
@@ -1517,6 +1566,7 @@
       '      <div class="draw-box">\n        <div class="star-spot">⭐ I did it!</div>\n' +
       '        <div class="draw-hint">✏️ draw what you liked best</div>\n      </div>\n    </div>\n  </div>\n\n</div>\n' +
       juFooter(T.footer, cap(day) + " · " + dateStr, T.emoji) + '\n</div>';
+    return typeof pkdfDaily === "function" ? pkdfDaily(pkdfPage, lv.nbFindIt && !fit) : pkdfPage;   // PK_DAILYFIT
   }
 
   // Julian's "Trace the path!" strip: his animal walks the dotted line to the egg.

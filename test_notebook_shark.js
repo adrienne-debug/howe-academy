@@ -40,11 +40,13 @@ const FIXTURES = (items) => ({
 // sha256 (first 16 hex) of JSON.stringify(generate(kid, ctx)) — taken from origin/main d3224dc, BEFORE generatePreK existed.
 // Pre-K hashes refreshed ON PURPOSE 2026-11-24 (PK_COVERFIT, test_prek_cover_fit.js): three CSS lines join every Pre-K notebook's
 // sheet so the cover's cards can't run off the page; with that block cut out of notebooks.js the old hashes come back exactly.
+// …and again ON PURPOSE 2026-11-25 (PK_DAILYFIT, test_prek_daily_fit.js): the daily page's fit rules join the shared Pre-K sheet and the
+// daily pages (the closing card's gaps, two row classes, one name size rule); with that block cut out the hashes above it come back exactly.
 const BEFORE = {
-  "julian/empty": "b81b956feb8e2a8e", "julian/mastery": "0c455b2d830e896d", "julian/cursors": "dda22ed9345aa7f9", "julian/extras": "1f8af64e2cb4ab28",
-  "julian/spelling": "ea388262ec0a948a", "julian/fourDay": "08df98c3f43430b0", "julian/picks": "bb66a1ced6f3a525",
-  "caleb/empty": "8d606791cb80f6c4", "caleb/mastery": "5a65293ef2364ae6", "caleb/cursors": "794f1313d1995c00", "caleb/extras": "c87216c88faa2ff0",
-  "caleb/spelling": "6e19203e61a8b466", "caleb/fourDay": "6dadff0294f120a8", "caleb/picks": "3bffe2b7a5b26454"
+  "julian/empty": "401ad528008c582e", "julian/mastery": "5cfec9cfa05965ee", "julian/cursors": "57ac860cbb14a7f4", "julian/extras": "d5b173f656d20e2f",
+  "julian/spelling": "09e0191768bfc894", "julian/fourDay": "d356dc463315f992", "julian/picks": "b116f2a172a32127",
+  "caleb/empty": "a39cc77da9202673", "caleb/mastery": "1bc809037dc890bf", "caleb/cursors": "48342c205d9fc7a2", "caleb/extras": "c8049c4f54882e14",
+  "caleb/spelling": "3f6ee7ed5ba65944", "caleb/fourDay": "1a81d6d263ec9234", "caleb/picks": "c81c259b5970fd3a"
 };
 // caleb/picks refreshed ON PURPOSE 2026-11-08 (🚜 CBPLAN, test_construction_planner.js): Mom's planner number pick now joins the
 // construction notebook's week list (JU_NUMPICK, as Julian's) — the Tuesday number reads 6, not 15. It used to equal caleb/mastery.
@@ -113,7 +115,9 @@ ok(/background:#0c4a6e/.test(o.student.split('Sea Turtles · Unit Study')[0].sli
 ok(!/<div class="page-label">This Month/.test(o.student) && /<div class="page-label">ABC Sing-Along/.test(o.student), "the extra-page on/off toggles apply");
 
 console.log("page fit — the same measured layout as Julian's");
-const skel = (h, i) => (h.split('<div class="page-label">')[i] || "").replace(/<style[\s\S]*?<\/style>/g, "").replace(/>[^<]*</g, "><").replace(/ style="[^"]*"/g, "").replace(/<path[^>]*>|<svg[^>]*>|<\/svg>/g, "");
+// PK_DAILYFIT (2026-11-25): the dinosaur family look's own full-size name card carries " pkdf-name" (it may give way on a wide-number
+// day); the shark name already follows the size rule, so it has no need of it — that one class is left out of the comparison.
+const skel = (h, i) => (h.split('<div class="page-label">')[i] || "").replace(/<style[\s\S]*?<\/style>/g, "").replace(/>[^<]*</g, "><").replace(/ style="[^"]*"/g, "").replace(/<path[^>]*>|<svg[^>]*>|<\/svg>/g, "").replace(/ pkdf-name"/g, '"');
 // week 1 for both, so the engine picks the same items (the shark kid counts from his own first week) — only words differ
 const ju = NB.generate("julian", base({ weekNum: "week1", masteryItems: juItems })), sk = shark({ weekNum: "week1", masteryItems: juItems });
 let same = true; for (let i = 1; i <= 10; i++) if (skel(ju.student, i) !== skel(sk.student, i)) { same = false; console.log("    differs at page " + i); }

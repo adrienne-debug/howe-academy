@@ -47,12 +47,14 @@ if (process.argv.includes("--hashes")) { console.log(JSON.stringify(hashes(loadN
 // sheet so the cover's cards can't run off the page; with that block cut out of notebooks.js the old hashes come back exactly.
 // ellis/* hashes refreshed ON PURPOSE 2026-11-24 (EL_OLDPASS_OUT, test_nb_ladread3.js): the 4th-grade notebook's old passage box + its two key rows are deleted.
 // lincoln/empty·mastery·cursors·fourDay·picks refreshed ON PURPOSE 2026-11-24 (LN_ANSWER_SPREAD, test_ln_answer_spread.js): built-in choices reordered; block cut out → 1f57f4a9…/e33c9858…/52c51b7d… come back.
+// …and again ON PURPOSE 2026-11-25 (PK_DAILYFIT, test_prek_daily_fit.js): the daily page's fit rules join the shared Pre-K sheet and the
+// daily pages (the closing card's gaps, two row classes, one name size rule); with that block cut out the hashes above it come back exactly.
 const BEFORE = {
  "lincoln/empty": "575d81da685d4a72", "lincoln/mastery": "575d81da685d4a72", "lincoln/cursors": "82c9d4e7d5942072", "lincoln/fourDay": "032e062d260350cc", "lincoln/picks": "575d81da685d4a72", "lincoln/theme": "2851b1b36aab33a8",
  "ellis/empty": "a55d33d52e9f7d79", "ellis/mastery": "a55d33d52e9f7d79", "ellis/cursors": "16a766f80275e76f", "ellis/fourDay": "3ed2059ef3ffd768", "ellis/picks": "a55d33d52e9f7d79", "ellis/theme": "2851b1b36aab33a8",
  "lucy/empty": "6396d3822f2d341e", "lucy/mastery": "6396d3822f2d341e", "lucy/cursors": "0917d7367019f92f", "lucy/fourDay": "85f73d959c6de9c2", "lucy/picks": "6396d3822f2d341e", "lucy/theme": "2851b1b36aab33a8",
- "julian/empty": "b81b956feb8e2a8e", "julian/mastery": "e96433639c199178", "julian/cursors": "90ed422a69e056a1", "julian/fourDay": "0e9c6a24b585ee61", "julian/picks": "12830dbf3c93d01a", "julian/theme": "2851b1b36aab33a8",
- "caleb/empty": "8d606791cb80f6c4", "caleb/mastery": "8c3db8b6bc42c734", "caleb/cursors": "e2b532c8efd75301", "caleb/fourDay": "0e5292eabbaf91af", "caleb/picks": "d2d83137ff5e8bee", "caleb/theme": "2851b1b36aab33a8",
+ "julian/empty": "401ad528008c582e", "julian/mastery": "42cada3ce1f62e4e", "julian/cursors": "9ced125b47e37ccc", "julian/fourDay": "9129eed9fbe18768", "julian/picks": "b7a02da7fe0a42e9", "julian/theme": "2851b1b36aab33a8",
+ "caleb/empty": "a39cc77da9202673", "caleb/mastery": "823cc4a47fc9af24", "caleb/cursors": "724e88357eec6d86", "caleb/fourDay": "5a789a65e40153cf", "caleb/picks": "d2d83137ff5e8bee", "caleb/theme": "2851b1b36aab33a8",
  "kidx/empty": "98cd36b5413f5b91", "kidx/mastery": "98cd36b5413f5b91", "kidx/cursors": "2cf707483a0b2775", "kidx/fourDay": "98cd36b5413f5b91", "kidx/picks": "98cd36b5413f5b91", "kidx/theme": "2851b1b36aab33a8",
  "juPlanPreview/empty": "2d0d0b2f20d7012f", "juPlanPreview/mastery": "204d506f889cda4e", "juPlanPreview/cursors": "5d1ad6bf9b03921c", "juPlanPreview/fourDay": "dcace5405162a444", "juPlanPreview/picks": "b3ba3b886911e339", "juPlanPreview/theme": "204d506f889cda4e"
 };
