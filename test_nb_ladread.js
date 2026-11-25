@@ -57,8 +57,8 @@ const NB = load(SRC.replace(HOOK, T_HOOK)), OLD = load(BASE), I = NB._internal, 
 const K1 = Object.keys(NB.GENERATORS).filter((k) => NB.ladderPages(k).reading);
 ok("exactly one built-in notebook prints the reading ladder (the 1st-grade one)", K1.length === 1 && NB.GENERATORS[K1[0]].build === I.generateLucy, K1);
 const KID = K1[0];
-ok("…a starter notebook and a Pre-K look print none; nothing prints the number ladder yet",
-  NB.ladderPages("kidz").reading === false && NB.ladderPages("kidt", { notebookTheme: Object.keys(NB.themes)[0] }).reading === false && NB.ladderPages(KID).number === false);
+ok("…a starter notebook and a Pre-K look print none (the number ladder is slice 4's — test_nb_ladnum.js)",
+  NB.ladderPages("kidz").reading === false && NB.ladderPages("kidt", { notebookTheme: Object.keys(NB.themes)[0] }).reading === false && NB.ladderPages(KID).number === true);
 const TR = L.track("reading", READ);
 
 // ── fixtures (made-up week, no family data) ──
