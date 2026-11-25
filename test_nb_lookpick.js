@@ -23,11 +23,12 @@ const block = html.slice(hA, hB + hE.length);
 const SITES = [
   ["function nbSetLook(kid,key){ if(!momHere()) return; if(typeof nbLookKidPicks===\"function\"&&nbLookKidPicks(kid)) return;   // NB_LOOKPICK: 2+ ticked = the kid picks in Kids' Corner\n",
    "function nbSetLook(kid,key){ if(!momHere()) return;\n"],
-  ["      nbLookPickRow(sel,lookOpts,'<div style=\"display:flex;gap:6px;flex-wrap:wrap\">'+looks+'</div>')+   // NB_LOOKPICK: Mom's pills (0–1 ticked) or the kid's pick (2+), then the tick list\n",
-   "      '<div style=\"display:flex;gap:6px;flex-wrap:wrap\">'+looks+'</div>'+\n"],
+  // 🎛 NB_CUSTOM (2026-11-24): the look card's two halves are placed apart — the pills/pick on the Customize card's top line, the ticks in its 🎨 Look dial
+  ["      pick:nbLookPickRow(sel,lookOpts,pills,\"top\"),   // NB_LOOKPICK: Mom's pills (0–1 ticked) or the kid's pick (2+)\n", "      pick:pills,\n"],
+  ["      ticks:nbLookPickRow(sel,lookOpts,pills,\"ticks\")   // NB_LOOKPICK: \"<name> may choose from:\"\n", "      ticks:\"\"\n"],
   ["        if(typeof nbLookPickKcHtml===\"function\") h+=nbLookPickKcHtml(k);   // NB_LOOKPICK: 🎨 My notebook look (2+ looks ticked by Mom)\n", ""]
 ];
-ok(SITES.every(([now, was]) => count(html, now) === 1 && (was === "" || count(html, was) === 0)), "index.html: three call sites, each once (nbSetLook's guard, the look card, Kids' Corner)");
+ok(SITES.every(([now, was]) => count(html, now) === 1 && (was === "" || count(html, was) === 0)), "index.html: four call sites, each once (nbSetLook's guard, the look's two halves, Kids' Corner)");
 let htmlBase = html.slice(0, hA) + html.slice(hB + hE.length);
 SITES.forEach(([now, was]) => { htmlBase = htmlBase.replace(now, was); });
 ok(!/NB_LOOKPICK|nbLookPick|nbLookKid|nbLookAllow|nbLooksAllowed|looksAllowed|lookCard/.test(htmlBase), "with the block and call sites cut out, index.html has no trace of this change");
@@ -76,7 +77,7 @@ function sandbox(src, o) {
   };
   const lp = src.indexOf(hS) >= 0 ? src.slice(src.indexOf(hS), src.indexOf(hE) + hE.length) : "";
   const body = "let kcKid=" + JSON.stringify(o.kcKid === undefined ? null : o.kcKid) + "; function _kcLoadKid(){}\n" + wireOf(src) + "\n" + lp +
-    "\nfunction lookCardHtml(sel){ const lookOpts=nbLookOpts(sel);\n" + segOf(src) + "\nreturn lookHtml; }\n" +
+    "\nfunction lookCardHtml(sel){ const lookOpts=nbLookOpts(sel);\n" + segOf(src) + "\nreturn lookParts?lookParts.pick+lookParts.ticks:\"\"; }\n" +
     "return {log:null, nbSetLook, nbThemeOf, lookCardHtml" + (lp ? ", nbLookAllow, nbLookKidSet, nbLookPickKcHtml, nbLooksAllowed, nbLookKidPicks" : "") + "};";
   const W = new Function(...Object.keys(env), body)(...Object.values(env));
   W.log = log; return W;
