@@ -22,7 +22,8 @@ const cut = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); if (i <
 // ── Howe's children, from the app's own roster defaults ──
 const cfg = { window: {} }; vm.runInNewContext(fs.readFileSync(path.join(__dirname, "family-config.js"), "utf8"), cfg);
 const fdSrc = cut("const FAMILY_DEFAULT", "const ROSTER_DEF").replace("const FAMILY_DEFAULT", "FD");
-const fd = { window: {} }; vm.runInNewContext("var FD;" + fdSrc, fd);   // window.HA_FAMILY absent → the code's own Howe fallback list
+const fd = { window: {}, HA_HOUSEHOLD: false };   // window.HA_FAMILY absent → the code's own Howe fallback list
+vm.runInNewContext("var FD;" + (src.includes("function haRosterOk(") ? slice("haRosterOk") + "\n" : "") + fdSrc, fd);
 const HOWE = [...new Set([].concat(cfg.window.HA_FAMILY.roster, fd.FD).map(k => k.name))];
 ok("Howe's children read from the roster defaults (" + HOWE.join(", ") + ")", HOWE.length >= 4 && cfg.window.HA_FAMILY.familyId === "howe");
 const HOWE_RE = new RegExp("\\b(" + HOWE.join("|") + ")\\b", "i");
