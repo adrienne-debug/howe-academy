@@ -133,8 +133,9 @@ const hblock = html.slice(html.indexOf(HS), html.indexOf(HE));
 const outside = html.slice(0, html.indexOf(HS)) + html.slice(html.indexOf(HE));
 ok(!/countPic"\)\.(set|remove)|\/countPic/.test(outside) && (hblock.match(/"\/countPic"/g) || []).length === 1, "the only write of countPic is in the block (one path)");
 ok((outside.match(/nbSetCountPic\(/g) || []).length === 0 && (outside.match(/nbCountPicCardHtml\(/g) || []).length === 1, "one control: the card is drawn from one place, and nothing outside the block saves the choice");
-const lookCard = html.slice(html.indexOf('lookHtml=\'<div id="nblook-card"'), html.indexOf("// Week switcher — only when a next week"));
-ok(/nbNameCardHtml\(sel,lookOpts\)\+[^\n]*\n\s*\(\(typeof nbCountPicCardHtml==="function"\)\?nbCountPicCardHtml\(sel\):""\)\+/.test(lookCard), "the control sits in the Notebook tab's 🎨 look card, right after the name (its own line)");
+const lookCard = html.slice(html.indexOf("    lookParts={"), html.indexOf("// Week switcher — only when a next week"));   // 🎛 NB_CUSTOM: the look card's pieces
+ok(/name:nbNameCardHtml\(sel,lookOpts\),[^\n]*\n\s*countPic:\(\(typeof nbCountPicCardHtml==="function"\)\?nbCountPicCardHtml\(sel\):""\),/.test(lookCard) && /look:L\?\(L\.name\+L\.countPic\+L\.ticks\):""/.test(html),
+  "the control sits in the Customize card's 🎨 Look dial, right after the name (its own line)");
 ok(/return \{ nbKidName:cap\(kid\),[^\n]*reviewCap:nbReviewCap\(kid\), countPic:\(\(typeof nbCountPicOf==="function"\)\?nbCountPicOf\(kid\):null\), personal:/.test(html), "haNbContext passes ctx.countPic (the same reader the card uses)");
 ok(/N\.reviewDecks\(kid,\{[\s\S]{0,200}?countPic:\(\(typeof nbCountPicOf==="function"\)\?nbCountPicOf\(kid\):null\), countEmoji:\(\(typeof nbCountPicOwn==="function"\)\?nbCountPicOwn\(kid\):null\) \}\)/.test(html), "the trouble card asks with the same setting and picture");
 ok(/mastSetCountEmoji/.test(html) && !/count_emoji"\)\.set|count_emoji=/.test(hblock), "the counting picture itself is not set here (its home stays the unit row's “Counts”)");

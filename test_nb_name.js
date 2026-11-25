@@ -30,8 +30,10 @@ const FIX = {
   extras: base({ masteryItems: big, extraPages: { abc: { on: true }, daysSeasons: { on: true }, thisMonth: { on: true } }, units: [{ emoji: "🐢", title: "Sea Turtles", learning: [{ name: "Shell" }], days: { tuesday: true } }] })
 };
 // sha256 (first 16 hex) of JSON.stringify(generate(kid, ctx)) with no name passed — taken from origin/main 3c00664, BEFORE NBNAME.
-const BEFORE = {"julian/empty":"8a86b1e0d153f181","julian/big":"d39fada8e323128d","julian/jWeek":"3d4101251bd64c9e","julian/extras":"069037003d6715c3",
-  "caleb/empty":"8b37fe802fbd9ed6","caleb/big":"429921b3ea20175a","caleb/jWeek":"5ab6e2f2139b3704","caleb/extras":"6640936f94d04e6c"};
+// Pre-K hashes refreshed ON PURPOSE 2026-11-24 (PK_COVERFIT, test_prek_cover_fit.js): three CSS lines join every Pre-K notebook's
+// sheet so the cover's cards can't run off the page; with that block cut out of notebooks.js the old hashes come back exactly.
+const BEFORE = {"julian/empty":"b81b956feb8e2a8e","julian/big":"d3076c76513364b1","julian/jWeek":"2fc49f06d0818cef","julian/extras":"6b56a373f5200a34",
+  "caleb/empty":"8d606791cb80f6c4","caleb/big":"9f61c161c89d5ac6","caleb/jWeek":"8e309ffe87c1a3b6","caleb/extras":"fc97a13a7a9b248d"};
 const KIDS = ["julian", "caleb"];
 const snap = {};
 for (const kid of KIDS) for (const f in FIX) snap[kid + "/" + f] = hash(NB.generate(kid, clone(FIX[f])));
@@ -108,7 +110,7 @@ ok(writes.length === 0 && W2.nbNameCardHtml("d3", W2.nbLookOpts("d3")) === "", "
 const ns3 = {}, W3 = sandbox({ roster, ns: ns3, dry: true }); W3.els["nbname-d3"] = { value: "David" }; writes.length = 0; W3.nbSaveName("d3");
 ok(writes.length === 0 && ns3.d3.notebookName === "David", "?dryrun=1: nothing written to the database");
 const rn = html.slice(html.indexOf("function renderNotebook(el){"), html.indexOf("function renderActivities(el){"));
-ok(/lvRows:''\)\+\s*nbNameCardHtml\(sel,lookOpts\)\+/.test(rn), "the Notebook tab shows it in the 🎨 look card (Mom only, Pre-K notebooks)");
+ok(/name:nbNameCardHtml\(sel,lookOpts\),/.test(rn) && html.indexOf('look:L?(L.name+L.countPic+L.ticks):""') > 0, "the Notebook tab shows it in the Customize card's 🎨 Look dial (Mom only, Pre-K notebooks)");
 ok(/kidName:nbNm\(\(\(\(notebookSettings\|\|\{\}\)\[kid\]\)\|\|\{\}\)\.notebookName\)\|\|nbNm\(nbRec\.notebookName\)\|\|nbNm\(nbRec\.name\), notebookTheme:/.test(html) && /nbKidName:cap\(kid\), kidName:/.test(html),
    "the build reads notebookSettings/<kid>/notebookName first, then the record's notebookName, then its name; nbKidName unchanged");
 
