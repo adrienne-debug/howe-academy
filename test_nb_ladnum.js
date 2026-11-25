@@ -190,8 +190,10 @@ console.log("(d) the child's page never shows or hints the answer — every ques
   // the whole student document of a real build (tablet copy): no rule, no answer words
   for (const [kid, extra, lv] of [[KPK[0], {}, "k"], [KLU, {}, "g1"], [KLU, {}, "g2"]]) {
     const ctx = mkCtx(kid, Object.assign({ ladders: nl({ lv }), nbPageTags: true }, extra)), out = gen(kid, ctx), its = ctx.ladders.number.next.items, np = numPages(out.student)[0];
-    ok(lv + " build (tablet copy): no rule line of this week anywhere in the child's notebook; the page's only data- attributes are the tablet's day + name",
-      its.every((x) => out.student.indexOf(esc(x.item.rule)) < 0) && (np.match(/data-[a-z-]+=/g) || []).join(",") === "data-nb-day=,data-nb-name=");
+    // NBLADTAB_SAY (tablet slice): the tablet copy's question blocks may carry data-nb-say, the words its 🔊 speaks (test_nb_ladtab_say.js checks them)
+    ok(lv + " build (tablet copy): no rule line of this week anywhere in the child's notebook; the page's only data- attributes are the tablet's day + name (+ a question block's spoken words)",
+      its.every((x) => out.student.indexOf(esc(x.item.rule)) < 0) && (np.match(/data-[a-z-]+=/g) || []).filter((a) => a !== "data-nb-say=").join(",") === "data-nb-day=,data-nb-name=" &&
+      (np.match(/data-nb-say=/g) || []).length === (np.match(/<div class="lnt-q" data-nb-say="/g) || []).length);
   }
   // a picture that can't be drawn where its words would give the answer away → no page at all
   const ctxB = mkCtx(KLU, { ladders: nl({ lv: "g2" }) }), est = TN.levels.g2.items.find((it) => it.pic && it.pic.kind === "estimate");
