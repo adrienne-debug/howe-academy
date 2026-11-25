@@ -58,7 +58,7 @@ console.log("\n── every Mom's Day section draws it ──");
   });
   ok("Home Base's summary: Today at a glance (MDSMOOTH 2026-10-24)", /h\+=mwBanner\('Today at a glance'\);/.test(slice("renderMomsDay")));
   ok("Home Base no longer builds its own banner", slice("renderMomsDay").indexOf("linear-gradient(135deg,#2B7A78,#3AAFA9)") < 0);
-  ok("the banner markup lives in one place", src.split("🏡 Mom's Day</div>").length - 1 === 1 && src.split("🏡 Mom\\'s Day</div>").length - 1 === 0);
+  ok("the banner markup lives in one place", src.split("🏡 ${(typeof haDay===\"function\")?haDay():\"Mom's Day\"}</div>").length - 1 === 1 && src.split("🏡 Mom's Day</div>").length - 1 === 0 && src.split("🏡 Mom\\'s Day</div>").length - 1 === 0);   // 🏡 HHHOME (2026-11-24): the one banner asks the name — "My Day" in a household, "Mom's Day" everywhere else
   // every summary is one short line (fits a phone)
   const sums = [...src.matchAll(/mwBanner\((['"`])((?:\\.|(?!\1).)*)\1\)/g)].map(m => m[2]).filter(Boolean);
   ok("summaries found for the sections", sums.length >= 6, sums);

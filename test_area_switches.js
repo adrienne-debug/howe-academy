@@ -104,7 +104,7 @@ ok("the block writes nothing and asks nothing (no db, no dialog)", !/db\.ref|\.s
 ok("no 🔀 anywhere in index.html", src.indexOf("\u{1F500}") < 0);
 let BEFORE = "";
 try { BEFORE = stripAreas(src); } catch (e) { ok("stripAreas runs (" + SLICE.length + " places)", false, String(e)); }
-const TRACE = /AREAS_START|🧩 AREAS|areaOn|areaViewOn|areaDefaults|\bAREA_(KEYS|LABEL|OFF_HOUSEHOLD|VIEWS)\b|_arS|_arK|_ao\(|mpGoto\('sset'\)/;
+const TRACE = /AREAS_START|🧩 AREAS|function areaOn|function areaViewOn|areaDefaults|\bAREA_(KEYS|LABEL|OFF_HOUSEHOLD|VIEWS)\b|_arS|_arK|_ao\(|mpGoto\('sset'\)/;   // (a later slice — 🏡 HHHOME — asks areaOn("school") in two lines of its own, behind a typeof guard)
 ok("stripped: no trace of the slice left", !!BEFORE && !TRACE.test(BEFORE), (BEFORE.match(new RegExp("[^\\n]{0,60}(" + TRACE.source + ")[^\\n]{0,40}")) || [""])[0]);
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "areas-"));
 const INDEX_BEFORE = path.join(TMP, "index.html");
