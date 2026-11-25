@@ -38,11 +38,13 @@ const FIXTURES = (items) => ({
   picks: base({ masteryItems: items, juPicks: { letters: { 0: "D" }, numbers: { 1: "6" } } })
 });
 // sha256 (first 16 hex) of JSON.stringify(generate(kid, ctx)) — taken from origin/main d3224dc, BEFORE generatePreK existed.
+// Pre-K hashes refreshed ON PURPOSE 2026-11-24 (PK_COVERFIT, test_prek_cover_fit.js): three CSS lines join every Pre-K notebook's
+// sheet so the cover's cards can't run off the page; with that block cut out of notebooks.js the old hashes come back exactly.
 const BEFORE = {
-  "julian/empty": "8a86b1e0d153f181", "julian/mastery": "fe558aa8ce3804e1", "julian/cursors": "5455af6aaaf562f7", "julian/extras": "e7a73a6c292926de",
-  "julian/spelling": "cf9da3a6129a42ad", "julian/fourDay": "64f1989e078eaa38", "julian/picks": "a89cffbae1f753d5",
-  "caleb/empty": "8b37fe802fbd9ed6", "caleb/mastery": "844d75732e5723d3", "caleb/cursors": "46cc24e6432e0fe9", "caleb/extras": "29ca960f1a13df95",
-  "caleb/spelling": "a84698ec494f2eaa", "caleb/fourDay": "785246ec8aeb0380", "caleb/picks": "2f6b157b07c2a86a"
+  "julian/empty": "b81b956feb8e2a8e", "julian/mastery": "0c455b2d830e896d", "julian/cursors": "dda22ed9345aa7f9", "julian/extras": "1f8af64e2cb4ab28",
+  "julian/spelling": "ea388262ec0a948a", "julian/fourDay": "08df98c3f43430b0", "julian/picks": "bb66a1ced6f3a525",
+  "caleb/empty": "8d606791cb80f6c4", "caleb/mastery": "5a65293ef2364ae6", "caleb/cursors": "794f1313d1995c00", "caleb/extras": "c87216c88faa2ff0",
+  "caleb/spelling": "6e19203e61a8b466", "caleb/fourDay": "6dadff0294f120a8", "caleb/picks": "3bffe2b7a5b26454"
 };
 // caleb/picks refreshed ON PURPOSE 2026-11-08 (🚜 CBPLAN, test_construction_planner.js): Mom's planner number pick now joins the
 // construction notebook's week list (JU_NUMPICK, as Julian's) — the Tuesday number reads 6, not 15. It used to equal caleb/mastery.
