@@ -71,6 +71,10 @@ const CHANGES=[
   // 📅 BWNOWEEK (break week slice 1, 2026-11-24): Kids' Corner asks the same one rule now; stripped back to KC_BREAK's own line (test_kc_break_cards.js pins that)
   ["kc","    if(typeof scheduleBreakToday===\"function\"&&scheduleBreakToday()) return [];   // 🏖 KC_BREAK (her report 2026-11-24:",
    "    if(typeof schoolOffToday===\"function\"&&schoolOffToday()) return [];   // 🏖 KC_BREAK → 📅 BWNOWEEK: asks schoolOffToday() (a break day, or a week the board doesn't hold) (her report 2026-11-24:"],
+  // 🏡 HOUSECHIP (Household step 7 slice 3, 2026-11-25): 🏡 My day's clock chip asks hmixPlaced with the cards her schedule draws — none
+  // on a day schoolOffToday() says (mpSchAgendaHTML → brkTodayAgendaHTML → momAgendaHtml([])); stripped back to the schedule's cards before BRKTODAY
+  ["chip","  const L=hhHouseToday(), P=hmixPlaced(dn,mpSchTasks(\"mom\",dn),L), C={};",
+   "  const L=hhHouseToday(), P=hmixPlaced(dn,schoolOffToday()?[]:mpSchTasks(\"mom\",dn),L), C={};"],
 ];
 function strip(src){
   for(let i=CHANGES.length-1;i>=0;i--){ const [,o,n]=CHANGES[i]; if(count(src,n)!==1) throw new Error("change "+i+" ("+CHANGES[i][0]+") not found once"); src=src.split(n).join(o); }
