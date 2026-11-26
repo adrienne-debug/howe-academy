@@ -50,8 +50,9 @@ const baseHjs = src => { let s = src; const R = (a, b, l) => { s = once(s, "hous
   R("if(typeof lgAmzSbBack===\"function\") lgAmzSbBack(R,at,u)/* LEDGERAMZ (C4): a 🌅 row's line since */; ", "", "L5's Send back Undo hook");
   if (/LEDGERAMZ|lgAmz|\bamPay|CHOREAMWHY|\batk\b/.test(s)) throw new Error("test_morning_why: the app before's house.js still mentions C4");
   return s; };
-const BASE_IDX = (() => { const t = path.join(os.tmpdir(), "morning_why_before_" + process.pid + ".html"); fs.writeFileSync(t, baseIdx(fs.readFileSync(path.join(__dirname, "index.html"), "utf8"))); return t; })();
-const BASE_HJS = baseHjs(fs.readFileSync(path.join(__dirname, "house.js"), "utf8"));
+const L6 = require(path.join(__dirname, "test_fixtures", "ledger_l6_out.js"));   // L6 (↩ Do it again) sits on these lines: taken out first
+const BASE_IDX = (() => { const t = path.join(os.tmpdir(), "morning_why_before_" + process.pid + ".html"); fs.writeFileSync(t, baseIdx(L6.idx(fs.readFileSync(path.join(__dirname, "index.html"), "utf8")))); return t; })();
+const BASE_HJS = baseHjs(L6.hjs(fs.readFileSync(path.join(__dirname, "house.js"), "utf8")));
 if (process.env.MWHY_BASE_OUT) { fs.writeFileSync(process.env.MWHY_BASE_OUT + ".html", fs.readFileSync(BASE_IDX, "utf8")); fs.writeFileSync(process.env.MWHY_BASE_OUT + ".js", BASE_HJS); process.exit(0); }
 console.log("(the app before: this tree with CHOREAMWHY / LEDGERAMZ taken out)");
 

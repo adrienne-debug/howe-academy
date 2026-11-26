@@ -35,7 +35,8 @@ const IDX = process.env.CD_INDEX || path.join(__dirname, "index.html"), HJS = fs
 const once = (src, what, from, to, label) => { const n = typeof from === "string" ? src.split(from).length - 1 : (src.match(from) || []).length;
   if (n !== 1) throw new Error("test_chore_daily: the app before cannot be built — " + label + " found " + n + "× in " + what + " (must be exactly once)"); return src.replace(from, () => to); };
 const C6 = require(path.join(__dirname, "test_fixtures", "carve_c6.js"));   // C6 (test_chore_zero_daily.js) shares C5's walk: its app before goes too
-const BASE_IDX = (() => { let s = C6.idx(fs.readFileSync(path.join(__dirname, "index.html"), "utf8"));
+const L6 = require(path.join(__dirname, "test_fixtures", "ledger_l6_out.js"));   // L6 (↩ Do it again) sits on these lines: taken out first
+const BASE_IDX = (() => { let s = C6.idx(L6.idx(fs.readFileSync(path.join(__dirname, "index.html"), "utf8")));
   const R = (a, b, l) => { s = once(s, "index.html", a, b, l); };
   R(/^\/\/ CHOREDAILY_START[^\n]*\n[\s\S]*?^\/\/ CHOREDAILY_END\n/m, "", "the CHOREDAILY block");
   R('\n    const _bd=(now&&_b0>0&&typeof rtDailyPay==="function"&&day===_todayDay&&rtDailyRow(_st0))?rtDailyPay(slot,kid,i,_st0):_bf;   // CHOREDAILY: a daily missed 2+ days in a row', "", "toggleRtStep");
@@ -67,7 +68,7 @@ const BASE_IDX = (() => { let s = C6.idx(fs.readFileSync(path.join(__dirname, "i
   R("{current:v,at:Date.now()}); if(_dw) rtDailyStampNew(_dw); householdOnValue(", "{current:v,at:Date.now()}); householdOnValue(", "hhLevelSet's stamp");
   if (/CHOREDAILY|rtDaily|RT_DAILY_FROM|_b1|_bd\b/.test(s)) throw new Error("test_chore_daily: the app before still mentions CHOREDAILY");
   const t = path.join(os.tmpdir(), "chore_daily_before_" + process.pid + ".html"); fs.writeFileSync(t, s); return t; })();
-const BASE_HJS = (() => { let s = C6.hjs(HJS);
+const BASE_HJS = (() => { let s = C6.hjs(L6.hjs(HJS));
   const R = (a, b, l) => { s = once(s, "house.js", a, b, l); };
   R(`    if(due){ if(p<full&&typeof rtDailyRow==="function"&&rtDailyRow(st)){ r.sh=full-p; r.note="paid "+p+" of "+full+" ⭐"; } return r; }   // CHOREDAILY (C5): a daily after 2+ missed days`, "    if(due) return r;", "the ledger's done row");
   R(`    if(D.k===0){ const dl=(typeof rtDailyNote==="function")?rtDailyNote(slot,kid,i,st):""; return Object.assign(r,{ic:"○",note:"not done yet"+(dl?" · "+dl:"")}); }   // CHOREDAILY (C5)`, `    if(D.k===0) return Object.assign(r,{ic:"○",note:"not done yet"});`, "the ledger's open row");

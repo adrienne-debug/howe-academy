@@ -17,6 +17,9 @@
  *       today's row writes, the day moving moves chores and never a card, Mom-off / no school → by time of day, the switch's one write
  *       · a chore ticked ✓ but never answered holds no gap · anything inside throws → today's rows
  *   7 · slice 2 mutation checks (the plan's: placed chores fed to the Mom loop → the identical-lay check fails)
+ *   8 · slice 3 (§5 row 3, the 🏡 My day clock chip, HOUSECHIP): a chore placed in a gap shows "⏰ <time>" on Mom's Day ▸ 🏡 My day =
+ *       its row's time on her schedule; no chip when Mixed in is off, on a no-school / Mom-off day, once answered or done, with no gap,
+ *       on another day, on Dad's rows; the rest of every screen = this tree minus HOUSECHIP; planted faults for each rule
  *
  *   run:  node test_momloop_house.js
  */
@@ -275,7 +278,17 @@ async function wholeApp() {
 const MIX = cut(SRC, "// HOUSEMIX_START", "// HOUSEMIX_END");
 const HOOK1 = ", P=(typeof hmixPlaced===\"function\")?hmixPlaced(dayName,dayTasks||[],list):null;   // 🏡 HOUSEMIX\n";
 const HOOK2 = "    if(!b&&P&&P[r.id]){ out.push(hmixRow(r,lbl,P[r.id],doneBtn,skipBtn)); return; }   // 🏡 HOUSEMIX: placed in a gap\n";
-const minusMix = s => { [MIX, HOOK1, HOOK2].forEach(x => { if (s.split(x).length !== 2) throw new Error("HOUSEMIX piece not found once: " + x.slice(0, 60)); }); return s.replace(MIX, "").replace(HOOK1, ";\n").replace(HOOK2, ""); };
+// Slice 3 (HOUSECHIP): the block and its hook lines in _mcRow / momDayStripHTML. minusChip = this tree minus slice 3.
+const CHIPB = cut(SRC, "// HOUSECHIP_START", "// HOUSECHIP_END");
+const CHIPHOOK = [["function _mcRow(id,c,iso,P,C){   // 👨 DADMYDAY: P = whose day (mdMine); omitted = Mom's, unchanged · 🏡 HOUSECHIP: C = her chip times", "function _mcRow(id,c,iso,P){   // 👨 DADMYDAY: P = whose day (mdMine); omitted = Mom's, unchanged", 1],
+  ["    +(C?hmixChip(C,id):'')   // 🏡 HOUSECHIP\n", "", 1], ["  const CH=(!P.dad&&typeof hmixChips===\"function\")?hmixChips(iso,today):null;   // 🏡 HOUSECHIP: once per draw\n", "", 1],
+  ["_mcRow(id,list[id],iso,P.dad?P:undefined,CH)", "_mcRow(id,list[id],iso,P.dad?P:undefined)", 2]];
+const minusChip = s => { if (s.split(CHIPB).length !== 2) throw new Error("HOUSECHIP block not found once"); s = s.replace(CHIPB, "");
+  CHIPHOOK.forEach(([a, b, n]) => { if (s.split(a).length !== n + 1) throw new Error("HOUSECHIP hook not found " + n + "×: " + a.slice(0, 60)); s = s.split(a).join(b); }); return s; };
+const CHIP_OPEN = (CHIPB.match(/'(<span style="[^"]*">)⏰ '/) || [])[1];
+const NOCHIP = x => String(x).split(CHIP_OPEN).map((seg, i) => i ? seg.replace(/^⏰ [^<]*<\/span>/, "") : seg).join("");
+const same6 = (k, a, b) => k === "momDay" ? NOCHIP(a) === NOCHIP(b) : JSON.stringify(a) === JSON.stringify(b);   // slice 3's chips are the one intended change on 🏡 My day
+const minusMix = s => { s = minusChip(s); [MIX, HOOK1, HOOK2].forEach(x => { if (s.split(x).length !== 2) throw new Error("HOUSEMIX piece not found once: " + x.slice(0, 60)); }); return s.replace(MIX, "").replace(HOOK1, ";\n").replace(HOOK2, ""); };
 const HJS = fs.readFileSync(path.join(__dirname, "house.js"), "utf8");
 const MIXSET = cut(HJS, "// HOUSEMIXSET_START", "// HOUSEMIXSET_END");
 const LBL = { m_fridge: "Wipe the fridge", m_oven: "Clean the oven", m_porch: "Sweep the porch", m_beds: "Strip the beds", m_lock: "Lock up", m_garage: "Clear out the garage" };
@@ -313,7 +326,7 @@ async function world6(o) {
     if (!A || o.fresh) { A = w.boot("A" + out.length, "devA" + out.length, { mom: true }); await w.flush(); }
     const mk = w.mark(); let extra = null;
     if (st[5]) { extra = st[5](A, w); await w.flush(); }
-    const row = { at: hm(st[3] * 60 + st[4]), shown: JSON.parse(A.run(SHOW6)), extra, writes: DBV(w, w.since(mk)) };
+    const row = { at: hm(st[3] * 60 + st[4]), shown: JSON.parse(A.run(o.show || SHOW6)), extra, writes: DBV(w, w.since(mk)) };
     if (o.call) { const c = JSON.parse(A.run(CALL)); row.call = c; }
     out.push(row);
   }
@@ -345,7 +358,7 @@ async function slice2(o) {
     const b = await world6({ mode, fit: "mixed", index: B6, steps: day(act) }), m = await world6({ mode, fit: "mixed", index: IDX, steps: day(act), call: true });
     const same = [], at = [], four = [], order = [], after = [], today = []; let nGap = 0, nAfter = 0;
     m.out.forEach((r, i) => { const br = b.out[i];
-      SAME6.forEach(k => { if (JSON.stringify(r.shown[k]) !== JSON.stringify(br.shown[k])) same.push(r.at + " " + k); });
+      SAME6.forEach(k => { if (!same6(k, r.shown[k], br.shown[k])) same.push(r.at + " " + k); });
       const mins = agendaRows(r.shown.sched).map(x => x.min); if (mins.some((x, j) => j && x < mins[j - 1])) order.push(r.at);
       const ans = r.call.r.placed, exp = expect6(r.call); if (JSON.stringify(ans) !== JSON.stringify(exp)) at.push([r.at, "≠ first fit"]);
       exp.forEach(p => { const lb = LBL[p.id] || p.id, row = rowOf(r.shown.sched, lb), base = rowOf(br.shown.sched, lb);
@@ -355,7 +368,7 @@ async function slice2(o) {
         else { nAfter++; if (!row || !base || row.html !== base.html || row.min !== base.min || row.min !== r.call.inp.end) after.push([r.at, lb]); } });
       ["m_fridge", m.out[3].extra].forEach(id => { const answered = r.call.r.placed.every(p => p.id !== id); if (answered && JSON.stringify(rowOf(r.shown.sched, LBL[id])) !== JSON.stringify(rowOf(br.shown.sched, LBL[id]))) today.push([r.at, id]); });
     });
-    ck("B plan " + mode + ", switch on: Mom's Day, Dad's Day, every kid's screen, another day's schedule and every card's time = the base, at every time", same.length === 0, same.slice(0, 4));
+    ck("B plan " + mode + ", switch on: Mom's Day (but for slice 3's clock chips), Dad's Day, every kid's screen, another day's schedule and every card's time = the base, at every time", same.length === 0, same.slice(0, 4));
     ck("B …each unanswered chore at the time hgapLay gives, = the independent first fit, \"<from>–<to> · in a gap\" (" + nGap + " placed)", at.length === 0 && nGap > 0, at.slice(0, 3));
     ck("B …each with ✓ Done · Now · ⏰ Later · Not now (today's handlers), no \"block out time?\"", four.length === 0, four.slice(0, 3));
     ck("B …her schedule in time order", order.length === 0, order);
@@ -390,7 +403,7 @@ async function slice2(o) {
     const on = await world6({ mode: "off", fit: "mixed", index: IDX, steps: st, call: true }), off = await world6({ mode: "off", fit: null, index: IDX, steps: st });
     const diff = [], kids = []; let moved = 0, cardMoved = 0, early = 0;
     on.out.forEach((r, i) => { if (JSON.stringify(r.shown.times) !== JSON.stringify(off.out[i].shown.times)) diff.push(r.at);
-      SAME6.filter(k => k !== "times").forEach(k => { if (JSON.stringify(r.shown[k]) !== JSON.stringify(off.out[i].shown[k])) kids.push(r.at + " " + k); });
+      SAME6.filter(k => k !== "times").forEach(k => { if (!same6(k, r.shown[k], off.out[i].shown[k])) kids.push(r.at + " " + k); });
       if (r.extra) early++;
       if (i) { if (JSON.stringify(r.call.r.placed) !== JSON.stringify(on.out[i - 1].call.r.placed)) moved++; if (JSON.stringify(r.shown.times) !== JSON.stringify(on.out[i - 1].shown.times)) cardMoved++; } });
     ck("D the day moving (" + early + " early check-offs, " + on.out.length + " draws 10:00 → 2:30): every card's laid time identical with the switch on and off", diff.length === 0, diff.slice(0, 4));
@@ -469,6 +482,86 @@ async function slice2(o) {
   }
   return R;
 }
+// ── 8 · slice 3: the 🏡 My day clock chip (HOUSECHIP) — this tree vs. this tree minus HOUSECHIP (HOUSEMIX kept) ─────────────────────
+// PLAN_house_step7 §5 row 3: "On 🏡 My day the same chore gets a small clock chip, "⏰ 10:40" … Same placement, worked out once per draw."
+const SHOW8 = SHOW6.replace(" times:", " keys:hhHouseToday().map(function(x){ return [x.r.id,x.r.on]; }), times:");
+// Mom's rows as 🏡 My day draws them: [{key, label, chip}] (chip = the "⏰ …" text right after the label, or null).
+const myRows = html => { const out = [], rx = /<div onclick="(mcToggle|dcToggle)\('([^']*)'\)" style="cursor:pointer;flex:1;[^"]*">([^<]*)<\/div>(<span style="[^"]*">⏰ ([^<]*)<\/span>)?/g; let m;
+  while ((m = rx.exec(String(html)))) out.push({ fn: m[1], key: m[2], label: m[3], chip: m[5] || null }); return out; };
+const keyOf = (shown, id) => { const k = (shown.keys || []).find(x => x[0] === id); return k ? (String(k[1]).match(/^mcToggle\('(.*)'\)$/) || [])[1] : null; };
+let BASE8 = null;
+async function slice3(o) {
+  o = o || {}; const R = [], ck = (n, c, x) => R.push([n, !!c, x]);
+  const IDX = o.index || MINE, B8 = BASE8, only = o.only || "KLMNOP";
+  const TIMES6 = [[9, 30], [10, 30], [11, 40], [13, 10], [15, 0]];
+  const day = (fn5) => TIMES6.map((t, i) => [2026, 11, 16, t[0], t[1], fn5 ? (A, w) => fn5(i, A, w) : null]);
+  const rest8 = (r, br, bad) => { SAME6.concat(["sched"]).forEach(k => { if (k === "momDay" ? NOCHIP(r.shown[k]) !== br.shown[k] : JSON.stringify(r.shown[k]) !== JSON.stringify(br.shown[k])) bad.push(r.at + " " + k); }); };
+
+  // K · switch on: every chore she has not answered that HOUSEMIX put in a gap carries "⏰ <time>" = its row's time on her schedule;
+  // answered (her 11:40 Now), done (her 1:10 tick) and no-gap chores carry none; the rest of every screen = the base.
+  if (only.includes("K")) for (const mode of (o.modes || ["off", "preview", "on"])) {
+    const act = (i, A) => { if (i === 2) A.run("hhHouseBlockSet('m_fridge','now')"); if (i === 3) return A.run("(function(){ const dn=mdTodayName(), L=hhHouseToday(), P=hmixPlaced(dn,mpSchTasks('mom',dn),L)||{}; const x=L.filter(function(y){ return y.r.id!=='m_fridge'&&P[y.r.id]&&P[y.r.id].how==='gap'&&(!mcSlotOf(y.r.job)||mcSlotOf(y.r.job)===mpSlotNow()); })[0]; if(!x) return null; new Function(x.r.on)(); return x.r.id; })()"); return null; };   // 11:40 her Now tap · 1:10 she ticks a chore that had a gap (and a chip) on the tab 🏡 My day shows now
+    const b = await world6({ mode, fit: "mixed", index: B8, steps: day(act), show: SHOW8 }), m = await world6({ mode, fit: "mixed", index: IDX, steps: day(act), call: true, show: SHOW8 });
+    const bad = [], none = [], rest = [], dad = []; let nChip = 0, nAns = 0, nDone = 0, nNoGap = 0;
+    m.out.forEach((r, i) => { const rows = myRows(r.shown.momDay), gap = {};
+      r.call.r.placed.forEach(p => { if (p.how === "gap") gap[p.id] = p; });
+      (r.shown.keys || []).forEach(([id]) => { const key = keyOf(r.shown, id), row = rows.find(x => x.fn === "mcToggle" && x.key === key); if (!row) return;
+        const p = gap[id], sr = rowOf(r.shown.sched, LBL[id] || id);
+        if (p) { nChip++; if (row.chip !== T12(p.at) || !sr || sr.min !== p.at || !sr.html.includes(T12(p.at) + "–" + T12(p.end) + " · in a gap")) bad.push([r.at, id, row.chip, sr && sr.min, p.at]); }
+        else { if (row.chip) none.push([r.at, id, row.chip]);
+          const answered = (id === "m_fridge" && i >= 2) || id === m.out[3].extra && i >= 3; if (answered && id === "m_fridge") nAns++; else if (answered) nDone++; else nNoGap++; } });
+      rest8(r, b.out[i], rest); if (r.shown.dadDay.includes(CHIP_OPEN) || r.shown.dadSched.includes(CHIP_OPEN)) dad.push(r.at); });
+    ck("K plan " + mode + ", switch on: each chore placed in a gap shows \"⏰ <time>\" on 🏡 My day = its row's time on her schedule (" + nChip + " chips)", bad.length === 0 && nChip > 0, bad.slice(0, 3));
+    ck("K …no chip on a chore she answered (Now, " + nAns + "), ticked done (" + nDone + ") or that found no gap (" + nNoGap + (mode === "on" ? "; the plan ON hands her only what fits her 20 min, so no second placed chore to tick at 1:10" : "") + ")", none.length === 0 && nAns > 0 && ((nDone > 0 && nNoGap > 0) || mode === "on"), none.slice(0, 3));
+    ck("K …the rest of 🏡 My day, her schedule, Dad's Day, every kid's screen and every card's time = the base; Dad's rows carry no chip", rest.length === 0 && dad.length === 0, rest.slice(0, 4).concat(dad));
+    ck("K …the same database writes in both copies (the chip saves nothing)", JSON.stringify(b.w.db.log.map(e => [e.op, e.path])) === JSON.stringify(m.w.db.log.map(e => [e.op, e.path])));
+    if (mode === "off" && !o.index) SHOT.chip = m.out.map(r => ({ at: r.at, rows: myRows(r.shown.momDay) }));
+  }
+
+  // L · Mixed in not tapped (the default on her data today) or "School first": no chip, 🏡 My day = the base byte for byte.
+  if (only.includes("L")) for (const [mode, fit] of [["off", null], ["on", null], ["off", "school"]]) {
+    const b = await world6({ mode, fit, index: B8, steps: day() }), m = await world6({ mode, fit, index: IDX, steps: day() }), bad = [];
+    m.out.forEach((r, i) => { const x = r.shown.momDay, y = b.out[i].shown.momDay; if (x.includes(CHIP_OPEN) || x !== y) { let k = 0; while (k < x.length && x[k] === y[k]) k++; bad.push([r.at, x.slice(Math.max(0, k - 120), k + 160), y.slice(Math.max(0, k - 120), k + 160)]); } });
+    ck("L switch " + (fit ? "\"" + fit + "\"" : "not tapped") + ", plan " + mode + ": no chip; 🏡 My day = the base byte for byte at every time", bad.length === 0 && m.out[1].shown.momDay.includes(LBL.m_fridge), bad);
+  }
+
+  // M · ⏰ Later and Not now: a chore with a chip at 10:00 loses it once she answers (10:30), and stays without it (10:40).
+  if (only.includes("M")) {
+    const tap = A => { A.run("hhHouseBlockSet('m_oven','later')"); A.run("hhHouseBlockSet('m_fridge','skip')"); return 1; };
+    const m = await world6({ mode: "off", fit: "mixed", index: IDX, steps: [[2026, 11, 16, 10, 0, null], [2026, 11, 16, 10, 30, tap], [2026, 11, 16, 10, 40, null]], show: SHOW8 });
+    const chipOf = (r, id) => { const row = myRows(r.shown.momDay).find(x => x.key === keyOf(r.shown, id)); return row ? row.chip : "(not drawn)"; };
+    const before = ["m_oven", "m_fridge"].map(id => chipOf(m.out[0], id)), after = [1, 2].map(i => ["m_oven", "m_fridge"].map(id => chipOf(m.out[i], id)));
+    ck("M ⏰ Later (Clean the oven) and Not now (Wipe the fridge): chips at 10:00 (" + before.join(", ") + "), none once answered", before.every(x => x && x !== "(not drawn)") && after.every(a => a.every(x => x === null)), after);
+  }
+
+  // N · her Mom-off day, a Saturday, a holiday: chores show by time of day on her schedule — no chip, 🏡 My day = the base.
+  if (only.includes("N")) for (const [tag, steps] of [["her Mom-off day", [[2026, 11, 16, 10, 30, A => A.run("momLoop.momOff=_mlDayStamp()")]]], ["a Saturday", [[2026, 11, 21, 10, 0, null]]],
+    ["a holiday", [[2026, 11, 17, 10, 30, A => A.run("calendarData.holidays=Object.assign({},calendarData.holidays,{h7:{date:'2026-11-17',name:'Day off'}})")]]]]) {
+    const b = await world6({ mode: "off", fit: "mixed", index: B8, steps }), m = await world6({ mode: "off", fit: "mixed", index: IDX, steps }), r = m.out[0];
+    ck("N " + tag + ": no chip, 🏡 My day = the base (her schedule shows them by time of day)", !r.shown.momDay.includes(CHIP_OPEN) && r.shown.momDay === b.out[0].shown.momDay && /☀️ Morning<\/span>/.test(r.shown.sched), [r.shown.momDay.includes(CHIP_OPEN)]);
+  }
+
+  // O · Dad: his 🏡 My day rows get no chip, even a chore with the same key as one of hers; another day gets none either.
+  if (only.includes("O")) {
+    const dadKeys = A => A.run("dadChoresData.oven={label:'Hose the car',cad:'daily'}; dadChoresData.fridge={label:'Fill the feeder',cad:'daily'}; 1");
+    const show = "(function(){ const dn=mdTodayName(), iso=mwTodayIso(), nx=DAYS_ALL[(DAYS_ALL.indexOf(dn)+1)%7]; return JSON.stringify({momDay:momDayStripHTML(iso,dn), dadDay:momDayStripHTML(iso,dn,'dad'), dadSched:dadSchedHTML(dn), nx:momDayStripHTML(iso,nx), nxChips:(typeof hmixChips===\"function\")?hmixChips(iso,nx):null}); })()";
+    const go = async idx => (await world6({ mode: "off", fit: "mixed", index: idx, steps: [[2026, 11, 16, 10, 0, dadKeys]], show })).out[0].shown;
+    const b = await go(B8), m = await go(IDX), dr = myRows(m.dadDay).filter(x => x.fn === "dcToggle");
+    ck("O Dad's 🏡 My day: his rows carry no chip (" + dr.map(x => x.key).join(", ") + " share keys with her chipped rows); his day = the base", dr.some(x => x.key === "oven") && dr.every(x => !x.chip) && !m.dadDay.includes(CHIP_OPEN) && m.dadDay === b.dadDay && m.dadSched === b.dadSched && myRows(m.momDay).some(x => x.key === "oven" && x.chip), dr);
+    ck("O another day: no chip (the chip is for today only)", m.nxChips === null && !m.nx.includes(CHIP_OPEN) && m.nx === b.nx, m.nxChips);
+  }
+
+  // P · anything inside HOUSECHIP throws → 🏡 My day still draws, without chips, = the switch-off strip; nothing written.
+  if (only.includes("P")) {
+    const W = require(path.join(__dirname, "test_fixtures", "house_world.js")), go = async (fit, plant) => { const w = await W.world({ household: hh7("off", fit), index: IDX }); await w.at(2026, 11, 16, 10, 30);
+      const A = w.boot("P", "devP", { mom: true }); await w.flush(); if (plant) A.run("hmixPlaced=function(){ throw new Error('planted'); };"); const mk = w.mark(); let md = null, err = null;
+      try { md = A.run("momDayStripHTML(mwTodayIso(),mdTodayName())"); } catch (e) { err = String(e && e.message || e); } await w.flush(); return { md, err, writes: w.since(mk).length }; };
+    const off = await go(null, false), on = await go("mixed", true);
+    ck("P switch on but the chip's placement throws: 🏡 My day still draws, = the switch-off strip, nothing written", !on.err && on.md === off.md && on.md.includes(LBL.m_oven) && on.writes === 0, on.err);
+  }
+  return R;
+}
+
 const SHOT = {};
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -510,8 +603,8 @@ const SHOT = {};
 
   console.log("\n── 6 · slice 2: her schedule draws them, once she taps Mixed in (this tree vs. this tree minus HOUSEMIX) ──");
   { ok("HOUSEMIX_START / _END each appear once, after HOUSEGAP_END, outside MOMLOOP", SRC.split("// HOUSEMIX_START").length === 2 && SRC.split("// HOUSEMIX_END").length === 2 && SRC.indexOf("// HOUSEMIX_START") > SRC.indexOf("// HOUSEGAP_END") && SRC.indexOf("// HOUSEMIX_START") > SRC.indexOf("// MOMLOOP_END") === SRC.indexOf("// HOUSEMIX_START") > SRC.indexOf("// MOMLOOP_START"));
-    const sched = fnText(SRC, "momSchedHouse"), noMix = SRC.replace(MIX, "");
-    ok("hmix… is named only in HOUSEMIX and momSchedHouse (its two hook lines), in no other app file", !/hmix/.test(noMix.replace(sched, "")) && sched.split("hmix").length === 4 && fs.readdirSync(__dirname).filter(f => /\.(js|html)$/.test(f) && f !== "index.html" && !/^test_/.test(f)).every(f => !/\bhmix/.test(fs.readFileSync(path.join(__dirname, f), "utf8"))));
+    const sched = fnText(SRC, "momSchedHouse"), noMix = minusChip(SRC).replace(MIX, "");
+    ok("hmix… is named only in HOUSEMIX, momSchedHouse (its two hook lines) and slice 3's HOUSECHIP + its hooks, in no other app file", !/hmix/.test(noMix.replace(sched, "")) && sched.split("hmix").length === 4 && fs.readdirSync(__dirname).filter(f => /\.(js|html)$/.test(f) && f !== "index.html" && !/^test_/.test(f)).every(f => !/\bhmix/.test(fs.readFileSync(path.join(__dirname, f), "utf8"))));
     ok("MOMLOOP, hhHouseBlocksOpen, hhHouseBlockSet, mpSchTasks and momAgendaHtml never name it", [MOMLOOP, fnText(SRC, "hhHouseBlocksOpen"), fnText(SRC, "hhHouseBlockSet"), fnText(SRC, "mpSchTasks"), fnText(SRC, "momAgendaHtml")].every(x => !/hmix|HOUSEMIX/.test(x)));
     ok("a 🧽 cleaning day's laid plan returns before HOUSEMIX is asked (her laid cleaning day stays as it is)", sched.indexOf("hhPlanLay(") > 0 && sched.indexOf("hhPlanLay(") < sched.indexOf("hmixPlaced"));
     const code = MIX.split("\n").filter(l => !/^\s*\/\//.test(l)).join("\n");
@@ -545,6 +638,39 @@ const SHOT = {};
     { const a = 'const f=hhPeopleOf("mom").fit;', n = MIXSET.split(a).length - 1;
       const f = n === 1 ? (await slice2({ hjs: HJS.replace(MIXSET, MIXSET.replace(a, 'const f=hhPeopleOf("mom").fit||"mixed";')), only: "H" })).filter(r => !r[1]) : [];
       ok("X8 👤 By person reads the unset default as Mixed in → the \"not on yet\" check fails", n === 1 && f.some(r => /not on yet/.test(r[0])), f.map(r => r[0])); }
+
+    console.log("\n── 8 · slice 3: the 🏡 My day clock chip (this tree vs. this tree minus HOUSECHIP) ──");
+    { ok("HOUSECHIP_START / _END each appear once, after HOUSEMIX_END, outside MOMLOOP", SRC.split("// HOUSECHIP_START").length === 2 && SRC.split("// HOUSECHIP_END").length === 2 && SRC.indexOf("// HOUSECHIP_START") > SRC.indexOf("// HOUSEMIX_END") && SRC.indexOf("// HOUSECHIP_START") > SRC.indexOf("// MOMLOOP_END") === SRC.indexOf("// HOUSECHIP_START") > SRC.indexOf("// MOMLOOP_START"));
+      const code = CHIPB.split("\n").filter(l => !/^\s*\/\//.test(l)).join("\n");
+      const bad = ["db", "localStorage", "sessionStorage", "HA_LS", "setTimeout", "setInterval", "_blkIv", "mlQueueLay", "renderAll", "document", "hgapLay"].filter(x => new RegExp("\\b" + x + "\\b").test(code));
+      ok("HOUSECHIP writes nothing and keeps nothing; its times come from HOUSEMIX's hmixPlaced on her schedule's own cards (mpSchTasks(\"mom\",today)), no placement of its own", bad.length === 0 && !/\.(set|update|remove|transaction)\(|ref\(/.test(code) && !/^(let|var)\s/m.test(code) && code.split("hmixPlaced(").length === 2 && code.includes('mpSchTasks("mom",dn)'), bad);
+      const strip = fnText(SRC, "momDayStripHTML");
+      ok("the chips are worked out once per 🏡 My day draw (one hmixChips call, before the rows), only for her (!P.dad); _mcRow only reads them", strip.split("hmixChips(").length === 2 && strip.includes("!P.dad&&typeof hmixChips") && strip.indexOf("hmixChips(") < strip.indexOf("_mcRow(") && strip.split(",CH)").length === 3 && fnText(SRC, "_mcRow").split("hmixChip").length === 2);
+      ok("MOMLOOP, momSchedHouse, hmixPlaced, hhHouseBlockSet, mpSchTasks and dadSchedHTML never name HOUSECHIP", [MOMLOOP, fnText(SRC, "momSchedHouse"), MIX, fnText(SRC, "hhHouseBlockSet"), fnText(SRC, "mpSchTasks"), fnText(SRC, "dadSchedHTML")].every(x => !/hmixChip|HOUSECHIP/.test(x)));
+      ok("the base (this tree minus HOUSECHIP) has no trace of it, and keeps HOUSEMIX", !/hmixChip|HOUSECHIP|,CH\)/.test(minusChip(SRC)) && minusChip(SRC).includes("// HOUSEMIX_START"));
+      ok("(the chip's markup was found in the block)", !!CHIP_OPEN); }
+    BASE8 = tmpFile("base8", minusChip(SRC));
+    (await slice3()).forEach(r => ok(r[0], r[1], r[2]));
+    if (SHOT.chip) [1, 3].forEach(i => console.log("    (🏡 My day at " + SHOT.chip[i].at + ": " + SHOT.chip[i].rows.map(r => r.label + (r.chip ? " ⏰ " + r.chip : "")).join(" · ") + ")"));
+
+    console.log("\n── 9 · slice 3 mutation checks: each planted fault → a check in 8 fails ──");
+    const CM = [
+      ["Y1 a second calculation (placement on an empty day, not her schedule's cards)", "CHIP", "K", 'schoolOffToday()?[]:mpSchTasks("mom",dn)', "[]", /= its row's time/],
+      ["Y2 a no-school / Mom-off (by time of day) chore gets a chip", "CHIP", "N", 'if(p&&p.how==="gap"&&k)', "if(p&&k)", /no chip/],
+      ["Y3 an answered chore keeps its chip", "CHIP", "KM", ",L), C={};", ",L.map(function(x){ return {r:x.r,rec:null}; })), C={};", /answered|once answered/],
+      ["Y4 a done chore keeps its chip", "CHIP", "K", ",L), C={};", ",L.map(function(x){ return {r:Object.assign({},x.r,{done:false}),rec:x.rec}; })), C={};", /ticked done/],
+      ["Y5 a chore with no gap gets a chip at school end", "CHIP", "K", 'if(p&&p.how==="gap"&&k) C[k]=p.at;', 'if(k&&!x.r.done&&!x.rec) C[k]=p&&p.how==="gap"?p.at:coSchoolEnd();', /no gap/],
+      ["Y6 Dad's 🏡 My day asks for the chips too", "HOOK", "O", "const CH=(!P.dad&&typeof hmixChips", "const CH=(typeof hmixChips", /Dad's 🏡 My day/],
+      ["Y7 the switch reads the unset default as on", "MIX", "L", 'return hhPeopleOf("mom").fit==="mixed";', 'return (hhPeopleOf("mom").fit||"mixed")==="mixed";', /not tapped/],
+      ["Y8 not today ignored", "CHIP", "O", "dn!==_todayDay||iso!==mwTodayIso()||", "", /another day/],
+      ["Y9 a throw inside is not caught", "CHIP", "P", "}catch(e){ return null; } }", "}catch(e){ throw e; } }", /throws/],
+    ];
+    for (const [name, where, only, a, b, rx] of CM) {
+      const hay = where === "CHIP" ? CHIPB : where === "MIX" ? MIX : SRC, n = hay.split(a).length - 1; if (n !== 1) { ok("(" + name + ": its text occurs once)", false, n); continue; }
+      const text = where === "CHIP" ? SRC.replace(CHIPB, CHIPB.replace(a, b)) : where === "MIX" ? SRC.replace(MIX, MIX.replace(a, b)) : SRC.replace(a, b);
+      const f = await slice3({ index: tmpFile("cm" + name.slice(0, 2), text), only, modes: ["off"] }).then(R => R.filter(r => !r[1]));
+      ok(name + " → " + f.length + " check(s) in " + only + " fail", f.length > 0 && f.some(r => rx.test(r[0])), f.map(r => r[0]).slice(0, 2));
+    }
   } finally { TMP6.forEach(f => { try { fs.unlinkSync(f); } catch (e) { } }); }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

@@ -2170,14 +2170,15 @@ function lgSbDone(u){ const ks=" "+Object.keys(u||{}).join(" ");
   if(/ laundry\//.test(ks)) try{ HA_LS.setItem("ha_laundry",JSON.stringify(laundryData)); }catch(e){} if(/ laundryLine\//.test(ks)) llStore(); lgSbRe(); }
 // The tap. The row is read again now; the un-tick is the pop-up's; Wasn't done marks the tick's own log line (never twice: a line marked
 // here, on the log or on 🧾, on any device, refuses).
-function lgSendBack(kid,wk,dn,ref,a){
-  if(!lgSbOk()||!LG_SBA.some(function(x){ return x.a===a; })) return false; lgSbAsk=""; const R=lgSbR(kid,wk,dn,ref), L=R&&R.rec&&lgSbLine(R);
-  if(!R||!R.rec||!lgSbCan(dn)||(a==="w"&&(!L||L.r.flagged))){ lgSbRe(); return false; }
+function lgSendBack(kid,wk,dn,ref,a,t){
+  if(!lgSbOk()||!LG_SBA.some(function(x){ return x.a===a; })) return false; lgSbAsk=""; const R=lgSbR(kid,wk,dn,ref), L=R&&R.rec&&lgSbLine(R), dz=a==="d"&&lgDaPre(R,L);   // LEDGERDA (L6): can it be done again today?
+  if(!R||!R.rec||!lgSbCan(dn)||(a==="w"&&(!L||L.r.flagged))||(a==="d"&&!dz)){ lgSbRe(); return false; }
   const q0=typeof _obSeq!=="undefined"?_obSeq:0, W=lgSbW(kid), b=lgSbSnap(W), x=R.st, iso=amIso(dn), e=x&&x.line&&x.laundry===true&&laundryLine&&laundryLine.log&&laundryLine.log[iso]&&laundryLine.log[iso][x.line];
   if(R.it) amMomTick(kid,R.id,dn); else { if(a==="w"&&e&&e.load&&lgSbMom()&&_leBackLineOk(e.load)) laundryEditBackLine(e.load); if((lgSbR(kid,wk,dn,ref)||{}).rec) mdKidTick(R.slot,kid,dn,R.i); }
   if((lgSbR(kid,wk,dn,ref)||{}).rec){ lgSbRe(); return false; }   // the un-tick did not happen
   const j=lgSbDiff(b,lgSbSnap(W)), by=lgSbMom()?"mom":"dad", pd=day, ob=[q0,typeof _obSeq!=="undefined"?_obSeq:0], at=Date.now();
   if(a==="m") lgSbJ[kid+"|"+wk+"|"+dn+"|"+ref]={j:j,c:R.c,at:at,ob:ob};
+  else if(a==="d") lgDaSet(R,j,at,ob,by,t,dz);   // LEDGERDA: its one line on the Click-off Log
   else { day=dn; try{ flagSet(kid,L.r,"routineLog/"+kid+"/"+L.ref,"flg_"+L.wk+"_"+L.d+"_"+L.key,"🚩 Wasn't done: "+R.lab+" · by "+(by==="dad"?"Dad":"Mom"),by,{sb:{wk:wk,dn:dn,r:ref,c:R.c,j:j,at:at}},flagN(kid,"step",L.ref)); } finally{ day=pd; }
     lgSbOb(ob,["routineLog/"+kid+"/"+L.ref+"/sb/at",at]); }   // SPOTONE: none if a spot check ✗ took it
   lgSbRe(); return true; }
@@ -2198,24 +2199,25 @@ function lgSbUndo(kid,wk,dn,ref){ const k=kid+"|"+wk+"|"+dn+"|"+ref, J=lgSbJ[k];
   const u=lgSbBack(kid,J.j,J.c); if(u){ lgSbMiss(lgSbR(kid,wk,dn,ref),J.at,u); if(J.ob) lgSbOb(J.ob); } if(u&&db&&!_dryRun()) db.ref().update(u); lgSbDone(u); return !!u; }
 // every Wasn't done mark on this kid's log: "<wk>|<day>|<ref>" → {r, ref of its line}
 function lgSbMarks(kid){ const o={}, G=routineLog[kid]||{}; Object.keys(G).forEach(function(w){ Object.keys(G[w]||{}).forEach(function(d){ const L=G[w][d]||{};
-  Object.keys(L).forEach(function(k){ const r=L[k], s=r&&r.flagged&&r.sb; if(s) o[s.wk+"|"+s.dn+"|"+s.r]={r:r,ref:w+"/"+d+"/"+k}; }); }); }); return o; }
+  Object.keys(L).forEach(function(k){ const r=L[k], s=r&&(r.flagged||r.act==="again")&&r.sb, q=s&&s.wk+"|"+s.dn+"|"+s.r; if(s&&!(o[q]&&o[q].r.flagged)) o[q]={r:r,ref:w+"/"+d+"/"+k}; }); }); }); return o; }   // LEDGERDA: and its ↩ Do it again lines
 // ── drawing ──
 function lgSbMark(kid,r,ref,lab){ return '<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="font-size:11.5px;font-weight:800;color:#b91c1c">'+esc(lab||flagMarkTxt(r))+'</span>'+(lgSbOk()&&(r.flagBid||r.penalty===0)?lgSbBtn("lgFlagUndo","'step','"+kid+"','"+ref+"',0","Undo",""):'')+'</span>'; }
-function lgSbAskHTML(R,js){ const k=R.kid, p=(R.rec&&R.rec.pts)||0, n=flagN(k), who=lgName(k), back="It goes back on "+who+"'s list"+(p?" and its "+p+" ⭐ come off":"");
-  const say={w:back+", "+(n?"and "+n+" ⭐ more come off (the penalty).":"and no more come off ("+(starTakeOk(k)?"the penalty is off":starTakeWhy(k))+").")+" The Click-off Log gets a 🚩.",m:back+". Nothing more, and nothing is said to "+who+"."};
+function lgSbAskHTML(R,js){ const k=R.kid, p=(R.rec&&R.rec.pts)||0, n=flagN(k), who=lgName(k), back="It goes back on "+who+"'s list"+(p?" and its "+p+" ⭐ come off":""), dz=lgDaPre(R,lgSbLine(R));   // LEDGERDA
+  const say={d:dz&&lgDaSay(R,dz,back),w:back+", "+(n?"and "+n+" ⭐ more come off (the penalty).":"and no more come off ("+(starTakeOk(k)?"the penalty is off":starTakeWhy(k))+").")+" The Click-off Log gets a 🚩.",m:back+". Nothing more, and nothing is said to "+who+"."};
   return '<div style="flex-basis:100%;margin:4px 0 2px 24px;padding:8px 10px;background:#fff7ed;border:1.5px solid #fdba74;border-radius:10px;font-size:12px;color:#1f2937"><b>↩ Send back "'+esc(R.lab)+'"?</b>'
-    +LG_SBA.map(function(x){ return '<div style="display:flex;align-items:baseline;gap:8px;margin-top:6px"><button onclick="lgSendBack('+js+',\''+x.a+'\')" style="flex-shrink:0;border:1.5px solid '+(x.a==="w"?'#ef4444;color:#b91c1c':'#d1d5db;color:#374151')+';background:#fff;border-radius:8px;padding:3px 10px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap">'+x.lab+'</button><span style="color:#6b7280;font-size:11.5px">'+esc(say[x.a]||"")+'</span></div>'; }).join('')
+    +LG_SBA.filter(function(x){ return x.a!=="d"||dz; }).map(function(x){ return '<div style="display:flex;align-items:baseline;gap:8px;margin-top:6px"><button onclick="lgSendBack('+js+',\''+x.a+'\''+(x.a==="d"?',lgDaT()':'')+')" style="flex-shrink:0;border:1.5px solid '+(x.a==="w"?'#ef4444;color:#b91c1c':'#d1d5db;color:#374151')+';background:#fff;border-radius:8px;padding:3px 10px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap">'+x.lab+'</button><span style="color:#6b7280;font-size:11.5px">'+esc(say[x.a]||"")+'</span></div>'+(x.a==="d"?lgDaIn(R):''); }).join('')
     +'<div style="margin-top:6px">'+lgSbBtn("lgSbAskSet","''","Cancel","")+'</div></div>'; }
 function lgSbAskSet(k){ lgSbAsk=k||""; lgDraw(); }
 // The hook on a row (LEDGERVIEW): a ticked row gets ↩ Send back, or its 🚩 from the log / 🧾 with Undo; a row sent back says so, with Undo.
 function lgSbRow(r,kid,D,ref){
   if(!r||D.prev) return r; r.sbRef=ref; const ok=lgSbOk(), js="'"+kid+"','"+D.wk+"','"+D.dn+"','"+ref+"'", k=kid+"|"+D.wk+"|"+D.dn+"|"+ref, R=lgSbR(kid,D.wk,D.dn,ref);
   if(R&&R.rec){ delete lgSbJ[k]; const L=lgSbLine(R);
-    if(L&&L.r.flagged){ r.sbH=lgSbMark(kid,L.r,L.ref); return r; }
+    if(L&&L.r.flagged){ r.sbH=lgSbMark(kid,L.r,L.ref); return r; } lgDaDone(r,R);   // LEDGERDA: a redo says so
     if(ok&&lgSbCan(D.dn)) r.sbH=lgSbAsk===k?lgSbAskHTML(R,js):lgSbBtn("lgSbAskSet","'"+k+"'","↩ Send back","It was not done, or it was a mistake: it goes back on the list and its stars come off. Asks which.");
     return r; }
   const M=lgSbMarks(kid)[D.wk+"|"+D.dn+"|"+ref];
-  if(M) r.sbH=lgSbMark(kid,M.r,M.ref,"↩ sent back · "+flagMarkTxt(M.r).slice(3));
+  if(M&&M.r.act==="again") r.sbH=lgDaMark(kid,D,ref,M.r,js);   // LEDGERDA
+  else if(M) r.sbH=lgSbMark(kid,M.r,M.ref,"↩ sent back · "+flagMarkTxt(M.r).slice(3));
   else if(lgSbJ[k]) r.sbH='<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="font-size:11.5px;font-weight:800;color:#6b7280">↩ sent back · just a mistake</span>'+(ok?lgSbBtn("lgSbUndo",js,"Undo",""):'')+'</span>';
   const o=r; if(o.sbH&&o.xH&&o.gbH) o.xH="";   // never more than two buttons (design §3): Undo and ⭐ Give stars back (C3 / C6) stay; ➖ Excuse is back after the Undo
   return r; }
@@ -2225,6 +2227,55 @@ function lgSbMore(rows,kid,D,slot){ if(D.prev) return; const M=lgSbMarks(kid), p
     if(k.indexOf(pre)!==0||rows.some(function(x){ return x.sbRef===k.slice(k.lastIndexOf("|")+1); })) return; const ref=k.slice(k.lastIndexOf("|")+1);
     if(lgSbJ[kid+"|"+k]===undefined&&!M[k]) return; const R=lgSbR(kid,D.wk,D.dn,ref); if(!R||R.rec) return;
     rows.push(lgSbRow({ic:"↩",nm:(R.st.emoji?R.st.emoji+" ":"")+R.lab,id:R.st.house||R.st._hh||""},kid,D,ref)); }); }
+// LEDGERDA_START — ↩ Send back's third answer, "↩ Do it again" (DESIGN_chore_ledger_2026-11-21 §3 "Do it again (done, but not right):
+// The chore is open again and what it paid comes off. The kid's row says "↩ Do this again" with your note. The redo pays 20% less"; §7;
+// slice L6). Mom, or Dad with his code (lgSbOk), on this week's rows up to today (lgSbCan, DADPAST). The un-tick is Just a mistake's (the
+// pop-up's own: mdKidTick / amMomTick), then ONE line on the kid's Click-off Log with a fixed name per row and day:
+// routineLog/<kid>/<wk>/<day>/ag_<m|a|c|e><step<i>|h<plan id>> (a 🌅 row: ag_am_<its id>) = {act:"again", label "… — sent back by Mom:
+// do it again", slot, ts, at, pts:0, by, t (the note, ≤ 80), f (a late turn: the days late its first tick was), i (a 🌅 row: its first
+// morning), sb (what the un-tick changed, as L5's 🚩 keeps it), prev (a second Do it again the same day: the line before)}. index.html
+// AGAIN reads it: the kid's row and the redo's pay (20% less, never below 0; in full while Take stars away is off or ⏸).
+// Offered only where the kid can do it again today: any row of today, a 🌅 row (it stays on the morning list until done), and a row of an
+// earlier day of a list that carries whose turn is still on today's list (no due day since, still in its wait). Undo (before the redo):
+// the tick, its pay and the line back exactly (prev back, if any). Once done again, the line stays as the record: no Undo.
+LG_SBA.unshift({a:"d",lab:"↩ Do it again"});
+function lgDaK(R){ return R.it?"ag_am_"+R.id:agX(R.slot,R.i,R.st); }
+// can it be done again today? → {f} or null (read only: the tick is hidden for a moment to ask the list whether its turn would be back)
+function lgDaPre(R,L){ if(!R||!R.rec||typeof agX!=="function"||(L&&L.r.flagged)) return null; if(R.it) return {f:0};
+  const st=R.st, c=st.cad||"daily", t=_rtPos(DAYS_ALL.indexOf(_todayDay)), p0=_rtPos(DAYS_ALL.indexOf(R.dn)), late=lgCarried(R.slot)&&/^wk:/.test(c)&&!st.house&&!st.line&&!st.laundry&&!st.rot;
+  if(c==="none"||(p0!==t&&!late)) return null; if(!late) return {f:st.house?+st.hdFall||0:0};   // a plan row (E): its fall at the first tick
+  for(let p=p0+1;p<=t;p++) if(cadDueOn(c,DAYS_ALL[_rtIdx(p)])) return null;   // a due day since: that is a new turn
+  const k=R.c.slice(R.wk.length+4), s=slState[k], pd=day, pw=_prevSlWk; let n=0; day=_todayDay;
+  try{ if(typeof _prevWkKey==="function") _prevSlWk=_prevWkKey(); delete slState[k]; n=rtLateDays(R.slot,R.kid,R.i); } finally{ slState[k]=s; day=pd; _prevSlWk=pw; }   // the ledger never starts a read
+  return (n>0||p0===t)?{f:Math.max(0,n-(t-p0))}:null; }
+// what the redo will pay, in words (the bonus room's share included)
+function lgDaSay(R,dz,back){ const k=R.kid, who=lgName(k), st=R.st||{}, pd=day; let b=0; day=_todayDay;
+  try{ b=R.it?amPay(k,R.it,amIso(R.dn)):st.house?(st.pts||0):(rtDailyRow(st)?rtDailyPay(R.slot,k,R.i,st):rtFallPay(st,dz.f,k)); } finally{ day=pd; }
+  const w=agPay(k,{},b), z=function(x){ return x+(!R.it&&st.zone&&typeof zoneBonusFor==="function"?zoneBonusFor(st.zone,x,_todayDay):0); }, M=lgDaRec(R);
+  return back+". "+who+" sees “↩ Do this again” and your note."+(b?" Done again, it pays "+(w<b?z(w)+" ⭐, not "+z(b)+" (20% less).":"its "+z(b)+" ⭐ in full ("+starTakeWhy(k)+")."):"")+(M?" It was sent back before: it still pays 20% less, not more.":""); }
+function lgDaIn(R){ return '<div style="margin:4px 0 0 0"><input id="lg-da-t" maxlength="80" placeholder="A short note for '+esc(lgName(R.kid))+' (they see it)" style="width:100%;max-width:340px;box-sizing:border-box;border:1.5px solid #d1d5db;border-radius:8px;padding:4px 8px;font-size:12px"></div>'; }
+function lgDaT(){ const e=document.getElementById("lg-da-t"); return e?String(e.value||""):""; }
+// this row's turn's line, if any (the one index.html reads)
+function lgDaRec(R){ return R.it?agFindA(R.kid,R.id):agFind(R.kid,R.slot,R.i,R.st,R.dn); }
+function lgDaSet(R,j,at,ob,by,t,dz){ const kid=R.kid, k=lgDaK(R), G=(routineLog[kid]=routineLog[kid]||{}), Wk=(G[R.wk]=G[R.wk]||{}), Dd=(Wk[R.dn]=Wk[R.dn]||{}), old=Dd[k], P="routineLog/"+kid+"/"+R.wk+"/"+R.dn+"/"+k;
+  const g={act:"again",label:R.lab+" — sent back by "+(by==="dad"?"Dad":"Mom")+": do it again",slot:R.it?"morning":R.slot,ts:nowTs(),at:at,pts:0,by:by,sb:{wk:R.wk,dn:R.dn,r:R.ref,c:R.c,j:j,at:at}};
+  t=String(t||"").replace(/\s+/g," ").trim().slice(0,80); if(t) g.t=t; if(dz.f) g.f=dz.f; if(R.it) g.i=amIso(R.dn); if(old&&old.act==="again") g.prev=old;
+  Dd[k]=JSON.parse(JSON.stringify(g)); if(db&&!_dryRun()) db.ref(P).set(g);
+  lgSbOb(ob,[P+"/at",at]); }   // 📮 the un-tick's notes replay only while this line is on the server (as Wasn't done's)
+// done again since? (a 🌅 row: its done; a plan row: that chore done that day or later (E carries it); a list row: a tick on any day of its turn from that day on)
+function lgDaRedone(R){ if(!R) return true; if(R.it) return !!R.it.done; if(R.rec) return true;
+  if(R.st.house){ for(let p=_rtPos(DAYS_ALL.indexOf(R.dn))+1;p<=_rtPos(DAYS_ALL.indexOf(_todayDay));p++) if(hdDoneRec(amIso(DAYS_ALL[_rtIdx(p)]),R.st.house)) return true; return false; }   // E carried it: done on a later day
+  for(let p=_rtPos(DAYS_ALL.indexOf(R.dn));p<=_rtPos(DAYS_ALL.indexOf(_todayDay));p++) if(rtDoneOnWk(R.wk,R.slot,R.kid,DAYS_ALL[_rtIdx(p)],R.i)) return true; return false; }
+function lgDaUndo(kid,wk,dn,ref){ if(!lgSbOk()) return false; const R=lgSbR(kid,wk,dn,ref), k=R&&lgDaK(R), Dd=((routineLog[kid]||{})[wk]||{})[dn]||{}, g=k&&Dd[k];
+  if(!g||g.act!=="again"||!g.sb||!lgSbCan(dn)||lgDaRedone(R)){ lgSbRe(); return false; } const u=lgSbBack(kid,g.sb.j,g.sb.c); if(!u){ lgSbRe(); return false; }
+  lgSbMiss(lgSbR(kid,wk,dn,ref),g.sb.at||0,u); const P="routineLog/"+kid+"/"+wk+"/"+dn+"/"+k;
+  if(g.prev){ Dd[k]=g.prev; u[P]=g.prev; } else { delete Dd[k]; u[P]=null; }
+  if(db&&!_dryRun()) db.ref().update(u); lgSbDone(u); return true; }
+// ── drawing ──
+function lgDaDone(r,R){ const g=lgDaRec(R); if(g) r.note=(r.note?r.note+" · ":"")+"↩ done again (sent back by "+(g.by==="dad"?"Dad":"Mom")+")"; }
+function lgDaMark(kid,D,ref,g,js){ const done=lgDaRedone(lgSbR(kid,D.wk,D.dn,ref));
+  return '<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px"><span style="font-size:11.5px;font-weight:800;color:#b45309">'+esc("↩ sent back · do it again · by "+(g.by==="dad"?"Dad":"Mom")+(g.t?" · “"+g.t+"”":"")+(done?" · done again":""))+'</span>'+(lgSbOk()&&!done&&lgSbCan(D.dn)?lgSbBtn("lgDaUndo",js,"Undo",""):'')+'</span>'; }
+// LEDGERDA_END
 // LEDGERSB_END
 // LEDGERDROP_START — what a dropped turn took, on its 📒 Ledger row (missed-chores design §2.4 and §4, slice C3; ledger design §2 and §3;
 // the hub's brief 2026-11-23). index.html CHOREDROP files the drop's decision on its "— not done" line (routineLog/<kid>/<wk>/<due day>/
