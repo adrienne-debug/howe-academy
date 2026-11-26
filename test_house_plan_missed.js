@@ -69,7 +69,7 @@ const COVF = require(path.join(__dirname, "test_fixtures", "covered_pairs.js"));
 const CG = require(path.join(__dirname, "test_fixtures", "carve_g.js"));   // slice G reads the stored days: it goes too
 const L6 = require(path.join(__dirname, "test_fixtures", "ledger_l6_out.js"));   // L6 (↩ Do it again) sits on hdToggle's pay line: taken out first
 const carve = (file, blocks, pairs) => { let s = fs.readFileSync(path.join(__dirname, file), "utf8"); if (file === "house.js") s = CG.hjs(s); s = file === "index.html" ? L6.idx(s) : file === "house.js" ? L6.hjs(s) : s;
-  const fb = file === "house.js" ? COVF.HJS_BLOCKS : COVF.IDX_BLOCKS, fp = file === "house.js" ? COVF.HJS_PAIRS : COVF.IDX_PAIRS;
+  const fb = file === "house.js" ? COVF.HJS_BLOCKS : COVF.IDX_BLOCKS.concat(["HDDONEEND"]) /* the done-no-drop fix sits on E: its guards go with MISSEDDAY */, fp = file === "house.js" ? COVF.HJS_PAIRS : COVF.IDX_PAIRS;
   blocks = fb.concat(blocks); pairs = fp.filter(x => x[2] !== "inE").map(x => [x[0], x[1]]).concat(pairs);
   blocks.forEach(b => { const re = new RegExp("^ *// " + b + "_START[^\\n]*\\n[\\s\\S]*?^ *// " + b + "_END\\n", "m"), n = (s.match(new RegExp(re.source, "gm")) || []).length;
     if (n !== 1) throw new Error("test_house_plan_missed: the app before cannot be built — the " + b + " block found " + n + "× in " + file); s = s.replace(re, ""); });

@@ -11,6 +11,7 @@
  *      = the app before G
  *   D  nothing is written by any draw (plan ON)
  *   E  planted faults, each named for the rule it breaks: every one is caught
+ *   F  a plan drop Mom then ➖ Excused reads – not counted, "· excused", out of "dropped" and of "of the last N" (+ the hub's g5 fault)
  * "The app before G" = this tree with the HORECSTORED block taken out and its six HOWOFTEN lines put back.  run: node test_house_record_stored.js
  */
 "use strict";
@@ -68,7 +69,8 @@ const PLAY = {
   10: [["kid_b", "Dust"]],                                  // Thu 12/17: Mom gives Kid A's Dust to Kid B (→ Give to…), Kid B does it
 };
 const MOM = (A, n) => { if (n === 7) A.run("(function(){ const r=hdLive(" + J(isoN(7)) + "); if(r&&r.plan&&r.plan.b_sink) hdSkipToggle(" + J(isoN(7)) + ",'b_sink','kid_b'); })()");   // Mom ✕ skips Kid B's sink on Mon 12/14
-  if (n === 10) A.run("hdGive(" + J(isoN(10)) + ",'a_dust','kid_b');1"); };
+  if (n === 10) A.run("hdGive(" + J(isoN(10)) + ",'a_dust','kid_b');1");
+  if (n === 6) A.run("lgHExcuse('kid_a'," + J(isoN(6)) + ",'a_dust')"); };   // Sun 12/13: Mom ➖ Excuses the Dust turn dropped that morning (the 📒 Ledger reaches it)
 const m0 = w.mark();
 for (let n = 0; n < 14; n++) { await go(w, n, 7); await w.flush(); await go(w, n, 10);
   MOM(A, n); (PLAY[n] || []).forEach(([k, l]) => tick(A, k, l));
@@ -80,10 +82,10 @@ const T0 = DN("2026-12-07"), dump = {}; for (let n = 0; n <= 14; n++) dump[isoN(
 const exp = id => { const T = {}; Object.keys(dump).sort().forEach(iso => { const r = dump[iso], p = (r.plan || {})[id], wt = (r.wait || {})[id], o = (r.over || {})[id], m = (r.miss || {})[id], d = (r.done || {})[id], k = (r.skip || {})[id];
     const at = s => T[s] || (T[s] = {}); if (p) { at(p.since).who = p.who; if (k) at(p.since).skip = 1; } if (wt) at(wt.since).who = wt.who; if (o) at(o.since).over = 1;
     if (d) { const t = at((p || o || {}).since || iso); if (t.at === undefined) { t.at = iso; t.by = d.who; t.pts = d.pts; } } if (m) at(m.since).miss = m; }); return T; };
-ok("the two weeks ran: 15 stored days, Vacuum ticked twice, the Tub's 12/16 turn and the Dust's 12/10 turn dropped, Shoes fit nobody", Object.values(dump).filter(r => r.built && r.built.ok).length === 15 && !!(dump["2026-12-13"].miss || {}).a_dust && !!(dump["2026-12-19"].miss || {}).b_tub && Object.values(dump).some(r => r.miss && r.miss.c_shoes && r.miss.c_shoes.nobody), Object.keys(dump).map(k => k + ":" + Object.keys(dump[k].miss || {}).join(",")));
+ok("the two weeks ran: 15 stored days, Vacuum ticked twice, the Tub's 12/16 turn and the Dust's 12/10 turn dropped (the Dust's then ➖ Excused by Mom), Shoes fit nobody", Object.values(dump).filter(r => r.built && r.built.ok).length === 15 && !!((dump["2026-12-13"].miss || {}).a_dust || {}).x && !!(dump["2026-12-19"].miss || {}).b_tub && Object.values(dump).some(r => r.miss && r.miss.c_shoes && r.miss.c_shoes.nobody), Object.keys(dump).map(k => k + ":" + Object.keys(dump[k].miss || {}).join(",")));
 for (const id of ["a_vac", "a_dust", "b_tub", "c_shoes"]) {
   const T = exp(id), r = rec(A, id), got = (r.marks || []).filter(m => m.n >= T0), want = [];
-  Object.keys(T).sort().forEach(s => { const t = T[s], n = DN(s); if (t.skip) return want.push("skip"); if (t.at) return want.push((t.at === s ? "on" : "late") + " " + (t.who || "") + " " + t.by + " " + (DN(t.at) - n) + " " + t.pts); if (t.miss) return want.push(t.miss.nobody ? "nobody " : "drop " + t.miss.who); });
+  Object.keys(T).sort().forEach(s => { const t = T[s], n = DN(s); if (t.skip) return want.push("skip"); if (t.at) return want.push((t.at === s ? "on" : "late") + " " + (t.who || "") + " " + t.by + " " + (DN(t.at) - n) + " " + t.pts); if (t.miss) return want.push(t.miss.x ? "skip" : t.miss.nobody ? "nobody " : "drop " + t.miss.who); });
   const gs = got.map(m => m.m === "skip" ? "skip" : m.m === "nobody" ? "nobody " : m.m === "drop" ? "drop " + m.who : m.m + " " + m.who + " " + m.by + " " + (m.q || 0) + " " + m.pts);
   ok("📊 " + id + ": one mark per stored turn, each the stored day's (" + (gs.join(" | ") || "none") + ")", J(gs) === J(want) && got.every(m => m.pl === 1), { got: gs, want }); }
 { const v = rec(A, "a_vac").marks.filter(m => m.n >= T0);
@@ -142,7 +144,7 @@ console.log("\n── E · planted faults (each must be caught; each names the r
 // a fault is applied to house.js on Mom's device A (the world from A), its record re-read, and the A checks re-run
 const checksA = (Af) => { const R = [];
   for (const id of ["a_vac", "a_dust", "b_tub", "c_shoes"]) { const T = exp(id), r = JSON.parse(Af.run("JSON.stringify(hoRec(" + J(id) + ",hoX()))")), want = [];
-    Object.keys(T).sort().forEach(s => { const t = T[s], n = DN(s); if (t.skip) return want.push("skip"); if (t.at) return want.push((t.at === s ? "on" : "late") + " " + (t.who || "") + " " + t.by + " " + (DN(t.at) - n) + " " + t.pts); if (t.miss) return want.push(t.miss.nobody ? "nobody " : "drop " + t.miss.who); });
+    Object.keys(T).sort().forEach(s => { const t = T[s], n = DN(s); if (t.skip) return want.push("skip"); if (t.at) return want.push((t.at === s ? "on" : "late") + " " + (t.who || "") + " " + t.by + " " + (DN(t.at) - n) + " " + t.pts); if (t.miss) return want.push(t.miss.x ? "skip" : t.miss.nobody ? "nobody " : "drop " + t.miss.who); });
     const gs = (r.marks || []).filter(m => m.n >= T0).map(m => m.m === "skip" ? "skip" : m.m === "nobody" ? "nobody " : m.m === "drop" ? "drop " + m.who : m.m + " " + m.who + " " + m.by + " " + (m.q || 0) + " " + m.pts);
     R.push([id, J(gs) === J(want)]); }
   R.push(["fit nobody text", /fit nobody/.test(Af.run("hoText(hoRec('c_shoes',hoX()))"))]);
@@ -164,6 +166,18 @@ for (const [rule, a, b] of FAULTS) { const n = HJS.split(a).length - 1; if (n !=
   const got = checksA(Af).filter(x => !x[1]).map(x => x[0]);
   ok("fault caught — " + rule + " (" + got.length + " check" + (got.length === 1 ? "" : "s") + " fail: " + got.join(", ") + ")", got.length > 0); }
 { const A2 = w.boot("Fok", "devFok", { mom: true }); A2.run(CAP); A2.run(HJS); await w.flush(); ok("…and the same checks, unchanged house.js on a fresh device: all pass", checksA(A2).every(x => x[1]), checksA(A2).filter(x => !x[1])); }
+
+// ════════════════ F · a plan drop that Mom then ➖ Excused (the hub's g5, 11/25) ════════════════
+console.log("\n── F · a plan drop Mom ➖ Excused (the Dust, due Thu 12/10, excused Sun 12/13): – not counted, \"· excused\" ──");
+{ const due = DN("2026-12-10"), pick = r => (r.marks || []).find(m => m.n === due), r = rec(A, "a_dust"), m = pick(r), tip = A.run("hoMarksHTML(hoRec('a_dust',hoX()))"), t = recTxt(A, "a_dust");
+  const counted = r.marks.filter(x => ["on", "late", "drop", "nobody"].indexOf(x.m) >= 0).length, drops = r.marks.filter(x => x.m === "drop").length, n = /(\d+) of the last (\d+)/.exec(t), d = +((/· (\d+) dropped/.exec(t) || [0, 0])[1]);
+  ok("(setup) its drop note says excused (x on houseDay/2026-12-13/miss/a_dust)", !!((dump["2026-12-13"].miss || {}).a_dust || {}).x);
+  ok("📊 that turn reads – not counted, with \"· excused\" in its tip", m && m.m === "skip" && m.x === 1 && /not counted[^"]*· excused/.test(tip), { m, tip: tip.slice(0, 300) });
+  ok("…and it is not in \"dropped\" nor in \"of the last N\" (" + strip(t) + ": " + counted + " counted, " + drops + " dropped, the excused turn neither)", n && +n[2] === counted && d === drops && !r.marks.some(x => x.n === due && x.m !== "skip"), { t, counted, drops });
+  const a5 = "if(m.x) return mk({m:\"skip\",who:m.who||who||own,x:1}); ", c5 = HJS.split(a5).length - 1;
+  if (c5 !== 1) ok("fault g5: its piece is found once", false, c5); else { const Dg = w.boot("G5", "devG5", { mom: true }); Dg.run(CAP); Dg.run(HJS.replace(a5, () => "")); await w.flush();
+    const fm = pick(JSON.parse(Dg.run("JSON.stringify(hoRec('a_dust',hoX()))"))), ft = Dg.run("hoText(hoRec('a_dust',hoX()))"), fd = +((/· (\d+) dropped/.exec(ft) || [0, 0])[1]);
+    ok("fault caught — g5, the hub's exact replacement: an excused miss counted as dropped (\"➖ Excuse: it costs nothing and is not a miss\") — it reads " + (fm && fm.m) + ", \"" + strip(ft) + "\"", fm && fm.m === "drop" && fd === drops + 1, { fm, ft }); } }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
