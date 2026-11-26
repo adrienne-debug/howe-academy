@@ -10,6 +10,9 @@
  *   D  a carried row with no earlier done record (not ticked yesterday): untouched, on her list, pays as before
  *   E  plan OFF and on preview, 14 days with ticks and Send backs: every list, every bank, every write and the database = the app before
  *   F  planted faults, each named for the rule it breaks
+ *   G  L6 "↩ Do it again" (the hub's three questions, 11/25), each with a planted fault: (a) after Do it again on a carried plan row the
+ *      row is still on the kid's list to redo, and the redo pays once; (b) F: a turn sent back (Do it again or 🚩 Wasn't done) does not
+ *      cover a later turn — the redo does; (c) G: the record reads what finally happened (dropped, or done late at the redo's pay)
  *   run: node test_house_sendback_double.js
  */
 "use strict";
@@ -40,8 +43,8 @@ const FAM = () => ({
 });
 const PE = () => ({ kid_a: { school: 60, weekend: 60 }, kid_b: { school: 60, weekend: 60 }, kid_c: { school: 0, weekend: 0 }, kid_d: { school: 0, weekend: 0 }, mom: { school: 0, weekend: 0 }, dad: { school: 0, weekend: 0 } });
 const CAP = "globalThis.__pop='';document.body.insertAdjacentHTML=function(p,h){ globalThis.__pop=h; };globalThis.__toast=[];gwShowToast=function(m){ __toast.push(m); };tab='moms-plan';confirm=function(){ return true; };1";
-async function mkW(index, mode) {
-  const w = await W.world({ index, household: { jobs: FAM(), people: PE(), meta: { takeover: 1, engine: { mode: mode || "on", on: "2026-11-30" } } }, tree: { config: clone(W.FX.db.config) } });
+async function mkW(index, mode, jobs) {
+  const w = await W.world({ index, household: { jobs: jobs || FAM(), people: PE(), meta: { takeover: 1, engine: { mode: mode || "on", on: "2026-11-30" } } }, tree: { config: clone(W.FX.db.config) } });
   const A = w.boot("A", "devA", { mom: true }), B = w.boot("B", "devB"); A.run(CAP); B.run(CAP); A.run(HJS); B.run(HJS); await w.flush(); return { w, A, B }; }
 const root = w => w.db.tree.root, day = (w, d) => clone(w.get("houseDay/" + d)) || {};
 const adj = (w, kid) => (((root(w).bank || {})[kid] || {}).adjustments) || {};
@@ -123,6 +126,43 @@ if (HAS) { const FAULTS = [
     try { fs.unlinkSync(f); } catch (e) {}
     ok("fault caught — " + rule + " (" + got.length + " fail: " + got.join(", ") + ")", got.length > 0); } }
 else ok("planted faults: the fix is not in this tree", false);
+
+// ════════════════ G · L6 "↩ Do it again" × this fix, slice F and slice G (the hub's three questions, 11/25) ════════════════
+console.log("\n── G · L6 ↩ Do it again × the hidden carried row, F Covered and G the record ──");
+// the Vacuum's card says "Skip the next one if done within 6 days" (cover 6), so a tick on Wed 12/09 WOULD cover Tue 12/15
+const FAM6 = () => Object.assign(FAM(), { a_vac: KJ({ label: "Vacuum the den", emoji: "🧹", who: "kid_a", cad: "wk:1", pts: 10, order: 1, cover: 6 }) });
+async function story2(index, how, redo, hjs) { const S = await mkW(index, "on", FAM6()), { w, A, B } = S; if (hjs) { A.run(hjs); B.run(hjs); await w.flush(); }
+  for (let n = 0; n <= 1; n++) { await go(w, n, 7); await w.flush(); }
+  await go(w, 2, 7); await w.flush(); await go(w, 2, 10); tickToday(A, "kid_a", "a_vac", true); await w.flush();
+  await go(w, 2, 15); const i = idxOf(A, "kid_a", "a_vac", "wednesday");
+  const sb = A.run("lgSendBack('kid_a',activeWk(),'wednesday','s:chores:" + i + "'," + J(how) + (how === "d" ? ",'Under the bed too'" : "") + ")"); await w.flush();
+  await go(w, 3, 7); await w.flush(); await go(w, 3, 9);
+  const o = { S, sb, thuShown: onList(B, "kid_a", "a_vac"), thuTxt: B.run("(function(){ const d0=day; day=_todayDay; try{ rtOpen={}; return rtSlotHTML('chores','kid_a'); } finally{ day=d0; } })()").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ") };
+  if (redo) { await go(w, 3, 16); o.t = tickToday(B, "kid_a", "a_vac", false); await w.flush(); o.redoPts = ((day(w, isoN(3)).done || {}).a_vac || {}).pts; o.shownAfter = onList(B, "kid_a", "a_vac"); }
+  for (let n = 4; n <= 8; n++) { await go(w, n, 7); await w.flush(); }
+  o.tue = !!((day(w, isoN(8)).plan || {}).a_vac); o.total = sumOf(w, "kid_a", /Vacuum the den/);
+  await go(w, 14, 9); await w.flush(); o.rec = JSON.parse(A.run("JSON.stringify(hoRec('a_vac',hoX()))")).marks.filter(m => m.n >= Math.round(Date.UTC(2026, 11, 7) / 864e5));
+  return o; }
+const G1 = await story2(IDX, "d", false), G2 = await story2(IDX, "d", true), G3 = await story2(IDX, "w", false);
+ok("(a) ↩ Do it again on Wed (a carried plan row ticked on day 1 of its wait): Thursday the row is on Kid A's own list, saying \"↩ Do this again\" with Mom's note", G1.sb === true && G1.thuShown && /Do this again/.test(G1.thuTxt) && /Under the bed too/.test(G1.thuTxt), { sb: G1.sb, shown: G1.thuShown, txt: G1.thuTxt.slice(0, 300) });
+ok("(a) …she does it again Thursday: the redo is paid once (" + G2.redoPts + " ⭐, less than the first tick's 8) and the row stays on her list, ticked", G2.t >= 0 && G2.redoPts > 0 && G2.redoPts < 8 && G2.total === G2.redoPts && G2.shownAfter, { t: G2.t, pts: G2.redoPts, total: G2.total, after: G2.shownAfter });
+ok("(b) F: Wednesday's tick sent back (↩ Do it again, not redone) does not cover Tue 12/15 (window 6): its turn is on her list", G1.tue);
+ok("(b) F: …nor a 🚩 Wasn't done (not redone)", G3.tue);
+ok("(b) F: …but the redo on Thu 12/10 is a real done: Tue 12/15 (5 days later) is covered", !G2.tue);
+const mk0 = r => r.map(m => m.m + (m.q ? m.q : "") + (m.early ? "e" + m.early : "") + (m.pts != null ? "/" + m.pts : ""));
+ok("(c) G: the record reads what finally happened — 🚩 Wasn't done, never redone: the 12/08 turn ○ dropped; 12/15 on its day, still open (" + J(mk0(G3.rec)) + ")", G3.rec[0] && G3.rec[0].m === "drop" && G3.rec[0].who === "kid_a", mk0(G3.rec));
+ok("(c) G: …↩ Do it again, never redone: ○ dropped (" + J(mk0(G1.rec)) + ")", G1.rec[0] && G1.rec[0].m === "drop", mk0(G1.rec));
+ok("(c) G: …↩ Do it again, redone Thursday: ◐ done 2 days late, paid the redo's " + G2.redoPts + " ⭐ (never the sent-back 8); 12/15 ● covered by it (" + J(mk0(G2.rec)) + ")", G2.rec[0] && G2.rec[0].m === "late" && G2.rec[0].q === 2 && G2.rec[0].pts === G2.redoPts && G2.rec[1] && G2.rec[1].m === "on" && G2.rec[1].early === 5, mk0(G2.rec));
+if (HAS) { const fx = (a, b) => { const n = SRC.split(a).length - 1; if (n !== 1) return null; const f = path.join(os.tmpdir(), "sbdouble_g_" + process.pid + "_" + Math.random().toString(36).slice(2) + ".html"); fs.writeFileSync(f, SRC.replace(a, () => b)); return f; };
+  const fa = fx("for(let d=p.since;d<iso;d=hdAdd(d,1)) if(hdDoneRec(d,id)) return true; return false; }", "for(let d=p.since;d<iso;d=hdAdd(d,1)) if(hdDoneRec(d,id)||(function(){ try{ return JSON.stringify(routineLog).indexOf('\"ag_ch'+id+'\"')>=0; }catch(e){ return false; } })()) return true; return false; }");
+  if (!fa) ok("fault (a): its line is found once", false); else { const r = await story2(fa, "d", false); ok("fault caught — (a) a turn sent back with ↩ Do it again read as settled and hidden (\"the kid has to be able to do it again\")", !r.thuShown); fs.unlinkSync(fa); }
+  const fb = fx("else { delete r.done[id]; upd[P]=null; hdUnstamp(id,iso,d0,upd); }", "else { delete r.done[id]; upd[P]=null; }");
+  if (!fb) ok("fault (b): its line is found once", false); else { const r = await story2(fb, "w", false); ok("fault caught — (b) the send-back's un-tick keeps the chore's last-done date, so the sent-back tick covers Tue 12/15 (\"a turn sent back must not cover a later turn\")", !r.tue); fs.unlinkSync(fb); }
+  const fa3 = "if(p){ const t=at(p.since); t.who=p.who; t.seen=n; t.k=p.k; if(k) t.skip=1; }", fcs = HJS.split(fa3).length - 1;
+  if (fcs !== 1) ok("fault (c): its line is found once", false, fcs); else {
+    const D = G3.S.w.boot("FC", "devFC", { mom: true }); D.run(CAP); D.run(HJS.replace(fa3, () => "if(p){ const t=at(p.since); t.who=p.who; t.seen=n; t.k=p.k; if(k) t.skip=1; if(t.at===undefined){ t.at=n; t.by=p.who; } }")); await G3.S.w.flush();
+    const r = JSON.parse(D.run("JSON.stringify(hoRec('a_vac',hoX()))")).marks.filter(m => m.n >= Math.round(Date.UTC(2026, 11, 7) / 864e5));
+    ok("fault caught — (c) G reads a turn that was on her list as done, so the sent-back tick still counts (\"a sent-back turn reads as what finally happened\")", !(r[0] && r[0].m === "drop"), mk0(r)); } }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 if (HAS) try { fs.unlinkSync(BASE_IDX); } catch (e) {}
