@@ -15653,13 +15653,21 @@ function hdStep(id,p,iso){ const j=hhJobs()[id]||{}, o=hhStepOf(j,id); ["from","
   return o; }
 function hdRtSteps(slot,kid,steps,dn){ try{
   if(!hdOn()) return steps; dn=dn||day; const iso=hdIsoOf(dn), r=hdLive(iso); if(!r) return steps;
-  const key=slot+"|"+kid+"|"+dn, m=_hdM[key], J=hhJobs(); if(m&&m.s===steps&&m.r===r&&m.J===J) return m.v;
+  const key=slot+"|"+kid+"|"+dn, m=_hdM[key], J=hhJobs(); if(m&&m.s===steps&&m.r===r&&m.J===J&&m.h===hdSbSig(r,kid,iso)) return m.v;
   const raw=(routineCfg2&&routineCfg2[slot]&&routineCfg2[slot][kid])||[];
   const out=steps.map(function(st,i){ const rw=raw[i], j=rw&&rw._hh&&J[rw._hh]; return (st&&j&&hdManaged(j))?Object.assign({},st,{cad:"none",hdHidden:true}):st; });
-  const idx={}; Object.keys(r.plan||{}).filter(function(id){ const p=r.plan[id]; return p&&p.who===kid&&J[id]&&hdSlotOf(J[id])===slot; })
+  const idx={}; Object.keys(r.plan||{}).filter(function(id){ const p=r.plan[id]; return p&&p.who===kid&&J[id]&&hdSlotOf(J[id])===slot&&!hdSbHid(p,id,iso); })
     .sort(function(a,b){ return ((r.plan[a].order||0)-(r.plan[b].order||0))||(a<b?-1:1); }).forEach(function(id){ idx[out.length]=id; out.push(hdStep(id,r.plan[id],iso)); });
-  _hdIdx[key]={iso:iso,r:r,idx:idx}; _hdM[key]={s:steps,r:r,J:J,v:out}; return out;
+  _hdIdx[key]={iso:iso,r:r,idx:idx}; _hdM[key]={s:steps,r:r,J:J,v:out,h:hdSbSig(r,kid,iso)}; return out;
 }catch(e){ return steps; } }
+// HDSBDOUBLE_START — the hub's find, her "Yes, fix it" 2026-11-25 (on main too): a plan row ticked on a not-last day of its wait, then
+// ↩ Send back, carries to the next day; the Send back's Undo puts yesterday's tick back, and the carried row was still tickable today —
+// one turn paid twice (main 10 + 10, with slice E 8 + 6). A carried plan row (since before today) whose turn already has a done record on
+// a day from its since to yesterday is hidden from the kid's list, as a done row would be. Read-only: nothing is written; a second Send
+// back removes that record and the row is back. hdSbSig: which rows it hides, so the list's memo follows a done record that lands later.
+function hdSbHid(p,id,iso){ if(!p||!(p.since<iso)) return false; for(let d=p.since;d<iso;d=hdAdd(d,1)) if(hdDoneRec(d,id)) return true; return false; }
+function hdSbSig(r,kid,iso){ let h=""; Object.keys(r.plan||{}).forEach(function(id){ const p=r.plan[id]; if(p&&p.who===kid&&hdSbHid(p,id,iso)) h+=id+","; }); return h; }
+// HDSBDOUBLE_END
 // The chore id of row i on that list and day, or null (not a plan row / the switch is off).
 function hdAt(slot,kid,d,i){ if(!hdOn()) return null; d=d||day; const key=slot+"|"+kid+"|"+d; let e=_hdIdx[key]; const iso=hdIsoOf(d), r=hdLive(iso); if(!r) return null;
   if(!e||e.r!==r){ try{ rtStepsFor(slot,kid,false,d); }catch(x){} e=_hdIdx[key]; } const id=e&&e.r===r&&e.idx[i]; return id?{iso:iso,id:id}:null; }
