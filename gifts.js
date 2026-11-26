@@ -85,7 +85,7 @@ function occs(){const o=gfData.occasions||{};return Object.keys(o).map(id=>Objec
 function occ(oid){const o=(gfData.occasions||{})[oid];return o?Object.assign({id:oid},o):null;}
 function secsOf(o){const s=(o&&o.secs)||{};return Object.keys(s).map(id=>Object.assign({id},s[id])).sort((a,b)=>(a.order||0)-(b.order||0));}
 function groups(){
-  const S=gfData.groups||{};const out=GF_GROUPS.map((g,i)=>Object.assign({id:g[0],emoji:g[1],name:g[2],order:i},S[g[0]]||{}));
+  const S=gfData.groups||{};const out=GF_GROUPS.map((g,i)=>{const a=(g[0]==="mom"||g[0]==="dad")&&typeof haAdult==="function"?haAdult(g[0],""):"";return Object.assign({id:g[0],emoji:g[1],name:a?a+"'s side":g[2],order:i},S[g[0]]||{});});   // 🏡 HHNAMES: a household's "Wendy's side"
   Object.keys(S).forEach(id=>{if(!GF_GROUPS.some(g=>g[0]===id))out.push(Object.assign({id,order:99},S[id]));});
   return out.filter(g=>!g.gone).sort((a,b)=>(a.order||0)-(b.order||0));
 }
