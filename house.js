@@ -1159,7 +1159,7 @@ function hoDoneRec(iso,id,r){ return (typeof hdDoneRec==="function")?hdDoneRec(i
 function hoTurns(id,X){ X.ht=X.ht||{}; if(X.ht[id]) return X.ht[id]; const T={}, has={};
   for(let n=X.t-15;n<=X.t;n++){ const iso=_hhIsoOf(n), r=hdLive(iso); if(!r) continue; has[n]=1;
     const p=(r.plan||{})[id], w=(r.wait||{})[id], o=(r.over||{})[id], m=(r.miss||{})[id], k=(r.skip||{})[id], d=hoDoneRec(iso,id,r), at=function(s){ const q=/^\d{4}-\d{2}-\d{2}$/.test(s||"")?_hhDayNum(s):n; return T[q]||(T[q]={}); };
-    if(p){ const t=at(p.since); t.who=p.who; t.seen=n; if(k) t.skip=1; }
+    if(p){ const t=at(p.since); t.who=p.who; t.seen=n; t.k=p.k; if(k) t.skip=1; }
     if(w){ const t=at(w.since); t.who=w.who; t.seen=n; }
     if(o){ const t=at(o.since); t.seen=n; if(k) t.skip=1; }
     if(d){ const t=at((p||o||{}).since); if(t.at===undefined){ t.at=n; t.by=d.who||""; if(d.pts!=null) t.pts=d.pts; if(d.grab) t.grab=1; } }
@@ -1175,6 +1175,7 @@ function hoStored(id,j,n,nx,X){ if(!hoStoredOn(X)||!hdManaged(j)||j.clock==="rol
   if(t.at!==undefined){ const q=t.at-n, o=mk({m:q>0?"late":"on",who:who||t.by||own,by:t.by}); if(q>0) o.q=q; if(t.pts!=null) o.pts=t.pts; if(t.grab) o.grab=1; return o; }
   if(t.miss){ const m=t.miss; if(m.x) return mk({m:"skip",who:m.who||who||own,x:1}); if(m.nobody) return mk({m:"nobody",who:""});
     const o=mk({m:"drop",who:m.who||who||own}), dk=(typeof hoDrop==="function")?hoDrop(X,id,n):null; if(dk) o.dk=dk; return o; }
+  if(t.k==="daily"&&t.who&&n<X.t) return mk({m:"drop",who:t.who});   // a daily on a list and not done: missed that day (the plan files no note for it: tomorrow has its own)
   for(let k=(t.seen||n)+1;k<=X.t;k++) if(H.has[k]) return mk({m:"skip",who:who||own,np:2});   // gone from the plan with no note: a day no device built
   return null; }
 // Covered (slice F): a turn the plan skipped because the chore was done within its window before its day → ● done early.

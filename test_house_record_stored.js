@@ -95,6 +95,9 @@ for (const id of ["a_vac", "a_dust", "b_tub", "c_shoes"]) {
   const pc = strip(card(A, { k: "who", id: "kid_c" }));
   ok("…and on 👤 kid_c's 📊 it counts nothing against her (no ◌, no dropped)", !/◌/.test(card(A, { k: "who", id: "kid_c" }).split("Shoes")[1] || "") && !/Shoes[^·]*· [0-9]+ dropped/.test(pc)); }
 { const sk = rec(A, "b_sink"); ok("Sink is a daily (3+ a week): its count reads the stored days too — Mon 12/14 ✕ skipped by Mom is – not counted", sk.form === "count" && sk.marks.some(m => m.n === DN(isoN(7)) && m.m === "skip" && m.pl === 1 && m.wv === 1), sk.marks.filter(m => m.n >= T0).map(m => m.m)); }
+const dailyWant = id => { const out = []; for (let n = 0; n < 14; n++) { const r = dump[isoN(n)], p = (r.plan || {})[id]; if (!p || p.since !== isoN(n)) continue; out.push((r.skip || {})[id] ? "skip" : (r.done || {})[id] ? "on" : "drop " + p.who); } return out; };
+const dailyGot = (Af, id) => JSON.parse(Af.run("JSON.stringify(hoRec(" + J(id) + ",hoX()))")).marks.filter(m => m.n >= T0).map(m => m.m === "drop" ? "drop " + m.who : m.m);
+ok("Dishes and Sink (dailies): each stored day's turn — ● done, – Mom's ✕ skip, ○ not done (a daily on her list and not done is a missed day, as the grid counts it; the plan files no note for it)", J(dailyGot(A, "b_sink")) === J(dailyWant("b_sink")) && J(dailyGot(A, "a_dish")) === J(dailyWant("a_dish")) && dailyWant("b_sink").some(x => /^drop/.test(x)), { got: dailyGot(A, "b_sink"), want: dailyWant("b_sink") });
 { const h = A.run("hoMarksHTML(hoRec('a_vac',hoX()))");
   ok("the mark's tip says who did it and what it paid (\"…by Kid A · paid N ⭐\")", /done 1 day late by [^"]+ · paid \d+ ⭐/.test(h), h.slice(0, 400)); }
 { const hist = strip(A.run("hoHistHTML('a_dust')"));
@@ -144,6 +147,7 @@ const checksA = (Af) => { const R = [];
     R.push([id, J(gs) === J(want)]); }
   R.push(["fit nobody text", /fit nobody/.test(Af.run("hoText(hoRec('c_shoes',hoX()))"))]);
   R.push(["skip by Mom", JSON.parse(Af.run("JSON.stringify(hoRec('b_sink',hoX()))")).marks.some(m => m.n === DN(isoN(7)) && m.m === "skip" && m.wv === 1)]);
+  R.push(["dailies", J(dailyGot(Af, "b_sink")) === J(dailyWant("b_sink")) && J(dailyGot(Af, "a_dish")) === J(dailyWant("a_dish"))]);
   R.push(["history", strip(Af.run("hoHistHTML('a_dust')")).indexOf("Last checked off 12/17 by " + Af.run("hhWhoName('kid_b')")) >= 0]);
   return R; };
 const FAULTS = [
@@ -152,6 +156,7 @@ const FAULTS = [
   ["who did it read from the owner, not the done record (\"who had it, who did it\")", "t.at=n; t.by=d.who||\"\";", "t.at=n; t.by=(hhJobs()[id]||{}).who||\"\";"],
   ["a late turn counted on the day it was done, not its own day (the turn's `since`)", "if(d){ const t=at((p||o||{}).since);", "if(d){ const t=at(iso);"],
   ["Mom's ✕ skip counted as a miss (a skip is never a drop)", "if(t.skip) return mk({m:\"skip\",who:who||own,wv:1});", ""],
+  ["a daily not done shown as not counted (\"Daily chores N% of days\" must count the missed days)", "if(t.k===\"daily\"&&t.who&&n<X.t) return mk({m:\"drop\",who:t.who});", ""],
   ["the stars paid left out (\"stars paid and taken\")", "if(t.pts!=null) o.pts=t.pts;", ""],
 ];
 for (const [rule, a, b] of FAULTS) { const n = HJS.split(a).length - 1; if (n !== 1) { ok("fault \"" + rule + "\": its line is found once", false, n); continue; }
