@@ -3139,15 +3139,18 @@ function starTakeNo(kid){ if(starTakeOk(kid)) return false; if(typeof gwShowToas
 // (the pop-up's own un-tick) and files one line, like WAVE's: routineLog/<kid>/<wk>/<day>/ag_<m|a|c|e><step<i>|h<plan id>> (a 🌅 row:
 // ag_am_<its id>) = {act:"again",label,slot,ts,at,pts:0,by,t: the note,f,i,sb,prev}. Here the kid's row says "↩ Do this again" and the
 // note, and the redo pays 20% less: rtFallPts(p,1), never below 0 (10 → 8, 5 → 4, 1 → 0); in full while Take stars away is off or ⏸.
-// A late turn's redo falls no further than its first tick did (f days; a 🌅 row, as on its first morning i). The line is its turn's: a
-// list row that carries finds it on a later day of the same turn (no due day in between); every other row, on its own day only.
+// A late turn's redo falls no further than its first tick did (f days; a plan row, f = its MISSEDDAY hdFall; a 🌅 row, as on its first
+// morning i). The line is its turn's: a list row that carries finds it on a later day of the same turn (no due day in between), a plan
+// row on the days MISSEDDAY carries its turn (from hdSince); every other row, on its own day only.
 function agX(slot,i,st){ return "ag_"+(slot==="morning"?"m":RT_ABBR[slot])+(st&&st.house?"h"+st.house:"step"+i); }
 function agFind(kid,slot,i,st,d){ const W=(routineLog[kid]||{})[activeWk()]||{}, k=agX(slot,i,st), c=(st&&st.cad)||"daily", w=/^wk:/.test(c)&&slot!=="morning"&&!(st&&st.house);
-  for(let p=_rtPos(DAYS_ALL.indexOf(d||day));p>=-1;p--){ const x=DAYS_ALL[_rtIdx(p)], g=(W[x]||{})[k]; if(g&&g.act==="again") return g; if(!w||cadDueOn(c,x)) break; } return null; }
+  for(let p=_rtPos(DAYS_ALL.indexOf(d||day));p>=-1;p--){ const x=DAYS_ALL[_rtIdx(p)], g=(W[x]||{})[k]; if(g&&g.act==="again") return g;
+    if(st&&st.house){ const y=p>-1&&DAYS_ALL[_rtIdx(p-1)]; if(!st.hdSince||!y||!(amIso(y)>=st.hdSince)) break; } else if(!w||cadDueOn(c,x)) break; } return null; }   // a plan row: back while MISSEDDAY carries its turn (hdSince)
 function agFindA(kid,id){ const W=(routineLog[kid]||{})[activeWk()]||{}; let g=null; Object.keys(W).forEach(function(x){ const r=(W[x]||{})["ag_am_"+id]; if(r&&r.act==="again") g=r; }); return g; }
 function agPay(kid,g,p){ return g&&starTakeOk(kid)?rtFallPts(p,1):p; }
 function agAm(kid,it,iso,g){ return g?agPay(kid,g,amPay(kid,it,g.i&&g.i<iso?g.i:iso)):amPay(kid,it,iso); }
-function agPill(kid,g,slot,i,st,n,cls){ return rtDailyPill(st.pts||0,agPay(kid,g,rtDailyRow(st)&&day===_todayDay?rtDailyPay(slot,kid,i,st):rtFallPay(st,st.house?n:Math.min(n||0,g.f||0),kid)),cls); }   /* a plan row: MISSEDDAY's own fall, as hdToggle pays */
+function agFall(st,g,n,kid){ return st.house?rtFallPay(Object.assign({},st,{hdFall:Math.min(+st.hdFall||0,g.f||0)}),n,kid):rtFallPay(st,Math.min(n||0,g.f||0),kid); }   // no further than its first tick (a plan row: MISSEDDAY's hdFall)
+function agPill(kid,g,slot,i,st,n,cls){ return rtDailyPill(st.pts||0,agPay(kid,g,rtDailyRow(st)&&day===_todayDay?rtDailyPay(slot,kid,i,st):agFall(st,g,n,kid)),cls); }
 function agTag(g){ return g?' <span class="cadtag" style="color:#b91c1c;border-color:#fecaca">↩ Do this again'+(g.t?' · '+(g.by==="dad"?"Dad":"Mom")+': “'+esc(g.t)+'”':'')+'</span>':''; }
 // AGAIN_END
 function rtLateDays(slot,kid,i,raw){   // raw (CHOREWAIT): the days since it was missed, wait or not — rtSlotHTML's drop check
@@ -15841,7 +15844,7 @@ function hdToggle(slot,kid,i,st){
   const d0=hdDoneRec(iso,id); if(d0&&d0.src==="list"){ if(!hdUnlist(slot,kid,id,iso)&&typeof gwShowToast==="function") gwShowToast("That one was checked off on Mom’s or Dad’s own list"); return; }
   const now=!d0, wk=activeWk(), _slB=slBefore(), P="houseDay/"+iso+"/done/"+id, b0=st.pts||0, label=st.label||j.label||"Chore", upd={};
   const b1=(now&&typeof rtFallPay==="function")?rtFallPay(st,st.hdLate||0,kid):b0;   // MISSEDDAY: a skipped turn pays 20% less a day
-  const _g=now&&typeof agFind==="function"&&agFind(kid,slot,i,st), b2=_g?agPay(kid,_g,b1):b1;   // ↩ AGAIN: a redo, 20% less than it would pay now
+  const _g=now&&typeof agFind==="function"&&agFind(kid,slot,i,st), b2=_g?agPay(kid,_g,agFall(st,_g,st.hdLate||0,kid)):b1;   // ↩ AGAIN: a redo pays 20% less, falling no further than its first tick
   const paid=now?(b2+((typeof zoneBonusFor==="function")?zoneBonusFor(st.zone,b2):0)):((d0.pts!=null)?d0.pts:b0); let bid=null;
   if(paid>0){
     if(now) bid=bankDirect(kid,paid,(st.emoji?st.emoji+" ":"")+label,(typeof choreVerifyOn==="function"&&choreVerifyOn(kid)));

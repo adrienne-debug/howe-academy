@@ -2192,7 +2192,7 @@ function lgDaK(R){ return R.it?"ag_am_"+R.id:agX(R.slot,R.i,R.st); }
 // can it be done again today? → {f} or null (read only: the tick is hidden for a moment to ask the list whether its turn would be back)
 function lgDaPre(R,L){ if(!R||!R.rec||typeof agX!=="function"||(L&&L.r.flagged)) return null; if(R.it) return {f:0};
   const st=R.st, c=st.cad||"daily", t=_rtPos(DAYS_ALL.indexOf(_todayDay)), p0=_rtPos(DAYS_ALL.indexOf(R.dn)), late=lgCarried(R.slot)&&/^wk:/.test(c)&&!st.house&&!st.line&&!st.laundry&&!st.rot;
-  if(c==="none"||(p0!==t&&!late)) return null; if(!late) return {f:0};
+  if(c==="none"||(p0!==t&&!late)) return null; if(!late) return {f:st.house?+st.hdFall||0:0};   // a plan row (E): its fall at the first tick
   for(let p=p0+1;p<=t;p++) if(cadDueOn(c,DAYS_ALL[_rtIdx(p)])) return null;   // a due day since: that is a new turn
   const k=R.c.slice(R.wk.length+4), s=slState[k], pd=day, pw=_prevSlWk; let n=0; day=_todayDay;
   try{ if(typeof _prevWkKey==="function") _prevSlWk=_prevWkKey(); delete slState[k]; n=rtLateDays(R.slot,R.kid,R.i); } finally{ slState[k]=s; day=pd; _prevSlWk=pw; }   // the ledger never starts a read
@@ -2211,8 +2211,9 @@ function lgDaSet(R,j,at,ob,by,t,dz){ const kid=R.kid, k=lgDaK(R), G=(routineLog[
   t=String(t||"").replace(/\s+/g," ").trim().slice(0,80); if(t) g.t=t; if(dz.f) g.f=dz.f; if(R.it) g.i=amIso(R.dn); if(old&&old.act==="again") g.prev=old;
   Dd[k]=JSON.parse(JSON.stringify(g)); if(db&&!_dryRun()) db.ref(P).set(g);
   lgSbOb(ob,[P+"/at",at]); }   // 📮 the un-tick's notes replay only while this line is on the server (as Wasn't done's)
-// done again since? (a 🌅 row: its done; a plan row: its tick; a list row: a tick on any day of its turn from that day on)
-function lgDaRedone(R){ if(!R) return true; if(R.it) return !!R.it.done; if(R.rec) return true; if(R.st.house) return false;
+// done again since? (a 🌅 row: its done; a plan row: that chore done that day or later (E carries it); a list row: a tick on any day of its turn from that day on)
+function lgDaRedone(R){ if(!R) return true; if(R.it) return !!R.it.done; if(R.rec) return true;
+  if(R.st.house){ for(let p=_rtPos(DAYS_ALL.indexOf(R.dn))+1;p<=_rtPos(DAYS_ALL.indexOf(_todayDay));p++) if(hdDoneRec(amIso(DAYS_ALL[_rtIdx(p)]),R.st.house)) return true; return false; }   // E carried it: done on a later day
   for(let p=_rtPos(DAYS_ALL.indexOf(R.dn));p<=_rtPos(DAYS_ALL.indexOf(_todayDay));p++) if(rtDoneOnWk(R.wk,R.slot,R.kid,DAYS_ALL[_rtIdx(p)],R.i)) return true; return false; }
 function lgDaUndo(kid,wk,dn,ref){ if(!lgSbOk()) return false; const R=lgSbR(kid,wk,dn,ref), k=R&&lgDaK(R), Dd=((routineLog[kid]||{})[wk]||{})[dn]||{}, g=k&&Dd[k];
   if(!g||g.act!=="again"||!g.sb||!lgSbCan(dn)||lgDaRedone(R)){ lgSbRe(); return false; } const u=lgSbBack(kid,g.sb.j,g.sb.c); if(!u){ lgSbRe(); return false; }

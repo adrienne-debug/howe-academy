@@ -129,6 +129,54 @@ const checkCore = (R, say) => ({
   "a due day since starts a new turn": R.r11ret === false && R.r11writes === 0
 });
 
+
+// ── E: plan rows that fell under slice E (the plan ON, its blank slate Mon 12/07; the plan's own made-up 12-chore family + three) ──
+const KP = o => Object.assign({ src: { kind: "routine" }, status: "active", area: "cleaning", verdict: "", note: "", level: 1 }, o);
+const FAMP = () => ({
+  a_dish: KP({ label: "Dishes", emoji: "🍽", who: "kid_a", slot: "chores", cad: "daily", minutes: 10, pts: 10, order: 1 }),
+  a_vac: KP({ label: "Vacuum", emoji: "🧹", who: "kid_a", slot: "chores", cad: "wk:1", minutes: 15, pts: 15, order: 2 }),
+  a_rug: KP({ label: "Shake the rug", emoji: "🧶", who: "kid_a", slot: "chores", cad: "wk:0", minutes: 5, pts: 10, order: 3 }),
+  a_one: KP({ label: "Hang the towel", emoji: "🧺", who: "kid_a", slot: "chores", cad: "wk:0", minutes: 5, pts: 1, order: 4 }),
+  b_sink: KP({ label: "Sink", emoji: "🚰", who: "kid_b", slot: "chores", cad: "daily", minutes: 10, pts: 10, order: 0 }),
+  b_mop: KP({ label: "Mop", emoji: "🪣", who: "kid_b", slot: "chores", cad: "7d", minutes: 15, pts: 20, lastDone: "2026-11-30", order: 1 }),
+  b_tub: KP({ label: "Tub", emoji: "🛁", who: "kid_b", slot: "chores", cad: "wk:1", minutes: 5, pts: 20, order: 2 }),
+  c_toys: KP({ label: "Toys", emoji: "🧩", who: "kid_c", slot: "chores", cad: "daily", minutes: 5, pts: 5, order: 0 })
+});
+const dP = n => new Date(2026, 11, 7 + n), goP = (w, n, h) => { const d = dP(n); return w.at(d.getFullYear(), d.getMonth() + 1, d.getDate(), h == null ? 7 : h, 0); };
+async function planE(index, hjs) {
+  const w = await W.world({ index, household: { jobs: FAMP(), people: { kid_a: { school: 60, weekend: 60 }, kid_b: { school: 30, weekend: 30 }, kid_c: { school: 10, weekend: 10 }, kid_d: { school: 0, weekend: 0 }, mom: { school: 0, weekend: 0 }, dad: { school: 0, weekend: 0 } }, meta: { takeover: 1, engine: { mode: "on", on: "2026-11-30" } } }, tree: { config: CFG() } });
+  const A = w.boot("A", "devA", { mom: true }), Kk = w.boot("Kk", "devK"); Kk.run("HA_LS.setItem('ha_kiosk','routines');1"); for (const d of [A, Kk]) d.run(CAP); A.run(hjs); await w.flush();
+  const R = {}, pI = (kid, id) => A.run("(function(){ const d0=day; day=_todayDay; try{ return (rtStepsFor('chores'," + J(kid) + ",false,day)||[]).findIndex(function(x){ return x&&x.house===" + J(id) + "; }); } finally{ day=d0; } })()");
+  const tk = (kid, id) => { const i = pI(kid, id); if (i >= 0) A.run("(function(){ day=_todayDay; _rtMomTick=true; try{ toggleRtStep('chores'," + J(kid) + "," + i + "); } finally{ _rtMomTick=false; } })()"); return i; };
+  const row = (kid, label) => { const h = Kk.run("(function(){ const d0=day; day=_todayDay; try{ rtOpen={}; return rtSlotHTML('chores'," + J(kid) + "); } finally{ day=d0; } })()"); return txt(String(h).split('<div class="mr-step').filter(x => txt(x).indexOf(label) >= 0)[0] || ""); };
+  const bl = k => A.run("bankBalance(" + J(k) + ")");
+  await goP(w, 0); await goP(w, 1, 16); A.run("haMomOn();1"); const wk = A.run("activeWk()"), aj = (k, dn, i) => "'" + k + "','" + wk + "','" + dn + "','s:chores:" + i + "'";
+  R.mopRow0 = row("kid_b", "Mop");
+  // e1: Ben's Mop (20), skipped Monday → Tuesday "20 → 16"; ticked (16), sent back, the redo
+  let b0 = bl("kid_b"); const mi = tk("kid_b", "b_mop"); await w.flush(); R.mopTick = bl("kid_b") - b0;
+  const t0 = ctree(w); b0 = bl("kid_b"); R.mopSend = A.run("lgSendBack(" + aj("kid_b", "tuesday", mi) + ",'d','Under the table too')"); await w.flush(); R.mopSent = bl("kid_b") - b0; R.mopRow = row("kid_b", "Mop");
+  R.mopUndo = A.run("lgDaUndo(" + aj("kid_b", "tuesday", mi) + ")"); await w.flush(); R.mopExact = ctree(w) === t0; R.mopDiff = ddiff(JSON.parse(ctree(w)), JSON.parse(t0));
+  A.run("lgSendBack(" + aj("kid_b", "tuesday", mi) + ",'d','')"); await w.flush(); b0 = bl("kid_b"); tk("kid_b", "b_mop"); await w.flush(); R.mopRedo = bl("kid_b") - b0;
+  // e2: Kid A's towel (1), skipped Monday → Tuesday pays 0; sent back, the redo
+  b0 = bl("kid_a"); const oi = tk("kid_a", "a_one"); await w.flush(); R.oneTick = bl("kid_a") - b0; A.run("lgSendBack(" + aj("kid_a", "tuesday", oi) + ",'d','')"); await w.flush(); R.oneRow = row("kid_a", "Hang the towel");
+  b0 = bl("kid_a"); tk("kid_a", "a_one"); await w.flush(); R.oneRedo = bl("kid_a") - b0;
+  // e3: Kid A's rug (10), skipped Monday → Tuesday "10 → 8"; ticked (8), sent back Tuesday and NOT done again; Wednesday, carried by E
+  b0 = bl("kid_a"); const ri = tk("kid_a", "a_rug"); await w.flush(); R.rugTick = bl("kid_a") - b0; b0 = bl("kid_a"); A.run("lgSendBack(" + aj("kid_a", "tuesday", ri) + ",'d','Shake it outside')"); await w.flush(); R.rugSent = bl("kid_a") - b0;
+  await goP(w, 2, 16); R.rugWait = clone((w.get("houseDay/2026-12-09/plan") || {}).a_rug || (w.get("houseDay/2026-12-09/wait") || {}).a_rug || null); R.rugRow = row("kid_a", "Shake the rug");
+  b0 = bl("kid_a"); tk("kid_a", "a_rug"); await w.flush(); R.rugRedo = bl("kid_a") - b0;
+  // e4: Tuesday's Undo after Wednesday's redo: refused, nothing written (never paid twice)
+  let m = w.mark(); b0 = bl("kid_a"); R.rugUndo = A.run("lgDaUndo(" + aj("kid_a", "tuesday", ri) + ")"); await w.flush(); R.rugUndoBank = bl("kid_a") - b0; R.rugUndoW = writes(w, m).length;
+  return R;
+}
+const checkPlan = R => ({
+  "a fallen plan row's redo pays 20% less than its fallen pay": R.mopTick === 16 && R.mopSent === -16 && /↩ Do this again · Mom: “Under the table too” 20 → 13 ⭐/.test(R.mopRow) && R.mopRedo === 13,
+  "never more than without the send-back": R.mopRedo <= R.mopTick && R.rugRedo <= R.rugTick && R.oneRedo <= R.oneTick,
+  "never below 0 (a plan row)": R.oneTick === 0 && /1 → 0 ⭐/.test(R.oneRow) && R.oneRedo === 0,
+  "a plan row's Undo is exact": R.mopUndo === true && R.mopExact,
+  "a carried plan row keeps its line and falls no further": !!R.rugWait && /↩ Do this again · Mom: “Shake it outside” 10 → 6 ⭐/.test(R.rugRow) && R.rugRedo === 6,
+  "no Undo after a carried redo (nothing paid twice)": R.rugUndo === false && R.rugUndoBank === 0 && R.rugUndoW === 0
+});
+
 (async () => {
 // ── R ──
 console.log("\n── R · the core rules (Mon → Thu) ──");
@@ -256,6 +304,17 @@ console.log("\n── P · a plan row (the plan ON; the fixture's own made-up ho
       r1 === true && s1 === -row.pts && ln && ln.act === "again" && new RegExp("↩ Do this again · Mom: “Wipe the corners” " + row.pts + " → " + A.run("rtFallPts(" + row.pts + ",1)") + " ⭐").test(kr) && u === true && ex && bal(A) - b1 === A.run("rtFallPts(" + row.pts + ",1)"), [r1, s1, !!ln, kr.slice(0, 300), u, ex, bal(A) - b1]); }
 }
 
+// ── E ──
+console.log("\n── E · plan rows that fell under slice E (the plan ON, from Mon 12/07): the redo, its Undo, a row E carries ──");
+{ const R = await planE(IDX, HJS), c = checkPlan(R);
+  ok("Ben's Mop (20 ⭐, 7d), skipped Monday: Tuesday \"20 → 16\", ticked +16; Do it again −16, his row \"↩ Do this again · Mom: “Under the table too” 20 → 13 ⭐\"; the redo pays 13 (20% less than 16)", c["a fallen plan row's redo pays 20% less than its fallen pay"], [R.mopRow0, R.mopTick, R.mopSent, R.mopRow, R.mopRedo]);
+  ok("…never more than without the send-back: the Mop 13 ≤ 16, the rug 6 ≤ 8, the towel 0 ≤ 0", c["never more than without the send-back"], [R.mopRedo, R.mopTick, R.rugRedo, R.rugTick, R.oneRedo, R.oneTick]);
+  ok("a 1 ⭐ plan row that fell to 0: sent back, its row says \"1 → 0 ⭐\", the redo pays 0 (never below 0)", c["never below 0 (a plan row)"], [R.oneTick, R.oneRow, R.oneRedo]);
+  ok("the Mop's Undo before the redo: the whole database byte for byte as before the tap", c["a plan row's Undo is exact"], R.mopDiff);
+  ok("a row E carries: Kid A's rug (10, skipped Monday → Tuesday \"10 → 8\", ticked +8) sent back Tuesday and not done again → Wednesday E keeps it with Kid A; the row still says \"↩ Do this again · Mom: “Shake it outside”\" and \"10 → 6\" (8 less 20%: it falls no further than its first tick, not E's Wednesday 6 less 20% = 5); the redo pays 6", c["a carried plan row keeps its line and falls no further"], [R.rugTick, R.rugSent, R.rugWait, R.rugRow, R.rugRedo]);
+  ok("…Tuesday's Undo after Wednesday's redo: refused, nothing written (the first tick never comes back beside the redo)", c["no Undo after a carried redo (nothing paid twice)"], [R.rugUndo, R.rugUndoBank, R.rugUndoW]);
+}
+
 if (!process.env.DA_QUICK) { // DA_QUICK=1: R, X and P only
 // ── A ──
 console.log("\n── A · 32 days, no ↩ Do it again tap (Just a mistake and Wasn't done tapped): every list, bank, write and the whole database = the app before ──");
@@ -290,12 +349,19 @@ const MUT = [
   ["a late redo falls no further than its first tick", "idx", "rtFallPay(_st0,Math.min(rtLateDays(slot,kid,i),_g?_g.f||0:99),kid)", "rtFallPay(_st0,rtLateDays(slot,kid,i),kid)"],
   ["the note and the redo's pay on the kid's row", "idx", "+(g.t?' · '+(g.by===\"dad\"?\"Dad\":\"Mom\")+': “'+esc(g.t)+'”':'')", ""],
   ["a due day since starts a new turn", "hjs", "for(let p=p0+1;p<=t;p++) if(cadDueOn(c,DAYS_ALL[_rtIdx(p)])) return null;", ""],
-  ["the tick's pay comes off", "hjs", "  if(R.it) amMomTick(kid,R.id,dn); else {", "  if(a===\"d\"){}else if(R.it) amMomTick(kid,R.id,dn); else {"]
+  ["the tick's pay comes off", "hjs", "  if(R.it) amMomTick(kid,R.id,dn); else {", "  if(a===\"d\"){}else if(R.it) amMomTick(kid,R.id,dn); else {"],
+  ["a fallen plan row's redo pays 20% less than its fallen pay", "idx", "b2=_g?agPay(kid,_g,agFall(st,_g,st.hdLate||0,kid)):b1;", "b2=b1;", "plan"],
+  ["never more than without the send-back", "idx", "function agPay(kid,g,p){ return g&&starTakeOk(kid)?rtFallPts(p,1):p; }", "function agPay(kid,g,p){ return g&&starTakeOk(kid)?p+2:p; }", "plan"],
+  ["never below 0 (a plan row)", "idx", "function agPay(kid,g,p){ return g&&starTakeOk(kid)?rtFallPts(p,1):p; }", "function agPay(kid,g,p){ return g&&starTakeOk(kid)?p-1:p; }", "plan"],
+  ["a plan row's Undo is exact", "hjs", "if(g.prev){ Dd[k]=g.prev; u[P]=g.prev; } else { delete Dd[k]; u[P]=null; }", "", "plan"],
+  ["a carried plan row keeps its line and falls no further", "idx", "if(!st.hdSince||!y||!(amIso(y)>=st.hdSince)) break;", "break;", "plan"],
+  ["a carried plan row keeps its line and falls no further", "idx", "hdFall:Math.min(+st.hdFall||0,g.f||0)", "hdFall:+st.hdFall||0", "plan"],
+  ["no Undo after a carried redo (nothing paid twice)", "hjs", "if(hdDoneRec(amIso(DAYS_ALL[_rtIdx(p)]),R.st.house)) return true;", "", "plan"]
 ];
-for (const [rule, f, a, b] of MUT) {
+for (const [rule, f, a, b, which] of MUT) {
   const src = f === "idx" ? IDXS : HJS, n = src.split(a).length - 1;
   if (n !== 1) { ok("planted fault for \"" + rule + "\": its line is found once", false, n); continue; }
-  const s = src.replace(a, () => b), r = await core(f === "idx" ? tmp("m" + MUT.findIndex(x => x[0] === rule), s) : IDX, f === "hjs" ? s : HJS), c = checkCore(r.R);
+  const s = src.replace(a, () => b), ix = f === "idx" ? tmp("m" + MUT.findIndex(x => x[2] === a && x[0] === rule), s) : IDX, hx = f === "hjs" ? s : HJS, c = which === "plan" ? checkPlan(await planE(ix, hx)) : checkCore((await core(ix, hx)).R);
   ok("planted fault (" + rule + ") is caught by that rule's check", c[rule] === false, Object.keys(c).filter(k => !c[k]));
 }
 
