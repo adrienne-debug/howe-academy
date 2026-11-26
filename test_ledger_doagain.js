@@ -241,7 +241,22 @@ const ix = (l, slot, dn) => idxOf(A, slot || "chores", "kid_a", l, dn), rf = (l,
   ok("two Mom devices, one after the other: the second is refused (the row is no longer ticked), one line, −5 once", r2 === false && writes(w, m).length === 0 && bal(A) - b1 === -5 && (w.get("routineLog/kid_a/" + wk + "/thursday/ag_astep" + ix("Water the plants", "afternoon")) || {}).t === "one");
 }
 
-if (!process.env.DA_QUICK) { // DA_QUICK=1: R and X only
+// ── P ──
+console.log("\n── P · a plan row (the plan ON; the fixture's own made-up household) ──");
+{ const w = await W.world({ mode: "on" }), A = w.boot("A", "devA", { mom: true }), B = w.boot("B", "devB"); for (const d of [A, B]) d.run(CAP); await w.flush();
+  await w.at(2026, 11, 17, 16, 0);
+  const row = JSON.parse(B.run("(function(){ day=_todayDay; const s=rtStepsFor('chores','kid_a',false,day)||[]; const i=s.findIndex(function(x,k){ return x&&x.house&&(x.pts||0)>0&&x.cad!=='none'&&rtDueOrLate('chores','kid_a',day,k,x); }); return JSON.stringify(i<0?null:{i:i,label:s[i].label,pts:s[i].pts,house:s[i].house}); })()"));
+  if (!row) ok("(a paying plan row is on Kid A's chores today)", false);
+  else { B.run("(function(){ day=_todayDay; toggleRtStep('chores','kid_a'," + row.i + "); })()"); await w.flush(); A.run(HJS); A.run("haMomOn();1");
+    const wk = A.run("activeWk()"), dn = A.run("_todayDay"), pj = "'kid_a','" + wk + "','" + dn + "','s:chores:" + row.i + "'", t0 = ctree(w), b0 = bal(A);
+    const r1 = A.run("lgSendBack(" + pj + ",'d','Wipe the corners')"); await w.flush(); const ln = w.get("routineLog/kid_a/" + wk + "/" + dn + "/ag_ch" + row.house), kr = txt(B.run("(function(){ day=_todayDay; rtOpen={}; return rtSlotHTML('chores','kid_a'); })()"));
+    const s1 = bal(A) - b0, u = A.run("lgDaUndo(" + pj + ")"); await w.flush(); const ex = ctree(w) === t0;
+    A.run("lgSendBack(" + pj + ",'d','')"); await w.flush(); const b1 = bal(A); B.run("(function(){ day=_todayDay; toggleRtStep('chores','kid_a'," + row.i + "); })()"); await w.flush();
+    ok("plan row \"" + row.label + "\" (" + row.pts + " ⭐, by chore): Do it again −" + row.pts + ", its line ag_ch" + row.house + ", the kid's row \"↩ Do this again · Mom: “Wipe the corners”\" and \"" + row.pts + " → " + A.run("rtFallPts(" + row.pts + ",1)") + " ⭐\"; Undo exact; the redo pays " + A.run("rtFallPts(" + row.pts + ",1)"),
+      r1 === true && s1 === -row.pts && ln && ln.act === "again" && new RegExp("↩ Do this again · Mom: “Wipe the corners” " + row.pts + " → " + A.run("rtFallPts(" + row.pts + ",1)") + " ⭐").test(kr) && u === true && ex && bal(A) - b1 === A.run("rtFallPts(" + row.pts + ",1)"), [r1, s1, !!ln, kr.slice(0, 300), u, ex, bal(A) - b1]); }
+}
+
+if (!process.env.DA_QUICK) { // DA_QUICK=1: R, X and P only
 // ── A ──
 console.log("\n── A · 32 days, no ↩ Do it again tap (Just a mistake and Wasn't done tapped): every list, bank, write and the whole database = the app before ──");
 { const dA = n => new Date(2026, 10, 16 + n);
