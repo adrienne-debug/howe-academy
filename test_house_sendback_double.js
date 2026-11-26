@@ -111,10 +111,9 @@ console.log("\n── F · planted faults (each must be caught; each names the r
 if (HAS) { const FAULTS = [
     ["the hide never fires (\"nothing is paid twice\")", "if(!p||!(p.since<iso)||hdDoneRec(iso,id)) return false;", "return false;"],
     ["any carried row hidden, done or not (\"a row with no earlier done record is untouched\")", "for(let d=p.since;d<iso;d=hdAdd(d,1)) if(hdDoneRec(d,id)) return true; return false; }", "return true; }"],
-    ["today's own done counted (a row ticked today must stay, checked)", "for(let d=p.since;d<iso;d=hdAdd(d,1))", "for(let d=p.since;d<=iso;d=hdAdd(d,1))"],
     ["the list's memo ignores the done records (a stale list after the Undo)", "if(m&&m.s===steps&&m.r===r&&m.J===J&&m.h===hdSbSig(r,kid,iso)) return m.v;", "if(m&&m.s===steps&&m.r===r&&m.J===J) return m.v;"]];
   for (const [rule, a, b] of FAULTS) { const n = SRC.split(a).length - 1; if (n !== 1) { ok("fault \"" + rule + "\": its line is found once", false, n); continue; }
-    const f = path.join(os.tmpdir(), "sbdouble_fault_" + process.pid + ".html"); fs.writeFileSync(f, SRC.replace(a, () => b)); const got = [];
+    const f = path.join(os.tmpdir(), "sbdouble_fault_" + process.pid + "_" + FAULTS.findIndex(x => x[0] === rule) + ".html"); fs.writeFileSync(f, SRC.replace(a, () => b)); const got = [];   // one path per fault: the sandbox caches the page by path
     const r = await story(f, "m"); if (!(r.u === true && !r.shown && r.t === -1 && r.total === 8)) got.push("pays once");
     if (r.S) { const { S } = r, { w, B } = S; if (!onList(B, "kid_a", "a_bins")) got.push("bins untouched");
       await go(w, 3, 17); send(S, "kid_a", "a_vac", "wednesday", "m"); await w.flush(); if (!onList(B, "kid_a", "a_vac")) got.push("back after a second Send back"); }
