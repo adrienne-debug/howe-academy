@@ -2401,14 +2401,15 @@ function _amSettleToday(kid){
 }
 function _amSettleSave(kid){ const b=slBefore(); _amSettleToday(kid); slSaveChanged(activeWk(),b); }
 // 🌅 AM on a pop-up row: put step i of that day's list on the kid's next morning list. A second tap takes it back.
-function amSend(slot,kid,d,i,quiet){
+function amSend(slot,kid,d,i,quiet,why){
   if(!_amGrown()) return false;
   const st=(rtStepsFor(slot,kid,false,d)||[])[i], fromIso=amIso(d); if(!st||!fromIso||!amCanSend(slot,st)) return false;
   const wk=activeWk(), id=st.house?amKeyH(fromIso,slot,st.house):amKey(fromIso,slot,i);   // 🚪 HOUSEDAY: a plan row by chore
-  if(amCarry[kid]&&amCarry[kid][id]){ const ok=amTakeBack(kid,id,true); if(ok&&!quiet) _amRedraw(); return ok; }
+  if(amCarry[kid]&&amCarry[kid][id]){ if(why) return amWhySet(kid,id,why);   // CHOREAMWHY: a new answer
+    const ok=amTakeBack(kid,id,true); if(ok&&!quiet) _amRedraw(); return ok; }
   if(rtDoneOn(slot,kid,d,i)||(typeof rtWaved==="function"&&rtWaved(slot,kid,d,i))) return false;
   const by=(typeof momHere==="function"&&!momHere())?"dad":"mom", lk=st.house?"am_"+RT_ABBR[slot]+"h_"+st.house:"am_"+RT_ABBR[slot]+"step"+i;
-  const rec={slot:slot,i:i,label:st.label||"",emoji:st.emoji||"",pts:st.pts||0,fromIso:fromIso,fromWk:wk,fromDay:d,dueIso:_amIsoAdd(fromIso,1),ts:nowTs(),at:Date.now(),by:by}; if(st.house) rec.house=st.house;
+  const rec={slot:slot,i:i,label:st.label||"",emoji:st.emoji||"",pts:st.pts||0,fromIso:fromIso,fromWk:wk,fromDay:d,dueIso:_amIsoAdd(fromIso,1),ts:nowTs(),at:Date.now(),by:by}; if(st.house) rec.house=st.house; else if((why==="ignored"||why==="notfault")&&typeof amAsks==="function"&&amAsks()) rec.why=why;   // CHOREAMWHY
   const lrec={label:(st.label||"Chore")+" — sent to the next morning by "+(by==="dad"?"Dad":"Mom"),slot:slot,act:"am",ts:rec.ts,at:rec.at,pts:0};
   amCarry[kid]=amCarry[kid]||{}; amCarry[kid][id]=rec;
   routineLog[kid]=routineLog[kid]||{}; routineLog[kid][wk]=routineLog[kid][wk]||{}; routineLog[kid][wk][d]=routineLog[kid][wk][d]||{}; routineLog[kid][wk][d][lk]=lrec;
@@ -2442,10 +2443,10 @@ function amRest(kid,d){
       out.push({slot:slot,i:i}); }); });
   return out;
 }
-function amSendRest(kid,d){
+function amSendRest(kid,d,why){
   if(!_amGrown()) return 0;
   const L=amRest(kid,d); if(!L.length) return 0;
-  let n=0; L.forEach(function(x){ if(amSend(x.slot,kid,d,x.i,true)) n++; });
+  let n=0; L.forEach(function(x){ if(amSend(x.slot,kid,d,x.i,true,why)) n++; });
   if(n&&typeof gwShowToast==="function") gwShowToast("\u{1F305} "+n+" thing"+(n===1?"":"s")+" on "+cap(kid)+"'s next morning list");
   _amRedraw(); return n;
 }
@@ -2464,7 +2465,7 @@ function amToggle(kid,id){
     it.done={iso:iso,ts:nowTs(),at:Date.now(),src:"list"};
     if(_amWrite()) db.ref("amCarry/"+kid+"/"+id+"/done").set(it.done);
   } else {
-    const paid=now?(it.pts||0):((it.done.pts!=null)?it.done.pts:(it.pts||0)), full=(it.emoji?it.emoji+" ":"")+label; let bid=null;
+    const paid=now?(typeof amPay==="function"?amPay(kid,it,iso):(it.pts||0)):((it.done.pts!=null)?it.done.pts:(it.pts||0)), full=(it.emoji?it.emoji+" ":"")+label; let bid=null;
     if(paid>0){
       if(now) bid=bankDirect(kid,paid,"\u{1F305} "+full+" (from "+amFromLbl(it)+")",(typeof choreVerifyOn==="function"&&choreVerifyOn(kid)));
       else if(it.done.bid){ if(!(typeof cuUnpay==="function"&&cuUnpay(kid,it.done.bid,label))) bankDirectRemove(kid,it.done.bid); }
@@ -2516,12 +2517,12 @@ function amRowsHTML(kid,items,ed){
   if(!items||!items.length) return '';
   const iso=amIso(day);
   let h='<div class="sl-slot-sub" style="padding:4px 0 2px;font-weight:800;color:#b45309">\u{1F305} Left over — finish these first</div>';
-  items.forEach(function(it){ const sd=amDoneBy(it,iso);
+  items.forEach(function(it){ const sd=amDoneBy(it,iso); if(!sd&&day===_todayDay&&typeof amCostSee==="function") amCostSee(kid,it);   // CHOREAMWHY: after 0, today's cost
     h+='<div class="mr-step'+(sd?" done":"")+'"'+(ed?' onclick="amToggle(\''+kid+'\',\''+it.id+'\')"':'')+'>'+
        '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
        '<div class="sl-slot-name">'+(it.emoji?it.emoji+" ":"")+esc(it.label||"Chore")+
          ' <span class="cadtag" style="color:#b45309;border-color:#fde68a">from '+amFromLbl(it)+' · '+(SL_SLBL[it.slot]||it.slot)+'</span>'+
-         ((it.pts||0)>0?' <span class="cadtag" style="color:#b45309;border-color:#fde68a">+'+(it.pts||0)+' ⭐</span>':'')+
+         ((it.pts||0)>0?' <span class="cadtag" style="color:#b45309;border-color:#fde68a">'+(typeof amPayTxt==="function"?amPayTxt(kid,it,iso):"+"+(it.pts||0))+' ⭐</span>':'')+   // CHOREAMWHY: "10 → 8 ⭐"
        '</div></div>'; });
   return h;
 }
@@ -2536,14 +2537,15 @@ function amPopBtnsHTML(r,slot,kid,d,ok){
   if(r.i==null||r.done||r.wv||RT_ABBR[slot]===undefined) return '';
   if(!amCanSend(slot,(rtStepsFor(slot,kid,false,d)||[])[r.i])) return '';
   const sent=!!amGet(kid,slot,r.i,amIso(d));
-  return '<button onclick="event.stopPropagation();amSend(\''+slot+'\',\''+kid+'\',\''+d+'\','+r.i+');'+re+'" title="'+(sent?'On the next morning list — tap to take it back':'Put this on the next morning list — done before school')+'" style="'+B+(sent?'#b45309;color:#b45309':'#d1d5db;color:#6b7280')+'">\u{1F305} AM'+(sent?' ✓':'')+'</button>';
+  const _q=(typeof amAsks==="function"&&amAsks())?'amAsk':'amSend', _ig=sent&&typeof amWhyIg==="function"&&amWhyIg(amGet(kid,slot,r.i,amIso(d)));   // CHOREAMWHY: the question; 🙈 = ignored
+  return '<button onclick="event.stopPropagation();'+_q+'(\''+slot+'\',\''+kid+'\',\''+d+'\','+r.i+');'+re+'" title="'+(sent?'On the next morning list — tap to take it back':'Put this on the next morning list — done before school')+'" style="'+B+(sent?'#b45309;color:#b45309':'#d1d5db;color:#6b7280')+'">\u{1F305} AM'+(sent?' ✓':'')+(_ig?' \u{1F648}':'')+'</button>';
 }
 // Kids today pop-up, under the rows of ☀️ 🧹 🌙: one button for everything still open in all three lists.
 function amPopFootHTML(kid,slot,d){
   if(RT_ABBR[slot]===undefined) return '';
   const n=amRest(kid,d).length; if(!n) return '';
   return '<div style="margin-top:10px;padding-top:9px;border-top:1px solid #f3f4f6">'+
-    '<button onclick="event.stopPropagation();amSendRest(\''+kid+'\',\''+d+'\');boardStatPop(\''+kid+'\',\''+slot+'\',\''+d+'\')" style="width:100%;padding:8px 10px;border-radius:9px;border:1.5px solid #fde68a;background:#fffbeb;color:#92400e;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">\u{1F305} Send all '+n+' unfinished to the next morning</button>'+
+    '<button onclick="event.stopPropagation();'+((typeof amAsks==="function"&&amAsks())?'amAskAll(\''+kid+'\',\''+d+'\',\''+slot+'\')':'amSendRest(\''+kid+'\',\''+d+'\')')+';boardStatPop(\''+kid+'\',\''+slot+'\',\''+d+'\')" style="width:100%;padding:8px 10px;border-radius:9px;border:1.5px solid #fde68a;background:#fffbeb;color:#92400e;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">\u{1F305} Send all '+n+' unfinished to the next morning</button>'+
     '<div style="font-size:10.5px;color:var(--muted);margin-top:4px">Afternoon, Chores and Evening together. They show first on the Morning list and hold school until done. \u{1F305} AM on a row sends just that one.</div></div>';
 }
 // SENDAM_END
@@ -2689,7 +2691,7 @@ function toggleRtStep(slot,kid,i){
     if(_mk&&_mk.done&&_mk.hd&&typeof hdUnmark==="function"&&hdUnmark(slot,kid,i,_mk)) return; }   // …and an old row the plan marked done un-checks through the plan (no double pay across OFF / ON)
   const wk=activeWk(), sk=wk+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i, cur=slState[sk], now=!(cur&&cur.done), _slB=slBefore();   // SLTARGET
   const _obPrev={}; _obPrev[sk]=cur||null; _obPrev[wk+"_"+day+"_"+kid+"_"+slot]=slState[wk+"_"+day+"_"+kid+"_"+slot]||null;   // 📮
-  { const _st0=rtStepsFor(slot,kid)[i], _b0=_st0?(_st0.pts||0):0;
+  { const _st0=rtStepsFor(slot,kid)[i], _ao=(now&&typeof amOrigPay==="function")?amOrigPay(slot,kid,i):null, _b0=_st0?(_ao!=null?_ao:(_st0.pts||0)):0;   // CHOREAMWHY: sent as ignored, ticked here on a later day → what its 🌅 row pays
     // CHOREFALL: a row in its wait pays what it is worth today (the base a bonus room doubles); on its own day it is never late
     const _bf=(now&&_b0>0&&typeof rtFallPay==="function"&&day===_todayDay&&!cadDueOn(_st0.cad||"daily",day)&&stepWindowOk(_st0,day))?rtFallPay(_st0,rtLateDays(slot,kid,i),kid):_b0;
     const _bd=(now&&_b0>0&&typeof rtDailyPay==="function"&&day===_todayDay&&rtDailyRow(_st0))?rtDailyPay(slot,kid,i,_st0):_bf;   // CHOREDAILY: a daily missed 2+ days in a row
@@ -2828,7 +2830,7 @@ function _lsDay(slot,kid,wk,dn,iso,map,back){
   let ok=0;
   for(let i=0;i<steps.length;i++){ if(!_lsDue(steps[i],dn,iso,back)) continue;
     if(_lsOnDay(map&&map[wk+"_"+dn+"_"+kid+"_"+(slot==="morning"?"m":RT_ABBR[slot])+"step"+i],iso)){ ok++; continue; }
-    if(off||wv[slot+"step"+i]||(slot!=="morning"&&am[iso+"_"+RT_ABBR[slot]+"step"+i])) continue;
+    if(off||wv[slot+"step"+i]||(slot!=="morning"&&am[iso+"_"+RT_ABBR[slot]+"step"+i]&&!(typeof amWhyIg==="function"&&amWhyIg(am[iso+"_"+RT_ABBR[slot]+"step"+i])))) continue;   // CHOREAMWHY: an ignored 🌅 breaks it
     return -1; }
   return ok?1:0;
 }
@@ -3256,6 +3258,70 @@ function _rtDropFileC3(kid,slot,i,dueDay,label,pts,wkIn,n){
     if(err||!ok||!ln) return; put(); db.ref("bank/"+kid+"/adjustments/"+bid).set(ln); },false); }catch(e){}   // the bank listener redraws
 }
 // CHOREDROP_END
+// CHOREAMWHY_START — 🌅 asks why (missed-chores design §2.5, slice C4; her words 11/19: "i think it asks at the time of because maybe it
+// was because the kid was sick or maybe because they ignored the chore"). Mom's (or an unlocked Dad's) 🌅 AM / Send all asks once:
+// 🤒 Not their fault (as before) or 🙈 They ignored it; closing it = not their fault. Stored as amCarry/<kid>/<id>/why. A sent row's chip
+// asks again: a new answer counts from now on (what was paid or taken stays), or ↩ take it off. Ignored: 20% less a day from its own day
+// (rtFallPts; the "Stars fall" switch and ⏸ Pause as C2 reads them); from the day after it pays 0, each day still undone takes 20% of its
+// stars, 5 days at most — C3's way: decided once that day on a line a transaction makes (routineLog/<kid>/<wk>/<day>/amz_<id>, .amz =
+// {n,bid,id,day} or {n:0,why}), ONE bank line camz_<wk>_<day>_<kid>_<id> by the committing device, never the outbox; starTakeAt and days
+// off take nothing; only today's, seen when the kid's Morning list is drawn on today's tab. Before RT_AMWHY_FROM, no why, a plan row: as before.
+const RT_AMWHY_FROM="2026-12-07";
+function _amIsoOf(t){ const d=new Date(t); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function amAsks(){ return (amIso(_todayDay)||_amToday())>=RT_AMWHY_FROM; }
+function amWhyOn(it){ return !!it&&!it.house&&!!it.at&&_amIsoOf(it.at)>=RT_AMWHY_FROM; }
+function amWhyIg(it){ return amWhyOn(it)&&it.why==="ignored"; }
+// its own day: the day it was due (a row sent while it waited was due before the day it was sent from)
+function amOwn(kid,it){ const st=(rtStepsFor(it.slot,kid)||[])[it.i]; if(!st||st.label!==it.label) return it.fromIso;
+  for(let k=0;k<7;k++){ const q=_amIsoAdd(it.fromIso,-k); if(cadDueOn(st.cad||"daily",DAYS_ALL[(new Date(q+"T12:00:00").getDay()+6)%7])) return q; } return it.fromIso; }
+function amFallN(kid,it,iso){ if(!amWhyIg(it)||!iso) return 0; const o=amOwn(kid,it), n=Math.round((new Date(iso+"T12:00:00")-new Date(o+"T12:00:00"))/864e5); return n>0&&o>=RT_FALL_FROM&&o>=starFallFrom(kid)?n:0; }
+// What it pays if ticked on day iso — the one number every payer and display of a 🌅 row reads.
+function amPay(kid,it,iso){ return amWhyIg(it)?rtFallPts(it.pts||0,amFallN(kid,it,iso)):(it.pts||0); }
+function amPayTxt(kid,it,iso){ const p=it.pts||0, f=amPay(kid,it,iso); return f===p?"+"+p:'<s style="opacity:.6">'+p+'</s> → '+f; }
+// After 0: what day iso costs — {n} or {n:0, why:"away"|"off"|"pause"} — or null (not after 0, or past its 5 days)
+function amCostN(kid,it,iso){ const p=it.pts||0, n=amFallN(kid,it,iso); let z=1; if(!(p>0)||!n) return null; while(rtFallPts(p,z)>0) z++; if(n<=z||n>z+5) return null;
+  const C=calendarData||{}, o=((C.kidOverrides||{})[kid]||{})[iso]; let off=o&&o.school===false;   // days off: 😷 Kid Off, or a break that paused every list
+  [C.holidays,C.vacations].forEach(function(c){ Object.values(c||{}).forEach(function(v){ const a=calNormDate(v&&(v.start||v.date)), b=calNormDate(v&&(v.end||v.start||v.date)); if(a&&iso>=a&&iso<=b&&v.pause==="all") off=true; }); });
+  if(off) return {n:0,why:"away"};
+  const no=starTakeAt(kid,amOwn(kid,it)); return no?{n:0,why:no}:{n:p-rtFallPts(p,1)}; }
+function amCostSee(kid,it){
+  const iso=amIso(_todayDay), tk=(iso&&!it.done)?amCostN(kid,it,iso):null; if(!tk) return;
+  const wk=activeWk(), dn=_todayDay, key="amz_"+it.id, L=(routineLog[kid]=routineLog[kid]||{}), W=(L[wk]=L[wk]||{}), D=(W[dn]=W[dn]||{}); if(D[key]) return;
+  const bid="camz_"+wk+"_"+dn+"_"+kid+"_"+it.id; tk.id=it.id; tk.day=iso; if(tk.n>0) tk.bid=bid;
+  const rec={label:(it.label||"Chore")+" — not done",slot:it.slot,act:"amz",ts:nowTs(),at:Date.now(),pts:0,amz:tk};
+  const ln=tk.n>0?{amount:-tk.n,note:(it.emoji?it.emoji+" ":"")+(it.label||"Chore")+" · not done",ts:rec.ts,iso:new Date().toISOString(),src:"drop",wk:wk,day:dn}:null;
+  const put=function(){ if(!ln) return; bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{}; bank[kid].adjustments[bid]=ln; };
+  D[key]=rec; if(!db||_dryRun()){ put(); return; }
+  try{ db.ref("routineLog/"+kid+"/"+wk+"/"+dn+"/"+key).transaction(function(cur){ return cur?undefined:rec; },function(err,ok){ if(err||!ok||!ln) return; put(); db.ref("bank/"+kid+"/adjustments/"+bid).set(ln); },false); }catch(e){}
+}
+// The ORIGINAL row of a carry sent as ignored, ticked (or shown) on a later day: what the 🌅 row pays today, or null (as before)
+function amOrigPay(slot,kid,i){ const c=amGet(kid,slot,i,amIso(day)), t=amIso(_todayDay); return (c&&amWhyIg(c)&&amFallN(kid,c,t)>0)?amPay(kid,c,t):null; }
+function amPopRows(rows,slot,kid){ rows.forEach(function(r){ const f=(r.i!=null&&!r.done&&r.hs)?amOrigPay(slot,kid,r.i):null, st=r.hs; if(f==null) return;
+  r.pay=f; r.lab=(st.emoji?st.emoji+" ":"")+st.label+(st.pts?(f!==st.pts?" "+st.pts+" → "+f+" ⭐":" +"+st.pts+" ⭐"):""); }); }
+// A sent row's answer: one targeted write. Refused for a carry from before RT_AMWHY_FROM, a done or plan row, or the same answer.
+function amWhySet(kid,id,v){ const it=_amGrown()&&amCarry[kid]&&amCarry[kid][id]; if(!it||it.done||!amWhyOn(it)||(v!=="ignored"&&v!=="notfault")||it.why===v) return false;
+  it.why=v; if(_amWrite()) db.ref("amCarry/"+kid+"/"+id+"/why").set(v); amOnValue(Object.assign({},amCarry)); return true; }
+// The question (🧒 Kids today pop-up). amAsk: 🌅 AM on a row · amAskAll: Send all. Where it does not ask, the tap is the old one.
+let _amQ=null;
+function amAsk(slot,kid,d,i){ if(!_amGrown()) return false; const st=(rtStepsFor(slot,kid,false,d)||[])[i], c=amGet(kid,slot,i,amIso(d));
+  if(!amAsks()||!st||st.house||(c&&!amWhyOn(c))) return amSend(slot,kid,d,i);
+  _amQ={slot:slot,kid:kid,d:d,i:i,id:c?amKey(amIso(d),slot,i):null,v:c?c.why:null,t:(st.emoji?st.emoji+" ":"")+(st.label||"Chore")}; return _amQDraw(); }
+function amAskAll(kid,d,slot){ if(!_amGrown()) return 0; if(!amAsks()) return amSendRest(kid,d); const n=amRest(kid,d).length; if(!n) return 0;
+  _amQ={all:1,slot:slot,kid:kid,d:d,t:n+" unfinished thing"+(n===1?"":"s")}; return _amQDraw(); }
+function _amQDraw(){ const q=_amQ, B='display:block;width:100%;text-align:left;margin-top:8px;padding:9px 12px;border-radius:10px;font-family:inherit;cursor:pointer;background:#fff;border:1.5px solid ';
+  const b=function(v,lab,sub){ return '<button onclick="amQPick(\''+v+'\')" style="'+B+(q.v===v?'#b45309':'#d1d5db')+'"><b style="font-size:14px">'+lab+(q.v===v?' ✓':'')+'</b><div style="font-size:11.5px;color:#6b7280">'+sub+'</div></button>'; };
+  try{ const o=document.getElementById("am-why"); if(o) o.remove(); document.body.insertAdjacentHTML("beforeend",'<div id="am-why" onclick="amQClose()" style="position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9600;display:flex;align-items:center;justify-content:center;padding:20px"><div onclick="event.stopPropagation()" style="background:#fff;border-radius:16px;max-width:360px;width:100%;padding:16px 18px">'+
+    '<div style="font-weight:800;font-size:15px">\u{1F305} '+esc(q.t)+' → '+esc(cap(q.kid))+'\'s next morning</div><div style="font-size:12.5px;color:#6b7280;margin-top:2px">Why wasn\'t it done?</div>'+
+    b("notfault","\u{1F912} Not their fault","Full stars, as always")+b("ignored","\u{1F648} They ignored it","20% fewer stars each day. After 0, 20% a day comes off the bank, 5 days at most")+
+    (q.id?'<button onclick="amQBack()" style="'+B+'#d1d5db;color:#6b7280;font-size:12.5px;font-weight:700">↩ Take it off the morning list</button>':'')+
+    '<div style="font-size:11px;color:#9ca3af;margin-top:8px">'+(q.id?'A new answer counts from now on. Closing changes nothing.':'Closing this = not their fault.')+'</div></div></div>'); }catch(e){}
+  return true; }
+function _amQEnd(){ const q=_amQ; _amQ=null; try{ const el=document.getElementById("am-why"); if(el) el.remove(); }catch(e){} return q; }
+function _amQRe(q,r){ try{ if(q.slot) boardStatPop(q.kid,q.slot,q.d); }catch(e){} return r; }   // the pop-up again, as the old tap's onclick did
+function amQPick(v){ const q=_amQEnd(); if(!q) return false; return _amQRe(q,q.all?amSendRest(q.kid,q.d,v):q.id?amWhySet(q.kid,q.id,v):amSend(q.slot,q.kid,q.d,q.i,false,v)); }
+function amQClose(){ const q=_amQ; if(!q||q.id){ _amQEnd(); return false; } return amQPick("notfault"); }   // nothing is ever taken by accident
+function amQBack(){ const q=_amQEnd(); return q&&q.id?_amQRe(q,amTakeBack(q.kid,q.id)):false; }
+// CHOREAMWHY_END
 function rtSlotHTML(slot,kid){
   const steps=rtStepsFor(slot,kid,false,day), label=SL_SLBL[slot];
   if(!steps.length){
@@ -7387,7 +7453,7 @@ function chSettingsClickoffLogHTML(){
       var slbl=(typeof SL_SLBL!=="undefined"&&SL_SLBL[e.slot])||e.slot||"";
       var dlbl=(typeof DAY_LBL!=="undefined"&&DAY_LBL[e._day])||e._day||"";
       h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)'+(e.flagged?';opacity:.6':'')+'">';
-      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">'+((typeof flagMarkTxt==="function"&&flagMarkTxt(e))||'−100')+'</span>':'')+((e.drop&&e.drop.n)?' <span style="color:#b91c1c;font-weight:800">'+(e.drop.gb?'−'+e.drop.n+' ⭐ given back':'−'+e.drop.n+' ⭐')+'</span>':'')/* CHOREDROP: what the drop took */+((e.zero&&e.zero.n)?' <span style="color:#b91c1c;font-weight:800">'+(e.zero.gb?'−1 ⭐ given back':'−1 ⭐')+'</span>':'')/* CHOREZERO */+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
+      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">'+((typeof flagMarkTxt==="function"&&flagMarkTxt(e))||'−100')+'</span>':'')+((e.drop&&e.drop.n)?' <span style="color:#b91c1c;font-weight:800">'+(e.drop.gb?'−'+e.drop.n+' ⭐ given back':'−'+e.drop.n+' ⭐')+'</span>':'')/* CHOREDROP: what the drop took */+((e.zero&&e.zero.n)?' <span style="color:#b91c1c;font-weight:800">'+(e.zero.gb?'−1 ⭐ given back':'−1 ⭐')+'</span>':'')/* CHOREZERO */+((e.amz&&e.amz.n)?' <span style="color:#b91c1c;font-weight:800">−'+e.amz.n+' ⭐'+(e.amz.gb?' given back':'')+'</span>':'')/* CHOREAMWHY */+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
       if(on&&!e.flagged&&(typeof ckLogCanDock!=="function"||ckLogCanDock())) h+='<button onclick="rlogFlag(\''+kid+'\',\''+_rlwk+'\',\''+e._day+'\',\''+e._key+'\')" title="Didn\'t actually do it — '+(spPenalty().on?'dock '+spPenalty().pts+' points':'mark it')+'" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ '+flagLbl()+'</button>';
       else if(e.flagged) h+=flagUndoBtn("step",kid,_rlwk+"/"+e._day+"/"+e._key);   // FLAGONE: undo
       h+='</div>';
@@ -10082,7 +10148,7 @@ function boardStatPop(kid,slot,d){
   if(slot==="morning"){ title="🌅 Morning";
     // 🌅 only that day's steps (the kid's own list); an as-needed step shows only if it was done, marked as such
     const _mDue=morningDueIdx(kid,day);
-    if(typeof amFor==="function"){ const _ai=amIso(day); amFor(kid,day).forEach(it=>{ rows.push({lab:"🌅 "+(it.emoji?it.emoji+" ":"")+(it.label||"Chore")+" — from "+amFromLbl(it)+" "+(SL_SLBL[it.slot]||it.slot)+(it.pts?" +"+it.pts+" ⭐":""),done:amDoneBy(it,_ai),ts:(it.done&&it.done.ts)||"",am:it.id}); }); }   // SENDAM: carried rows first
+    if(typeof amFor==="function"){ const _ai=amIso(day); amFor(kid,day).forEach(it=>{ rows.push({lab:"🌅 "+(it.emoji?it.emoji+" ":"")+(it.label||"Chore")+" — from "+amFromLbl(it)+" "+(SL_SLBL[it.slot]||it.slot)+(it.pts?(typeof amPay==="function"&&amPay(kid,it,_ai)!==it.pts?" "+it.pts+" → "+amPay(kid,it,_ai)+" ⭐":" +"+it.pts+" ⭐"):""),done:amDoneBy(it,_ai),ts:(it.done&&it.done.ts)||"",am:it.id}); }); }   // SENDAM: carried rows first
     morningStepsFor(kid).forEach((st,i)=>{ const rec=((typeof hdSlRec==="function")?hdSlRec("morning",kid,day,i):slState[activeWk()+"_"+day+"_"+kid+"_mstep"+i])||{};   /* 🚪 HOUSEDAY */
       const _due=_mDue.indexOf(i)>=0, _dn=mStepDoneOn(kid,day,i), _wv=(typeof rtWaved==="function")&&rtWaved("morning",kid,day,i);   // KIDROWS2: a waved step stays on the list, greyed, with undo
       if(!_due&&!_wv&&!(st.cad==="asneeded"&&_dn)) return;
@@ -10104,6 +10170,7 @@ function boardStatPop(kid,slot,d){
       if(!cadDueOn(st.cad||"daily",day)&&!(_ln>0)) return; const rec=((typeof hdSlRec==="function")?hdSlRec(slot,kid,day,i):slState[activeWk()+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i])||{};   /* 🚪 HOUSEDAY */
       const _dl=typeof rtDailyRow==="function"&&day===_todayDay&&rtDailyRow(st), _f=_dl?rtDailyPay(slot,kid,i,st):(typeof rtFallPay==="function")?rtFallPay(st,_ln,kid):(st.pts||0);   // CHOREFALL: a falling row shows both numbers, as on the kid's row; CHOREDAILY: a daily too
       rows.push({lab:(st.emoji?st.emoji+" ":"")+st.label+(st.pts?(_f!==st.pts?" "+st.pts+" → "+_f+" ⭐":" +"+st.pts+" ⭐"):""),done:rtDoneOn(slot,kid,day,i),ts:rec.ts||"",i:i,wv:(typeof rtWaved==="function")&&rtWaved(slot,kid,day,i),late:_ln,hs:st,pay:_f,dly:_dl?rtDailyNote(slot,kid,i,st):""}); });   // LISTS_TAP; KIDROWS2: wv
+    if(typeof amPopRows==="function") amPopRows(rows,slot,kid);   // CHOREAMWHY: a row sent as ignored shows what its 🌅 row pays today
   }
   // LISTS_TAP (her ask 2026-10-21: "make on both mom and dads day all the lists clickable but do not change the look or size on any" —
   // "each individual list you can open for each kid like morning etc"): the ○/✅ on a morning / afternoon / chores / evening row is the
@@ -13472,7 +13539,7 @@ function mpBankAsk(kid,sign){
     '<div style="display:flex;align-items:center;margin-bottom:6px"><div style="font-family:\'Fraunces\',serif;font-weight:700;font-size:17px;flex:1">'+(give?'⭐ Give <span style="color:'+col+'">'+esc(nm)+'</span> '+amt+' star'+(amt===1?'':'s'):'Take '+amt+' star'+(amt===1?'':'s')+' from <span style="color:'+col+'">'+esc(nm)+'</span>')+'</div>'+
     '<button onclick="mpBankAskClose()" style="border:none;background:#f3f4f6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer">✕</button></div>'+
     '<div style="font-size:12.5px;color:#6b7280;margin-bottom:8px">'+(give?'What\'s it for?':'What happened?')+' It shows on '+esc(nm)+'\'s Star Bank statement.</div>'+
-    '<input id="mpbank-why" maxlength="120" placeholder="'+(give?'e.g. helped Lucy without being asked':'e.g. argued about screen time')+'" onkeydown="if(event.key===\'Enter\'){'+go(true)+'}" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-family:\'DM Sans\',sans-serif;margin-bottom:12px">'+
+    '<input id="mpbank-why" maxlength="120" placeholder="'+(give?'e.g. helped without being asked':'e.g. argued about screen time')+'" onkeydown="if(event.key===\'Enter\'){'+go(true)+'}" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-family:\'DM Sans\',sans-serif;margin-bottom:12px">'+
     '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">'+
     '<button onclick="'+go(false)+'" style="'+btn+'border:1.5px solid var(--border);background:#fff;color:#4b5563">Skip — no reason</button>'+
     '<button onclick="'+go(true)+'" style="'+btn+'border:none;background:'+(give?'#16a34a':'#b91c1c')+';color:#fff">'+(give?'+':'−')+amt+' ⭐</button>'+
@@ -14185,7 +14252,7 @@ function hhRowHTML(id,job){
     +_hhBtn("hhPickToggle('"+id+"','area')",a[0]+' '+a[1],false,'#2B7A78')+((job.area==="cleaning"||job.area==="pickup")?_hhBtn("hhPickToggle('"+id+"','floor')",'🏠 '+fl,false,'#2B7A78'):'')
     +(typeof hhGiveBtn==="function"?hhGiveBtn(id):'')+(job.who!=="grab"&&typeof hhCanLabel==="function"?_hhBtn("hhPickToggle('"+id+"','can')",hhCanLabel(job),false,'#475569'):'')+(typeof hhEditBtn==="function"?hhEditBtn(id):'')+((typeof momHere!=="function"||momHere())?_hhBtn("hhDeleteForGood('"+id+"')",'🗑 Delete for good',false,'#b91c1c'):'')+'<span style="flex:1"></span>';   // HHDELETE   // HH_ADDGIVE · HH_SETTINGS_METER · HH_EDITOR
   Object.keys(HH_VERDICTS).forEach(function(k){ const V=HH_VERDICTS[k]; h+=_hhBtn("hhSet('"+id+"','verdict','"+k+"')",V[0]+' '+V[1],v===k,V[2]); });
-  h+='</div>'+(typeof hhPickHTML==="function"?hhPickHTML(id,"area")+hhPickHTML(id,"floor")+hhPickHTML(id,"can"):'')+(typeof _hhGiveOrRot==="function"?_hhGiveOrRot(id):'')+(typeof hhEditHTML==="function"?hhEditHTML(id):'')+'<input type="text" value="'+esc(job.note||'')+'" placeholder="Note (move to Tue, give to Lucy, …)" onchange="hhNote(\''+id+'\',this)" style="width:100%;box-sizing:border-box;margin-top:6px;padding:6px 8px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif">';
+  h+='</div>'+(typeof hhPickHTML==="function"?hhPickHTML(id,"area")+hhPickHTML(id,"floor")+hhPickHTML(id,"can"):'')+(typeof _hhGiveOrRot==="function"?_hhGiveOrRot(id):'')+(typeof hhEditHTML==="function"?hhEditHTML(id):'')+'<input type="text" value="'+esc(job.note||'')+'" placeholder="Note (move to Tue, give to someone else, …)" onchange="hhNote(\''+id+'\',this)" style="width:100%;box-sizing:border-box;margin-top:6px;padding:6px 8px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif">';
   return h+'</div>';
 }
 function hhReviewHTML(){
@@ -47060,7 +47127,7 @@ function kcPointsHTML(k){
       const isDone=function(i){ return isM?(typeof mStepDoneOn==="function"&&mStepDoneOn(k,dn,i)):rtDoneOn(slot,k,dn,i); };
       const done=due.filter(isDone);
       let left=0; due.forEach(function(i){ if(!isDone(i)) left+=((!isM&&typeof rtFallPay==="function"&&!cadDueOn((steps[i]||{}).cad||"daily",dn))?rtFallPay(steps[i],rtLateDays(slot,k,i),k):(typeof rtDailyPay==="function")?rtDailyPay(slot,k,i,steps[i]):((steps[i]||{}).pts||0)); });   // CHOREFALL: a falling row counts what it pays today; CHOREDAILY: a daily too
-      _am.forEach(function(it){ if(!amDoneBy(it,_ai)) left+=(it.pts||0); });   // SENDAM
+      _am.forEach(function(it){ if(!amDoneBy(it,_ai)) left+=(typeof amPay==="function"?amPay(k,it,_ai):(it.pts||0)); });   // SENDAM · CHOREAMWHY
       const allDone=done.length===due.length&&_amD===_am.length;
       const bonus=(typeof rtBonusFor==="function")?rtBonusFor(slot,k):0;
       if(!allDone){ anyOpen=true; left+=bonus; }
@@ -86528,7 +86595,7 @@ function mastPrintCards(){
 
   let page='<div class="mpp-sheet" style="display:flex;flex-direction:column">';
   page+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
-  page+='<div><div style="font-size:1.1rem;font-weight:700;color:'+kc+'">\u{1F995} Julian</div>';
+  page+='<div><div style="font-size:1.1rem;font-weight:700;color:'+kc+'">'+kcEmoji(masteryKid)+' '+esc(cap(masteryKid))+'</div>';
   const _jps=mastDrillSettings();
   page+='<div style="font-size:0.6rem;color:#6b7280">Pre-K \u{00B7} Left = introduction \u{00B7} fill '+_jps.intro_dots+' dots \u{2192} \u{2B50} enters ladder \u{00B7} Right = ladder \u{00B7} right \u{2192} moves up</div></div>';
   page+='<div style="font-family:monospace;font-size:8.5px;color:#9ca3af;text-align:right;line-height:1.7">'+wkLabel+'<br>'+dayN+', '+dateStr+'</div></div>';
@@ -89707,7 +89774,7 @@ function rulesFamilyCardsHTML(openSchool){
   h+='<div class="rules-section-lbl">What it checks</div>';
   ["No kid double-booked; nothing in the lunch block",
    "One Mom-Required / one computer / one shared iPad at a time (from Overlap Rules)",
-   "Lucy’s iPad runs independently of the boys’",
+   "No more iPad/phone tasks at once than there are shared screens",
    "Per-subject Cap (sittings per day) not exceeded",
    "Nothing on a calendar off-day (holiday / vacation / kid-off)",
    "Nothing silently dropped — every task is placed or on the carry-over list"
@@ -89930,7 +89997,7 @@ function renderAdminGenerate(el,headerHtml){
     h+='<div style="text-align:center;padding:40px 0;color:var(--muted)"><div style="font-size:36px;margin-bottom:8px">\u{1F4DA}</div><div style="font-weight:600;margin-bottom:4px">No curriculum uploaded</div><div style="font-size:12px">Upload howe_master_schedule.xlsx via the Curriculum tab first.</div></div>';
   } else {
     h+=gwGoneHintHTML();   // GWGONE: "Regenerate Week N" / "Plan Week N →" were here
-    h+='<div style="margin:0 0 8px"><button onclick="haOpenNotebookPicker()" style="width:100%;padding:10px;border-radius:12px;border:1.5px solid #fed7aa;background:#fff7ed;font-size:12px;font-weight:700;color:#9a3412;cursor:pointer;font-family:\'DM Sans\',sans-serif">📓 Generate Notebooks — in-app (beta)</button><div style="font-size:11px;color:var(--muted);margin-top:5px;line-height:1.4">Builds print-ready notebooks right here, no terminal. Julian first; more kids coming.</div></div>';
+    h+='<div style="margin:0 0 8px"><button onclick="haOpenNotebookPicker()" style="width:100%;padding:10px;border-radius:12px;border:1.5px solid #fed7aa;background:#fff7ed;font-size:12px;font-weight:700;color:#9a3412;cursor:pointer;font-family:\'DM Sans\',sans-serif">📓 Generate Notebooks — in-app (beta)</button><div style="font-size:11px;color:var(--muted);margin-top:5px;line-height:1.4">Builds print-ready notebooks right here, no terminal.</div></div>';
     h+='<div style="margin:0 0 14px"><button onclick="downloadWeekJSON()" style="width:100%;padding:10px;border-radius:12px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;color:#1f2937;cursor:pointer;font-family:\'DM Sans\',sans-serif">⬇️ Download '+WK.replace("week","Week ")+' JSON — for notebooks</button><div style="font-size:11px;color:var(--muted);margin-top:5px;line-height:1.4">Exports the current committed week to feed the desktop generators (the older Python path).</div></div>';
     if(gwStatus) h+='<div style="background:#dcfce7;border:1px solid #86efac;border-radius:10px;padding:10px 14px;font-size:12px;font-weight:700;color:#15803d;margin-bottom:12px">'+gwStatus+'</div>';
     if(gwResult){
