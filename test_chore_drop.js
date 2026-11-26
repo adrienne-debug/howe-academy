@@ -36,6 +36,7 @@ const once = (src, what, from, to, label) => { const n = typeof from === "string
 const C6 = require(path.join(__dirname, "test_fixtures", "carve_c6.js"));   // C6 (test_chore_zero_daily.js) is built on C3: its app before goes too
 const BASE_IDX = (() => { let s = C6.idx(fs.readFileSync(path.join(__dirname, "index.html"), "utf8")); const R = (a, b, l) => { s = once(s, "index.html", a, b, l); };
   R(/^\/\/ CHOREDROP_START[^\n]*\n[\s\S]*?^\/\/ CHOREDROP_END\n/m, "", "the CHOREDROP block");
+  R(/^\/\/ CHOREAMWHY_START[^\n]*\n[\s\S]*?^\/\/ CHOREAMWHY_END\n/m, "", "C4's block (it reads starTakeAt; its hooks are typeof-guarded)");
   R(/^const RT_TAKE_FROM=[^\n]*\n/m, "", "RT_TAKE_FROM");
   R(/^\/\/ CHOREDROP \(C3\): why the drop[^\n]*\n[^\n]*\nfunction starTakeAt[^\n]*\n/m, "", "starTakeAt");
   R(/^ {2}const due=_rtLastDueIdx\(ds,DAYS_ALL\.indexOf\(_todayDay\)\), tp=[^\n]*/m, "  const due=_rtLastDueIdx(ds,DAYS_ALL.indexOf(_todayDay));", "_rtLogLateMiss's tp");
@@ -47,6 +48,7 @@ const BASE_IDX = (() => { let s = C6.idx(fs.readFileSync(path.join(__dirname, "i
 const CG = require(path.join(__dirname, "test_fixtures", "carve_g.js"));   // slice G (test_house_record_stored.js) reads C3's hoDrop: its app before goes too
 const BASE_HJS = (() => { let s = C6.hjs(CG.hjs(fs.readFileSync(path.join(__dirname, "house.js"), "utf8"))); const R = (a, b, l) => { s = once(s, "house.js", a, b, l); };
   R(/^\/\/ LEDGERDROP_START[^\n]*\n[\s\S]*?^\/\/ LEDGERDROP_END\n/m, "", "the LEDGERDROP block");
+  R(/^\/\/ LEDGERAMZ_START[^\n]*\n[\s\S]*?^\/\/ LEDGERAMZ_END\n/m, "", "C4's ledger block (it reads LEDGERDROP's gate)"); R(/^ {2}out\.lists\.forEach\(function\(L\)\{ L\.rows\.forEach\(function\(r\)\{ out\.taken\+=r\.atk[^\n]*\n/m, "", "C4's taken");
   R(/^ {6}const g0=out\.gone\.length;[^\n]*\n/m, "", "the gone rows' start");
   R(/^ {6}if\(typeof lgDropGones===[^\n]*\n/m, "", "the gone rows' hook");
   R(/^ {2}out\.taken=0;[^\n]*\n/m, "", "the day's taken");

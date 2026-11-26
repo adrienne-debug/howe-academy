@@ -55,7 +55,7 @@ op = NB.notebookOptions("kid9", { isPreK: true });
 ok(op.looks.map(l => l.key).join() === "," + SIX.concat(NEW).join() && op.current === "", "a Pre-K kid on the starter notebook: Starter + the nine");
 op = NB.notebookOptions("kid9", { notebookTheme: "plain" });
 ok(op.current === "plain" && op.prek && op.levels.length === 5 && op.extraPages.length === 3, "picking a new look gives the level switches and the three extra pages, as any Pre-K look");
-ok(["lincoln", "ellis", "lucy", "kid9"].every(k => NB.notebookOptions(k, {}).looks.length === 1), "an older kid's picker is untouched (one look each)");
+ok(["lincoln", "ellis", "kid9"].every(k => NB.notebookOptions(k, {}).looks.length === 1) && NB.notebookOptions("lucy", {}).looks.every(l => !NEW.concat(SIX).includes(l.key)), "an older kid's picker gets none of the Pre-K looks (4th and 6th: one look; the 1st-grade colour sets: test_lu_looka.js)");
 ok(!/['"](plain|horses|sports)['"]/.test(html.slice(html.indexOf("// PREKLEVEL_WIRE_START"), html.indexOf("// PREKLEVEL_WIRE_START") + 4000)) && !/This week(’|\\u2019|')s (riding|game) plan/.test(html), "index.html names none of the new looks (no index.html change)");
 // Mom's week-plan card takes a look's title from the look (index.html nbPlanTitle, NB_LOOKS2)
 const hA = html.indexOf("// NB_LOOKS2_START"), hB = html.indexOf("// NB_LOOKS2_END\n");

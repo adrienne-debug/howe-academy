@@ -37,7 +37,7 @@ const noSig = t => { const o = clone(t); Object.keys(o.houseDay || {}).forEach(k
 const outHH = t => noHH(noSig(t));
 const R = (d, expr) => JSON.parse(d.run("JSON.stringify((function(){ " + expr + " })())"));
 const pool = (d, kid) => F.poolNames(d, kid);
-const mkW = async (kind, mode, o) => { o = o || {}; const w = await F.world(kind, mode, o); const A = w.boot("A", "devA", { mom: true }), B = w.boot("B", "devB"); A.run(o.hjs || HJS); await w.flush(); return { w, A, B }; };
+const mkW = async (kind, mode, o) => { o = o || {}; const w = await F.world(kind, mode, Object.assign({ longPlan: true }, o));   /* 📅 LISTWK: 60 school days (test_fixtures/house_world.js) */ const A = w.boot("A", "devA", { mom: true }), B = w.boot("B", "devB"); A.run(o.hjs || HJS); await w.flush(); return { w, A, B }; };
 const drawn = async S => { S.A.run("try{ renderAll(); hhRender(); }catch(e){}"); await S.w.flush(); };
 const snap = S => J({ kid: F.kidHTML(S.B), mom: F.kidHTML(S.A, true).map(h => h.replace(/<span onclick="event\.stopPropagation\(\);hcGo\('[^']*'\)" title="Edit this chore" style="[^"]*">✎<\/span>/g, "")) });
 // One day of Up for Grabs, picked by name from each kid's own list, so two worlds do the same thing to the same chore.

@@ -309,7 +309,7 @@ async function dayOf(S, n) {
     if (o.length) { if (k === "kid_c" || n % 2) B.run("hdGrabDone(" + J(k) + "," + J(t) + "," + J(o[0]) + ")"); else { B.run("hdGrabHold(" + J(k) + "," + J(t) + "," + J(o[0]) + ")"); await w.flush(); B.run("hdGrabLetGo(" + J(k) + "," + J(t) + "," + J(o[0]) + ")"); } await w.flush(); } }
   await go(w, n, 18, 0); S.A.run("try{ renderAll(); hhRender(); }catch(e){}"); await w.flush();
 }
-const mkW = async (kind, mode, o) => { const w = await F.world(kind, mode, { index: o.index, household: o.household }); const A = w.boot("A", "devA", { mom: true }), B = w.boot("B", "devB"); A.run(o.hjs); await w.flush(); return { w, A, B }; };
+const mkW = async (kind, mode, o) => { const w = await F.world(kind, mode, { index: o.index, household: o.household, longPlan: true });   /* 📅 LISTWK: 60 school days (test_fixtures/house_world.js) */ const A = w.boot("A", "devA", { mom: true }), B = w.boot("B", "devB"); A.run(o.hjs); await w.flush(); return { w, A, B }; };
 const replay = async (kind, mode, days, hh, sw, index, hjs) => { const S = await mkW(kind, mode, { index, hjs, household: hh() }), shots = [];
   await go(S.w, 0, 7, 0); if (sw) { S.A.run("hgOpen(); hgSwitch()"); await S.w.flush(); }
   for (let n = 0; n < days; n++) { await dayOf(S, n); shots.push(snap(S)); }
