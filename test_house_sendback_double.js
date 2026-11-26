@@ -10,6 +10,7 @@
  *   D  a carried row with no earlier done record (not ticked yesterday): untouched, on her list, pays as before
  *   E  plan OFF and on preview, 14 days with ticks and Send backs: every list, every bank, every write and the database = the app before
  *   F  planted faults, each named for the rule it breaks
+ *   H  a carried row with an earlier done record that is ticked TODAY stays shown, ticked (test_house_card_anywhere G found it hidden)
  *   G  L6 "↩ Do it again" (the hub's three questions, 11/25), each with a planted fault: (a) after Do it again on a carried plan row the
  *      row is still on the kid's list to redo, and the redo pays once; (b) F: a turn sent back (Do it again or 🚩 Wasn't done) does not
  *      cover a later turn — the redo does; (c) G: the record reads what finally happened (dropped, or done late at the redo's pay)
@@ -108,7 +109,7 @@ for (const mode of ["off", "preview"]) {
 
 console.log("\n── F · planted faults (each must be caught; each names the rule it breaks) ──");
 if (HAS) { const FAULTS = [
-    ["the hide never fires (\"nothing is paid twice\")", "if(!p||!(p.since<iso)) return false;", "return false;"],
+    ["the hide never fires (\"nothing is paid twice\")", "if(!p||!(p.since<iso)||hdDoneRec(iso,id)) return false;", "return false;"],
     ["any carried row hidden, done or not (\"a row with no earlier done record is untouched\")", "for(let d=p.since;d<iso;d=hdAdd(d,1)) if(hdDoneRec(d,id)) return true; return false; }", "return true; }"],
     ["today's own done counted (a row ticked today must stay, checked)", "for(let d=p.since;d<iso;d=hdAdd(d,1))", "for(let d=p.since;d<=iso;d=hdAdd(d,1))"],
     ["the list's memo ignores the done records (a stale list after the Undo)", "if(m&&m.s===steps&&m.r===r&&m.J===J&&m.h===hdSbSig(r,kid,iso)) return m.v;", "if(m&&m.s===steps&&m.r===r&&m.J===J) return m.v;"]];
@@ -163,6 +164,22 @@ if (HAS) { const fx = (a, b) => { const n = SRC.split(a).length - 1; if (n !== 1
     const D = G3.S.w.boot("FC", "devFC", { mom: true }); D.run(CAP); D.run(HJS.replace(fa3, () => "if(p){ const t=at(p.since); t.who=p.who; t.seen=n; t.k=p.k; if(k) t.skip=1; if(t.at===undefined){ t.at=n; t.by=p.who; } }")); await G3.S.w.flush();
     const r = JSON.parse(D.run("JSON.stringify(hoRec('a_vac',hoX()))")).marks.filter(m => m.n >= Math.round(Date.UTC(2026, 11, 7) / 864e5));
     ok("fault caught — (c) G reads a turn that was on her list as done, so the sent-back tick still counts (\"a sent-back turn reads as what finally happened\")", !(r[0] && r[0].m === "drop"), mk0(r)); } }
+
+// ════════════════ H · a carried row ticked TODAY stays shown, ticked (test_house_card_anywhere G found it hidden) ════════════════
+console.log("\n── H · a carried row with an earlier done record, ticked today: shown, ticked ──");
+const FAMH = () => Object.assign(FAM(), { a_mop: KJ({ label: "Mop the hall", emoji: "🪣", who: "kid_a", cad: "7d", pts: 10, order: 3, lastDone: "2026-11-30" }) });   // every 7 days, due Mon 12/07
+const oldTick = (d, id) => d.run("(function(){ day=_todayDay; const raw=rtStepsFor('chores','kid_a',true,day)||[], i=raw.findIndex(function(x){ return x&&x._hh===" + J(id) + "; }); if(i<0) return -1; _rtMomTick=true; try{ toggleRtStep('chores','kid_a',i); } finally{ _rtMomTick=false; } return i; })()");   // the owner's OWN (old) row: done "on the list" (hdDoneRec src list)
+const rowState = (d, id) => d.run("(function(){ const d0=day; day=_todayDay; try{ const L=rtStepsFor('chores','kid_a',false,day)||[], i=L.findIndex(function(x){ return x&&x.house===" + J(id) + "&&x.cad!=='none'; }); return i<0?'hidden':(rtDoneOn('chores','kid_a',day,i)?'shown, ticked':'shown'); } finally{ day=d0; } })()");
+async function storyH(index) { const S = await mkW(index, "on", FAMH()), { w, A } = S; await go(w, 0, 7); await w.flush(); await go(w, 0, 10); const t0 = oldTick(A, "a_mop"); await w.flush();
+  await go(w, 1, 7); await w.flush(); await go(w, 1, 9); const before = rowState(A, "a_mop"); await go(w, 1, 10); const t1 = oldTick(A, "a_mop"); await w.flush();
+  return { t0, t1, carried: !!((day(w, isoN(1)).plan || {}).a_mop), before, after: rowState(A, "a_mop") }; }
+{ const h = await storyH(IDX);
+  ok("(setup) every-7-days Mop ticked Mon on Kid A's own old row (a done record \"on the list\"), still carried Tue (that tick never stamps last-done)", h.t0 >= 0 && h.carried, h);
+  ok("Tue 9:00, not ticked today: the carried row is hidden (an earlier done record: nothing paid twice)", h.before === "hidden", h);
+  ok("Tue 10:00, ticked today on that row: the plan row shows, ticked — as the app before (a row done today is never hidden)", h.t1 >= 0 && h.after === "shown, ticked", h);
+  if (HAS) { const a = "if(!p||!(p.since<iso)||hdDoneRec(iso,id)) return false;", n = SRC.split(a).length - 1;
+    if (n !== 1) ok("fault (H): its line is found once", false, n); else { const f = path.join(os.tmpdir(), "sbdouble_h_" + process.pid + ".html"); fs.writeFileSync(f, SRC.replace(a, () => "if(!p||!(p.since<iso)) return false;"));
+      const r = await storyH(f); fs.unlinkSync(f); ok("fault caught — a row ticked today hidden too (\"a row done today is never hidden: it shows, ticked\")", r.after !== "shown, ticked", r); } } }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 if (HAS) try { fs.unlinkSync(BASE_IDX); } catch (e) {}
