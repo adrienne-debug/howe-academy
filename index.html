@@ -3417,6 +3417,14 @@ function haAppName(){ try{ const a=String((window.HA_FAMILY&&window.HA_FAMILY.ap
 function haDay(curly){ return ((typeof HA_HOUSEHOLD!=="undefined")&&HA_HOUSEHOLD)?"My Day":(curly?"Mom\u2019s Day":"Mom's Day"); }   // each call site keeps the apostrophe it always had
 function haHome(){ return (typeof HA_HOUSEHOLD!=="undefined")&&HA_HOUSEHOLD&&!(_kiosk()||_kioskR()||_kioskD()||_kioskK()); }
 // HHHOME_END
+// HHNAMES_START — 🏡 a household's two adults are shown by their names (her decision 2026-11-24: her mother is Wendy, her husband is
+// David, and he "shows by name as a person jobs and gifts can belong to, with no page of his own yet" — DESIGN_household_edition_2026-11-24.md
+// §5.3 "Adult display names: config adults:{mom:\"…\", dad:\"…\"} so pickers and gift lists show their names instead of Mom and Dad").
+// For a household (a family file with kind household) whose family file has adults:{mom:"Wendy", dad:"David"} only. Every call site is
+// marked 🏡 HHNAMES and keeps its own words as the fallback, so every other family — and a household without adults — reads exactly as
+// before. Only what is SHOWN changes: the data keys stay mom / dad everywhere. No database reads or writes, nothing stored.
+function haAdult(id,fallback){ try{ if((typeof HA_HOUSEHOLD!=="undefined")&&HA_HOUSEHOLD&&(id==="mom"||id==="dad")){ const A=window.HA_FAMILY&&window.HA_FAMILY.adults, n=(A&&typeof A[id]==="string")?A[id].trim():""; if(n) return n; } }catch(e){} return fallback; }
+// HHNAMES_END
 // AREAS_START — 🧩 switches for the areas INSIDE Mom's Day (her ask 2026-11-24: "build this in a way where we could just turn off those
 // other areas"; her "Every family" 2026-11-24 for the Settings chip — slice 2 of DESIGN_household_edition_2026-11-24.md §5.2). Same
 // home as the top-tab switches: settings/pages/<area> = true|false, set from Adrienne's families dashboard, one listener, one saved
@@ -14090,7 +14098,7 @@ const HH_VERDICTS={keep:["✅","Keep","#15803d"],change:["✏️","Change","#b45
 // Grabs — it was Howe's four by name, so Settings ▸ 🧽 Cleaning Day listed Lincoln/Ellis/Lucy/Julian in every family's app and a
 // family's own kids' household jobs would never show. For Howe the list comes out identical.
 const HH_WHO=((typeof ROSTER!=="undefined"&&Array.isArray(ROSTER)&&(ROSTER.length||(typeof HA_HOUSEHOLD!=="undefined"&&HA_HOUSEHOLD)))?ROSTER.slice():["lincoln","ellis","lucy","julian"]).concat(["mom","dad","grab"]);   // HHKIND: a household's empty list stays empty
-function hhWhoName(w){ return w==="mom"?"Mom":w==="dad"?"Dad":w==="grab"?"Up for Grabs":((typeof KID_NAME!=="undefined"&&KID_NAME[w])||cap(w)); }
+function hhWhoName(w){ /* 🏡 HHNAMES */ return w==="mom"?(typeof haAdult==="function"?haAdult("mom","Mom"):"Mom"):w==="dad"?(typeof haAdult==="function"?haAdult("dad","Dad"):"Dad"):w==="grab"?"Up for Grabs":((typeof KID_NAME!=="undefined"&&KID_NAME[w])||cap(w)); }
 function hhSlug(l){ return String(l||"").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,96)||"x"; }
 // Ids are "<source>_<slug of the label>"; two rows with the same label on the same list get _2, _3 … so nothing is lost.
 function _hhUniq(rows){ const seen={}; rows.forEach(function(r){ let id=r.id, n=2; while(seen[id]){ id=r.id+"_"+(n++); } seen[id]=1; r.id=id; }); return rows; }
@@ -16216,7 +16224,7 @@ function llPeople(){ const R=(typeof ROSTER!=="undefined"&&ROSTER&&(ROSTER.lengt
 // "both" = Mom or Dad (her ask 2026-10-18: "a mom or dad choice where it shows up on both"): either parent runs it — it reads
 // "Mom or Dad" everywhere, whoever taps 🫧 Start has it, and 🤒 Mom's sick asks nobody (Dad has it).
 function llDoerChoices(){ const P=llPeople(); return P.slice(0,2).concat(["both"],P.slice(2)); }
-function llName(w){ return w==="both"?"Mom or Dad":w==="mom"?"Mom":w==="dad"?"Dad":((typeof KID_NAME!=="undefined"&&KID_NAME[w])||cap(w)); }
+function llName(w){ /* 🏡 HHNAMES */ return w==="both"?(typeof haAdult==="function"?haAdult("mom","Mom")+" or "+haAdult("dad","Dad"):"Mom or Dad"):w==="mom"?(typeof haAdult==="function"?haAdult("mom","Mom"):"Mom"):w==="dad"?(typeof haAdult==="function"?haAdult("dad","Dad"):"Dad"):((typeof KID_NAME!=="undefined"&&KID_NAME[w])||cap(w)); }
 function llDoer(id){ const x=llAll()[id]||{}; if(x.doer&&llDoerChoices().indexOf(x.doer)>=0) return x.doer; return llPeople().indexOf(id)>=2?id:"mom"; }
 function llOut(who,iso){ if(who==="both") return false; if(who==="mom") return !!(laundryLine&&laundryLine.momSick&&laundryLine.momSick[iso]);
   const C=(typeof calendarData!=="undefined"&&calendarData)||{}, o=C.kidOverrides&&C.kidOverrides[who]&&C.kidOverrides[who][iso]; return !!(o&&o.school===false); }   // 😷 Kid off — the per-kid day off, not a holiday
@@ -16422,7 +16430,7 @@ function llCover(id,who){ llAdultGo(function(){ const t=llToday(); if(who!=="wai
 function llCoverClear(id){ llAdultGo(function(){ const t=llToday(); if(!llCoverOf(id,t)) return; delete laundryLine.cover[t][id]; llStore(); const u={}; u["cover/"+t+"/"+id]=null; llWrite(u); llRerender(); }); }
 function llMomSick(){ llAdultGo(function(){ const t=llToday(), on=llOut("mom",t), u={}; laundryLine.momSick=laundryLine.momSick||{};
   if(on){ delete laundryLine.momSick[t]; u["momSick/"+t]=null; } else { laundryLine.momSick[t]=true; u["momSick/"+t]=true; } llEnsureItems(u); llStore(); llWrite(u);
-  if(typeof mwToast==="function") mwToast(on?'Mom\'s back on the laundry':'🤒 Feel better — pick who does your loads today'); llRerender(); }); }
+  if(typeof mwToast==="function") mwToast(on?llName("mom")+'\'s back on the laundry':'🤒 Feel better — pick who does your loads today'); llRerender(); }); }
 // 👤 the usual doer: tap to go round Mom → Dad → the kids.
 function llDoerNext(id){ llMomGo(function(){ const P=llDoerChoices(), w=P[(P.indexOf(llDoer(id))+1)%P.length], ex=laundryLine.extras&&laundryLine.extras[id], u={};
   const on1=laundryLine.once&&laundryLine.once[id]; if(on1){ on1.doer=w; u["once/"+id+"/doer"]=w; }
@@ -16434,10 +16442,10 @@ function llCoverAskHTML(){ if(!laundryLine||!Object.keys(laundryLine).length) re
   const need=r.loads.filter(function(id){ return r.started.indexOf(id)<0&&llWho(id,t).need; }); if(!need.length) return "";
   const P=llPeople().filter(function(w){ return !llOut(w,t); });
   return need.map(function(id){ const d=llDoer(id);
-    return '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:7px 9px;margin-top:6px"><div style="font-size:12px;font-weight:800;margin-bottom:5px">'+(d==="mom"?'🤒 Mom\'s sick':'😷 '+esc(llName(d))+'\'s off today')+' — who\'s doing '+esc(A[id].label)+'?</div><div style="display:flex;gap:4px;flex-wrap:wrap">'
+    return '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:7px 9px;margin-top:6px"><div style="font-size:12px;font-weight:800;margin-bottom:5px">'+(d==="mom"?'🤒 '+esc(llName("mom"))+'\'s sick':'😷 '+esc(llName(d))+'\'s off today')+' — who\'s doing '+esc(A[id].label)+'?</div><div style="display:flex;gap:4px;flex-wrap:wrap">'
       +P.map(function(w){ return '<button onclick="llCover(\''+id+'\',\''+w+'\')" style="padding:4px 9px;border-radius:8px;border:1.5px solid #2563eb;background:#fff;color:#1d4ed8;font-size:11.5px;font-weight:700;cursor:pointer">'+esc(llName(w))+'</button>'; }).join('')
       +'<button onclick="llCover(\''+id+'\',\'wait\')" style="padding:4px 9px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:11.5px;font-weight:700;cursor:pointer">⏸ Wait a day</button></div></div>'; }).join(''); }
-function llMomSickBtn(){ const on=llOut("mom",llToday()); return '<button onclick="llMomSick()" style="padding:4px 9px;border-radius:8px;border:1.5px solid '+(on?'#b45309':'#cbd5e1')+';background:'+(on?'#fef3c7':'#fff')+';color:'+(on?'#92400e':'#475569')+';font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">🤒 '+(on?'Mom\'s sick today ✓':'Mom\'s sick today')+'</button>'; }
+function llMomSickBtn(){ const on=llOut("mom",llToday()); return '<button onclick="llMomSick()" style="padding:4px 9px;border-radius:8px;border:1.5px solid '+(on?'#b45309':'#cbd5e1')+';background:'+(on?'#fef3c7':'#fff')+';color:'+(on?'#92400e':'#475569')+';font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">🤒 '+esc(llName("mom"))+(on?'\'s sick today ✓':'\'s sick today')+'</button>'; }   // 🏡 HHNAMES: a household's own name
 // 💦 WET_ASK (her plan 2026-10-19: "when we have the PP accident and it says like wash bedding, I would like it to be like, did you have to
 // do comforter? … we know that we've already done it 2 days ago … if the king size was done 2 days before its actual time, then it
 // could get pushed back"). After a 💦 Sheets quick button, the bed's question: what got wet? Its sheets item (log early:true on the wet
