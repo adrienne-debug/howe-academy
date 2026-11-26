@@ -341,7 +341,7 @@ const MUT = [
   ["the redo pays 20% less", "idx", "function agPay(kid,g,p){ return g&&starTakeOk(kid)?rtFallPts(p,1):p; }", "function agPay(kid,g,p){ return p; }"],
   ["Take stars away off: the redo pays in full, the mark still shows", "idx", "return g&&starTakeOk(kid)?rtFallPts(p,1):p;", "return g?rtFallPts(p,1):p;"],
   ["never below 0", "idx", "return g&&starTakeOk(kid)?rtFallPts(p,1):p;", "return g&&starTakeOk(kid)?p-2:p;"],
-  ["a new turn pays in full", "idx", "if(g&&g.act===\"again\") return g; if(!w||cadDueOn(c,x)) break; }", "if(g&&g.act===\"again\") return g; }"],
+  ["a new turn pays in full", "idx", "} else if(!w||cadDueOn(c,x)) break; } return null; }", "} else {} } return null; }"],
   ["Undo puts everything back exactly", "hjs", "if(g.prev){ Dd[k]=g.prev; u[P]=g.prev; } else { delete Dd[k]; u[P]=null; }", ""],
   ["no Undo after the redo (nothing paid twice)", "hjs", "function lgDaRedone(R){ if(!R) return true;", "function lgDaRedone(R){ return false; if(!R) return true;"],
   ["only where the kid can do it again today", "hjs", "if(c===\"none\"||(p0!==t&&!late)) return null;", "if(c===\"none\") return null;"],

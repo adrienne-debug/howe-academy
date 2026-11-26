@@ -65,7 +65,8 @@ const BEFORE_IDX = /*PAIRS_IDX*/[
   ["  if(s.wait) Object.keys(Object.assign({},r.wait,s.wait)).forEach(function(id){ if(JSON.stringify((r.wait||{})[id]||null)!==JSON.stringify(s.wait[id]||null)) upd[B+\"wait/\"+id]=s.wait[id]||null; });   // MISSEDDAY\n",""],
   ["  upd[B+\"built/sig\"]=hdSig(); upd[B+\"keep\"]=null; r.plan=plan; r.over=s.over; if(s.wait) r.wait=s.wait; r.built=Object.assign({},r.built,{sig:upd[B+\"built/sig\"]}); delete r.keep;\n","  upd[B+\"built/sig\"]=hdSig(); upd[B+\"keep\"]=null; r.plan=plan; r.over=s.over; r.built=Object.assign({},r.built,{sig:upd[B+\"built/sig\"]}); delete r.keep;\n"]
 ];
-const carve = (file, blocks, pairs) => { let s = fs.readFileSync(path.join(__dirname, file), "utf8");
+const L6 = require(path.join(__dirname, "test_fixtures", "ledger_l6_out.js"));   // L6 (↩ Do it again) sits on hdToggle's pay line: taken out first
+const carve = (file, blocks, pairs) => { let s = fs.readFileSync(path.join(__dirname, file), "utf8"); s = file === "index.html" ? L6.idx(s) : file === "house.js" ? L6.hjs(s) : s;
   blocks.forEach(b => { const re = new RegExp("^ *// " + b + "_START[^\\n]*\\n[\\s\\S]*?^ *// " + b + "_END\\n", "m"), n = (s.match(new RegExp(re.source, "gm")) || []).length;
     if (n !== 1) throw new Error("test_house_plan_missed: the app before cannot be built — the " + b + " block found " + n + "× in " + file); s = s.replace(re, ""); });
   pairs.forEach(([a, b], i) => { const n = s.split(a).length - 1; if (n !== 1) throw new Error("test_house_plan_missed: the app before cannot be built — piece " + (i + 1) + " of " + file + " found " + n + "× (" + J(a.slice(0, 90)) + ")"); s = s.replace(a, () => b); });
