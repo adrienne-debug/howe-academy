@@ -15796,10 +15796,10 @@ function hdMissedOv(){ if(typeof rtWaitDays!=="function") return undefined; cons
   if(typeof hdCoverOv==="function") hdCoverOv(o,J);   // COVERED (slice F)
   return o; }
 function hdCarryM(r,y,skip){ const out=[], gone=function(id){ return !!((r.done||{})[id]||(r.skip||{})[id]||skip[id]||hdDoneRec(y,id)); };
-  Object.keys(r.plan||{}).forEach(function(id){ const p=r.plan[id]; if(!p||p.k==="daily"||gone(id)) return; const sk=(+p.sk||0)+((hhIsKid(p.who)&&hdKidOff(p.who,y))?0:1), c={id:id,turn:p.from||p.who,k:p.k,since:p.since||y,listed:1};   // 😷 Kid Off: not a skip
+  Object.keys(r.plan||{}).forEach(function(id){ const p=r.plan[id]; if(!p||p.k==="daily"||gone(id)||hdDoneEnd(id,p.since||y)) return; /* HDDONEEND */ const sk=(+p.sk||0)+((hhIsKid(p.who)&&hdKidOff(p.who,y))?0:1), c={id:id,turn:p.from||p.who,k:p.k,since:p.since||y,listed:1};   // 😷 Kid Off: not a skip
     if(sk){ c.by=p.who; c.sk=sk; } out.push(c); });
-  Object.keys(r.over||{}).forEach(function(id){ const o=r.over[id]; if(o&&!gone(id)) out.push({id:id,turn:o.turn,k:o.k,since:o.since||y}); });
-  Object.keys(r.wait||{}).forEach(function(id){ const w=r.wait[id]; if(w&&!gone(id)) out.push({id:id,turn:w.turn||w.who,k:w.k,since:w.since||y,by:w.who,sk:+w.sk||0}); });
+  Object.keys(r.over||{}).forEach(function(id){ const o=r.over[id]; if(o&&!gone(id)&&!hdDoneEnd(id,o.since||y)) out.push({id:id,turn:o.turn,k:o.k,since:o.since||y}); });   // HDDONEEND
+  Object.keys(r.wait||{}).forEach(function(id){ const w=r.wait[id]; if(w&&!gone(id)&&!hdDoneEnd(id,w.since||y)) out.push({id:id,turn:w.turn||w.who,k:w.k,since:w.since||y,by:w.who,sk:+w.sk||0}); });
   return out; }
 // A dropped turn → its note. A turn somebody had on their list: theirs, and what the drop takes (C3's decision, made here once).
 function hdMissNote(m,iso){ const o={since:m.since||"",out:m.why==="wait"?"wait":"next"}; if(!m.by){ o.nobody=1; return o; }
@@ -15815,6 +15815,13 @@ function hdDropFile(m,j,w,key,rec){ const L=(routineLog[m.who]=routineLog[m.who]
   try{ db.ref("routineLog/"+m.who+"/"+w.wk+"/"+w.dn+"/"+key).transaction(function(cur){ return cur?undefined:rec; },function(err,ok){ if(err||!ok||!ln) return;
     bank[m.who]=bank[m.who]||{}; bank[m.who].adjustments=bank[m.who].adjustments||{}; bank[m.who].adjustments[t.bid]=ln; db.ref("bank/"+m.who+"/adjustments/"+t.bid).set(ln); },false); }catch(e){} }
 // MISSEDDAY_END
+// HDDONEEND_START — her "Yes, fix it" 2026-11-25 to "Fix E so a chore you marked done never drops or takes stars?": with the plan ON
+// (slice E), Mom's ✓ Done today on a chore during its turn's wait moves only its lastDone, and the next build dropped the turn anyway (a
+// drop note, "— not done" and −20%). A carried turn whose chore has a real lastDone on or after the turn's since ends quietly in hdCarryM
+// (a turn on a list, one that fit nobody, one waiting): nothing filed, nothing taken; its clock restarts from that done, as before. A ✕ skip
+// is not a done (lastSkip is never read). The kid's row after Mom's ✓ is unchanged (not decided). Read-only.
+function hdDoneEnd(id,since){ const l=(hhJobs()[id]||{}).lastDone; return /^\d{4}-\d{2}-\d{2}$/.test(l||"")&&!!since&&l>=since; }
+// HDDONEEND_END
 // COVEREDDAY_START — slice F, the app's side of COVERED (HouseEng): each fixed-day house chore's cover window and its real last-done date,
 // for the plan (hdMissedOv → ov.missed) and the preview (house.js hpOv, the same call). The window is the card's (slice D, house.js
 // CARDRULES): cover 0 = never, 1–6 days; none = Auto, "the same size as the Auto wait" = a third of its gap, at most 7 (the card's cauto:
