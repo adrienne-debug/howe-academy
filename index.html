@@ -2979,7 +2979,7 @@ function rtWaitDays(st){
 // is" — and who sees it: "Kids too, as now". A chore on 3 or more days of the week (not daily) keeps the old late rule: it waits until
 // its next day, with the red "N days late" tag on every list (the kid's, Mom's pop-up, the 🧽 house panel). Told apart by its days:
 // "wk:" with 3 or more weekdays (a 4-week cycle too). Its "— not done" follows the one rule: filed the day it drops (its next day).
-function rtWaitAsBefore(st){ const cad=(st&&st.cad)||""; return cad.indexOf("wk:")===0&&cad.slice(3).split(",").filter(function(x){ return x!==""; }).length>=3; }
+function rtWaitAsBefore(st){ if(st&&st.house) return !!st.hdTag; const cad=(st&&st.cad)||""; return cad.indexOf("wk:")===0&&cad.slice(3).split(",").filter(function(x){ return x!==""; }).length>=3; }
 // n days since its missed day → n while it waits, 0 once dropped: past its wait, or its next day has come (today is one of its
 // days). The plan's own rows (st.house) keep the plan's count.
 function rtWaitCut(st,n){ if(!n||(st&&st.house)) return n; return (n<=rtWaitDays(st)&&!cadDueOn((st&&st.cad)||"daily",_todayDay))?n:0; }
@@ -2987,6 +2987,7 @@ function rtWaitCut(st,n){ if(!n||(st&&st.house)) return n; return (n<=rtWaitDays
 // its next day, or a new 4-week-cycle week (they start on a Monday), ends it sooner. Never on a kid's list.
 function rtWaitNote(n,st){
   const d=((DAYS_ALL.indexOf(_todayDay)-n)%7+7)%7, dn=DAYS_ALL[d]||""; let w=0;
+  if(st&&st.house&&st.hdW!=null) w=+st.hdW; else   // MISSEDDAY: a plan row's own wait (its row is "daily" on the list)
   for(let k=1;k<=rtWaitDays(st);k++){ const x=(d+k)%7; if(cadDueOn((st&&st.cad)||"daily",DAYS_ALL[x])||(st&&st.cycW&&x===0)) break; w=k; }
   return "from "+dn.charAt(0).toUpperCase()+dn.slice(1,3)+" \u00b7 day "+n+" of "+w;
 }
@@ -3010,6 +3011,7 @@ function rtFallPts(pts,n){ pts=pts||0; if(!(n>0)||!(pts>0)) return pts; return M
 // The late days that count (0 = full stars). n = rtLateDays on today's tab (daily, as-needed, waved and \ud83c\udf05-sent rows are already 0).
 // Not the plan's own rows (slice E), not a turn whose own day was before RT_FALL_FROM.
 function rtFallDays(st,n){
+  if(st&&st.house){ const k=arguments[2], f=+st.hdFall||0; return (f>0&&n>0&&rtFallDays(Object.assign({},st,{house:0}),+st.hdLate||n,k)>0)?f:0; }   // MISSEDDAY: a plan row falls by the days its kid skipped it, when its own day may fall
   if(!(n>0)||!st||st.house) return 0;
   const t=new Date(), d=new Date(t.getFullYear(),t.getMonth(),t.getDate()-n,12);
   const s=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
@@ -3145,7 +3147,7 @@ function agFind(kid,slot,i,st,d){ const W=(routineLog[kid]||{})[activeWk()]||{},
 function agFindA(kid,id){ const W=(routineLog[kid]||{})[activeWk()]||{}; let g=null; Object.keys(W).forEach(function(x){ const r=(W[x]||{})["ag_am_"+id]; if(r&&r.act==="again") g=r; }); return g; }
 function agPay(kid,g,p){ return g&&starTakeOk(kid)?rtFallPts(p,1):p; }
 function agAm(kid,it,iso,g){ return g?agPay(kid,g,amPay(kid,it,g.i&&g.i<iso?g.i:iso)):amPay(kid,it,iso); }
-function agPill(kid,g,slot,i,st,n,cls){ return rtDailyPill(st.pts||0,agPay(kid,g,rtDailyRow(st)&&day===_todayDay?rtDailyPay(slot,kid,i,st):rtFallPay(st,Math.min(n||0,g.f||0),kid)),cls); }
+function agPill(kid,g,slot,i,st,n,cls){ return rtDailyPill(st.pts||0,agPay(kid,g,rtDailyRow(st)&&day===_todayDay?rtDailyPay(slot,kid,i,st):rtFallPay(st,st.house?n:Math.min(n||0,g.f||0),kid)),cls); }   /* a plan row: MISSEDDAY's own fall, as hdToggle pays */
 function agTag(g){ return g?' <span class="cadtag" style="color:#b91c1c;border-color:#fecaca">↩ Do this again'+(g.t?' · '+(g.by==="dad"?"Dad":"Mom")+': “'+esc(g.t)+'”':'')+'</span>':''; }
 // AGAIN_END
 function rtLateDays(slot,kid,i,raw){   // raw (CHOREWAIT): the days since it was missed, wait or not — rtSlotHTML's drop check
@@ -15527,15 +15529,31 @@ const HouseEng=(function(){
   function never(j,people){ return !j||typeof j!=="object"||j.status==="retired"||j.free||j.hold||j.cad==="once"||j.layer==="project"||j.who==="grab"||!people[j.who]; }
   // Is a row due on s, and how? cad = the cadence the list uses (a rotation slot's own); last = last-done iso; on = switch-on iso.
   // → null | {k:"daily"|"set"|"every", late:<days past its due day>, at:<due day number>}
-  function dueOf(j,cad,s,last,on){
+  function dueOf(j,cad,s,last,on,w){
     cad=cad||"daily"; if(cad==="asneeded"||cad==="none"||cad==="once") return null;
     if(j.from&&s<j.from) return null; if(j.to&&s>j.to) return null; if(!cycleOk(j,s)) return null;
     const d=dowOf(s), n=dnum(s);
     if(cad==="daily") return {k:"daily",late:0,at:n};
     if(cad==="sat"||cad==="sun"||cad.indexOf("wk:")===0){ const days=cad==="sat"?[5]:cad==="sun"?[6]:cad.slice(3).split(",").filter(function(x){ return x!==""; }).map(Number); return days.indexOf(d)>=0?{k:"set",late:0,at:n}:null; }
-    const N=everyN(cad); if(N){ const base=isIso(last)?dnum(last)+N:(isIso(on)?dnum(on)+N:null); return (base!==null&&n>=base)?{k:"every",late:n-base,at:base}:null; }
+    const N=everyN(cad); if(N){ const base=isIso(last)?dnum(last)+N:(isIso(on)?dnum(on)+N:null); if(base===null||n<base) return null;
+      if(!w||w.keep) return {k:"every",late:n-base,at:base};
+      const at=base+Math.floor((n-base)/N)*N; return n-at<=w.W?{k:"every",late:n-at,at:at}:null; }   // MISSEDPLAN: its turns come every N days from the last done; past its wait, that turn is dropped
     return {k:"daily",late:0,at:n};   // cadDueOn reads an unknown cadence as due
   }
+  // MISSEDPLAN_START — slice E of DESIGN_missed_chores_2026-11-19 (§1.1–1.6, §2.1, §2.6; her rules 11/19–11/20), the plan's part: from
+  // ov.missed.from on, a chore not done WAITS its wait (ov.missed.wait, rtWaitDays' own numbers) and then DROPS (no more "carried first";
+  // rolling chores drop too and come back N days from the day they were due; 📌 keep never drops); the day is filled by the SCORE "days since
+  // it was last done ÷ the gap of this turn", highest first ("Nothing has a front seat"); a chore its person skipped STAYS with them
+  // ("if skipped it stays with them") and waits unseen when there is no room — never moved, never Up for Grabs. ov.missed absent, or a day
+  // before its `from`: exactly as before.
+  function daysOf(cad){ return cad==="sat"?[5]:cad==="sun"?[6]:String(cad||"").indexOf("wk:")===0?cad.slice(3).split(",").filter(function(x){ return x!==""; }).map(Number):[]; }
+  function setOn(j,D,n){ return D.indexOf(((n+3)%7+7)%7)>=0&&(!j.cycW||cycleOk(j,isoOf(n))); }   // day number n is one of its days
+  function gapOf(j,cad,at){ const N=everyN(cad), D=daysOf(cad); if(N) return N; if(!D.length) return 1; const L=7*(j.cycW?Math.max(1,parseInt(j.cycN,10)||4):1); for(let b=1;b<=L;b++) if(setOn(j,D,at-b)) return b; return L; }
+  // days since last done; no date, or one before the slate A: as if done one gap before its first turn on or after A (it starts even)
+  function dsOf(j,c,n,last,A){ const l=isIso(last)?dnum(last):-1e9; if(l>=A) return n-l; let f=c.at; const N=everyN(c.cad), D=daysOf(c.cad);
+    if(N){ if(f>=A) f-=Math.floor((f-A)/N)*N; } else if(D.length){ for(let d=A;d<c.at;d++) if(setOn(j,D,d)){ f=d; break; } } else if(A<f) f=A;
+    return n-Math.max(l,f-gapOf(j,c.cad,f)); }
+  // MISSEDPLAN_END
   // The rotation groups, built the way rtApplyRot builds them from the lists hhDeriveKids makes: per list (slot), each kid in
   // roster order, their rows in list order (order, then id), every row with a rot tag. A group of 2+ rotates.
   function groupsOf(jobs,people,ov){
@@ -15565,11 +15583,14 @@ const HouseEng=(function(){
   const RANK={daily:1,set:2,every:3};
   function day(table,s,people,ov){
     ov=ov||{}; const jobs=(table&&table.jobs)||{}, last=ov.lastDone||{}, skip=ov.skip||{}, off=ov.off||{}, n=dnum(s);
+    const M=(ov.missed&&isIso(ov.missed.from)&&s>=ov.missed.from)?ov.missed:null, Mw=function(id,k){ return (k==="daily"||!M.wait)?0:Math.max(0,+M.wait[id]||0); }, Mk=function(id,k){ return k!=="daily"&&!!(M.keep&&M.keep[id]); };   // MISSEDPLAN (📌 is never on a daily: tomorrow has its own)
     const lastOf=function(id){ return last[id]!==undefined?last[id]:(jobs[id]&&jobs[id].lastDone); };
     const due={}, cands=[], routine=[];
     const consider=function(id,turn,cad){ const j=jobs[id]; if(due[id]||skip[id]||never(j,people)) return; if(isHouse(j)&&!levelOut(j,people)) return;
-      const d=dueOf(j,cad,s,lastOf(id),ov.on); if(!d) return; due[id]=1;
+      let jj=j; if(M&&M.roll&&M.roll[id]&&cad===j.cad){ cad=M.roll[id]+"d"; jj={from:j.from,to:j.to}; }   // MISSEDPLAN: 🔄 a rolling chore on the card
+      const d=M&&isHouse(j)?dueOf(jj,cad,s,lastOf(id),ov.on,{W:Mw(id,"every"),keep:Mk(id,"every")}):dueOf(j,cad,s,lastOf(id),ov.on); if(!d) return; due[id]=1;
       const g=deepOf(jobs,id,turn,people,ov), c={id:id,turn:g||turn,mins:minsOf(j,ov.minDefault),k:d.k,late:d.late,carried:d.k==="every"&&d.late>0}; if(g) c.deep=1;   // 🔁 the grown-up turn
+      if(M){ c.at=d.at; c.since=isoOf(d.at); c.cad=cad; c.j=jj; }
       if(isHouse(j)) cands.push(c); else routine.push(c); };
     const R=rotOn(jobs,s,people,ov);
     R.list.forEach(function(x){ if(people[x.kid]) consider(x.pick,x.kid,x.cad); });
@@ -15577,25 +15598,40 @@ const HouseEng=(function(){
     Object.keys(jobs).sort().forEach(function(id){ if(!R.members[id]) consider(id,jobs[id]&&jobs[id].who,jobs[id]&&jobs[id].cad); });
     // Yesterday's overflow: first in line, unless its own next day has come (then it is a miss, as on the lists today).
     const missed=[];
-    (Array.isArray(ov.carry)?ov.carry:[]).forEach(function(c){ const j=jobs[c.id];
+    if(M){ const byId={}; cands.forEach(function(c){ byId[c.id]=c; });   // MISSEDPLAN: a turn not done waits its wait, then drops (missed)
+      (Array.isArray(ov.carry)?ov.carry:[]).forEach(function(c){ const j=jobs[c.id], x={turn:c.turn,by:c.by||"",sk:+c.sk||0,k:c.k}, cur=byId[c.id];
+        const drop=function(why){ missed.push(Object.assign({id:c.id,since:c.since,why:why},x)); };
+        if(never(j,people)||!isHouse(j)||skip[c.id]) return drop("no longer handed out");
+        if(cur){ if(cur.since!==c.since&&!(Mk(c.id,cur.k)&&cur.k!=="every")) return drop("its next day came");   // 📌 on its days: the old turn goes on
+          cur.at=dnum(c.since); cur.since=c.since; cur.late=n-cur.at; cur.by=x.by; cur.sk=x.sk; if(people[x.turn]&&!cur.deep) cur.turn=x.turn; return; }
+        if(c.k==="every"||(!Mk(c.id,c.k)&&n-dnum(c.since)>Mw(c.id,c.k))) return drop("wait");   // a rolling chore's own clock says so
+        due[c.id]=1; cands.push({id:c.id,turn:people[c.turn]?c.turn:j.who,mins:minsOf(j,ov.minDefault),k:c.k,late:n-dnum(c.since),at:dnum(c.since),since:c.since,cad:j.cad||"daily",j:j,by:x.by,sk:x.sk}); }); }
+    else (Array.isArray(ov.carry)?ov.carry:[]).forEach(function(c){ const j=jobs[c.id];
       if(due[c.id]||never(j,people)||!isHouse(j)||skip[c.id]){ missed.push({id:c.id,since:c.since,why:due[c.id]?"its next day came":"no longer handed out"}); return; }
       due[c.id]=1; cands.push({id:c.id,turn:people[c.turn]?c.turn:j.who,mins:minsOf(j,ov.minDefault),k:c.k,late:n-dnum(c.since),carried:true,since:c.since}); });
     const ord=function(id){ return (jobs[id]&&+jobs[id].order)||0; };
-    cands.sort(function(a,b){ return ((b.carried?1:0)-(a.carried?1:0))||(a.carried?(b.late-a.late):0)||(RANK[a.k]-RANK[b.k])||(b.late-a.late)||(ord(a.id)-ord(b.id))||(a.id<b.id?-1:1); });
+    if(M){ const A=Math.max(isIso(ov.on)?dnum(ov.on):0,dnum(M.from));   // MISSEDPLAN: the score, highest first; ties: no turn yet before skipped · closest to dropping · the page's order
+      cands.forEach(function(c){ c.g=gapOf(c.j,c.cad,c.at); c.ds=dsOf(c.j,c,n,lastOf(c.id),A); c.left=Mk(c.id,c.k)?1e9:Mw(c.id,c.k)-c.late; });
+      cands.sort(function(a,b){ return (b.ds*a.g-a.ds*b.g)||((a.by?1:0)-(b.by?1:0))||(a.left-b.left)||(ord(a.id)-ord(b.id))||(a.id<b.id?-1:1); }); }
+    else cands.sort(function(a,b){ return ((b.carried?1:0)-(a.carried?1:0))||(a.carried?(b.late-a.late):0)||(RANK[a.k]-RANK[b.k])||(b.late-a.late)||(ord(a.id)-ord(b.id))||(a.id<b.id?-1:1); });
     const limit={}, left={}; Object.keys(people).forEach(function(w){ limit[w]=off[w]?0:limitOf(people,w,s); left[w]=limit[w]; });
     const plan={}, list={}, over=[], carryOut=[], put=function(id,o){ plan[id]=o; (list[o.who]=list[o.who]||[]).push(id); o.order=list[o.who].length-1; };
     routine.forEach(function(c){ if(!off[c.turn]) put(c.id,{who:c.turn,mins:c.mins,why:"routine",late:0,k:c.k,house:false}); });
+    const asg=[], wait=[];   // MISSEDPLAN: who gets what, by score; then each list in its normal order (a waiting chore is "a plain row in its normal place")
     cands.forEach(function(c){
-      let who=null, why=c.carried?"carried":c.deep?"deep":"turn";
+      if(M&&c.by){ if(left[c.by]!==undefined&&left[c.by]>=c.mins){ left[c.by]-=c.mins; asg.push({c:c,who:c.by,why:c.late>0?"carried":"turn"}); return; }   // skipped: it stays theirs
+        wait.push({id:c.id,who:c.by,turn:c.turn,mins:c.mins,k:c.k,late:c.late,sk:c.sk}); carryOut.push({id:c.id,turn:c.turn,k:c.k,since:c.since,by:c.by,sk:c.sk}); return; }   // no room: it waits, unseen
+      let who=null, why=c.carried||(M&&c.late>0)?"carried":c.deep?"deep":"turn";
       if(left[c.turn]!==undefined&&left[c.turn]>=c.mins) who=c.turn;
       else { let best=-1; canOf(jobs[c.id],people).forEach(function(w){ if(w===c.turn||!levelFor(jobs[c.id],w,people)) return; const r=left[w]; if(r!==undefined&&r>=c.mins&&r>best){ best=r; who=w; } }); if(who) why="moved"; }
       if(!who){ const can=canOf(jobs[c.id],people).filter(function(w){ return (ov.kids||[]).indexOf(w)>=0; });
         over.push({id:c.id,turn:c.turn,mins:c.mins,k:c.k,late:c.late,can:can});
-        if(c.k!=="every") carryOut.push({id:c.id,turn:c.turn,k:c.k,since:c.since||s});
+        if(M) carryOut.push({id:c.id,turn:c.turn,k:c.k,since:c.since,sk:c.sk||0}); else if(c.k!=="every") carryOut.push({id:c.id,turn:c.turn,k:c.k,since:c.since||s});
         return; }
-      left[who]-=c.mins; const o={who:who,mins:c.mins,why:why,late:c.late,k:c.k,house:true}; if(who!==c.turn) o.from=c.turn; put(c.id,o); });
+      left[who]-=c.mins; if(M){ asg.push({c:c,who:who,why:why}); return; } const o={who:who,mins:c.mins,why:why,late:c.late,k:c.k,house:true}; if(who!==c.turn) o.from=c.turn; put(c.id,o); });
+    if(M) asg.sort(function(a,b){ return (RANK[a.c.k]-RANK[b.c.k])||(ord(a.c.id)-ord(b.c.id))||(a.c.id<b.c.id?-1:1); }).forEach(function(x){ const c=x.c, o={who:x.who,mins:c.mins,why:x.why,late:c.late,k:c.k,house:true}; if(x.who!==c.turn) o.from=c.turn; if(c.sk) o.sk=c.sk; put(c.id,o); });
     const used={}; Object.keys(limit).forEach(function(w){ used[w]=limit[w]-left[w]; });
-    return {iso:s,plan:plan,list:list,over:over,carryOut:carryOut,missed:missed,limit:limit,used:used};
+    const r={iso:s,plan:plan,list:list,over:over,carryOut:carryOut,missed:missed,limit:limit,used:used}; if(M) r.wait=wait; return r;
   }
   function run(table,start,days,people,ov){
     ov=ov||{}; const jobs=(table&&table.jobs)||{}, last={}, out=[];
@@ -15671,7 +15707,7 @@ function hdSig(){ const J=hhJobs(), K=["who","can","cad","area","level","status"
   const s=JSON.stringify([hdPeople(),o]); let h=5381; for(let i=0;i<s.length;i++) h=((h*33)^s.charCodeAt(i))>>>0; return h.toString(36); }
 // Yesterday's unfinished set-day chores and its overflow carry (first in line, late badge); a daily is gone at night and an
 // every-N chore stays due through its last-done date, so neither is carried. A chore on a 🌅 morning list is the morning's job.
-function hdCarryFrom(y,skip){ const r=hdLive(y), out=[]; if(!r) return out;
+function hdCarryFrom(y,skip,M){ const r=hdLive(y), out=[]; if(!r) return out; if(M) return hdCarryM(r,y,skip);   // MISSEDDAY: the plan's own waits (slice E)
   Object.keys(r.plan||{}).forEach(function(id){ const p=r.plan[id]; if(!p||(r.done||{})[id]||(r.skip||{})[id]||skip[id]||p.k==="daily"||p.k==="every"||hdDoneRec(y,id)) return; out.push({id:id,turn:p.who,k:p.k,since:p.since||y,listed:1}); });   // listed: it WAS on that person's list yesterday
   Object.keys(r.over||{}).forEach(function(id){ const o=r.over[id]; if(!o||o.k==="every"||(r.skip||{})[id]||skip[id]||(r.done||{})[id]) return;   /* 🙌 HOUSEOVER: done as a ×2 grab → not carried */ out.push({id:id,turn:o.turn,k:o.k,since:o.since||y}); });
   return out; }
@@ -15681,12 +15717,16 @@ function hdOv(iso,extraSkip){ const J=hhJobs(), r=houseDayData[iso]||{}, skip={}
     const a=/^\d{4}-\d{2}-\d{2}$/.test(j.lastDone||"")?j.lastDone:"", b=/^\d{4}-\d{2}-\d{2}$/.test(j.lastSkip||"")?j.lastSkip:""; if(a||b) last[id]=a>b?a:b; });   // ✕ skip this time counts like done for "every N"
   const am={}; ((typeof amCarry!=="undefined"&&amCarry)?Object.keys(amCarry):[]).forEach(function(k){ const m=amCarry[k]||{}; Object.keys(m).forEach(function(c){ const it=m[c]; if(it&&it.house&&!it.done&&it.dueIso<=iso){ am[it.house]=1; if(/^\d+d$|^2w$/.test((J[it.house]||{}).cad||"")) skip[it.house]=1; } }); });   // 🌅 on a morning list: never carried; an every-N one is not due again until it is done
   ROSTER.forEach(function(k){ if(hdKidOff(k,iso)) off[k]=1; });
-  const e=(householdData.meta&&householdData.meta.engine)||{};
-  return {rotations:hhTurnsAll()||{},kids:SL_KIDS.slice(),slots:SL_SLOTS.slice(),rotPeriod:Object.assign({},(typeof rotationPeriod!=="undefined"&&rotationPeriod)||{}),on:/^\d{4}-\d{2}-\d{2}$/.test(e.on||"")?e.on:iso,minDefault:HH_MIN_DEFAULT,lastDone:last,carry:hdCarryFrom(hdAdd(iso,-1),Object.assign({},skip,am)),skip:skip,off:off}; }
+  const e=(householdData.meta&&householdData.meta.engine)||{}, M=hdMissedOn(iso);   // MISSEDDAY
+  const o={rotations:hhTurnsAll()||{},kids:SL_KIDS.slice(),slots:SL_SLOTS.slice(),rotPeriod:Object.assign({},(typeof rotationPeriod!=="undefined"&&rotationPeriod)||{}),on:/^\d{4}-\d{2}-\d{2}$/.test(e.on||"")?e.on:iso,minDefault:HH_MIN_DEFAULT,lastDone:last,carry:hdCarryFrom(hdAdd(iso,-1),Object.assign({},skip,am),M),skip:skip,off:off};
+  if(M) o.missed=hdMissedOv(); return o; }
 // One day's plan → the stored shape (house rows only; health and animals stay on their own lists, untouched).
 function hdShape(p){ const plan={}, over={}; Object.keys(p.plan).forEach(function(id){ const x=p.plan[id]; if(!x.house) return; const o={who:x.who,mins:x.mins,order:x.order,why:x.why,late:x.late||0,k:x.k,since:hdAdd(p.iso,-(x.late||0))}; if(x.from) o.from=x.from; plan[id]=o; });
-  p.over.forEach(function(o){ over[o.id]={turn:o.turn,mins:o.mins,k:o.k,late:o.late||0,since:hdAdd(p.iso,-(o.late||0))}; }); return {plan:plan,over:over}; }
+  p.over.forEach(function(o){ over[o.id]={turn:o.turn,mins:o.mins,k:o.k,late:o.late||0,since:hdAdd(p.iso,-(o.late||0))}; });
+  if(!p.wait) return {plan:plan,over:over}; const wait={}; Object.keys(plan).forEach(function(id){ if(p.plan[id].sk) plan[id].sk=p.plan[id].sk; });   // MISSEDDAY: the days skipped; who waits with no room
+  p.wait.forEach(function(w){ const o={who:w.who,mins:w.mins,k:w.k,late:w.late||0,since:hdAdd(p.iso,-(w.late||0)),sk:w.sk||0}; if(w.turn&&w.turn!==w.who) o.turn=w.turn; wait[w.id]=o; }); return {plan:plan,over:over,wait:wait}; }
 function hdBuild(iso){ const ov=hdOv(iso), p=HouseEng.day({jobs:hhJobs()},iso,hdPeople(),ov), s=hdShape(p), miss={};
+  if(s.wait){ p.missed.forEach(function(m){ if(m.why!=="no longer handed out") miss[m.id]=hdMissNote(m,iso); }); return {plan:s.plan,over:s.over,miss:miss,grabs:(typeof hdGrabsOf==="function")?hdGrabsOf(p.over,ov.off):{},wait:s.wait}; }   // MISSEDDAY
   p.missed.forEach(function(m){ if(m.why==="its next day came"){ const c=ov.carry.find(function(x){ return x.id===m.id; }); miss[m.id]=(c&&c.listed)?{who:c.turn||"",since:m.since||""}:{nobody:1,since:m.since||""}; } });   // a chore that fit nobody was on no one's list: Mom sees it here, no kid gets a "— not done" line (hub review 2026-11-17)
   return {plan:s.plan,over:s.over,miss:miss,grabs:(typeof hdGrabsOf==="function")?hdGrabsOf(p.over,ov.off):{}}; }   // 🙌 HOUSEOVER: what fit nobody, offered ×2 to the kids who can
 function hdClaimTx(cur,dev,now){ if(cur&&cur.ok) return; return _abClaimTx(cur,dev,now); }
@@ -15700,7 +15740,7 @@ function hdEnsure(){
   try{ db.ref("houseDay/"+t+"/built").transaction(function(cur){ return hdClaimTx(cur,HA_DEV_ID,Date.now()); },function(err,committed){
     if(err){ hdRefused(t,err); return; } if(!committed) return;   // another device holds the claim, or it is built: the listener brings it
     if(hdOk(houseDayData[t])) return; const b=hdBuild(t), P="houseDay/"+t+"/", upd={}, at=Date.now();
-    Object.keys(b.plan).forEach(function(id){ upd[P+"plan/"+id]=b.plan[id]; }); Object.keys(b.over).forEach(function(id){ upd[P+"over/"+id]=b.over[id]; }); Object.keys(b.miss).forEach(function(id){ upd[P+"miss/"+id]=b.miss[id]; }); Object.keys(b.grabs||{}).forEach(function(id){ upd[P+"grabs/"+id]=b.grabs[id]; });
+    Object.keys(b.plan).forEach(function(id){ upd[P+"plan/"+id]=b.plan[id]; }); Object.keys(b.over).forEach(function(id){ upd[P+"over/"+id]=b.over[id]; }); Object.keys(b.miss).forEach(function(id){ upd[P+"miss/"+id]=b.miss[id]; }); Object.keys(b.grabs||{}).forEach(function(id){ upd[P+"grabs/"+id]=b.grabs[id]; }); Object.keys(b.wait||{}).forEach(function(id){ upd[P+"wait/"+id]=b.wait[id]; });
     upd[P+"built/ok"]=at; upd[P+"built/sig"]=hdSig();
     db.ref().update(upd).then(function(){ _hdBad=null; hdLogMisses(t,b.miss); },function(e){ hdRefused(t,e); }); }).catch(function(){}); }catch(e){ hdRefused(t,e); }   // a refused claim is answered in the callback
 }
@@ -15709,8 +15749,43 @@ function hdEnsure(){
 function hdWkDay(iso){ for(let i=0;i<DAYS_ALL.length;i++){ const dn=DAYS_ALL[i]; if(amIso(dn)===iso) return {wk:activeWk(),dn:dn}; if(typeof _prevWkKey==="function"&&_prevWkKey()&&amIso(dn,true)===iso) return {wk:_prevWkKey(),dn:dn}; } return null; }
 function hdLogMisses(t,miss){ const J=hhJobs(); Object.keys(miss||{}).forEach(function(id){ const m=miss[id], j=J[id]; if(!j||!hhIsKid(m.who)||!m.since) return; const w=hdWkDay(m.since); if(!w) return;
   const key="miss_h_"+id, rec={label:(j.label||"Chore")+" — not done",slot:hdSlotOf(j),act:"miss",ts:nowTs(),at:Date.now(),pts:j.pts||0,missed:true,house:id};
+  if(m.drop) return hdDropFile(m,j,w,key,Object.assign(rec,{drop:m.drop}));   // MISSEDDAY: the drop's decision, once
   routineLog[m.who]=routineLog[m.who]||{}; routineLog[m.who][w.wk]=routineLog[m.who][w.wk]||{}; routineLog[m.who][w.wk][w.dn]=routineLog[m.who][w.wk][w.dn]||{};
   if(routineLog[m.who][w.wk][w.dn][key]) return; routineLog[m.who][w.wk][w.dn][key]=rec; if(_hdWrite()) db.ref("routineLog/"+m.who+"/"+w.wk+"/"+w.dn+"/"+key).set(rec); }); }
+// MISSEDDAY_START — slice E of the missed-chores design (§1, §2.1–2.6), the stored day's side of MISSEDPLAN (HouseEng): with the plan ON,
+// from HD_MISSED_FROM (the blank slate: nothing before it is counted) the day is built with each chore's wait (rtWaitDays: its own Waits,
+// else Auto), 📌 keep and 🔄 rolling (the card, slice D); yesterday's unfinished turns carry who had them on their list (by) and the days
+// they did (sk). A skipped turn pays 20% less a day (rtFallPts, the C2 steps; a day with no room is not one); when it drops, "— not done"
+// and the drop's −20% once by the slice C3 rules (rtDropTake: 0 ⭐, the 📒 switches; rtDropAway: days off) and record shapes (bank line
+// hdrop_<wk>_<due day>_<kid>_<id>, src "drop"), written by the day's builder under its claim: the log line by a create-only transaction,
+// and only the device whose transaction commits writes the bank line. The stored day: plan/<id>.sk ·
+// wait/<id> {who,mins,k,late,since,sk} (skipped, no room: theirs, unseen) · miss/<id> {since,out:"wait"|"next",who,sk,drop} or {nobody}.
+const HD_MISSED_FROM="2026-12-07";
+function hdMissedOn(iso){ return !!iso&&iso>=HD_MISSED_FROM; }
+function hdMissedOv(){ if(typeof rtWaitDays!=="function") return undefined; const J=hhJobs(), o={from:HD_MISSED_FROM,wait:{},keep:{},roll:{}};
+  Object.keys(J).forEach(function(id){ const j=J[id]; if(!hhIsHouse(j)) return; o.wait[id]=rtWaitDays({cad:j.cad||"daily",cycW:j.cycW,cycN:j.cycN,_hh:id}); if(j.keep===true) o.keep[id]=1;
+    if(j.clock==="roll"&&/^(wk:\d|sat|sun)$/.test(j.cad||"")) o.roll[id]=7*(j.cycW?Math.max(1,parseInt(j.cycN,10)||4):1); });
+  return o; }
+function hdCarryM(r,y,skip){ const out=[], gone=function(id){ return !!((r.done||{})[id]||(r.skip||{})[id]||skip[id]||hdDoneRec(y,id)); };
+  Object.keys(r.plan||{}).forEach(function(id){ const p=r.plan[id]; if(!p||p.k==="daily"||gone(id)) return; const sk=(+p.sk||0)+((hhIsKid(p.who)&&hdKidOff(p.who,y))?0:1), c={id:id,turn:p.from||p.who,k:p.k,since:p.since||y,listed:1};   // 😷 Kid Off: not a skip
+    if(sk){ c.by=p.who; c.sk=sk; } out.push(c); });
+  Object.keys(r.over||{}).forEach(function(id){ const o=r.over[id]; if(o&&!gone(id)) out.push({id:id,turn:o.turn,k:o.k,since:o.since||y}); });
+  Object.keys(r.wait||{}).forEach(function(id){ const w=r.wait[id]; if(w&&!gone(id)) out.push({id:id,turn:w.turn||w.who,k:w.k,since:w.since||y,by:w.who,sk:+w.sk||0}); });
+  return out; }
+// A dropped turn → its note. A turn somebody had on their list: theirs, and what the drop takes (C3's decision, made here once).
+function hdMissNote(m,iso){ const o={since:m.since||"",out:m.why==="wait"?"wait":"next"}; if(!m.by){ o.nobody=1; return o; }
+  o.who=m.by; if(m.sk) o.sk=m.sk; const w=hdWkDay(m.since), t=w&&hdDropTake(m.by,m.id,m.since,iso);
+  if(t){ t.due=m.since; t.job=m.id; if(t.n>0) t.bid="hdrop_"+w.wk+"_"+w.dn+"_"+m.by+"_"+m.id; o.drop=t; } return o; }
+function hdDropTake(kid,id,due,iso){ const j=hhJobs()[id]; if(!j||!hhIsKid(kid)||!(due>=HD_MISSED_FROM)||typeof rtDropTake!=="function") return null;
+  const st={pts:j.pts||0,cad:j.cad||"daily",cycW:j.cycW,cycN:j.cycN,cycStart:j.cycStart,_hh:id}, slot=hdSlotOf(j), t=rtDropTake(kid,st,due,slot,0); if(!t||t.why==="zero") return t;
+  for(let d=due;d<iso;d=hdAdd(d,1)) if(rtDropAway(kid,slot,st,d,1)) return {n:0,why:"away"};   // a day off on its day or in its wait
+  return t; }
+function hdDropFile(m,j,w,key,rec){ const L=(routineLog[m.who]=routineLog[m.who]||{}), Wk=(L[w.wk]=L[w.wk]||{}), D=(Wk[w.dn]=Wk[w.dn]||{}); if(D[key]) return; D[key]=rec;
+  const t=m.drop, ln=t.n>0?{amount:-t.n,note:(j.emoji?j.emoji+" ":"")+(j.label||"Chore")+" · not done",ts:rec.ts,iso:new Date().toISOString(),src:"drop",wk:w.wk,day:w.dn}:null;
+  if(!_hdWrite()) return;
+  try{ db.ref("routineLog/"+m.who+"/"+w.wk+"/"+w.dn+"/"+key).transaction(function(cur){ return cur?undefined:rec; },function(err,ok){ if(err||!ok||!ln) return;
+    bank[m.who]=bank[m.who]||{}; bank[m.who].adjustments=bank[m.who].adjustments||{}; bank[m.who].adjustments[t.bid]=ln; db.ref("bank/"+m.who+"/adjustments/"+t.bid).set(ln); },false); }catch(e){} }
+// MISSEDDAY_END
 // Listen to today and the last 14 days (§5). Attached the first time the switch reads "on" on this device — never before.
 function hdAttach(){
   if(typeof db==="undefined"||!db||_hdDb===db||!hdOn()) return; _hdDb=db; const cut=hdAdd(_todayStr(),-14);
@@ -15720,7 +15795,9 @@ function hdTick(){ if(!hdOn()) return; hdAttach(); const t=_todayStr(); if(t!==_
 try{ if(typeof setInterval==="function") setInterval(function(){ try{ hdTick(); }catch(e){} },60000); }catch(e){}
 // ── the kids' lists ──
 function hdStep(id,p,iso){ const j=hhJobs()[id]||{}, o=hhStepOf(j,id); ["from","to","cycW","cycN","cycStart","rot","since","free"].forEach(function(k){ delete o[k]; });
-  o.cad="daily"; o.house=id; o.hdIso=iso; o.hdLate=p.late||0; if(p.from) o.hdFrom=p.from; return o; }
+  o.cad="daily"; o.house=id; o.hdIso=iso; o.hdLate=p.late||0; if(p.from) o.hdFrom=p.from;
+  if(hdMissedOn(iso)){ o.hdSince=p.since||iso; if(p.sk&&o.hdSince>=HD_MISSED_FROM) o.hdFall=+p.sk; if((p.late||0)>0&&rtWaitAsBefore({cad:j.cad})) o.hdTag=1; o.hdW=j.keep===true?p.late||0:rtWaitDays({cad:j.cad||"daily",cycW:j.cycW,cycN:j.cycN,_hh:id}); }   // Mom's note: "day 2 of 2"   // MISSEDDAY: falling stars; 3+ a week keep the red tag
+  return o; }
 function hdRtSteps(slot,kid,steps,dn){ try{
   if(!hdOn()) return steps; dn=dn||day; const iso=hdIsoOf(dn), r=hdLive(iso); if(!r) return steps;
   const key=slot+"|"+kid+"|"+dn, m=_hdM[key], J=hhJobs(); if(m&&m.s===steps&&m.r===r&&m.J===J) return m.v;
@@ -15753,8 +15830,10 @@ function hdToggle(slot,kid,i,st){
   if(!(typeof _rtMomTick!=="undefined"&&_rtMomTick)&&hdLocked(slot,kid,day)){ if(typeof gwShowToast==="function") gwShowToast("House chores open when school work is done, or at "+rtFmtHour(rtAfternoonHour())+" 📚"); return; }
   const iso=st.hdIso, id=st.house, r=hdLive(iso), j=hhJobs()[id]; if(!r||!j) return;
   const d0=hdDoneRec(iso,id); if(d0&&d0.src==="list"){ if(!hdUnlist(slot,kid,id,iso)&&typeof gwShowToast==="function") gwShowToast("That one was checked off on Mom’s or Dad’s own list"); return; }
-  const now=!d0, wk=activeWk(), _slB=slBefore(), P="houseDay/"+iso+"/done/"+id, b0=now&&typeof agFind==="function"?agPay(kid,agFind(kid,slot,i,st),st.pts||0):st.pts||0, label=st.label||j.label||"Chore", upd={};   // ↩ AGAIN
-  const paid=now?(b0+((typeof zoneBonusFor==="function")?zoneBonusFor(st.zone,b0):0)):((d0.pts!=null)?d0.pts:b0); let bid=null;
+  const now=!d0, wk=activeWk(), _slB=slBefore(), P="houseDay/"+iso+"/done/"+id, b0=st.pts||0, label=st.label||j.label||"Chore", upd={};
+  const b1=(now&&typeof rtFallPay==="function")?rtFallPay(st,st.hdLate||0,kid):b0;   // MISSEDDAY: a skipped turn pays 20% less a day
+  const _g=now&&typeof agFind==="function"&&agFind(kid,slot,i,st), b2=_g?agPay(kid,_g,b1):b1;   // ↩ AGAIN: a redo, 20% less than it would pay now
+  const paid=now?(b2+((typeof zoneBonusFor==="function")?zoneBonusFor(st.zone,b2):0)):((d0.pts!=null)?d0.pts:b0); let bid=null;
   if(paid>0){
     if(now) bid=bankDirect(kid,paid,(st.emoji?st.emoji+" ":"")+label,(typeof choreVerifyOn==="function"&&choreVerifyOn(kid)));
     else if(d0.bid){ if(!(typeof cuUnpay==="function"&&cuUnpay(kid,d0.bid,label))) bankDirectRemove(kid,d0.bid); }   // ↶ CHOREUNDO / UNDOLISTS
@@ -15765,7 +15844,7 @@ function hdToggle(slot,kid,i,st){
     if(typeof _spBy==="function"&&_spBy()) rec.by=_spBy(); r.done[id]=rec; upd[P]=rec; hdStamp(id,iso,kid,upd); }
   else { delete r.done[id]; upd[P]=null; hdUnstamp(id,iso,d0,upd); }
   hdOwnerMark(id,iso,now,kid);
-  rlogAppend(kid,slot,label,now?"on":"off",paid,(!now&&typeof cuUndoTag==="function")?cuUndoTag():null);   // ↩︎ UNDOLISTS
+  rlogAppend(kid,slot,label,now?"on":"off",paid,(function(x){ return hdMissedOn(iso)?Object.assign({},x,{house:id}):x; })((!now&&typeof cuUndoTag==="function")?cuUndoTag():null));   // ↩︎ UNDOLISTS; MISSEDDAY: the tick carries its chore
   try{ if(typeof amSourceSyncKey==="function") amSourceSyncKey(kid,amKeyH(iso,slot,id),now); }catch(e){}   // 🌅 SENDAM: sent to the morning list → closes there too
   householdOnValue(householdData); if(_hdWrite()) db.ref().update(upd);
   if(slot==="morning"){ const mk=wk+"_"+day+"_"+kid+"_morning", prev=slState[mk], all=morningComplete(kid,day); slState[mk]={done:all,ts:all?nowTs():""};
@@ -15825,6 +15904,7 @@ function hdLimitOn(who,iso){ const P=hdPeople()[who]; if(!P) return 0; return _h
 // with the most minutes left today, else onto "fit nobody" (first in line tomorrow). Run on Mom's device; idempotent.
 function hdSweepOff(iso){ const r=hdLive(iso); if(!r||!_hdWrite()) return 0; const J=hhJobs(), P=hdPeople(), upd={}, ng=[]; let n=0;
   Object.keys(r.plan||{}).forEach(function(id){ const p=r.plan[id]; if(!p||!hhIsKid(p.who)||!hdKidOff(p.who,iso)||hdDone(iso,id)||!J[id]) return;
+    if(hdMissedOn(iso)&&p.sk>0){ r.plan=Object.assign({},r.plan); delete r.plan[id]; r.wait=Object.assign({},r.wait); r.wait[id]={who:p.who,mins:p.mins,k:p.k,late:p.late||0,since:p.since||iso,sk:p.sk}; upd["houseDay/"+iso+"/plan/"+id]=null; upd["houseDay/"+iso+"/wait/"+id]=r.wait[id]; n++; return; }   // MISSEDDAY: skipped → it stays theirs, waiting
     const used=hdUsed(r,id); let best=null, bl=-1; HouseEng.canOf(J[id],P).forEach(function(w){ if(w===p.who||(hhIsKid(w)&&hdKidOff(w,iso))) return; const l=hdLimitOn(w,iso)-(used[w]||0); if(l>=(p.mins||0)&&l>bl){ bl=l; best=w; } });
     r.plan=Object.assign({},r.plan); n++;
     if(best){ const rec=Object.assign({},p,{who:best,why:"moved",from:p.from||p.who}); r.plan[id]=rec; upd["houseDay/"+iso+"/plan/"+id]=rec; }

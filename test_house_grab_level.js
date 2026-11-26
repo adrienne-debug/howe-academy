@@ -333,8 +333,11 @@ if (BASE && BHJS) for (const kind of ["saved", "builtin", "none"]) for (const mo
 
 // ── 11 ──
 console.log("\n── 11 · switched, every chore at Level 1 (her data): 60 days = " + WAS + " ──");
+// Slice E (missed chores, the plan's part) changes the plan ON from HD_MISSED_FROM (12/07), inside these 60 days and not in BEFORE: the ON
+// replay runs this tree with that one constant moved past the window, so it still measures the level rule alone.
+const IDX_NOE = (() => { const n = SRC_IDX.split('const HD_MISSED_FROM="2026-12-07";').length - 1; if (n !== 1) return IDX; const p = path.join(os.tmpdir(), "house_grablv_noE_" + process.pid + ".html"); fs.writeFileSync(p, SRC_IDX.replace('const HD_MISSED_FROM="2026-12-07";', 'const HD_MISSED_FROM="2099-01-01";')); MUTS.push(p); return p; })();
 if (BASE && BHJS) for (const kind of ["saved", "builtin"]) for (const mode of ["off", "preview", "on"]) {
-  const hh = () => O.household(mode, {}), N = await replay(kind, mode, 60, hh, true, IDX, HJS), B0 = await replay(kind, mode, 60, hh, true, BASE, BHJS);
+  const hh = () => O.household(mode, {}), N = await replay(kind, mode, 60, hh, true, mode === "on" ? IDX_NOE : IDX, HJS), B0 = await replay(kind, mode, 60, hh, true, BASE, BHJS);
   cmp(kind + " · " + mode + " · switched, all Level 1", N, B0, 60);
   ok(kind + " · " + mode + " · switched, all Level 1 · Mom's card and 🔍 Checks for every Up for Grabs row: only the new 🪜 line differs from " + WAS, (() => { const a = JSON.parse(N.ex), b = JSON.parse(B0.ex); return a.every((x, i) => J(x[1]) === J(b[i][1]) && x[0].replace(/<div style="width:100%;font-size:11\.5px;color:#7c2d12;margin-top:4px">🪜 [^<]*<\/div>/, "") === b[i][0]); })());
   ok(kind + " · " + mode + " · (sanity) switched; the kids grabbed (" + N.gc + " records)" + (mode === "on" ? ", ×2 grabs done: " + N.x2 : ""), N.gc >= 30 && (mode !== "on" || N.x2 >= 20) && /gb_/.test(N.tree) && /"grabs":\{"on"/.test(N.tree), [N.gc, N.x2]);
