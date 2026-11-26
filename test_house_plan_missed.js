@@ -455,6 +455,16 @@ const lines = (w, kid, re) => Object.entries(adj(w, kid)).filter(([k, a]) => re.
   let u = null, err = ""; try { u = sbUndo(S, "kid_a", "a_vac", "thursday"); } catch (e) { err = String(e.message || e); } await w.flush();
   ok("with LEDGERHDROP absent the call in lgSbMiss is a no-op (typeof-guarded): the Undo still works as main's (tick back, the plan's drop stays)", !err && u === true && (day(w, isoN(3)).done || {}).a_vac && lines(w, "kid_a", /hdrop_.*a_vac/).length === 1, [err, u, lines(w, "kid_a", /./)]);
 }
+{ // left alone: a LATER turn of the same chore (it started after the sent-back day) dropped before the Undo — every 2 days: a new turn each other day
+  const S = await mkW(IDX, HJS, { jobs: { a_dish: K({ label: "Dry the dishes", emoji: "🍽", who: "kid_a", slot: "chores", cad: "2d", minutes: 5, pts: 10, order: 1 }) }, people: P(60, 60, 60, 60) }), { w } = S; S.A.run("confirm=function(){ return true; };1");
+  await go(w, 0, 7); await go(w, 1, 8); tickPlan(S.A, "kid_a", "a_dish"); await w.flush(); sbSend(S, "kid_a", "a_dish", "tuesday", "m"); await w.flush();
+  for (let n = 2; n <= 4; n++) await go(w, n, 7); const mW = day(w, isoN(2)).miss || {}, mF = day(w, isoN(4)).miss || {}, d0 = lines(w, "kid_a", /hdrop_/);
+  ok("(setup) Kid A's every-2-days chore ticked Tue 12/08 and sent back; Wed's build drops Tuesday's turn, Fri's build drops Thursday's (never ticked) — each with its −2 line", !!(mW.a_dish && mW.a_dish.since === isoN(1) && mW.a_dish.drop && mW.a_dish.drop.n > 0 && mF.a_dish && mF.a_dish.since === isoN(3) && mF.a_dish.drop && mF.a_dish.drop.n > 0 && d0.length === 2), [mW.a_dish, mF.a_dish, d0]);
+  const kF = { n: J(mF.a_dish), l: J(logLines(w, "kid_a", /^miss_h_a_dish$/).filter(l => l._dn === "thursday")), b: J(lines(w, "kid_a", /hdrop_.*thursday.*a_dish/)) };
+  await go(w, 4, 11); const u = sbUndo(S, "kid_a", "a_dish", "tuesday"); await w.flush();
+  ok("Undo on Fri: Tuesday's tick is back and Tuesday's turn's drop goes (its note on Wed, its line, its hdrop_)", u === true && !!(day(w, isoN(1)).done || {}).a_dish && !(day(w, isoN(2)).miss || {}).a_dish && !lines(w, "kid_a", /hdrop_.*tuesday.*a_dish/).length && !logLines(w, "kid_a", /^miss_h_a_dish$/).some(l => l._dn === "tuesday"));
+  ok("left alone: Thursday's turn (started after the sent-back day) and its drop — its note on Fri, its \"— not done\" line and its −2 bank line stay exactly", J((day(w, isoN(4)).miss || {}).a_dish) === kF.n && J(logLines(w, "kid_a", /^miss_h_a_dish$/).filter(l => l._dn === "thursday")) === kF.l && J(lines(w, "kid_a", /hdrop_.*thursday.*a_dish/)) === kF.b && kF.b !== "[]" && kF.l !== "[]", [kF, lines(w, "kid_a", /hdrop_/)]);
+}
 
 // ════════════════════════════════════════ D · 8 weeks ════════════════════════════════════════
 console.log("\n── D · 8 made-up weeks (12/07 – 1/31), the kids ticking some rows ──");
