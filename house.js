@@ -322,7 +322,7 @@ function hhRoomStats(ids){ const J=hhJobs(), t=_hhDayNum(_hhIsoLocal(Date.now())
 function hhHouseOrder(byRoom){ const L=hhRoomList().map(function(r){ return r[0]; }).concat(byRoom.__none.length?["__none"]:[]);
   return L.map(function(id,i){ return {id:id,i:i,s:hhRoomStats(byRoom[id]||[])}; }).sort(function(a,b){ return (b.s.late-a.s.late)||((a.s.pct===null?101:a.s.pct)-(b.s.pct===null?101:b.s.pct))||(a.i-b.i); }); }
 function hhRmCol(w){ return (typeof KID_COLOR!=="undefined"&&KID_COLOR[w])||(w==="mom"?"#6B4C93":w==="dad"?"#2C5F8A":"#A0622D"); }
-function hhRmShort(w){ return w==="mom"?"Mom":w==="dad"?"Dad":w==="grab"?"Grab":String(hhWhoName(w)).slice(0,2); }
+function hhRmShort(w){ /* 🏡 HHNAMES */ return w==="mom"?(typeof haAdult==="function"?haAdult("mom","Mom"):"Mom"):w==="dad"?(typeof haAdult==="function"?haAdult("dad","Dad"):"Dad"):w==="grab"?"Grab":String(hhWhoName(w)).slice(0,2); }
 // One square: {who, done} or null (not due, not done). A cleaning-day plan names who had it and who did it; a rotation row is
 // done by the kid whose turn it was (the inverse of hhRotLabelOn); "has it" asks what the lists ask (cad, dates, cycle, held,
 // level), not the Week grid's moved day. On past days an every-N chore shows only its ✓: its past due dates are not trustworthy
@@ -1134,7 +1134,7 @@ function hoCardHTML(){
   if(rows.length>HO_FOLD) h+='<div onclick="hoMore()" style="padding:6px 12px;border-top:1px solid #f3f4f6;font-size:12px;font-weight:800;color:#2B7A78;cursor:pointer">'+(hoAll?'Show fewer':'Show all '+rows.length)+'</div>';
   h+='<div style="padding:6px 12px 8px;font-size:11px;color:var(--muted)">● done on its day · ◐ done late, before its next day · ○ not done by its next day · – not counted (you waved it, the kid was off, or it had not started). Looks back 8 weeks (3 or more times a week: 4 weeks), from the check-offs — not from the “not done” lines. '
     +'The top line is the last 4 weeks: daily chores (3 or more times a week) as the share of their days done'+(L.dl?' ('+L.dl.done+' of '+L.dl.n+')':'')+'; weekly chores (once or twice a week) as times done of times due, dropped = not done by its next day. Late counts as done. '
-    +'Mom’s, Dad’s and Up for Grabs chores are never counted as dropped: they show how often they were checked off and stay out of the top line'+(L.ticks?' ('+L.ticks+' here)':'')+'. Left out too: what was not counted'+(L.none?', the '+L.none+' with no record yet':'')+' and any chore still inside its wait. A renamed chore starts fresh: the log knows a chore by its name.</div>';
+    +esc(hhWhoName("mom"))+'’s, '+esc(hhWhoName("dad"))+'’s and Up for Grabs chores are never counted as dropped: they show how often they were checked off and stay out of the top line'+(L.ticks?' ('+L.ticks+' here)':'')+'. Left out too: what was not counted'+(L.none?', the '+L.none+' with no record yet':'')+' and any chore still inside its wait. A renamed chore starts fresh: the log knows a chore by its name.</div>';
   return h+'</div>';
 }
 // The chore card ▸ History: this chore's own line (the card's row, unfiltered) and the last time the grid shows it done, by whom.
