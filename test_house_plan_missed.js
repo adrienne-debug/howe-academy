@@ -66,7 +66,8 @@ const BEFORE_IDX = /*PAIRS_IDX*/[
   ["  upd[B+\"built/sig\"]=hdSig(); upd[B+\"keep\"]=null; r.plan=plan; r.over=s.over; if(s.wait) r.wait=s.wait; r.built=Object.assign({},r.built,{sig:upd[B+\"built/sig\"]}); delete r.keep;\n","  upd[B+\"built/sig\"]=hdSig(); upd[B+\"keep\"]=null; r.plan=plan; r.over=s.over; r.built=Object.assign({},r.built,{sig:upd[B+\"built/sig\"]}); delete r.keep;\n"]
 ];
 const COVF = require(path.join(__dirname, "test_fixtures", "covered_pairs.js"));   // slice F sits on E: take it out first (its own test checks it)
-const carve = (file, blocks, pairs) => { let s = fs.readFileSync(path.join(__dirname, file), "utf8");
+const CG = require(path.join(__dirname, "test_fixtures", "carve_g.js"));   // slice G reads the stored days: it goes too
+const carve = (file, blocks, pairs) => { let s = fs.readFileSync(path.join(__dirname, file), "utf8"); if (file === "house.js") s = CG.hjs(s);
   const fb = file === "house.js" ? COVF.HJS_BLOCKS : COVF.IDX_BLOCKS, fp = file === "house.js" ? COVF.HJS_PAIRS : COVF.IDX_PAIRS;
   blocks = fb.concat(blocks); pairs = fp.filter(x => x[2] !== "inE").map(x => [x[0], x[1]]).concat(pairs);
   blocks.forEach(b => { const re = new RegExp("^ *// " + b + "_START[^\\n]*\\n[\\s\\S]*?^ *// " + b + "_END\\n", "m"), n = (s.match(new RegExp(re.source, "gm")) || []).length;

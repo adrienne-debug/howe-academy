@@ -1067,7 +1067,7 @@ function hwLaundryCardHTML(){ try{ if(hwFilter().k!=="laundry") return hwCardHTM
 // dropped = the ○ marks only — never a daily chore's un-ticked days). A VIEW: the filter and "show all" are plain variables; nothing
 // here writes, on a draw or on any tap.
 let hoKey="", hoF=null, hoAll=false;
-const HO_WK=56, HO_DAYS=28, HO_FOLD=8, HO_MARK={on:["●","#16a34a"],late:["◐","#d97706"],drop:["○","#64748b"],skip:["–","#cbd5e1"]};
+const HO_WK=56, HO_DAYS=28, HO_FOLD=8, HO_MARK={on:["●","#16a34a"],late:["◐","#d97706"],drop:["○","#64748b"],skip:["–","#cbd5e1"],nobody:["◌","#b45309"]};   // ◌ HORECSTORED (slice G): fit nobody
 // The page's own setting (the Schedule card's homes, without 🧺 Laundry); another room, person or page → back to it, folded.
 function hoHome(){ if(hhView==="person") return {key:"p|"+hpSel,f:{k:"who",id:hpSel}};
   if(hhView==="rooms"&&hhRmSel&&hhRmSel!=="__none") return {key:"r|"+hhRmSel,f:{k:"room",id:hhRmSel}}; return {key:"h|"+hhView+"|"+hhRmSel,f:{k:"all"}}; }
@@ -1088,6 +1088,7 @@ function hoRec(id,X){
   const ds=hoDays(cad); if(!ds.length) return none("no days set");
   const cnt=ds.length>=3, due=function(n){ return ds.indexOf((n+3)%7)>=0; }, marks=[];   // day 0 (1970-01-01) was a Thursday: (n+3)%7 = Mon 0 … Sun 6
   for(let n=X.t-(cnt?HO_DAYS:HO_WK);n<X.t;n++){ if(!due(n)) continue; let nx=n+1; while(!due(nx)) nx++;
+    const pd=(typeof hoStored==="function")?hoStored(id,j,n,nx,X):undefined; if(pd!==undefined){ if(pd) marks.push(pd); continue; }   // HORECSTORED (slice G): a day the plan stored
     const c=hoCell(id,n,X); if(!c){ marks.push({n:n,m:"skip",who:j.who}); continue; }
     if(c.done){ marks.push({n:n,m:"on",who:c.who,by:c.who}); continue; }
     let q=0, by=""; for(let k=n+1;k<nx&&k<=X.t;k++){ const d=hoCell(id,k,X); if(d&&d.done){ q=k-n; by=d.who; break; } }
@@ -1100,13 +1101,13 @@ function hoRec(id,X){
 }
 // The record seen through a filter: a person keeps only the times that were theirs (who had it that day).
 function hoSee(r,f){ if(!r||f.k!=="who"||r.form==="none") return r; return {form:r.form,daily:r.daily,wk:r.wk,marks:r.marks.filter(function(x){ return x.who===f.id; })}; }
-function hoSum(ms){ const s={on:0,late:0,drop:0,skip:0}; ms.forEach(function(x){ s[x.m]++; }); s.done=s.on+s.late; s.n=s.done+s.drop; return s; }
+function hoSum(ms){ const s={on:0,late:0,drop:0,skip:0,nobody:0}; ms.forEach(function(x){ s[x.m]++; }); s.done=s.on+s.late; s.n=s.done+s.drop+s.nobody; return s; }   // nobody: HORECSTORED
 function hoText(r){ if(r.form==="none") return 'no record yet · '+esc(r.why); const s=hoSum(r.marks);
   if(r.form==="ticks") return s.done?'checked off '+s.done+' time'+(s.done===1?'':'s')+' · last '+r.wk+' weeks':'no record yet · no check-offs';
   if(!s.n) return 'no record yet · '+(s.skip?s.skip+' not counted':'nothing due yet');
-  return s.done+' of the last '+s.n+(r.form==="count"?(r.daily?' days':' times'):'')+(s.late?' · '+s.late+' late':'')+(r.form==="marks"&&s.drop?' · '+s.drop+' dropped':'')+(s.skip?' · '+s.skip+' not counted':''); }
+  return s.done+' of the last '+s.n+(r.form==="count"?(r.daily?' days':' times'):'')+(s.late?' · '+s.late+' late':'')+(r.form==="marks"&&s.drop?' · '+s.drop+' dropped':'')+(s.nobody?' · '+s.nobody+' fit nobody':'')+(s.skip?' · '+s.skip+' not counted':''); }
 function hoMarksHTML(r){ if(r.form!=="marks") return ''; return '<span style="font-size:12px;letter-spacing:1px;white-space:nowrap">'+r.marks.map(function(x){ const M=HO_MARK[x.m], iso=_hhIsoOf(x.n);
-    const tip=hpDay(iso)+' · '+(x.m==="on"?'done that day':x.m==="late"?'done '+x.q+' day'+(x.q===1?'':'s')+' late':x.m==="drop"?'not done by its next day'+(x.dk?' · '+x.dk.n+' ⭐ '+(x.dk.gb?'given back':'taken'):''):x.off?'off that day':'not counted')+(x.by?' by '+hhWhoName(x.by):'');
+    const tip=hpDay(iso)+' · '+(x.m==="on"?'done that day':x.m==="late"?'done '+x.q+' day'+(x.q===1?'':'s')+' late':x.m==="drop"?'not done by its next day'+(x.dk?' · '+x.dk.n+' ⭐ '+(x.dk.gb?'given back':'taken'):''):x.m==="nobody"?'fit nobody, all through its wait (the limits): not counted against a kid':x.off?'off that day':'not counted')+(x.by?' by '+hhWhoName(x.by):'')+((x.pl&&typeof hoStoredTip==="function")?hoStoredTip(x):'');   // HORECSTORED
     return '<span title="'+esc(tip)+'" style="color:'+M[1]+'">'+M[0]+(x.dk?'<span style="font-size:10px;letter-spacing:0;color:'+(x.dk.gb?'#64748b':'#b91c1c')+'"> '+(x.dk.gb?'given back':'−'+x.dk.n)+'</span>':'')+'</span>'; }).join('')+'</span>'; }   // LEDGERDROP: "○ −2" / "○ given back"
 // The rows for a filter, least done first (no record yet last), and the filter's line.
 function hoRows(f,X){ const J=hhJobs(), out=[];
@@ -1116,8 +1117,8 @@ function hoRows(f,X){ const J=hhJobs(), out=[];
 // The filter's line, last 28 days: dl = the chores done 3+ times a week (days done of days due), wk = once or twice a week (times, ○ = dropped).
 function hoLine(rows,X){ const D=[], W=[]; let nr=0, nt=0; rows.forEach(function(x){ if(x.rate===2){ nr++; return; } if(x.r.form==="ticks"){ nt++; return; }
     x.r.marks.forEach(function(m){ if(m.n>=X.t-HO_DAYS) (x.r.form==="count"?D:W).push(m); }); });
-  const d=hoSum(D), w=hoSum(W); return {dl:d.n?{pct:Math.round(100*d.done/d.n),done:d.done,n:d.n}:null,wk:w.n?{done:w.done,n:w.n,drop:w.drop}:null,none:nr,ticks:nt}; }
-function hoLineTxt(L){ const p=[]; if(L.dl) p.push('Daily chores '+L.dl.pct+'% of days'); if(L.wk) p.push('Weekly chores '+L.wk.done+' of '+L.wk.n+(L.wk.drop?' · '+L.wk.drop+' dropped':''));
+  const d=hoSum(D), w=hoSum(W); return {dl:d.n?{pct:Math.round(100*d.done/d.n),done:d.done,n:d.n}:null,wk:w.n?(w.nobody?{done:w.done,n:w.n,drop:w.drop,nobody:w.nobody}:{done:w.done,n:w.n,drop:w.drop}):null,none:nr,ticks:nt}; }
+function hoLineTxt(L){ const p=[]; if(L.dl) p.push('Daily chores '+L.dl.pct+'% of days'); if(L.wk) p.push('Weekly chores '+L.wk.done+' of '+L.wk.n+(L.wk.drop?' · '+L.wk.drop+' dropped':'')+(L.wk.nobody?' · '+L.wk.nobody+' fit nobody':''));
   return p.length?'last 4 weeks · '+p.join(' · '):'<span style="color:#94a3b8">no record yet</span>'; }
 function hoRowHTML(x,mom){ const j=hhJobs()[x.id], tap=mom?' onclick="hcOpen(\''+x.id+'\')"':'';
   return '<div'+tap+' style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:5px 12px;border-top:1px solid #f3f4f6;font-size:12.5px'+(mom?';cursor:pointer':'')+'"><span>'+esc(j.emoji||'☐')+'</span>'
@@ -1143,6 +1144,47 @@ function hoHistHTML(id){ const j=hhJobs()[id]; if(!j) return ''; const X=hoX(), 
   return '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:12px;font-weight:700">📊 '+(r?hoMarksHTML(r)+'<span style="color:#475569">'+hoText(r)+'</span>':'<span style="color:#475569">a one-time job</span>')+'</div>'
     +'<div style="font-size:12px;font-weight:700;margin-top:4px">'+(last?'Last checked off '+(+last.iso.slice(5,7))+'/'+(+last.iso.slice(8))+(last.by?' by '+esc(hhWhoName(last.by)):''):'Not checked off in the last 8 weeks')+'</div>'; }
 // HOWOFTEN_END
+// HORECSTORED_START — slice G of DESIGN_missed_chores_2026-11-19 (§5 "with E and G, who had it and who did it, by chore and not by name";
+// §8 row G: "The record reads the stored days: who had it, who did it, stars paid and taken, 'fit nobody' drops"). With the plan ON, 📊 How
+// often (🏠 Whole house, a room, 👤 By person) and the chore card's History marks read each turn of a chore the plan hands out from the
+// stored days houseDay/<iso> on this device (today and the 14 days before, as HOUSEDAY listens) instead of working it out again from the
+// grid: whose turn it was (plan / wait / its drop note — a chore moved to a sibling is that sibling's), who did it and what it paid
+// (done/<id>, by chore, so a renamed chore keeps its record), what its drop took (the "— not done" line's drop, as LEDGERDROP reads it),
+// Mom's ✕ skip and ➖ Excuse (– not counted), a turn that fit nobody for its whole wait (◌, never against a kid: no kid's name on it),
+// and a turn covered by an early done (slice F: ● "done Mon, ahead of its day"). A day the plan did not store (older, or a day no device
+// built), the plan off or on preview, a 🔄 rolling chore and a chore the plan does not hand out: the grid, exactly as before. Reads only.
+function hoStoredOn(X){ if(X.hs===undefined) X.hs=typeof hdOn==="function"&&hdOn()&&typeof hdLive==="function"&&typeof hdManaged==="function"; return X.hs; }
+function hoDoneRec(iso,id,r){ return (typeof hdDoneRec==="function")?hdDoneRec(iso,id):((r&&r.done)||{})[id]||null; }
+// Each turn of one chore in the stored days, by the day it was due (its `since`): {who, at (the day done), by, pts, grab, skip, miss, seen}.
+function hoTurns(id,X){ X.ht=X.ht||{}; if(X.ht[id]) return X.ht[id]; const T={}, has={};
+  for(let n=X.t-15;n<=X.t;n++){ const iso=_hhIsoOf(n), r=hdLive(iso); if(!r) continue; has[n]=1;
+    const p=(r.plan||{})[id], w=(r.wait||{})[id], o=(r.over||{})[id], m=(r.miss||{})[id], k=(r.skip||{})[id], d=hoDoneRec(iso,id,r), at=function(s){ const q=/^\d{4}-\d{2}-\d{2}$/.test(s||"")?_hhDayNum(s):n; return T[q]||(T[q]={}); };
+    if(p){ const t=at(p.since); t.who=p.who; t.seen=n; if(k) t.skip=1; }
+    if(w){ const t=at(w.since); t.who=w.who; t.seen=n; }
+    if(o){ const t=at(o.since); t.seen=n; if(k) t.skip=1; }
+    if(d){ const t=at((p||o||{}).since); if(t.at===undefined){ t.at=n; t.by=d.who||""; if(d.pts!=null) t.pts=d.pts; if(d.grab) t.grab=1; } }
+    if(m){ at(m.since).miss=m; } }
+  return X.ht[id]={T:T,has:has}; }
+// One due day n (next due day nx) of chore id: undefined = not the plan's to say (the grid decides) · null = no mark yet (inside its wait)
+// · a mark, with pl:1.
+function hoStored(id,j,n,nx,X){ if(!hoStoredOn(X)||!hdManaged(j)||j.clock==="roll") return undefined; const H=hoTurns(id,X); if(!H.has[n]) return undefined;
+  const t=H.T[n], own=j.who, mk=function(o){ return Object.assign({n:n,pl:1},o); };
+  if(!t) return hoEarly(id,j,n,X)||mk({m:"skip",who:own,np:1});   // the plan gave it to nobody that day: covered (F), or waved, a day off, above the level
+  const who=t.who||(t.miss&&t.miss.who)||"";
+  if(t.skip) return mk({m:"skip",who:who||own,wv:1});
+  if(t.at!==undefined){ const q=t.at-n, o=mk({m:q>0?"late":"on",who:who||t.by||own,by:t.by}); if(q>0) o.q=q; if(t.pts!=null) o.pts=t.pts; if(t.grab) o.grab=1; return o; }
+  if(t.miss){ const m=t.miss; if(m.x) return mk({m:"skip",who:m.who||who||own,x:1}); if(m.nobody) return mk({m:"nobody",who:""});
+    const o=mk({m:"drop",who:m.who||who||own}), dk=(typeof hoDrop==="function")?hoDrop(X,id,n):null; if(dk) o.dk=dk; return o; }
+  for(let k=(t.seen||n)+1;k<=X.t;k++) if(H.has[k]) return mk({m:"skip",who:who||own,np:2});   // gone from the plan with no note: a day no device built
+  return null; }
+// Covered (slice F): a turn the plan skipped because the chore was done within its window before its day → ● done early.
+function hoEarly(id,j,n,X){ const iso=_hhIsoOf(n), N=(typeof hdCoverN==="function"&&typeof hdMissedOn==="function"&&hdMissedOn(iso))?hdCoverN(j):0; if(!(N>0)) return null;
+  for(let k=1;k<=N;k++){ const s=_hhIsoOf(n-k), d=hoDoneRec(s,id,hdLive(s)), c=d?null:hoCell(id,n-k,X); if(d||(c&&c.done)||j.lastDone===s) return {n:n,pl:1,m:"on",who:j.who,by:d?d.who||"":c&&c.done?c.who:(j.lastBy||""),early:k}; }
+  return null; }
+function hoStoredTip(x){ return (x.early?' · done '+x.early+' day'+(x.early===1?'':'s')+' ahead of its day ('+hpDay(_hhIsoOf(x.n-x.early)).split(' ')[0]+'), so this turn was skipped':'')
+  +(x.who&&x.by&&x.by!==x.who?' · '+hhWhoName(x.who)+'’s turn':'')+(x.pts!=null?' · paid '+x.pts+' ⭐':'')+(x.grab?' · as an Up for Grabs':'')
+  +(x.wv?' · you skipped it':'')+(x.x?' · excused':'')+(x.np===1?' · the plan gave it to nobody that day':'')+(x.np===2?' · no plan was made for a day of its wait':''); }
+// HORECSTORED_END
 // LASTTURNS_START — 📒 Last turns on the chore card, and the 📒 Ledger on that one chore (DESIGN_chore_ledger_2026-11-21 §5 "Quick jumps,
 // never second copies": "the card's '📒 Last turns: ✅ ✅ ✅ ✖ ›' → the ledger on that chore"; §8 "Each links to the other"; §9 row L7;
 // the hub's brief 2026-11-24). The ledger's chore name opens the card (hcGo); this line on the card's History opens the ledger. A JUMP:

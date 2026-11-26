@@ -44,7 +44,8 @@ const BASE_IDX = (() => { let s = C6.idx(fs.readFileSync(path.join(__dirname, "i
   R(/\+\(\(e\.drop&&e\.drop\.n\)\?[^\n]*?\/\* CHOREDROP: what the drop took \*\//, "", "the Click-off Log's −2");
   if (/CHOREDROP|RT_TAKE_FROM|starTakeAt|_rtDropFile|cdrop_/.test(s)) throw new Error("test_chore_drop: the app before still mentions CHOREDROP");
   const t = path.join(os.tmpdir(), "chore_drop_before_" + process.pid + ".html"); fs.writeFileSync(t, s); return t; })();
-const BASE_HJS = (() => { let s = C6.hjs(fs.readFileSync(path.join(__dirname, "house.js"), "utf8")); const R = (a, b, l) => { s = once(s, "house.js", a, b, l); };
+const CG = require(path.join(__dirname, "test_fixtures", "carve_g.js"));   // slice G (test_house_record_stored.js) reads C3's hoDrop: its app before goes too
+const BASE_HJS = (() => { let s = C6.hjs(CG.hjs(fs.readFileSync(path.join(__dirname, "house.js"), "utf8"))); const R = (a, b, l) => { s = once(s, "house.js", a, b, l); };
   R(/^\/\/ LEDGERDROP_START[^\n]*\n[\s\S]*?^\/\/ LEDGERDROP_END\n/m, "", "the LEDGERDROP block");
   R(/^ {6}const g0=out\.gone\.length;[^\n]*\n/m, "", "the gone rows' start");
   R(/^ {6}if\(typeof lgDropGones===[^\n]*\n/m, "", "the gone rows' hook");

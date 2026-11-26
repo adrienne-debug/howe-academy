@@ -27,7 +27,7 @@ const carve = (s, blocks, pairs, file) => { blocks.forEach(b => { const re = new
   pairs.forEach(([a, b], i) => { const n = s.split(a).length - 1; if (n !== 1) throw new Error("test_house_covered: the app before F cannot be built — piece " + (i + 1) + " of " + file + " found " + n + "×"); s = s.replace(a, () => b); });
   if (/covOf|covCarry|hdCover|hdCovered|hpCovHTML|COVERED/.test(s)) throw new Error("test_house_covered: the app before F's " + file + " still mentions slice F");
   return s; };
-const BASE_SRC = carve(SRC, COVF.IDX_BLOCKS, COVF.IDX_PAIRS, "index.html"), BASE_HJS = carve(HJS, COVF.HJS_BLOCKS, COVF.HJS_PAIRS, "house.js");
+const BASE_SRC = carve(SRC, COVF.IDX_BLOCKS, COVF.IDX_PAIRS, "index.html"), BASE_HJS = carve(require(path.join(__dirname, "test_fixtures", "carve_g.js")).hjs(HJS), COVF.HJS_BLOCKS, COVF.HJS_PAIRS, "house.js");   // slice G reads F's hdCoverN: it goes too
 const BASE_IDX = path.join(os.tmpdir(), "covered_before_" + process.pid + ".html"); fs.writeFileSync(BASE_IDX, BASE_SRC);
 console.log("(the app before F: this tree with COVERED / COVEREDDAY / COVEREDSEEN taken out = slice E's tip)");
 const block = (s, name) => { const a = s.indexOf("// " + name + "_START"), b = s.indexOf("// " + name + "_END"); if (a < 0 || b < a) throw new Error("missing " + name); return s.slice(a, s.indexOf("\n", b)); };
