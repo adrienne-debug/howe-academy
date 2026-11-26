@@ -687,7 +687,7 @@ function hpPersonHTML(){
   if(hhIsKid(who)&&typeof lsFourHTML==='function') h+=lsFourHTML(who,'padding:2px 12px 4px');   // 🔥 LISTSTREAK (P2): the four streaks, as in the Kids today pop-up
   const R=hpRoutineNow(who); h+='<div style="'+HP_HEAD+'">🧼 Health and 🐾 animals — on their lists now</div>'+(R.length?R.map(function(r){ return hpRow(r.id,r.emoji,r.label,'',!!r.done); }).join(''):'<div style="padding:3px 12px 6px;font-size:12px;color:var(--muted)">Nothing due today.</div>');
   if(hhIsKid(who)&&typeof amList==="function"){ const C=amList(who).filter(function(c){ return !c.done&&c.dueIso<=today; });
-    if(C.length) h+='<div style="'+HP_HEAD+'">🌅 Sent to the morning list</div>'+C.map(function(c){ return hpRow("",c.emoji,c.label,_hhChip('from '+hpDay(c.fromIso),'#fef3c7','#92400e')); }).join(''); }
+    if(C.length) h+='<div style="'+HP_HEAD+'">🌅 Sent to the morning list</div>'+C.map(function(c){ return hpRow("",c.emoji,c.label,_hhChip('from '+hpDay(c.fromIso)+((typeof amPay==="function"&&amPay(who,c,today)!==c.pts)?' · '+c.pts+' → '+amPay(who,c,today)+' ⭐':''),'#fef3c7','#92400e')); }).join(''); }   // CHOREAMWHY (C4): an ignored one shows what it pays
   h+=(typeof hqPersonWaitHTML==="function")?hqPersonWaitHTML(who):'';   // HOUSEQUIET: still on their list from an earlier day, with Mom's note
   if(d0){ const mine=(d0.list[who]||[]).filter(function(id){ return d0.plan[id].house; }), mv=hpMovedOff(d0,who);
     h+='<div style="'+HP_HEAD+'">🔭 House chores the plan WOULD give today — preview</div><div style="display:flex;gap:8px;align-items:center;padding:2px 12px 4px;font-size:11px;color:var(--muted)">'+hpBar(d0.used[who],d0.limit[who])+'<span>'+d0.used[who]+' / '+d0.limit[who]+' min</span></div>';
@@ -1767,7 +1767,7 @@ function lgRow(slot,kid,D,i,st){
     if(typeof lgGbRow==="function") lgGbRow(r,slot,kid,D,i,st,E,p,full);   // ⭐ LEDGERGB (L2): the row's give-back button, or what was given back
     return r; }
   if(due){
-    if(typeof amGet==="function"&&amGet(kid,slot,i,D.iso)) return Object.assign(r,{ic:"🌅",note:"sent to "+(D.k===0?"tomorrow":"the next")+" morning"});
+    if(typeof amGet==="function"&&amGet(kid,slot,i,D.iso)) return Object.assign(r,{ic:"🌅",note:"sent to "+(D.k===0?"tomorrow":"the next")+" morning"+(typeof lgAmzSent==="function"?lgAmzSent(kid,slot,i,D):"")});   // LEDGERAMZ
     r.c=0; r.want=full;
     if(D.k===0){ const dl=(typeof rtDailyNote==="function")?rtDailyNote(slot,kid,i,st):""; return Object.assign(r,{ic:"○",note:"not done yet"+(dl?" · "+dl:"")}); }   // CHOREDAILY (C5)
     const f=lgFate(slot,kid,i,st,D);
@@ -1792,8 +1792,10 @@ function lgDayData(kid,k){
         const r={nm:"🌅 "+(it.emoji?it.emoji+" ":"")+(it.label||"Chore"),note:"from "+amFromLbl(it)+" "+(SL_SLBL[it.slot]||it.slot)}, x=it.done;
         if(x&&x.iso===D.iso){ r.c=1; r.ts=x.ts||""; if(x.src==="list"){ r.ic="✅"; r.note+=" · ticked on its own list"; } else if(lgHeld(kid,x.bid)){ r.ic="⏸"; r.held=x.pts||0; r.note+=" · waiting for your ✓"; } else { r.ic="✅"; r.pts=x.pts||0; } }
         else { r.c=0; r.ic=D.k===0?"○":"✖"; r.note+=D.k===0?" · not done yet":" · not done"; }
+        if(typeof lgAmzRow==="function") lgAmzRow(r,kid,D,it);   // LEDGERAMZ (C4)
         if(typeof lgSbRow==="function") lgSbRow(r,kid,D,"a:"+it.id);   // ↩ LEDGERSB
         rows.push(r); });
+      if(slot==="morning"&&typeof lgAmzLost==="function") lgAmzLost(rows,kid,D);   // LEDGERAMZ
       steps.forEach(function(st,i){ if(!st||(D.prev&&st.house)) return; let r=lgRow(slot,kid,D,i,st); if(typeof lgXRow==="function") r=lgXRow(r,slot,kid,D,i,st);   // ➖ LEDGERX (L3): Excuse / Undo on the row
         if(r&&typeof lgZeroRow==="function") lgZeroRow(r,slot,kid,D,i,st);   // LEDGERZERO (C6): a 0 ⭐ daily's −1
         if(!r) return;
@@ -1815,6 +1817,7 @@ function lgDayData(kid,k){
   out.lists.forEach(function(L){ L.rows.forEach(function(r){ out.earned+=(r.pts||0)+(r.gb||0); out.short+=r.sh||0; out.held+=r.held||0; if(r.c===0) out.open++; }); });
   out.taken=0; out.gone.forEach(function(r){ out.taken+=r.tk||0; });   // LEDGERDROP: what came off the bank
   out.lists.forEach(function(L){ L.rows.forEach(function(r){ out.taken+=r.tk||0; }); });   // LEDGERZERO: a 0 ⭐ daily's −1
+  out.lists.forEach(function(L){ L.rows.forEach(function(r){ out.taken+=r.atk||0; }); });   // LEDGERAMZ (C4): a 🌅 row's cost after 0
   return out;
 }
 // ── drawing ──
@@ -2107,7 +2110,7 @@ function lgSbBack(kid,j,c){ const W=lgSbW(kid), L=lgSbList(j), core=L.filter(fun
   L.forEach(function(x){ if(lgSbEq(lgSbAt(W,x[0]),x[2])){ lgSbAt(W,x[0],1,x[1]); u[x[0]]=x[1]; } }); return u; }
 // a "— not done" line a device filed for this turn while it was sent back (_rtLogMiss / C3's _rtDropFileC3, under its own day or the
 // day it was due) goes again with the tick's return, and C3's drop line with it (cdrop_…, −20%): the turn was done.
-function lgSbMiss(R,at,u){ if(!R||!R.slot||R.st.house) return; const D=lgSbDay(R.wk,R.dn), E=D&&lgDueBefore(R.st,D), k="miss_"+R.slot+"_"+R.i;
+function lgSbMiss(R,at,u){ if(typeof lgAmzSbBack==="function") lgAmzSbBack(R,at,u)/* LEDGERAMZ (C4): a 🌅 row's line since */; if(!R||!R.slot||R.st.house) return; const D=lgSbDay(R.wk,R.dn), E=D&&lgDueBefore(R.st,D), k="miss_"+R.slot+"_"+R.i;
   [D,E].forEach(function(T){ const L=T&&((routineLog[R.kid]||{})[T.wk]||{})[T.dn], x=L&&L[k], b=x&&x.drop&&x.drop.bid, A=bank[R.kid]&&bank[R.kid].adjustments;
     if(x&&(x.at||0)>=at){ delete L[k]; u["routineLog/"+R.kid+"/"+T.wk+"/"+T.dn+"/"+k]=null; if(b&&A&&A[b]){ delete A[b]; u["bank/"+R.kid+"/adjustments/"+b]=null; } } }); }   // C3: and the drop it took
 function lgSbDone(u){ const ks=" "+Object.keys(u||{}).join(" ");
@@ -2229,6 +2232,51 @@ function hoDrop(X,id,n){ if(!X.dr){ X.dr={}; Object.keys(routineLog||{}).forEach
     Object.keys(D).forEach(function(q){ const t=D[q]&&D[q].drop; if(t&&t.n>0&&t.due&&t.job) X.dr[t.job+"|"+t.due]={n:t.n,gb:!!t.gb}; }); }); }); }); }
   return X.dr[id+"|"+_hhIsoOf(n)]||null; }
 // LEDGERDROP_END
+// LEDGERAMZ_START — a 🌅 row sent as "they ignored it" (missed-chores design §2.5, slice C4; ledger design §2–§3), on its 📒 Ledger rows.
+// index.html CHOREAMWHY files each day it costs after 0 on its own line (routineLog/<kid>/<wk>/<day>/amz_<carry id>, .amz = {n, bid,
+// id, day} or {n:0, why}) and writes that day's one bank line. Here, on the carry's row of that morning: "· 2 ⭐ taken this morning"
+// with ⭐ Give stars back (ONE update: the bank line removed + amz.gb = {by, ts, at, line}; Undo puts that exact line back) and ➖ Excuse
+// (not their fault after all: every line of that carry on this device given back with gb.x, and its why = "notfault", in ONE update;
+// its Undo puts every line and "ignored" back). The gate is LEDGERDROP's (Mom, or Dad's link with his code). A line whose carry was
+// taken off the list keeps a row of its own. Writes only when db && !_dryRun() (lgDropUp).
+function lgAmzBtn(fn,args,lab,tip){ const u=lab==="Undo"; return '<button onclick="'+fn+'('+args+')"'+(tip?' title="'+tip+'"':'')+' style="border:1.5px solid '+(u?'var(--border)':'#d1d5db')+';background:#fff;color:'+(u?'#374151':'#6b7280')+';border-radius:8px;padding:2px 9px;font-size:11.5px;font-weight:'+(u?700:800)+';cursor:pointer;white-space:nowrap">'+lab+'</button>'; }   // the ledger's own button look
+function lgAmzLog(kid,wk,dn,id){ return (((routineLog[kid]||{})[wk]||{})[dn]||{})["amz_"+id]||null; }
+function lgAmzSent(kid,slot,i,D){ const c=amGet(kid,slot,i,D.iso); if(!c||!amWhyIg(c)) return ""; const f=amPay(kid,c,amIso(_todayDay)); return " · 🙈 they ignored it"+(!c.done&&f<(c.pts||0)?" · pays "+f+" of "+c.pts+" ⭐ today":""); }
+function lgAmzRow(g,kid,D,it){
+  if(g.c===0&&amWhyIg(it)){ const f=amPay(kid,it,D.iso); g.note+=" · 🙈 ignored"+(f<(it.pts||0)?" · pays "+f+" of "+it.pts+" ⭐":""); }
+  const L=lgAmzLog(kid,D.wk,D.dn,it.id); if(L&&L.amz) lgAmzTk(g,kid,D,it.id,L.amz,amWhyIg(it)&&g.c!==1?1:0); }   // ➖ Excuse only while it is "ignored" and not ticked (beside ↩ Send back: two buttons at most)
+function lgAmzTk(g,kid,D,id,t,x){ const ok=lgDropOk(), js="('"+kid+"','"+D.wk+"','"+D.dn+"','"+id+"')", tw=D.k===0?"this morning":"that morning";
+  if(!t.n){ g.note+=" · nothing taken "+tw+" ("+(t.why==="away"?"a day off":t.why==="pause"?"⏸ paused":"Take stars away was off")+")"; return; }
+  g.note+=" · "+lgStar(t.n)+" taken "+tw;
+  if(t.gb){ g.gbH='<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="font-size:11.5px;font-weight:800;color:#b45309">'+(t.gb.x?'➖ excused · ':'')+'⭐ '+(t.gb.by==="dad"?"Dad":"Mom")+' gave back +'+lgStar(t.n)+'</span>'+(ok?lgAmzBtn(t.gb.x?"lgAmzExUndo":"lgAmzUndo",js.slice(1,-1),"Undo",""):'')+'</span>'; return; }
+  if(!lgDropLine(kid,t.bid)){ g.note+=", not in the Star Bank now"; return; }
+  g.atk=t.n; if(ok) g.gbH=(x?lgAmzBtn("lgAmzExcuse","'"+kid+"','"+id+"'","➖ Excuse","Not their fault after all: every star this took goes back, and it pays full stars from now on"):'')+' <button onclick="lgAmzGive'+js+'" style="border:1.5px solid #f59e0b;background:#fffbeb;color:#92400e;border-radius:8px;padding:2px 9px;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap">⭐ Give stars back</button>'; }
+// the lines of a carry no longer on the list (✕ take off) that day: a row each
+function lgAmzLost(rows,kid,D){ const L=((routineLog[kid]||{})[D.wk]||{})[D.dn]||{}, m=(amCarry||{})[kid]||{};
+  Object.keys(L).forEach(function(k){ const x=L[k], t=x&&x.amz; if(!t||!/^amz_/.test(k)||m[t.id]) return; const q={ic:"✖",nm:"🌅 "+String(x.label||"").replace(/ — not done$/,""),note:"taken off the list"}; lgAmzTk(q,kid,D,t.id,t,0); rows.push(q); }); }
+function lgAmzP(kid,wk,dn,id){ return "routineLog/"+kid+"/"+wk+"/"+dn+"/amz_"+id+"/amz/gb"; }
+function lgAmzGive(kid,wk,dn,id){ const L=lgDropOk()&&lgAmzLog(kid,wk,dn,id), t=L&&L.amz, ln=t&&lgDropLine(kid,t.bid);
+  if(!ln||!(t.n>0)||t.gb){ lgDropDone(); return false; } const u={}; t.gb={by:momHere()?"mom":"dad",ts:nowTs(),at:Date.now(),line:ln}; delete bank[kid].adjustments[t.bid];
+  u[lgAmzP(kid,wk,dn,id)]=t.gb; u["bank/"+kid+"/adjustments/"+t.bid]=null; lgDropUp(u); lgDropDone(); return true; }
+function lgAmzUndo(kid,wk,dn,id){ const L=lgDropOk()&&lgAmzLog(kid,wk,dn,id), t=L&&L.amz, gb=t&&t.gb;
+  if(!gb||gb.x||!gb.line||lgDropLine(kid,t.bid)){ lgDropDone(); return false; } const u={}; delete t.gb; bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{}; bank[kid].adjustments[t.bid]=gb.line;
+  u[lgAmzP(kid,wk,dn,id)]=null; u["bank/"+kid+"/adjustments/"+t.bid]=gb.line; lgDropUp(u); lgDropDone(); return true; }
+// every line of carry id on this device (this week and last): [wk, dn, amz]
+function lgAmzAll(kid,id){ const out=[], R=routineLog[kid]||{}; [activeWk(),_prevWkKey()].forEach(function(wk){ Object.keys(R[wk]||{}).forEach(function(dn){ const L=lgAmzLog(kid,wk,dn,id); if(L&&L.amz) out.push([wk,dn,L.amz]); }); }); return out; }
+function lgAmzExcuse(kid,id){ const c=lgDropOk()&&amCarry[kid]&&amCarry[kid][id]; if(!c||!amWhyIg(c)){ lgDropDone(); return false; } const u={}, by=momHere()?"mom":"dad";
+  lgAmzAll(kid,id).forEach(function(a){ const t=a[2], ln=t.n>0&&!t.gb&&lgDropLine(kid,t.bid); if(!ln) return; t.gb={by:by,ts:nowTs(),at:Date.now(),line:ln,x:1}; delete bank[kid].adjustments[t.bid]; u[lgAmzP(kid,a[0],a[1],id)]=t.gb; u["bank/"+kid+"/adjustments/"+t.bid]=null; });
+  c.why="notfault"; u["amCarry/"+kid+"/"+id+"/why"]="notfault"; lgDropUp(u); amOnValue(Object.assign({},amCarry)); lgDropDone(); return true; }
+function lgAmzExUndo(kid,wk,dn,id){ const c=lgDropOk()&&amCarry[kid]&&amCarry[kid][id]; if(!c||c.why!=="notfault"){ lgDropDone(); return false; } const u={};
+  lgAmzAll(kid,id).forEach(function(a){ const t=a[2], gb=t.gb; if(!gb||!gb.x||!gb.line||lgDropLine(kid,t.bid)) return; delete t.gb; bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{}; bank[kid].adjustments[t.bid]=gb.line; u[lgAmzP(kid,a[0],a[1],id)]=null; u["bank/"+kid+"/adjustments/"+t.bid]=gb.line; });
+  if(!Object.keys(u).length){ lgDropDone(); return false; } c.why="ignored"; u["amCarry/"+kid+"/"+id+"/why"]="ignored"; lgDropUp(u); amOnValue(Object.assign({},amCarry)); lgDropDone(); return true; }
+// ↩ L5's Send back on a 🌅 row, undone (its Undo calls this): a line this carry filed since the send back goes with the tick's return, and
+// its bank line — the chore was done. A line from before it, one given back or excused, and other carries' lines stay. Into u (targeted).
+// "Since" = at or after the send back, or after the tick now put back (no line can be filed while it is ticked: one filed by the un-tick's
+// own redraw, a few ms before L5's at, counts too).
+function lgAmzSbBack(R,at,u){ if(!R||!R.it||!R.id||!(at>0)) return; const kid=R.kid, W=(routineLog[kid]||{})[R.wk]||{}, A=bank[kid]&&bank[kid].adjustments, d0=_amIsoOf(at), k=(R.rec&&R.rec.at)||0;
+  Object.keys(W).forEach(function(dn){ const L=W[dn], x=L&&L["amz_"+R.id], t=x&&x.amz, a=(x&&x.at)||0; if(!t||t.gb||t.id!==R.id||!(a>=at||(k>0&&a>k))||!(t.day>=d0)) return;
+    delete L["amz_"+R.id]; u["routineLog/"+kid+"/"+R.wk+"/"+dn+"/amz_"+R.id]=null; if(t.bid&&A&&A[t.bid]){ delete A[t.bid]; u["bank/"+kid+"/adjustments/"+t.bid]=null; } }); }
+// LEDGERAMZ_END
 // LEDGERZERO_START — a 0 ⭐ daily's −1 on its 📒 Ledger row (missed-chores design §2.8 and §4, slice C6; C3's LEDGERDROP pattern and gate).
 // index.html CHOREZERO files the day's line (routineLog/<kid>/<wk>/<day>/zero_<chore>, .zero) and the bank line. Here, on that day's row:
 // "−1 ⭐ this morning: not done 2 days in a row" with ⭐ Give stars back (Mom, or Dad's link with his code: lgDropOk), and the day's

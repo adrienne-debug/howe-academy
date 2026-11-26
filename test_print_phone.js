@@ -60,6 +60,7 @@ function world(o) {
     MAST_CAT_EMOJI_MAP: {}, MAST_ANIMAL_EMOJI: {},
     mastGetPrintNum: () => 7, mastOrderedDue: () => DUE.slice(),
     mastDrillSettings: () => ({}), mastColorBorder: () => "#000", mastCountEmoji: () => "🦕", mastCountN: () => 3, mastCountVisFrames: () => "",
+    kcEmoji: k => (k === KID ? "🦊" : "🌟"), cap: k => (k === KID ? "Kid One" : String(k)), esc: s => String(s),   // the card header names the printed kid (newfam slice 2)
   };
   // the print-sheet checkboxes
   els["mast-chk-student"] = { checked: true }; els["mast-chk-parent"] = { checked: true };
